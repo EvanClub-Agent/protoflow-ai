@@ -1,0 +1,26 @@
+[Unit]
+Description=ProtoFlow publishing API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=protoflow
+Group=protoflow
+WorkingDirectory=/data/protoflow-ai/current
+Environment="RELEASE_STORAGE_DIR=/data/protoflow-ai/shared/releases"
+Environment="TRUSTED_PROXIES=127.0.0.1,::1"
+EnvironmentFile=/data/protoflow-ai/shared/server.env
+ExecStart=/data/protoflow-ai/current/protoflow
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/protoflow-ai/shared/releases
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,106 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '..');
+if (process.versions.electron) {
+  const { app, BrowserWindow } = require('electron');
+  const dir = process.env.PFLOW_TRUTH_SMOKE_DIR;
+  app.setPath('userData', path.join(dir, 'profile'));
+  app.whenReady().then(async () => {
+    app.dock?.hide();
+    const win = new BrowserWindow({ show:false, width:1550, height:1000, webPreferences:{contextIsolation:true,nodeIntegration:false} });
+    const errors = [];
+    win.webContents.on('console-message', event => { if(event.level === 'error') errors.push(event.message); });
+    const js = code => win.webContents.executeJavaScript(code);
+    const settle = () => js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const click = async label => { await js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('Missing button '+${JSON.stringify(label)});b.click()})()`); await settle(); };
+    const content = () => js('document.body.textContent');
+    const screenshot = async name => { if(process.env.PFLOW_TRUTH_SCREENSHOT_DIR) fs.writeFileSync(path.join(process.env.PFLOW_TRUTH_SCREENSHOT_DIR,`protoflow-truth-${name}.png`),(await win.webContents.capturePage()).toPNG()); };
+    try {
+      await win.loadFile(path.join(dir, 'index.html'));
+      for(let i=0;i<100 && !await js('Boolean(window.truthSmoke && document.querySelector("[data-project-flow]"))');i++) await new Promise(r=>setTimeout(r,20));
+      await settle();
+      assert.ok((await content()).includes('客户详情'));
+      for (const label of ['供应商审批','合格供应商目录','Page 57','海关物资管理系统']) assert.ok(!(await content()).includes(label));
+      assert.deepEqual(await js('window.truthSmoke.rows()'), {});
+      await screenshot('flow');
+      await click('预览数据');
+      assert.ok((await content()).includes('尚未加载该表的预览数据'));
+      assert.deepEqual(await js('window.truthSmoke.rows()'), {});
+      await js('window.truthSmoke.savedRows()'); await settle();
+      assert.ok((await content()).includes('真实保存的客户记录'));
+      assert.equal(await js('document.querySelectorAll("[data-project-table-data] th").length'),2);
+      await click('页面配置');
+      await click('知识与影响');
+      assert.ok((await content()).includes('共用表的其他页面 (1)'));
+      assert.ok((await content()).includes('详情要求必须明确'));
+      await screenshot('knowledge');
+      win.setSize(1040,800);await settle();
+      assert.ok(await js('document.documentElement.scrollWidth<=window.innerWidth+1'));
+      await click('需求巡检');
+      assert.ok((await content()).includes('暂无巡检记录'));
+      assert.ok(!(await content()).includes('100%'));
+      await js('window.truthSmoke.history()');await settle();
+      assert.ok((await content()).includes('历史记录未核验来源'));
+      assert.equal(await js(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('关联组件已不可用')).disabled`),true);
+      const auditLayout = () => js(`(()=>{const box=document.querySelector('[data-workspace]').getBoundingClientRect(),detail=document.querySelector('[data-audit-detail]').getBoundingClientRect();return {direction:getComputedStyle(document.querySelector('[data-audit-layout]')).flexDirection,detailWidth:detail.width,left:detail.left,right:detail.right,workspaceLeft:box.left,workspaceRight:box.right}})()`);
+      const narrow=await auditLayout();
+      assert.equal(narrow.direction,'column');
+      assert.ok(narrow.detailWidth>=220,JSON.stringify(narrow));
+      assert.ok(narrow.left>=narrow.workspaceLeft && narrow.right<=narrow.workspaceRight,JSON.stringify(narrow));
+      await js(`document.querySelector('[data-audit-detail] button').scrollIntoView({block:'center'})`);await settle();
+      assert.ok(await js(`(()=>{const b=document.querySelector('[data-audit-detail] button'),r=b.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===b || b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})()`));
+      await js(`[...document.querySelectorAll('[data-audit-detail] button')].find(b=>b.textContent.includes('应用所选方案并修复')).scrollIntoView({block:'center'})`);await settle();
+      assert.ok(await js(`(()=>{const b=[...document.querySelectorAll('[data-audit-detail] button')].find(b=>b.textContent.includes('应用所选方案并修复')),r=b.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===b || b.contains(hit)})()`));
+      await screenshot('audit-narrow');
+      win.setSize(1800,1000);await settle();
+      const wide=await auditLayout();assert.equal(wide.direction,'row');assert.ok(wide.detailWidth>300,JSON.stringify(wide));
+      await screenshot('audit');
+      await click('工程导出');
+      assert.ok((await content()).includes('工程文件'));
+      assert.ok(!(await content()).includes('提交成功'));
+      await click('本次查看期间的变化 (0)');
+      assert.ok((await content()).includes('本次查看期间没有变化'));
+      await js('window.truthSmoke.change()');await settle();
+      assert.ok((await content()).includes('sticky-notes/customer-list.pins.md'));
+      await click('当前文件 (' + await js('window.truthSmoke.fileCount()') + ')');
+      await click('SPEC.md');await screenshot('files');
+      await js(`document.querySelector('[aria-label="关闭工程文件"]').click()`);await settle();
+      await click('缺失源码');
+      assert.ok((await content()).includes('missing-page 缺少源码'));
+      assert.equal(await js('window.truthSmoke.hasPhantom()'),false);
+      await js('window.truthSmoke.empty()');await settle();await click('跨模块关系');
+      assert.ok((await content()).includes('当前没有跨页面跳转配置'));
+      assert.ok(!(await content()).includes('真实保存的客户记录'));
+      assert.deepEqual(errors, []);
+      console.log('PASS Chromium: actual project relations, exact saved table fields, read-only inspection, knowledge dependencies, historical audits, real file diff, responsive layout, missing-source guard and project isolation');
+      app.exit(0);
+    } catch(e) { console.error(e); console.error(errors); app.exit(1); }
+  });
+  setTimeout(()=>app.exit(1),30000).unref();
+} else {
+  const { buildSync } = require('esbuild');
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-truth-'));
+  try {
+    const code = `
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import {LeftSitemapTree} from './src/components/LeftSitemapTree';import {CrossModuleFlowView} from './src/components/CrossModuleFlowView';import {KnowledgeImpactView} from './src/components/KnowledgeImpactView';import {ClosedLoopAuditView} from './src/components/ClosedLoopAuditView';import {InspectorSidebar} from './src/components/InspectorSidebar';import {DesktopBundleModal} from './src/components/DesktopBundleModal';import {ProtoCanvasDesigner} from './src/proto/designer/ProtoCanvasDesigner';
+import {useProtoStore} from './src/store/useProtoStore';import {usePageStore} from './src/proto/store/usePageStore';import {createProjectPayload,loadProjectFromBinaryPayload,captureProjectPayload} from './src/services/projectStorage';import {generateUnpackedGitFiles} from './src/utils/pflowBinaryCodec';
+const meta=id=>({projectId:id,projectName:id==='empty'?'新建空白工程':'客户管理设计工程',templateId:'blank_project',storageDir:'/tmp/test',fileName:id+'.pflow',createdAt:'2026-10-31',updatedAt:'2026-10-31',pageCount:0,tableCount:0,stickyCount:0});
+const payload=createProjectPayload(meta('smoke'));
+Object.assign(payload.stateSnapshot,{designerFolders:[{id:'folder-project-pages',title:'测试目录',parentFolderId:null}],activePageId:'customer-list',dbTables:[{id:'entity-customers',tableName:'t_customers',cnName:'客户档案',domain:'基础资料域 (MDM)',description:'',sharedByMenus:[],columns:[{id:'col-id',name:'id',dataType:'VARCHAR(32)',nullable:false,isPrimaryKey:true,comment:'客户标识'},{id:'col-name',name:'customer_name',dataType:'VARCHAR(128)',nullable:false,comment:'客户名称'}]}],pageSources:{'customer-list':'export default function Page(){return <Page pfId="root"><Table pfId="customer-table" table="entity-customers" rowActions={[{label:"详情",onClick:()=>navigate("customer-detail")}]} /></Page>;}','customer-detail':'export default function Page(){return <Page pfId="detail-root"><Form pfId="detail-form" table="entity-customers" /></Page>;}'},designerPages:[{pageId:'customer-list',title:'客户查询',folderId:'folder-project-pages'},{pageId:'customer-detail',title:'客户详情',folderId:'folder-project-pages'}],tableRows:{},stickyNotes:[{id:'note-1',pageId:'customer-list',targetWidgetId:'customer-table',targetWidgetName:'客户表格',index:1,text:'详情要求必须明确；客户名称应完整展示。',compiledRule:'',active:true}]});loadProjectFromBinaryPayload(payload);
+window.truthSmoke={rows:()=>usePageStore.getState().tableRows,savedRows:()=>usePageStore.setState({tableRows:{'entity-customers':[{id:'customer-17',customer_name:'真实保存的客户记录'}]}}),history:()=>useProtoStore.setState({closedLoopIssues:[{id:'old',scope:'module',pageId:'customer-list',moduleTitle:'客户查询',category:'字段核对',severity:'warning',title:'核对名称字段是否满足要求',brokenChainDesc:'这是一条旧版本保存的记录，目标组件已删除。',targetWidgetId:'removed-widget',targetWidgetName:'旧组件',targetTableId:'removed-table',aiQuestion:'是否需要重新验证？',status:'open',options:[]}]}),change:()=>useProtoStore.getState().updateStickyRuleText('note-1','本次查看期间实际修改的需求说明'),fileCount:()=>generateUnpackedGitFiles(captureProjectPayload()).length,hasPhantom:()=>Object.hasOwn(usePageStore.getState().pageSources,'missing-page'),empty:()=>loadProjectFromBinaryPayload(createProjectPayload(meta('empty')))};
+function Harness(){const [view,setView]=useState('flow');return <div className="flex h-screen flex-col bg-slate-100"><nav className="flex shrink-0 gap-2 border-b border-slate-200 bg-white p-3">{[['flow','跨模块关系'],['knowledge','知识与影响'],['audit','需求巡检'],['missing','缺失源码']].map(([id,name])=><button key={id} onClick={()=>setView(id)} className={'rounded px-3 py-2 text-xs '+(view===id?'bg-blue-600 text-white':'text-slate-600')}>{name}</button>)}<button onClick={()=>useProtoStore.getState().setBundleModalOpen(true)} className="ml-auto rounded border border-slate-300 px-3 py-2 text-xs">工程导出</button></nav><div className="flex min-h-0 flex-1"><div style={{width:48,flexShrink:0}}/><LeftSitemapTree/><main data-workspace className="min-w-0 flex-1 overflow-auto p-4">{view==='flow'?<CrossModuleFlowView/>:view==='knowledge'?<KnowledgeImpactView/>:view==='audit'?<ClosedLoopAuditView/>:<ProtoCanvasDesigner pageId="missing-page"/>}</main><InspectorSidebar/></div><DesktopBundleModal/></div>};createRoot(document.getElementById('frame')).render(<Harness/>);`;
+    const result = buildSync({stdin:{contents:code,resolveDir:root,loader:'tsx'},bundle:true,platform:'browser',format:'iife',write:false,loader:{'.svg':'dataurl'},define:{'process.env.NODE_ENV':'"production"'}});
+    fs.writeFileSync(path.join(dir,'bundle.js'),result.outputFiles[0].contents);
+    const css = fs.readdirSync(path.join(root,'dist/assets')).find(n=>n.endsWith('.css'));
+    fs.copyFileSync(path.join(root,'dist/assets',css),path.join(dir,'styles.css'));
+    fs.writeFileSync(path.join(dir,'index.html'),'<!doctype html><html data-theme="light"><meta charset="utf-8"><link rel="stylesheet" href="./styles.css"><div id="frame"></div><script src="./bundle.js"></script>');
+    const env = {...process.env,PFLOW_TRUTH_SMOKE_DIR:dir};delete env.ELECTRON_RUN_AS_NODE;
+    const child = spawnSync(require('electron'),[__filename],{env,encoding:'utf8',timeout:35000});
+    if(child.status!==0)throw new Error(child.error?.message||child.stderr||child.stdout);
+    console.log(child.stdout.trim());
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- MANDATORY: Declare support for both light and dark themes -->
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Resolve the persisted theme before first paint to avoid a flash of the wrong theme.
+      try {
+        var pref = localStorage.getItem("color-scheme") || "light";
+        var resolved =
+          pref === "system"
+            ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+            : pref === "dark" ? "dark" : "light";
+        document.documentElement.dataset.theme = resolved;
+        document.querySelector('meta[name="color-scheme"]').content = resolved;
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+    <title>Alex — AI 时代可运行原型与数据流转沙盒</title>
+  </head>
+  <body class="antialiased overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

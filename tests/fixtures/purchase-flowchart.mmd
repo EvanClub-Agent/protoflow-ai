@@ -1,0 +1,153 @@
+---
+config:
+  layout: dagre
+---
+flowchart TB
+    START((采购业务开始))
+
+    subgraph PLAN["一、年度计划管理"]
+        direction TB
+        A1["发起年度计划"]
+        A2["年度计划审批"]
+        A3{"审批是否通过"}
+        A4["选择已审批年度计划"]
+        A5["发起年度计划合并"]
+        A6["年度计划合并审批"]
+        A7{"审批是否通过"}
+        A1 --> A2 --> A3
+        A3 -->|通过| A4
+        A3 -->|退回| A1
+        A4 --> A5 --> A6 --> A7
+        A7 -->|退回| A5
+    end
+    subgraph NORMAL["二、常规采购申请"]
+        direction TB
+        B1["发起常规采购申请"]
+        B2{"采购模式"}
+        B3["标内采购"]
+        B4["选择已审批招标结果"]
+        B5["标外采购"]
+        B6["从物料基础目录选择物料"]
+        B7{"明细采购方式"}
+        B8["招标物料"]
+        B9["询价物料"]
+        B10["提交常规采购审批"]
+        B11{"审批是否通过"}
+        B1 --> B2
+        B2 -->|标内| B3 --> B4
+        B2 -->|标外| B5 --> B6 --> B7
+        B7 -->|招标| B8
+        B7 -->|询价| B9
+        B4 --> B10
+        B8 --> B10
+        B9 --> B10
+        B10 --> B11
+        B11 -->|退回| B1
+    end
+    subgraph RESEARCH["三、科研采购申请"]
+        direction TB
+        R1["发起科研采购申请"]
+        R2["标外采购"]
+        R3["从物料基础目录选择物料"]
+        R4{"明细采购方式"}
+        R5["招标物料"]
+        R6["询价物料"]
+        R7["提交科研采购审批"]
+        R8{"审批是否通过"}
+        R1 --> R2 --> R3 --> R4
+        R4 -->|招标| R5
+        R4 -->|询价| R6
+        R5 --> R7
+        R6 --> R7
+        R7 --> R8
+        R8 -->|退回| R1
+    end
+    subgraph TENDER["四、招标申请管理"]
+        direction TB
+        C1["招标申请：待招标"]
+        C2["勾选待招标明细"]
+        C3["生成招标申请"]
+        C4["招标申请审批"]
+        C5{"审批是否通过"}
+        C1 --> C2 --> C3 --> C4 --> C5
+        C5 -->|退回| C3
+    end
+    subgraph RESULT["五、招标结果管理"]
+        direction TB
+        D1["招标结果：待录入"]
+        D2["点击录入"]
+        D3["录入招标结果"]
+        D4["提交招标结果审批"]
+        D5{"审批是否通过"}
+        D6["招标结果：已审批"]
+        D1 --> D2 --> D3 --> D4 --> D5
+        D5 -->|通过| D6
+        D5 -->|退回| D3
+    end
+    subgraph INQUIRY["六、询价管理"]
+        direction TB
+        E1["询价模块：待询价"]
+        E2["发起询价"]
+        E3["供应商报价"]
+        E4["询价结果确认"]
+        E5["询价结果"]
+        E1 --> E2 --> E3 --> E4 --> E5
+    end
+    subgraph ORDER["七、采购订单管理"]
+        direction TB
+        F1["采购订单：待处理数据"]
+        F2["选择采购明细"]
+        F3["生成采购订单"]
+        F4["采购订单确认"]
+        F1 --> F2 --> F3 --> F4
+    end
+    subgraph CONTRACT["八、采购合同管理"]
+        direction TB
+        G1["创建采购合同"]
+        G2["采购合同审批"]
+        G3{"审批是否通过"}
+        G4["合同生效"]
+        G1 --> G2 --> G3
+        G3 -->|通过| G4
+        G3 -->|退回| G1
+    end
+    subgraph WAREHOUSE["九、到货与入库管理"]
+        direction TB
+        H1["到货验收"]
+        H2["验收确认"]
+        H3["入库管理"]
+        H4["入库确认"]
+        H5((采购流程完成))
+        H1 --> H2 --> H3 --> H4 --> H5
+    end
+    subgraph BASE["十、基础资料"]
+        M1[("物料基础目录")]
+        M2[("供应商管理")]
+    end
+    START --> A1
+    START --> B1
+    START --> R1
+    A7 -->|通过：年度计划明细| C1
+    B11 -->|标内审批通过| F1
+    B11 -->|标外招标审批通过| C1
+    B11 -->|标外询价审批通过| E1
+    R8 -->|招标审批通过| C1
+    R8 -->|询价审批通过| E1
+    C5 -->|通过| D1
+    D6 -->|直接进入采购订单| F1
+    D6 -.->|提供标内采购数据| B4
+    E5 -->|询价完成后| F1
+    F4 --> G1
+    G4 --> H1
+    M1 -.-> B6
+    M1 -.-> R3
+    M2 -.-> E3
+    M2 -.-> F3
+    classDef approval fill:#fff3cd,stroke:#d39e00,color:#664d03
+    classDef success fill:#d1e7dd,stroke:#198754,color:#0f5132
+    classDef pending fill:#cfe2ff,stroke:#0d6efd,color:#084298
+    classDef decision fill:#f8d7da,stroke:#dc3545,color:#842029
+    class A2,A6,B10,R7,C4,D4,G2 approval
+    class D6,E5,G4,H5 success
+    class C1,D1,E1,F1 pending
+    class A3,A7,B2,B7,B11,R4,R8,C5,D5,G3 decision

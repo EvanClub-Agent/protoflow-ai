@@ -1,0 +1,25 @@
+services:
+  website:
+    image: ${ALEX_WEBSITE_NGINX_IMAGE:?Set the verified Nginx image digest in .env}
+    container_name: alex-website
+    restart: unless-stopped
+    user: "101:101"
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
+    ports:
+      - "${WEBSITE_BIND:-127.0.0.1}:${WEBSITE_PORT:-8090}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /data/alex-website:/srv/site:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

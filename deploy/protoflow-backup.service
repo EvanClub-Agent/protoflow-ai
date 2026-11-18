@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up ProtoFlow database, settings and release signing key
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/protoflow-backup
+UMask=0077

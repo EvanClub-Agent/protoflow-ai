@@ -1,0 +1,211 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1120" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FAF9F5" />
+      <stop offset="100%" stop-color="#F2EFE6" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+    <linearGradient id="mobileHeader" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EFF6FF" />
+      <stop offset="100%" stop-color="#EEF2FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Backdrop -->
+  <rect width="1120" height="560" rx="20" fill="url(#bgGrad)" stroke="#E4E1D6" stroke-width="2" />
+
+  <!-- App Window Shell -->
+  <rect x="24" y="22" width="1072" height="516" rx="14" fill="#FFFFFF" stroke="#D8D5C8" stroke-width="1.5" />
+
+  <!-- Top Window Bar -->
+  <rect x="25" y="23" width="1070" height="42" rx="13" fill="#F8FAFC" />
+  <line x1="25" y1="65" x2="1095" y2="65" stroke="#E2E8F0" stroke-width="1" />
+  <circle cx="48" cy="44" r="5.5" fill="#F43F5E" />
+  <circle cx="66" cy="44" r="5.5" fill="#F59E0B" />
+  <circle cx="84" cy="44" r="5.5" fill="#10B981" />
+
+  <!-- Top Mode Tabs -->
+  <rect x="116" y="32" width="84" height="24" rx="6" fill="#2563EB" />
+  <text x="158" y="48" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600">原型画布</text>
+  <rect x="206" y="32" width="88" height="24" rx="6" fill="#F1F5F9" />
+  <text x="250" y="48" text-anchor="middle" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="500">ER 数据库表</text>
+  <rect x="300" y="32" width="92" height="24" rx="6" fill="#F1F5F9" />
+  <text x="346" y="48" text-anchor="middle" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="500">跨模块流转</text>
+  <rect x="398" y="32" width="84" height="24" rx="6" fill="#F1F5F9" />
+  <text x="440" y="48" text-anchor="middle" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="500">项目脑图</text>
+  <rect x="488" y="32" width="84" height="24" rx="6" fill="#F1F5F9" />
+  <text x="530" y="48" text-anchor="middle" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="500">闭环审计</text>
+
+  <text x="865" y="48" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11.5">云仓电商进销存系统 · 本地已保存</text>
+  <rect x="1012" y="32" width="70" height="24" rx="6" fill="#0F172A" />
+  <text x="1047" y="48" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="600">发布分享</text>
+
+  <!-- Left Sitemap & Shared DB Sidebar -->
+  <rect x="25" y="66" width="195" height="471" fill="#F8FAFC" />
+  <line x1="220" y1="65" x2="220" y2="537" stroke="#E2E8F0" stroke-width="1" />
+
+  <text x="40" y="90" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="700">目录菜单树 (PC + 移动)</text>
+  <text x="40" y="113" fill="#334155" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600">▾ 供应商与商品中心</text>
+  <text x="54" y="135" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11.5">合格供应商目录</text>
+  <text x="54" y="156" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11.5">商品 SKU 目录</text>
+
+  <text x="40" y="184" fill="#334155" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600">▾ 采购与仓储协同</text>
+  <rect x="44" y="194" width="164" height="26" rx="6" fill="#DBEAFE" />
+  <text x="54" y="211" fill="#1D4ED8" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600">采购订单与入库看板</text>
+  <text x="54" y="236" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11.5">到货验收单台账</text>
+  <text x="54" y="258" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="11.5">掌上扫码收货</text>
+  <rect x="132" y="246" width="34" height="16" rx="4" fill="#EDE9FE" />
+  <text x="149" y="257" text-anchor="middle" fill="#6D28D9" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600">移动</text>
+
+  <line x1="40" y1="280" x2="204" y2="280" stroke="#E2E8F0" stroke-width="1" />
+  <text x="40" y="302" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="700">工程共享物理表 (ER)</text>
+
+  <rect x="40" y="314" width="166" height="36" rx="7" fill="#FFFFFF" stroke="#CBD5E1" />
+  <text x="50" y="330" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" font-weight="600">t_base_supplier</text>
+  <text x="50" y="344" fill="#059669" font-family="system-ui, -apple-system, sans-serif" font-size="9.5">● 4 个菜单页面读写共表</text>
+
+  <rect x="40" y="358" width="166" height="36" rx="7" fill="#FFFFFF" stroke="#CBD5E1" />
+  <text x="50" y="374" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" font-weight="600">t_pms_po_item</text>
+  <text x="50" y="388" fill="#2563EB" font-family="system-ui, -apple-system, sans-serif" font-size="9.5">● 主子表联动 · 防超收校验</text>
+
+  <rect x="40" y="402" width="166" height="36" rx="7" fill="#FFFFFF" stroke="#CBD5E1" />
+  <text x="50" y="418" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" font-weight="600">t_wms_acceptance</text>
+  <text x="50" y="432" fill="#7C3AED" font-family="system-ui, -apple-system, sans-serif" font-size="9.5">● PC 后台 + 移动端实时同步</text>
+
+  <!-- Sticky Contract Summary Box in Sidebar -->
+  <rect x="40" y="452" width="166" height="68" rx="8" fill="#FFFBEB" stroke="#FDE68A" />
+  <text x="50" y="470" fill="#92400E" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="700">📌 需求便签契约 (5/5 闭环)</text>
+  <text x="50" y="487" fill="#B45309" font-family="system-ui, -apple-system, sans-serif" font-size="9.8">不含税单价自动保留 6 位小数</text>
+  <text x="50" y="503" fill="#B45309" font-family="system-ui, -apple-system, sans-serif" font-size="9.8">提交入库反向扣减订单余量</text>
+
+  <!-- Center Canvas Area -->
+  <rect x="221" y="66" width="598" height="471" fill="#F1F5F9" />
+
+  <!-- Desktop Canvas Card -->
+  <rect x="238" y="82" width="416" height="438" rx="10" fill="#FFFFFF" stroke="#CBD5E1" />
+  <text x="256" y="108" fill="#0F172A" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">采购订单与入库实时看板</text>
+  <rect x="568" y="92" width="70" height="24" rx="6" fill="url(#accentGrad)" />
+  <text x="603" y="108" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">+ 新建订单</text>
+
+  <!-- Query Form Row -->
+  <rect x="254" y="124" width="112" height="26" rx="5" fill="#F8FAFC" stroke="#CBD5E1" />
+  <text x="264" y="141" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5">订单编号 / SKU</text>
+  <rect x="374" y="124" width="112" height="26" rx="5" fill="#F8FAFC" stroke="#CBD5E1" />
+  <text x="384" y="141" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5">供应商：极光数码</text>
+  <rect x="494" y="124" width="84" height="26" rx="5" fill="#F8FAFC" stroke="#CBD5E1" />
+  <text x="504" y="141" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5">状态：全部</text>
+  <rect x="586" y="124" width="52" height="26" rx="5" fill="#EFF6FF" stroke="#BFDBFE" />
+  <text x="612" y="141" text-anchor="middle" fill="#1D4ED8" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">查询</text>
+
+  <!-- Data Table -->
+  <rect x="254" y="162" width="384" height="148" rx="7" fill="#FFFFFF" stroke="#E2E8F0" />
+  <rect x="255" y="163" width="382" height="28" rx="6" fill="#F8FAFC" />
+  <text x="266" y="181" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">采购单号</text>
+  <text x="358" y="181" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">供应商 / 商品</text>
+  <text x="492" y="181" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">含税金额</text>
+  <text x="576" y="181" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600">流转状态</text>
+
+  <line x1="255" y1="192" x2="637" y2="192" stroke="#E2E8F0" />
+  <text x="266" y="213" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5">PO-20261108</text>
+  <text x="358" y="213" fill="#334155" font-family="system-ui, -apple-system, sans-serif" font-size="10.5">极光数码 · 降噪耳机 Pro</text>
+  <text x="492" y="213" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5">¥ 48,200</text>
+  <rect x="572" y="200" width="50" height="18" rx="9" fill="#DCFCE7" />
+  <text x="597" y="212" text-anchor="middle" fill="#15803D" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600">已入库</text>
+
+  <rect x="255" y="226" width="382" height="36" fill="#EFF6FF" />
+  <text x="266" y="248" fill="#1D4ED8" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5" font-weight="600">PO-20261109</text>
+  <text x="358" y="248" fill="#1E3A8A" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="500">星海光电 · 4K 会议镜头</text>
+  <text x="492" y="248" fill="#1E3A8A" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5">¥ 19,860</text>
+  <rect x="572" y="235" width="50" height="18" rx="9" fill="#FEF3C7" />
+  <text x="597" y="247" text-anchor="middle" fill="#B45309" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600">待收货</text>
+
+  <line x1="255" y1="263" x2="637" y2="263" stroke="#E2E8F0" />
+  <text x="266" y="287" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5">PO-20261110</text>
+  <text x="358" y="287" fill="#334155" font-family="system-ui, -apple-system, sans-serif" font-size="10.5">云图配件 · 140W 快充站</text>
+  <text x="492" y="287" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, monospace" font-size="10.5">¥ 12,400</text>
+  <rect x="572" y="274" width="50" height="18" rx="9" fill="#E0E7FF" />
+  <text x="597" y="286" text-anchor="middle" fill="#4338CA" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="600">待审批</text>
+
+  <!-- Pin Badge #4 -->
+  <circle cx="634" cy="244" r="9" fill="#F59E0B" />
+  <text x="634" y="248" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700">4</text>
+
+  <!-- ECharts Bar & Trend Card -->
+  <rect x="254" y="322" width="384" height="182" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
+  <text x="268" y="344" fill="#334155" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600">月度采购签约与入库趋势 (ECharts 绑定物理表)</text>
+  <line x1="274" y1="478" x2="618" y2="478" stroke="#CBD5E1" />
+  <rect x="292" y="426" width="26" height="52" rx="4" fill="#93C5FD" />
+  <rect x="346" y="404" width="26" height="74" rx="4" fill="#60A5FA" />
+  <rect x="400" y="416" width="26" height="62" rx="4" fill="#93C5FD" />
+  <rect x="454" y="382" width="26" height="96" rx="4" fill="#3B82F6" />
+  <rect x="508" y="368" width="26" height="110" rx="4" fill="#2563EB" />
+  <rect x="562" y="356" width="26" height="122" rx="4" fill="#1D4ED8" />
+  <path d="M305 420 L359 398 L413 408 L467 374 L521 362 L575 350" stroke="#D97757" stroke-width="2.5" stroke-linecap="round" />
+  <text x="305" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">6月</text>
+  <text x="359" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">7月</text>
+  <text x="413" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">8月</text>
+  <text x="467" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">9月</text>
+  <text x="521" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">10月</text>
+  <text x="575" y="494" text-anchor="middle" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">11月</text>
+
+  <!-- Companion Mobile Viewport Card -->
+  <rect x="666" y="102" width="140" height="398" rx="22" fill="#0F172A" />
+  <rect x="672" y="108" width="128" height="386" rx="18" fill="#FFFFFF" />
+  <rect x="714" y="114" width="44" height="10" rx="5" fill="#0F172A" />
+  <rect x="672" y="132" width="128" height="58" fill="url(#mobileHeader)" />
+  <text x="684" y="152" fill="#4338CA" font-family="system-ui, sans-serif" font-size="9" font-weight="700">移动端 · 共表视口</text>
+  <text x="684" y="170" fill="#0F172A" font-family="system-ui, sans-serif" font-size="11.5" font-weight="700">掌上扫码收货</text>
+
+  <rect x="682" y="200" width="108" height="72" rx="8" fill="#F8FAFC" stroke="#CBD5E1" />
+  <text x="690" y="218" fill="#1D4ED8" font-family="ui-monospace, monospace" font-size="9.5" font-weight="700">PO-20261109</text>
+  <text x="690" y="234" fill="#334155" font-family="system-ui, sans-serif" font-size="9.5">4K 会议摄像头 × 8</text>
+  <rect x="690" y="244" width="92" height="20" rx="5" fill="#2563EB" />
+  <text x="736" y="258" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="9.5" font-weight="600">扫码确认入库</text>
+
+  <rect x="682" y="282" width="108" height="62" rx="8" fill="#F8FAFC" stroke="#E2E8F0" />
+  <text x="690" y="300" fill="#64748B" font-family="system-ui, sans-serif" font-size="9.5">待审批补货单</text>
+  <text x="690" y="318" fill="#0F172A" font-family="system-ui, sans-serif" font-size="11" font-weight="700">2 项高优待处理</text>
+  <text x="690" y="334" fill="#059669" font-family="system-ui, sans-serif" font-size="9">实时联动 PC 台账</text>
+
+  <rect x="682" y="458" width="108" height="24" rx="12" fill="#F1F5F9" />
+  <text x="736" y="474" text-anchor="middle" fill="#475569" font-family="system-ui, sans-serif" font-size="9.5">探索 · 待办 · 助手 · 我的</text>
+
+  <!-- Right Project AI Sidebar -->
+  <line x1="820" y1="65" x2="820" y2="537" stroke="#E2E8F0" stroke-width="1" />
+  <rect x="821" y="66" width="274" height="471" fill="#FAF9F5" />
+  <text x="838" y="92" fill="#141413" font-family="system-ui, -apple-system, sans-serif" font-size="12.5" font-weight="700">✨ 项目 AI 协同 (Hermes)</text>
+  <rect x="1008" y="78" width="72" height="20" rx="10" fill="#DCFCE7" />
+  <text x="1044" y="91" text-anchor="middle" fill="#15803D" font-family="system-ui, sans-serif" font-size="9.5" font-weight="600">● 本机连接</text>
+
+  <!-- User Bubble -->
+  <rect x="854" y="110" width="226" height="58" rx="10" fill="#141413" />
+  <text x="866" y="130" fill="#FAF9F5" font-family="system-ui, sans-serif" font-size="10.5">做一套电商采购与入库系统，PC</text>
+  <text x="866" y="146" fill="#FAF9F5" font-family="system-ui, sans-serif" font-size="10.5">后台管订单，手机端支持扫码入库</text>
+
+  <!-- AI Clarify Bubble -->
+  <rect x="836" y="180" width="236" height="56" rx="10" fill="#FFFFFF" stroke="#E8E6DC" />
+  <text x="848" y="200" fill="#9A3B1E" font-family="system-ui, sans-serif" font-size="10" font-weight="700">AI 需求澄清提问</text>
+  <text x="848" y="218" fill="#3D3D3A" font-family="system-ui, sans-serif" font-size="10.5">入库数量超出订货余量时是否拦截？</text>
+
+  <!-- User Answer Chip -->
+  <rect x="920" y="246" width="160" height="30" rx="8" fill="#FBF1EC" stroke="#F1C9BC" />
+  <text x="1000" y="265" text-anchor="middle" fill="#9A3B1E" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600">✓ 严格拦截防超收并算税</text>
+
+  <!-- AI Plan Card -->
+  <rect x="836" y="288" width="244" height="162" rx="10" fill="#FFFFFF" stroke="#D8D5C8" />
+  <text x="850" y="310" fill="#141413" font-family="system-ui, sans-serif" font-size="11" font-weight="700">已生成工程蓝图（待确认）：</text>
+  <text x="850" y="332" fill="#475569" font-family="system-ui, sans-serif" font-size="10.5">• 3 张共享物理表 + 主外键契约</text>
+  <text x="850" y="352" fill="#475569" font-family="system-ui, sans-serif" font-size="10.5">• PC 端：供应商、订单、验收看板</text>
+  <text x="850" y="372" fill="#475569" font-family="system-ui, sans-serif" font-size="10.5">• 移动端：掌上扫码收货与审批页</text>
+  <text x="850" y="392" fill="#475569" font-family="system-ui, sans-serif" font-size="10.5">• 自动挂载 5 条字段与公式便签</text>
+  <rect x="850" y="408" width="216" height="28" rx="7" fill="#D97757" />
+  <text x="958" y="426" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="11" font-weight="600">确认方案并生成页面 →</text>
+
+  <!-- Model Picker Footer -->
+  <rect x="836" y="466" width="244" height="54" rx="10" fill="#FFFFFF" stroke="#E8E6DC" />
+  <text x="848" y="486" fill="#73726C" font-family="system-ui, sans-serif" font-size="10">Claude · Gemini · DeepSeek · Ollama</text>
+  <text x="848" y="506" fill="#141413" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600">输入局部修改指令或拖入参考截图…</text>
+</svg>

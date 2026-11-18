@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Deep Midnight-to-Sapphire Squircle Background -->
+    <linearGradient id="pf-bg" x1="40" y1="24" x2="472" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#090D1A" />
+      <stop offset="48%" stop-color="#0F1E46" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+
+    <!-- Radiant Top-Right Cyan & Bottom-Left Violet Aurora -->
+    <radialGradient id="pf-aurora-cyan" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(388 112) rotate(135) scale(320)">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.48" />
+      <stop offset="55%" stop-color="#2563EB" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#090D1A" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="pf-aurora-indigo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(116 408) rotate(-45) scale(280)">
+      <stop offset="0%" stop-color="#6366F1" stop-opacity="0.38" />
+      <stop offset="100%" stop-color="#090D1A" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Specular Glass Rim -->
+    <linearGradient id="pf-rim" x1="56" y1="32" x2="456" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BAE6FD" stop-opacity="0.6" />
+      <stop offset="45%" stop-color="#60A5FA" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0.42" />
+    </linearGradient>
+
+    <!-- Layer 1 (Bottom Schema Plane): Deep Cobalt-Indigo -->
+    <linearGradient id="pf-layer-bottom" x1="136" y1="280" x2="376" y2="412" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#4F46E5" stop-opacity="0.75" />
+    </linearGradient>
+
+    <!-- Layer 2 (Middle Flow Ribbon): Electric Sky-to-Blue -->
+    <linearGradient id="pf-layer-mid" x1="120" y1="196" x2="388" y2="332" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="55%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+
+    <!-- Layer 3 (Top Prototype Prism): Luminous Pure White to Ice Cyan -->
+    <linearGradient id="pf-layer-top" x1="132" y1="112" x2="364" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="68%" stop-color="#F0F9FF" />
+      <stop offset="100%" stop-color="#BAE6FD" />
+    </linearGradient>
+
+    <!-- AI 4-Point Star Gradient -->
+    <linearGradient id="pf-star" x1="336" y1="104" x2="416" y2="184" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="45%" stop-color="#7DD3FC" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+
+    <filter id="pf-drop" x="72" y="72" width="368" height="384" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#020617" flood-opacity="0.48" />
+    </filter>
+  </defs>
+
+  <!-- macOS Rounded Squircle Base -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#pf-bg)" />
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#pf-aurora-cyan)" />
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#pf-aurora-indigo)" />
+  <rect x="26" y="26" width="460" height="460" rx="106" stroke="url(#pf-rim)" stroke-width="3.5" />
+
+  <!-- Subtle Isometric Grid Aura -->
+  <circle cx="256" cy="256" r="168" stroke="#93C5FD" stroke-opacity="0.08" stroke-width="1.5" stroke-dasharray="6 6" />
+  <circle cx="256" cy="256" r="120" stroke="#93C5FD" stroke-opacity="0.08" stroke-width="1.5" />
+
+  <!-- Central 3D Isometric Flow Prism + AI Spark -->
+  <g filter="url(#pf-drop)">
+    <!-- Bottom Layer: Database Schema Isometric Diamond Plane -->
+    <path
+      d="M256 266L382 332C393 337.8 393 352.2 382 358L272 415.5C262 420.7 250 420.7 240 415.5L130 358C119 352.2 119 337.8 130 332L256 266Z"
+      fill="url(#pf-layer-bottom)"
+      stroke="#93C5FD"
+      stroke-opacity="0.35"
+      stroke-width="2.5"
+    />
+
+    <!-- Middle Layer: Dynamic Data-Flow S-Ribbon Folding Upward -->
+    <path
+      d="M256 188L382 254C393 259.8 393 274.2 382 280L272 337.5C262 342.7 250 342.7 240 337.5L130 280C119 274.2 119 259.8 130 254L256 188Z"
+      fill="url(#pf-layer-mid)"
+      stroke="#E0F2FE"
+      stroke-opacity="0.55"
+      stroke-width="2.5"
+    />
+
+    <!-- Top Layer: Luminous Prototype Canvas Plane with Cutout Flow Channel -->
+    <path
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+      d="M256 110L382 176C393 181.8 393 196.2 382 202L272 259.5C262 264.7 250 264.7 240 259.5L130 202C119 196.2 119 181.8 130 176L256 110ZM256 154L188 189L256 224L324 189L256 154Z"
+      fill="url(#pf-layer-top)"
+    />
+
+    <!-- Glowing Data Nodes & Vertical Flow Bridge -->
+    <circle cx="256" cy="189" r="14" fill="#38BDF8" />
+    <circle cx="256" cy="189" r="6" fill="#FFFFFF" />
+
+    <!-- Radiant 4-Point AI Sparkle at Top-Right Crest -->
+    <path
+      d="M380 96C384.2 122.8 393.2 131.8 420 136C393.2 140.2 384.2 149.2 380 176C375.8 149.2 366.8 140.2 340 136C366.8 131.8 375.8 122.8 380 96Z"
+      fill="url(#pf-star)"
+    />
+  </g>
+</svg>

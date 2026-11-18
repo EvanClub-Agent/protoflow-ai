@@ -1,0 +1,80 @@
+name: Build & Release Desktop Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            script: build:mac:arm64
+          - name: macos-x64
+            os: macos-latest
+            script: build:mac:x64
+          - name: windows-x64
+            os: windows-latest
+            script: build:win
+          - name: linux-x64
+            os: ubuntu-latest
+            script: build:linux
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Sync version from Git tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libfuse2t64 || sudo apt-get install -y rpm libfuse2
+      - run: npm ci
+      - run: npm run ${{ matrix.script }}
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.deb
+            release/*.AppImage
+            release/*.tar.gz
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate SHA256SUMS.txt
+        working-directory: artifacts
+        run: sha256sum * > SHA256SUMS.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Alex ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*

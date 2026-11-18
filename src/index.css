@@ -1,0 +1,1286 @@
+@import "./viewer/releaseWorkspace.css";
+@import "tailwindcss";
+
+.project-mindmap-svg > svg {
+  display: block;
+  width: 100%;
+  max-width: none !important;
+  height: 100%;
+}
+
+/* Official mermaid.ai style '+' crosshair canvas grid */
+.pf-mermaid-canvas-grid {
+  background-color: #fafcfd;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M14 11v6M11 14h6' stroke='%23b6dde8' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-size: 28px 28px;
+}
+
+[data-theme="dark"] .pf-mermaid-canvas-grid {
+  background-color: #0b1120;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M14 11v6M11 14h6' stroke='%231e293b' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-size: 28px 28px;
+}
+
+.pf-mermaid-code-header {
+  background-color: rgba(227, 241, 246, 0.88);
+}
+
+[data-theme="dark"] .pf-mermaid-code-header {
+  background-color: rgba(30, 41, 59, 0.92);
+}
+
+/* Mobile viewport studio stage: soft neutral dot matrix in light mode, deep obsidian studio grid in dark mode */
+.pf-mobile-canvas-stage {
+  background-color: #f3f6fb;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.06), transparent 62%),
+    radial-gradient(rgba(100, 116, 139, 0.24) 1px, transparent 1px);
+  background-size: 100% 100%, 18px 18px;
+}
+
+:root[data-theme="dark"] .pf-mobile-canvas-stage {
+  background-color: #0b0f17;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(96, 165, 250, 0.08), transparent 60%),
+    radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 100% 100%, 18px 18px;
+}
+
+/* ============================================================================
+   ALEX — PRODUCT DESIGN TOKEN SYSTEM
+   ----------------------------------------------------------------------------
+   Color discipline (Linear / Navicat 17 / Antigravity style):
+   - ~90% neutral surfaces & typography (4 surface levels, 3 text levels)
+   - ~8%  ONE brand accent (blue-600) — primary CTA, focus, selected state
+   - ~2%  semantic status (success / warning / danger) used only for meaning
+
+   Authoring rules for components (light-first Tailwind classes):
+   ┌──────────────────────┬──────────────────────────────┬──────────────────┐
+   │ Role                 │ Light (authored class)       │ Dark (auto-map)  │
+   ├──────────────────────┼──────────────────────────────┼──────────────────┤
+   │ App canvas           │ bg-[#F3F5F8]                 │ #0d1117          │
+   │ Panel / card / modal │ bg-white                     │ #151a23          │
+   │ Toolbar / header     │ bg-slate-50                  │ #1a202b          │
+   │ Track / hover / chip │ bg-slate-100                 │ #222a36          │
+   │ Border (structure)   │ border-slate-200             │ #2a3241          │
+   │ Border (control)     │ border-slate-300             │ #3a4456          │
+   │ Important text       │ text-slate-900 / 800         │ #e6e9ef          │
+   │ Secondary text       │ text-slate-700 / 600         │ #b4bccb          │
+   │ Muted / hint text    │ text-slate-500 / 400         │ #8a93a5          │
+   │ Primary button       │ bg-blue-600 text-white       │ unchanged        │
+   │ Secondary button     │ bg-white border-slate-200    │ panel + border   │
+   │ Selected pill        │ bg-white shadow-2xs in track │ #2f3848          │
+   │ Status chip          │ bg-{hue}-50 text-{hue}-700   │ tinted / -300    │
+   └──────────────────────┴──────────────────────────────┴──────────────────┘
+   Prototype "paper" (the ERP pages users design) is wrapped in `.pf-paper`
+   and follows the resolved workspace theme.
+   ============================================================================ */
+
+:root {
+  --brand-accent-light: #2563eb;
+  --brand-accent-dark: #3b82f6;
+  --accent-color: var(--brand-accent-light);
+
+  /* MANDATORY: Fallback for browsers without light-dark support */
+  @media (prefers-color-scheme: dark) {
+    --accent-color: var(--brand-accent-dark);
+  }
+
+  @supports (color: light-dark(white, black)) {
+    --accent-color: light-dark(var(--brand-accent-light), var(--brand-accent-dark));
+  }
+
+  --pf-scrollbar-thumb: light-dark(#c4cbd6, #3a4456);
+  --pf-scrollbar-track: transparent;
+
+  /* ER modeler canvas tokens (resolve via the computed color-scheme) */
+  --pf-canvas-dot: light-dark(rgba(100, 116, 139, 0.26), rgba(148, 163, 184, 0.14));
+  --pf-canvas-grid: light-dark(rgba(148, 163, 184, 0.1), rgba(148, 163, 184, 0.05));
+  --pf-er-line: light-dark(#a3adbd, #4b5568);
+  --pf-er-line-strong: light-dark(#7c8799, #6b7487);
+  --pf-er-line-active: light-dark(#2563eb, #60a5fa);
+  --pf-er-line-halo: light-dark(rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.18));
+  --pf-er-pill-bg: light-dark(#ffffff, #1a202b);
+  --pf-er-pill-border: light-dark(#d5dbe4, #3a4456);
+  --pf-er-pill-text: light-dark(#516076, #b4bccb);
+
+  /* MANDATORY: Apply color-scheme to :root for viewport-wide native UI theming */
+  color-scheme: light dark;
+  accent-color: var(--accent-color);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pf-scrollbar-thumb) var(--pf-scrollbar-track);
+}
+
+/* Explicit theme resolved by JS (index.html boot script + GlobalToolbar) */
+:root[data-theme="light"] {
+  color-scheme: light;
+  accent-color: var(--accent-color);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  accent-color: var(--accent-color);
+}
+
+body {
+  background-color: #f3f5f8;
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue",
+    "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: rgba(37, 99, 235, 0.18);
+}
+
+/* Prototype paper adapts to the active tool theme via Ant Design 5/6 design tokens */
+.pf-paper {
+  color-scheme: inherit;
+  accent-color: var(--accent-color);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.pf-mobile-scroll {
+  --pf-mobile-scrollbar-thumb: #64748b;
+  --pf-mobile-scrollbar-track: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pf-mobile-scrollbar-thumb) var(--pf-mobile-scrollbar-track);
+}
+
+[data-mobile-appearance="dark"] .pf-mobile-scroll,
+.pf-mobile-scroll[data-mobile-appearance="dark"] {
+  --pf-mobile-scrollbar-thumb: #788296;
+}
+
+/* ============================================================================
+   DARK THEME — maps the light-first authoring classes onto dark tokens.
+   Workspace chrome uses Slate-dark; `.pf-paper` uses Ant Design darkAlgorithm tokens.
+   ============================================================================ */
+:root[data-theme="dark"] {
+  body {
+    background-color: #0d1117;
+    color: #e6e9ef;
+  }
+
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.32);
+  }
+
+  /* ---- Ant Design Dark Algorithm Tokens for Prototype Canvas (.pf-paper) ----
+     Reference: Ant Design 5/6 `theme.darkAlgorithm` specification
+     - colorBgLayout:          #0a0a0a (page canvas background)
+     - colorBgContainer:       #141414 (card, table, input, modal container)
+     - colorBgElevated:        #1f1f1f (segmented active pill, elevated surface)
+     - colorFillAlter:         #1d1d1d (table header, striped row, card header)
+     - colorFillSecondary:     #262626 (tags, secondary track, hover fill)
+     - colorBorder:            #424242 (control border)
+     - colorBorderSecondary:   #303030 (structural divider / card / cell border)
+     - colorText:              rgba(255, 255, 255, 0.88)
+     - colorTextSecondary:     rgba(255, 255, 255, 0.65)
+     - colorTextTertiary:      rgba(255, 255, 255, 0.45)
+     - colorTextQuaternary:    rgba(255, 255, 255, 0.25)
+  */
+  .pf-paper {
+    color: rgba(255, 255, 255, 0.88);
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-\[\#f8fafc\], .bg-\[\#F8FAFC\]) {
+    background-color: #0a0a0a !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-white, .bg-white\/98, .bg-white\/95, .bg-white\/90, .bg-white\/80, .focus-within\:bg-white:focus-within) {
+    background-color: #141414 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-slate-50, .bg-slate-50\/90, .bg-slate-50\/80, .bg-slate-50\/75, .bg-slate-50\/70, .bg-slate-50\/60, .bg-slate-50\/50, .bg-slate-50\/40) {
+    background-color: #1d1d1d !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-slate-100, .bg-slate-100\/90, .bg-slate-100\/80) {
+    background-color: #262626 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-slate-200, .bg-slate-200\/80, .bg-slate-200\/70, .bg-slate-200\/60) {
+    background-color: #303030 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.bg-slate-300) {
+    background-color: #424242 !important;
+  }
+
+  .pf-paper :is(.bg-slate-100, .bg-slate-50) > .bg-white.shadow-2xs {
+    background-color: #1f1f1f !important;
+  }
+
+  .pf-paper tr.group\/row:hover > td.sticky {
+    background-color: #1d283a !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-100\/80, .hover\:bg-white\/70):hover {
+    background-color: #262626 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.hover\:bg-slate-200, .hover\:bg-slate-200\/70, .hover\:bg-slate-200\/60):hover {
+    background-color: #303030 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.border-slate-100, .border-slate-200, .border-slate-200\/95, .border-slate-200\/90, .border-slate-200\/85, .border-slate-200\/80) {
+    border-color: #303030 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.border-slate-300, .border-slate-300\/80, .border-slate-400) {
+    border-color: #424242 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.divide-slate-100, .divide-slate-200) > :not(:last-child) {
+    border-color: #303030 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.text-slate-950, .text-slate-900, .text-slate-800) {
+    color: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.text-slate-700, .text-slate-600) {
+    color: rgba(255, 255, 255, 0.65) !important;
+  }
+
+  /* The floating quickbar has a dark background in both modes. Keep its own
+     foreground and hover colors, while still theming nested sticky-note panels. */
+  :is(.pf-paper, .pf-paper *):is(.text-slate-500, .text-slate-400):not(:where([data-pf-quickbar] > *)) {
+    color: rgba(255, 255, 255, 0.45) !important;
+  }
+
+  :is(.pf-paper, .pf-paper *).text-slate-300:not(:where([data-pf-quickbar] > *)) {
+    color: rgba(255, 255, 255, 0.25) !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.hover\:text-slate-900, .hover\:text-slate-800):hover {
+    color: rgba(255, 255, 255, 0.95) !important;
+  }
+
+  /* Ant Design semantic status tokens inside .pf-paper (colorInfoBg/Border, colorSuccessBg/Border, colorWarningBg/Border, colorErrorBg/Border) */
+  :is(.pf-paper, .pf-paper *):is(.bg-blue-50, .bg-blue-50\/80, .bg-blue-50\/70, .bg-blue-50\/60, .bg-blue-50\/50, .bg-blue-50\/40, .bg-blue-50\/20, .bg-blue-100, .bg-blue-100\/80, .hover\:bg-blue-50:hover, .hover\:bg-blue-50\/40:hover, .hover\:bg-blue-50\/20:hover) {
+    background-color: #111a2c !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-indigo-50, .bg-indigo-50\/80, .bg-indigo-100) {
+    background-color: #131629 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-emerald-50, .bg-emerald-50\/80, .bg-emerald-50\/50, .bg-emerald-100) {
+    background-color: #162312 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-amber-50, .bg-amber-50\/95, .bg-amber-50\/90, .bg-amber-50\/80, .bg-amber-50\/70, .bg-amber-50\/60, .bg-amber-50\/50, .bg-amber-50\/45, .bg-amber-50\/40, .bg-amber-100, .bg-amber-100\/95, .bg-amber-100\/80, .bg-amber-200, .bg-amber-200\/90, .bg-amber-200\/80, .hover\:bg-amber-50:hover, .hover\:bg-amber-100:hover, .hover\:bg-amber-100\/80:hover, .hover\:bg-amber-200:hover, .hover\:bg-amber-200\/60:hover) {
+    background-color: #2b2111 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-rose-50, .bg-rose-50\/80, .bg-rose-100, .bg-red-50, .hover\:bg-rose-50:hover, .hover\:bg-rose-50\/40:hover) {
+    background-color: #2c1618 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-100) {
+    background-color: #1a1325 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-teal-50, .bg-teal-50\/80, .bg-teal-50\/40, .bg-teal-100, .bg-teal-100\/80, .hover\:bg-teal-50:hover, .hover\:bg-teal-50\/40:hover, .hover\:bg-teal-100:hover, .hover\:bg-teal-100\/80:hover) {
+    background-color: #112123 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.bg-sky-50, .bg-sky-100, .bg-cyan-50, .bg-cyan-100) {
+    background-color: #112123 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.border-blue-100, .border-blue-200, .border-blue-300) {
+    border-color: #15325b !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-indigo-100, .border-indigo-200, .border-indigo-300) {
+    border-color: #1e2759 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-emerald-100, .border-emerald-200, .border-emerald-300) {
+    border-color: #274916 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-amber-100, .border-amber-200, .border-amber-200\/90, .border-amber-200\/80, .border-amber-200\/70, .border-amber-200\/60, .border-amber-300, .border-amber-300\/90) {
+    border-color: #594214 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-rose-100, .border-rose-200, .border-rose-300, .border-red-200) {
+    border-color: #5b2526 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-purple-200, .border-violet-200) {
+    border-color: #301c4d !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.border-sky-200, .border-cyan-200, .border-teal-200, .border-teal-200\/90, .border-teal-300, .hover\:border-teal-300:hover) {
+    border-color: #144848 !important;
+  }
+
+  :is(.pf-paper, .pf-paper *):is(.text-blue-900, .text-blue-800, .text-blue-700, .text-blue-600) {
+    color: #3c89e8 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-indigo-900, .text-indigo-800, .text-indigo-700, .text-indigo-600) {
+    color: #6875f5 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-emerald-900, .text-emerald-800, .text-emerald-700, .text-emerald-600) {
+    color: #49aa19 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-amber-950, .text-amber-900, .text-amber-800, .text-amber-700, .text-amber-600, .hover\:text-amber-950:hover) {
+    color: #d89614 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-rose-900, .text-rose-800, .text-rose-700, .text-rose-600, .text-rose-500, .text-red-600) {
+    color: #dc4446 !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-purple-800, .text-purple-700, .text-purple-600, .text-violet-700, .text-violet-600) {
+    color: #854eca !important;
+  }
+  :is(.pf-paper, .pf-paper *):is(.text-sky-800, .text-sky-700, .text-sky-600, .text-cyan-700, .text-cyan-600, .text-teal-900, .text-teal-800, .text-teal-700, .text-teal-600, .hover\:text-teal-800:hover) {
+    color: #13a8a8 !important;
+  }
+
+  /* ---- Surfaces (Workspace Chrome; excludes PC .pf-paper and Gemini .pf-mobile-scope) ---- */
+  :is(.bg-\[\#F3F5F8\], .bg-\[\#f3f5f8\]):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #0d1117 !important;
+  }
+
+  :is(.bg-white, .bg-white\/98, .bg-white\/95, .bg-white\/90, .bg-white\/80, .focus\:bg-white:focus, .focus-within\:bg-white:focus-within):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #151a23 !important;
+  }
+
+  :is(.bg-slate-50, .bg-slate-50\/90, .bg-slate-50\/80, .bg-slate-50\/70, .bg-slate-50\/60, .bg-slate-50\/50, .bg-slate-50\/40):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #1a202b !important;
+  }
+
+  :is(.bg-slate-100, .bg-slate-100\/90, .bg-slate-100\/80):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #222a36 !important;
+  }
+
+  :is(.bg-slate-200, .bg-slate-200\/80, .bg-slate-200\/70):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #2a3241 !important;
+  }
+
+  :is(.bg-slate-300):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #3a4456 !important;
+  }
+
+  /* Selected pill inside a segmented track must be lighter than the track */
+  :is(.bg-slate-200\/70, .bg-slate-200, .bg-slate-100, .bg-slate-50) > .bg-white.shadow-2xs:not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #2f3848 !important;
+  }
+
+  :is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-100\/80, .hover\:bg-white\/70):hover:not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #222a36 !important;
+  }
+
+  :is(.hover\:bg-slate-200, .hover\:bg-slate-200\/70):hover:not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: #2a3241 !important;
+  }
+
+  /* ---- Borders ---- */
+  :is(.border-slate-100, .border-slate-200, .border-slate-200\/95, .border-slate-200\/90, .border-slate-200\/85, .border-slate-200\/80):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: #2a3241 !important;
+  }
+
+  :is(.border-slate-300, .border-slate-300\/80, .border-slate-400):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: #3a4456 !important;
+  }
+
+  :is(.divide-slate-100, .divide-slate-200):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) > :not(:last-child) {
+    border-color: #2a3241 !important;
+  }
+
+  /* ---- Typography hierarchy ---- */
+  :is(.text-slate-950, .text-slate-900, .text-slate-800):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #e6e9ef !important;
+  }
+
+  :is(.text-slate-700, .text-slate-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #b4bccb !important;
+  }
+
+  :is(.text-slate-500, .text-slate-400):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #8a93a5 !important;
+  }
+
+  :is(.hover\:text-slate-900, .hover\:text-slate-800):hover:not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #ffffff !important;
+  }
+
+  :is(input, select, textarea):not(:where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *))::placeholder {
+    color: #6b7487;
+  }
+
+  /* ---- Semantic tinted surfaces (status chips, callouts) ---- */
+  :is(.bg-blue-50, .bg-blue-50\/80, .bg-blue-50\/70, .bg-blue-50\/60, .bg-blue-50\/50, .bg-blue-50\/40, .bg-blue-50\/30, .bg-blue-50\/20, .bg-blue-100, .bg-blue-100\/80, .hover\:bg-blue-50:hover, .hover\:bg-blue-50\/60:hover, .hover\:bg-blue-50\/50:hover, .hover\:bg-blue-50\/40:hover, .hover\:bg-blue-50\/20:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(59, 130, 246, 0.14) !important;
+  }
+  :is(.bg-indigo-50, .bg-indigo-50\/80, .bg-indigo-100):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(99, 102, 241, 0.14) !important;
+  }
+  :is(.bg-emerald-50, .bg-emerald-50\/80, .bg-emerald-50\/50, .bg-emerald-100):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(16, 185, 129, 0.13) !important;
+  }
+  :is(.bg-amber-50, .bg-amber-50\/95, .bg-amber-50\/90, .bg-amber-50\/80, .bg-amber-50\/70, .bg-amber-50\/60, .bg-amber-50\/50, .bg-amber-50\/45, .bg-amber-50\/40, .bg-amber-100, .bg-amber-100\/95, .bg-amber-100\/80, .bg-amber-200, .bg-amber-200\/90, .bg-amber-200\/80, .hover\:bg-amber-50:hover, .hover\:bg-amber-100:hover, .hover\:bg-amber-100\/80:hover, .hover\:bg-amber-200:hover, .hover\:bg-amber-200\/60:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(245, 158, 11, 0.14) !important;
+  }
+  :is(.bg-rose-50, .bg-rose-50\/80, .bg-rose-100, .hover\:bg-rose-50:hover, .hover\:bg-rose-50\/40:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(244, 63, 94, 0.13) !important;
+  }
+  :is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-50\/80, .bg-violet-50\/70, .bg-violet-50\/40, .bg-violet-100, .hover\:bg-violet-50:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(139, 92, 246, 0.14) !important;
+  }
+  :is(.bg-teal-50, .bg-teal-50\/80, .bg-teal-50\/40, .bg-teal-100, .bg-teal-100\/80, .hover\:bg-teal-50:hover, .hover\:bg-teal-50\/40:hover, .hover\:bg-teal-100:hover, .hover\:bg-teal-100\/80:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(20, 184, 166, 0.15) !important;
+  }
+  :is(.bg-sky-50, .bg-sky-100, .bg-cyan-50, .bg-cyan-100):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    background-color: rgba(14, 165, 233, 0.14) !important;
+  }
+
+  :is(.border-blue-100, .border-blue-200, .border-blue-200\/80, .border-blue-200\/70, .border-blue-300):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(96, 165, 250, 0.32) !important;
+  }
+  :is(.border-indigo-100, .border-indigo-200, .border-indigo-200\/80, .border-indigo-300):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(129, 140, 248, 0.32) !important;
+  }
+  :is(.border-emerald-100, .border-emerald-200, .border-emerald-200\/80, .border-emerald-200\/70, .border-emerald-300):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(52, 211, 153, 0.3) !important;
+  }
+  :is(.border-amber-100, .border-amber-200, .border-amber-200\/90, .border-amber-200\/80, .border-amber-200\/70, .border-amber-200\/60, .border-amber-300, .border-amber-300\/90):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(251, 191, 36, 0.3) !important;
+  }
+  :is(.border-rose-100, .border-rose-200, .border-rose-200\/80, .border-rose-300):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(251, 113, 133, 0.3) !important;
+  }
+  :is(.border-purple-200, .border-purple-200\/80, .border-purple-200\/70, .border-violet-100, .border-violet-200, .border-violet-200\/90, .border-violet-200\/80, .border-violet-300, .border-sky-200, .border-sky-200\/80, .border-cyan-200, .border-cyan-200\/80):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(167, 139, 250, 0.32) !important;
+  }
+  :is(.border-violet-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: #8b5cf6 !important;
+  }
+  :is(.border-teal-200, .border-teal-200\/90, .border-teal-300, .hover\:border-teal-300:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    border-color: rgba(45, 212, 191, 0.34) !important;
+  }
+
+  /* ---- Semantic text: readable tints on dark ---- */
+  :is(.text-blue-900, .text-blue-800, .text-blue-700, .text-blue-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #8ab4ff !important;
+  }
+  .group:hover :is(.group-hover\:text-blue-700, .group-hover\:text-blue-600, .group-hover\:text-blue-600\/80):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #93c5fd !important;
+  }
+  :is(.text-indigo-900, .text-indigo-800, .text-indigo-700, .text-indigo-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #a5b4fc !important;
+  }
+  :is(.text-emerald-900, .text-emerald-800, .text-emerald-700, .text-emerald-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #6ee7b7 !important;
+  }
+  :is(.text-amber-950, .text-amber-900, .text-amber-800, .text-amber-700, .text-amber-600, .hover\:text-amber-950:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #fcd34d !important;
+  }
+  :is(.text-rose-900, .text-rose-800, .text-rose-700, .text-rose-600, .text-rose-500):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #fda4af !important;
+  }
+  :is(.text-purple-900, .text-purple-800, .text-purple-700, .text-purple-600, .text-violet-900, .text-violet-800, .text-violet-700, .text-violet-600, .hover\:text-violet-800:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #c4b5fd !important;
+  }
+  .group:hover :is(.group-hover\:text-violet-700):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #ddd6fe !important;
+  }
+  :is(.text-sky-800, .text-sky-700, .text-sky-600, .text-cyan-700, .text-cyan-600):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #7dd3fc !important;
+  }
+  :is(.text-teal-900, .text-teal-800, .text-teal-700, .text-teal-600, .hover\:text-teal-800:hover):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
+    color: #5eead4 !important;
+  }
+
+  /* Solid buttons keep crisp white text in both themes */
+  :is(.bg-blue-600, .bg-blue-700, .bg-violet-600, .bg-violet-700, .bg-rose-600, .bg-emerald-600, .bg-teal-600, .bg-teal-700):not(:where(.pf-mobile-scope, .pf-mobile-scope *)) {
+    color: #ffffff;
+  }
+
+  .shadow-2xs,
+  .shadow-xs,
+  .shadow-sm {
+    --tw-shadow-color: rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Legacy WebKit scrollbar fallback */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--pf-scrollbar-thumb);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--pf-scrollbar-track);
+  }
+  .pf-mobile-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .pf-mobile-scroll::-webkit-scrollbar-thumb {
+    background: var(--pf-mobile-scrollbar-thumb);
+    border-radius: 999px;
+  }
+  .pf-mobile-scroll::-webkit-scrollbar-track {
+    background: var(--pf-mobile-scrollbar-track);
+  }
+}
+
+@keyframes flow-pulse {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-flow-line {
+  stroke-dasharray: 6 6;
+  animation: flow-pulse 0.8s linear infinite;
+}
+
+.animate-flow-line-fast {
+  stroke-dasharray: 8 6;
+  animation: flow-pulse 0.35s linear infinite;
+}
+
+/* Responsive Data Table */
+.proto-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(320px, 50vh);
+  container-type: inline-size;
+}
+
+.proto-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.proto-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+}
+
+.proto-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+}
+
+/* ============================================================================
+ * Visual Prototype Designer (AST Node Selection, Hover & 4-Way Drag-Drop Indicators)
+ * ============================================================================ */
+:is(.pf-paper, .pf-mobile-scope) [data-pf-id] {
+  position: relative;
+  transition: box-shadow 120ms ease, outline-color 120ms ease;
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-hover="1"] {
+  outline: 1.5px dashed #3b82f6;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-sel="1"] {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10);
+}
+
+[data-mobile-appearance="dark"] [data-pf-hover="1"] {
+  outline-color: #60a5fa;
+}
+
+[data-mobile-appearance="dark"] [data-pf-sel="1"] {
+  outline-color: #60a5fa;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.22);
+}
+
+/* Full-bleed mobile page root & edge-pinned bars sit flush against the clipped
+   phone screen, so draw their design outline inset instead of outside-clipped. */
+.pf-mobile-scope :is(.pf-mobile-page, .pf-mobile-page > .sticky > [data-pf-id]):is([data-pf-hover="1"], [data-pf-sel="1"]) {
+  outline-offset: -2px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* During generation, the root uses the iridescent frame; ordinary selection keeps its blue outline. */
+[data-ai-active="1"] .pf-paper.pf-ai-aura-surface > [data-pf-id][data-pf-sel="1"],
+[data-ai-active="1"] .pf-paper.pf-ai-aura-surface > [data-pf-id][data-pf-hover="1"] {
+  outline: none;
+  box-shadow: none;
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-drop="before"]::before {
+  content: "↑ 上方插入";
+  position: absolute;
+  inset-inline: 0;
+  top: -4px;
+  height: 3px;
+  background: #2563eb;
+  border-radius: 999px;
+  z-index: 40;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.35);
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-drop="after"]::after {
+  content: "↓ 下方换行";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -4px;
+  height: 3px;
+  background: #2563eb;
+  border-radius: 999px;
+  z-index: 40;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.35);
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-drop="left"]::before {
+  content: "← 左并排";
+  position: absolute;
+  inset-block: 0;
+  left: -4px;
+  width: 4px;
+  background: #2563eb;
+  border-radius: 999px;
+  z-index: 40;
+  font-size: 10px;
+  font-weight: 600;
+  color: #2563eb;
+  white-space: nowrap;
+  text-indent: 8px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.45);
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-drop="right"]::after {
+  content: "右并排 →";
+  position: absolute;
+  inset-block: 0;
+  right: -4px;
+  width: 4px;
+  background: #2563eb;
+  border-radius: 999px;
+  z-index: 40;
+  font-size: 10px;
+  font-weight: 600;
+  color: #2563eb;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.45);
+}
+
+:is(.pf-paper, .pf-mobile-scope) [data-pf-drop="inside"] {
+  outline: 2px dashed #2563eb !important;
+  background-color: rgba(37, 99, 235, 0.08) !important;
+}
+
+/* ============================================================================
+ * Apple Intelligence Iridescent Edge Aura (Siri / iOS 18+ Screen-Edge Glow)
+ * Registered gradient angles and a soft halo animate only during generation.
+ * ============================================================================ */
+@property --pf-ai-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+@property --pf-ai-angle-2 {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 360deg;
+}
+
+@keyframes pf-ai-orbit {
+  0% {
+    --pf-ai-angle: 0deg;
+    --pf-ai-angle-2: 360deg;
+  }
+  100% {
+    --pf-ai-angle: 360deg;
+    --pf-ai-angle-2: 0deg;
+  }
+}
+
+@keyframes pf-ai-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    filter: blur(12px) saturate(1.35) hue-rotate(0deg);
+  }
+  50% {
+    opacity: 0.95;
+    filter: blur(18px) saturate(1.65) hue-rotate(18deg);
+  }
+}
+
+/* 1. Outer Design Area Viewport 4-Edge Screen Glow (iPhone Screen Perimeter + Frosted Mask) */
+.pf-canvas-viewport-shell[data-ai-active="1"] {
+  border-color: transparent !important;
+}
+
+[data-ai-active="1"] [data-pf-quickbar="1"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-theme="dark"] .pf-canvas-viewport-shell {
+  background-color: rgba(15, 23, 42, 0.75);
+  border-color: rgba(51, 65, 85, 0.85);
+}
+
+[data-ai-active="1"] .pf-ai-viewport-aura {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 25;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.11);
+  -webkit-backdrop-filter: blur(1.6px) saturate(125%);
+  backdrop-filter: blur(1.6px) saturate(125%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 16px rgba(255, 255, 255, 0.12);
+  animation: pf-ai-orbit 2.4s linear infinite;
+}
+
+/* Crisp iridescent flowing border ring strictly along the rounded outer edge */
+[data-ai-active="1"] .pf-ai-viewport-aura::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 3.5px;
+  background:
+    conic-gradient(
+      from var(--pf-ai-angle),
+      #00e5ff 0deg,
+      #3b82f6 50deg,
+      #6366f1 100deg,
+      #a855f7 155deg,
+      #ec4899 210deg,
+      #ff2d55 255deg,
+      #ff9500 305deg,
+      #fde047 335deg,
+      #00e5ff 360deg
+    ),
+    conic-gradient(
+      from var(--pf-ai-angle-2),
+      transparent 0deg,
+      rgba(56, 189, 248, 0.9) 90deg,
+      transparent 180deg,
+      rgba(236, 72, 153, 0.9) 270deg,
+      transparent 360deg
+    );
+  background-blend-mode: screen;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 1;
+  z-index: 2;
+  animation: pf-ai-orbit 2.4s linear infinite;
+}
+
+/* Soft edge-only colorful bloom hugging the rounded perimeter (never entering the middle) */
+[data-ai-active="1"] .pf-ai-viewport-aura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 14px;
+  background: conic-gradient(
+    from var(--pf-ai-angle),
+    #00e5ff 0deg,
+    #3b82f6 50deg,
+    #6366f1 100deg,
+    #a855f7 155deg,
+    #ec4899 210deg,
+    #ff2d55 255deg,
+    #ff9500 305deg,
+    #fde047 335deg,
+    #00e5ff 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: blur(11px) saturate(1.55);
+  opacity: 0.86;
+  z-index: 1;
+  animation:
+    pf-ai-orbit 2.4s linear infinite,
+    pf-ai-breathe 1.8s ease-in-out infinite;
+}
+
+/* 2. Inner Canvas Surface (.pf-ai-aura-surface) — keep clean without a second inner rainbow border */
+[data-ai-active="1"] .pf-ai-aura-surface {
+  position: relative;
+  animation: pf-ai-orbit 2.4s linear infinite;
+}
+
+[data-ai-active="1"] .pf-ai-aura-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  animation: pf-ai-orbit 2.4s linear infinite;
+}
+
+/* Dark theme adaptation for the frosted translucent mask */
+[data-theme="dark"][data-ai-active="1"] .pf-ai-viewport-aura,
+[data-theme="dark"] [data-ai-active="1"] .pf-ai-viewport-aura {
+  background: rgba(15, 23, 42, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 16px rgba(15, 23, 42, 0.14);
+}
+
+/* Respect reduced-motion preferences while retaining a static generation indicator. */
+@media (prefers-reduced-motion: reduce) {
+  [data-ai-active="1"] :is(.pf-ai-viewport-aura, .pf-ai-aura-surface),
+  [data-ai-active="1"] :is(.pf-ai-viewport-aura, .pf-ai-aura-surface)::before,
+  [data-ai-active="1"] :is(.pf-ai-viewport-aura, .pf-ai-aura-surface)::after {
+    animation: none;
+  }
+}
+
+/* Prevent scroll chaining behind native modal dialogs */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Antigravity-style Markdown code block & inline code dark mode refinement */
+:root[data-theme="dark"] .pf-md-inline-code:not(.pf-paper, .pf-paper *) {
+  background-color: rgba(51, 65, 85, 0.55) !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  color: #e2e8f0 !important;
+}
+
+:root[data-theme="dark"] .pf-md-code-block:not(.pf-paper, .pf-paper *) {
+  background-color: #0b0f17 !important;
+  border-color: #2a3241 !important;
+}
+
+/* Discrete Hermes effort slider: keep native dragging and keyboard controls. */
+.hermes-effort-slider {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+.hermes-effort-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0f172a26;
+}
+.hermes-effort-slider[data-unset="true"]::-webkit-slider-thumb { opacity: 0; }
+.hermes-effort-slider:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.hermes-effort-slider[aria-disabled="true"] { cursor: wait; }
+
+:root {
+  --brand-color: #2563eb;
+}
+
+:root[data-theme="dark"] {
+  --brand-color: #60a5fa;
+}
+
+body {
+  accent-color: var(--brand-color);
+  /* Inherit the scheme resolved on :root (data-theme), so light-dark() follows the app theme
+     switch instead of the OS preference. */
+  color-scheme: inherit;
+}
+
+@supports not (accent-color: var(--brand-color)) {
+  progress {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    border: none;
+    background: #cbd5e1;
+    height: 8px;
+    border-radius: 4px;
+  }
+  progress::-webkit-progress-bar {
+    background-color: #cbd5e1;
+    border-radius: 4px;
+  }
+  progress::-webkit-progress-value {
+    background-color: var(--brand-color, #2563eb);
+    border-radius: 4px;
+  }
+  progress::-moz-progress-bar {
+    background-color: var(--brand-color, #2563eb);
+    border-radius: 4px;
+  }
+}
+
+/* ============================================================================
+   NOTION-STYLE BLOCK EDITOR TYPOGRAPHY & SURFACE (.pf-notion-editor)
+   ============================================================================ */
+.pf-notion-editor .ProseMirror {
+  outline: none;
+  min-height: 380px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: light-dark(#1e293b, #e2e8f0);
+}
+
+.pf-notion-editor .ProseMirror > * + * {
+  margin-top: 0.65em;
+}
+
+.pf-notion-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: light-dark(#94a3b8, #64748b);
+  pointer-events: none;
+  height: 0;
+}
+
+.pf-notion-editor .ProseMirror h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-top: 1.4em;
+  margin-bottom: 0.4em;
+  color: light-dark(#0f172a, #f8fafc);
+}
+
+.pf-notion-editor .ProseMirror h2 {
+  font-size: 1.22rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid light-dark(#f1f5f9, #1e293b);
+  color: light-dark(#0f172a, #f1f5f9);
+}
+
+.pf-notion-editor .ProseMirror h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 1em;
+  margin-bottom: 0.25em;
+  color: light-dark(#1e293b, #e2e8f0);
+}
+
+.pf-notion-editor .ProseMirror ul:not([data-type="taskList"]) {
+  list-style-type: disc;
+  padding-left: 1.4rem;
+}
+
+.pf-notion-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.4rem;
+}
+
+.pf-notion-editor .ProseMirror li > p {
+  margin: 0.15em 0;
+}
+
+/* Task List (Checkboxes) */
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.2rem;
+}
+
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.35em 0;
+}
+
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.22rem;
+  user-select: none;
+}
+
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pf-notion-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: light-dark(#94a3b8, #64748b);
+}
+
+/* Callout / Blockquote */
+.pf-notion-editor .ProseMirror blockquote {
+  margin: 0.85em 0;
+  padding: 0.75rem 1rem;
+  border-left: 3.5px solid #2563eb;
+  border-radius: 0 0.75rem 0.75rem 0;
+  background-color: light-dark(#f8fafc, #1a2230);
+  color: light-dark(#334155, #cbd5e1);
+}
+
+/* Inline Code & CodeBlock */
+.pf-notion-editor .ProseMirror code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.86em;
+  padding: 0.15em 0.4em;
+  border-radius: 0.35rem;
+  background-color: light-dark(#f1f5f9, #1e293b);
+  color: light-dark(#e11d48, #fb7185);
+}
+
+.pf-notion-editor .ProseMirror pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  background-color: light-dark(#0f172a, #0b0f17);
+  color: #e2e8f0;
+  overflow-x: auto;
+}
+
+.pf-notion-editor .ProseMirror pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Highlight Mark */
+.pf-notion-editor .ProseMirror mark {
+  background-color: light-dark(#fef08a, rgba(234, 179, 8, 0.35));
+  color: inherit;
+  padding: 0.08em 0.25em;
+  border-radius: 0.25rem;
+}
+
+/* Horizontal Rule */
+.pf-notion-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid light-dark(#e2e8f0, #2a3241);
+  margin: 1.4em 0;
+}
+
+/* Notion-style Table */
+.pf-notion-editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 13px;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.pf-notion-editor .ProseMirror th,
+.pf-notion-editor .ProseMirror td {
+  border: 1px solid light-dark(#e2e8f0, #2a3241);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+  text-align: left;
+  min-width: 90px;
+}
+
+.pf-notion-editor .ProseMirror th {
+  background-color: light-dark(#f8fafc, #1a202b);
+  font-weight: 600;
+  color: light-dark(#334155, #e2e8f0);
+}
+
+/* @Mention Inline Pills (Page & DB Table links) */
+.pf-notion-editor .ProseMirror a[href^="#pf-"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.08rem 0.45rem;
+  margin: 0 0.1rem;
+  border-radius: 0.375rem;
+  font-size: 0.88em;
+  font-weight: 600;
+  text-decoration: none;
+  background-color: light-dark(#eff6ff, rgba(37, 99, 235, 0.2));
+  border: 1px solid light-dark(#bfdbfe, rgba(96, 165, 250, 0.35));
+  color: light-dark(#1d4ed8, #93c5fd);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.pf-notion-editor .ProseMirror a[href^="#pf-"]:hover {
+  background-color: light-dark(#dbeafe, rgba(37, 99, 235, 0.32));
+}
+
+
+/* ============================================================================
+   PROJECT NOTES — DARK THEME COMPLEMENT (.pf-notes-surface)
+   The global dark block maps the base surface/text classes. Notes also use hover, ring,
+   placeholder and fractional-opacity variants that would otherwise stay light (e.g. a white
+   flash on hover), so they are mapped here, scoped to note surfaces only.
+   ============================================================================ */
+:root[data-theme="dark"] :is(.pf-notes-surface, .pf-notes-surface *) {
+  &:is(.hover\:bg-white, .hover\:bg-slate-50\/70):hover {
+    background-color: #222a36 !important;
+  }
+  &:is(.hover\:bg-slate-200\/60):hover {
+    background-color: #2a3241 !important;
+  }
+  &:is(.bg-blue-50\/90) {
+    background-color: rgba(59, 130, 246, 0.14) !important;
+  }
+  &:is(.hover\:bg-blue-100, .hover\:bg-blue-100\/80):hover,
+  .group:hover > &.group-hover\:bg-blue-50,
+  .group:hover &.group-hover\:bg-blue-50 {
+    background-color: rgba(59, 130, 246, 0.24) !important;
+  }
+  &:is(.hover\:bg-rose-50, .hover\:bg-rose-100):hover {
+    background-color: rgba(244, 63, 94, 0.2) !important;
+  }
+  &:is(.hover\:bg-amber-100\/70):hover {
+    background-color: rgba(245, 158, 11, 0.22) !important;
+  }
+
+  &:is(.border-slate-200\/70, .border-slate-200\/60) {
+    border-color: #2a3241 !important;
+  }
+  &:is(.hover\:border-slate-200\/80, .hover\:border-slate-300):hover {
+    border-color: #3a4456 !important;
+  }
+  &:is(.border-blue-200\/80) {
+    border-color: rgba(96, 165, 250, 0.32) !important;
+  }
+  &:is(.hover\:border-blue-300, .hover\:border-blue-400):hover {
+    border-color: rgba(96, 165, 250, 0.55) !important;
+  }
+
+  &:is(.hover\:text-slate-700, .hover\:text-slate-600):hover {
+    color: #e6e9ef !important;
+  }
+  &:is(.hover\:text-blue-600):hover,
+  .group:hover &.group-hover\:text-blue-600 {
+    color: #8ab4ff !important;
+  }
+  &:is(.hover\:text-rose-700, .hover\:text-rose-600):hover {
+    color: #fda4af !important;
+  }
+  &:is(.text-amber-500) {
+    color: #fbbf24 !important;
+  }
+  &.placeholder\:text-slate-300::placeholder,
+  &.placeholder\:text-slate-400::placeholder {
+    color: #5b6477 !important;
+  }
+
+  /* Rings: keep focus/selection visible and drop the white ring offset. */
+  &:is(.ring-blue-200\/70, .ring-blue-500, .ring-blue-600, .ring-blue-600\/20) {
+    --tw-ring-color: rgba(96, 165, 250, 0.6) !important;
+  }
+  &.ring-offset-1 {
+    --tw-ring-offset-color: #151a23 !important;
+  }
+  &:is(.focus\:border-blue-600):focus {
+    border-color: #60a5fa !important;
+  }
+
+  /* Native date/select pickers follow the dark scheme. */
+  &:is(input, select, textarea) {
+    color-scheme: dark;
+  }
+}
+
+/* Vivid cover gradients are toned down so they do not glare on a dark page (overlay, so the
+   hover buttons on the banner keep full contrast). */
+:root[data-theme="dark"] .pf-notes-surface .pf-note-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(13, 17, 23, 0.28);
+  pointer-events: none;
+}
+
+/* Selected image block (both themes). */
+.pf-notion-editor .ProseMirror img.ProseMirror-selectednode,
+.pf-notion-editor .ProseMirror .ProseMirror-selectednode > img {
+  outline: 2px solid var(--brand-color);
+  outline-offset: 2px;
+}
+
+/* Missing image data (asset not found) gets a visible placeholder frame. */
+.pf-notion-editor .ProseMirror img.pf-note-image:not([src]),
+.pf-notion-editor .ProseMirror img.pf-note-image[src=""] {
+  min-height: 64px;
+  min-width: 160px;
+  background: light-dark(#f1f5f9, #1a202b);
+}
+
+/* Table cell selection and the editor caret follow the theme. */
+.pf-notion-editor .ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: light-dark(rgba(37, 99, 235, 0.1), rgba(96, 165, 250, 0.18));
+  pointer-events: none;
+}
+.pf-notion-editor .ProseMirror td,
+.pf-notion-editor .ProseMirror th {
+  position: relative;
+}
+.pf-notion-editor .ProseMirror {
+  caret-color: var(--brand-color);
+}
