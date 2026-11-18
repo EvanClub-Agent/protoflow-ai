@@ -164,8 +164,8 @@ npm run electron:start
 # 1. 复制环境变量配置（按需修改 POSTGRES_PASSWORD 与对外访问地址 PUBLIC_ORIGIN）
 cp deploy/.env.example deploy/.env
 
-# 2. 一键构建并后台启动全部服务（自动完成 PostgreSQL 建表迁移）
-docker compose --env-file deploy/.env -f deploy/compose.yml up --build -d
+# 2. 直接拉取 GHCR 预编译镜像并后台秒级启动（自动完成 PostgreSQL 建表迁移；本地改了源码可加 --build）
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 
 # 3. 检查健康状态（返回 ok 即部署成功）
 curl -fsS http://127.0.0.1:8088/healthz

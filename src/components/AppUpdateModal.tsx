@@ -69,7 +69,7 @@ export const AppUpdatePanel: React.FC<{ embedded?: boolean }> = ({ embedded = fa
       {status === 'idle' && !error && <p className="text-sm text-slate-500">点击“检查更新”，即可获取最新版本。</p>}
       <div className="flex items-center gap-3 text-xs text-slate-500">
         <ShieldCheck size={14} /><span>更新包会自动验证来源和完整性</span>
-        <button type="button" disabled={!serverUrl || busy} className="ml-auto flex items-center gap-1 hover:text-blue-600 disabled:opacity-40" onClick={() => void update.openReleaseCenterWeb()}><ExternalLink size={13} />版本记录</button>
+        <button type="button" disabled={busy} className="ml-auto flex items-center gap-1 hover:text-blue-600 cursor-pointer disabled:opacity-40" onClick={() => void update.openReleaseCenterWeb()}><ExternalLink size={13} />{serverUrl ? '版本记录' : 'GitHub Releases'}</button>
       </div>
 
 

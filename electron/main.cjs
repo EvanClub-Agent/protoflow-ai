@@ -159,8 +159,10 @@ handleIpc('pflow:updater-open-web', event => {
   if (!isMainRendererEvent(event)) throw new Error('不允许的版本更新调用');
   const updater = getDesktopUpdater();
   const baseUrl = updater.resolveServerUrl();
-  if (!baseUrl) throw new Error('更新服务暂不可用，请稍后重试。');
-  return require('electron').shell.openExternal(`${baseUrl}/releases`);
+  const target = baseUrl
+    ? `${baseUrl}/releases`
+    : 'https://github.com/EvanClub-Agent/protoflow-ai/releases';
+  return require('electron').shell.openExternal(target);
 });
 
 const WELCOME_SIZE = { width: 980, height: 640 };

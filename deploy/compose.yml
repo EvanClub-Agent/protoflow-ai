@@ -20,6 +20,7 @@ services:
       - no-new-privileges:true
 
   api:
+    image: ${PROTOFLOW_API_IMAGE:-ghcr.io/evanclub-agent/protoflow-ai-api:latest}
     build:
       context: ../server
     restart: unless-stopped
@@ -51,6 +52,7 @@ services:
       - /tmp
 
   web:
+    image: ${PROTOFLOW_WEB_IMAGE:-ghcr.io/evanclub-agent/protoflow-ai-web:latest}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web

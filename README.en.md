@@ -84,8 +84,8 @@ Want to share interactive `/p/{id}` prototype links with your team in the browse
 # 1. Copy environment config and set POSTGRES_PASSWORD & PUBLIC_ORIGIN
 cp deploy/.env.example deploy/.env
 
-# 2. Build and start PostgreSQL, Go API, and Web Viewer
-docker compose --env-file deploy/.env -f deploy/compose.yml up --build -d
+# 2. Pull prebuilt GHCR images and start PostgreSQL, Go API, and Web Viewer (add --build if building locally)
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 
 # 3. Verify service health
 curl -fsS http://127.0.0.1:8088/healthz

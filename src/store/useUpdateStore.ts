@@ -8,6 +8,7 @@ import {
 } from '../services/releaseClient';
 import { publishingOrigin, publishingSettings } from '../services/publishingClient';
 import { flushProjectChanges } from '../services/projectStorage';
+import packageMeta from '../../package.json';
 
 export interface UpdateStore extends DesktopUpdaterState {
   isModalOpen: boolean;
@@ -37,7 +38,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
   isUpdating: false,
   selectedAssetId: null,
   status: 'idle',
-  currentVersion: '0.1.0',
+  currentVersion: packageMeta.version || '0.0.1',
   os: browserPlatform.os,
   arch: browserPlatform.arch,
   preferPackage: browserPlatform.os === 'windows' ? 'exe' : browserPlatform.os === 'macos' ? 'dmg' : 'deb',
@@ -302,7 +303,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
   openReleaseCenterWeb: async () => {
     const targetUrl = get().serverUrl.trim();
     const bridge = getUpdaterDesktopBridge();
-    if (bridge && targetUrl) {
+    if (bridge) {
       await bridge.openWeb();
       return;
     }
@@ -310,7 +311,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
       const clean = publishingOrigin(targetUrl);
       window.open(`${clean}/releases`, '_blank', 'noopener,noreferrer');
     } else {
-      window.open('/releases', '_blank', 'noopener,noreferrer');
+      window.open('https://github.com/EvanClub-Agent/protoflow-ai/releases', '_blank', 'noopener,noreferrer');
     }
   },
 }));

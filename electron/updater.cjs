@@ -626,7 +626,7 @@ class DesktopUpdater {
       }
       return this.pushState({
         status: 'idle',
-        error: options.silent ? null : '尚未配置版本更新服务地址，请先填写服务器地址或连接发布服务',
+        error: options.silent ? null : '当前为开源社区版本，请点击下方「GitHub Releases」前往下载最新安装包',
       });
     }
 
