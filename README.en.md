@@ -22,7 +22,7 @@ lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST 
 
 <br/>
 
-<img src="./docs/assets/readme-showcase.svg" width="100%" alt="Alex Workbench Overview" />
+<img src="./docs/assets/workbench-screenshot.png" width="100%" alt="Alex Desktop Workbench Screenshot" />
 
 </div>
 

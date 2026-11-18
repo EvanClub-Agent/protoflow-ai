@@ -22,7 +22,7 @@
 
 <br/>
 
-<img src="./docs/assets/readme-showcase.svg" width="100%" alt="Alex 工作台总览：左侧目录与共享物理表、中间 PC 与移动端双视口画布、右侧项目 AI 协同规划" />
+<img src="./docs/assets/workbench-screenshot.png" width="100%" alt="Alex 桌面工作台实机截图：左侧多模块菜单与共表标记、中间 ECharts 与业务表格直连物理表、右侧双向 AST 属性检查器" />
 
 </div>
 
