@@ -57,7 +57,7 @@ func Handler(store Store, options Options) *gin.Engine {
 			}
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Protoflow-Password, X-Protoflow-Password-Base64, MCP-Protocol-Version, Mcp-Session-Id")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if c.Request.Method == "OPTIONS" {
@@ -255,6 +255,7 @@ func Handler(store Store, options Options) *gin.Engine {
 	public.Use(rateLimit)
 	registerReleaseAndAuthRoutes(api, rateLimit, store, options)
 	registerDiagnosticRoutes(api, rateLimit, store, options)
+	registerMcpRoutes(api, rateLimit, store, options)
 	load := func(c *gin.Context) (Publication, bool) {
 		p, e := store.Get(c.Request.Context(), c.Param("id"), "")
 		if e != nil {

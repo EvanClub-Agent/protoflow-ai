@@ -383,6 +383,20 @@ handleIpc('pflow:read-binary-project', async (_event, { dirPath, fileName }) => 
   return { binaryBytes: new Uint8Array(await fs.promises.readFile(path.join(dirPath, fileName))) };
 });
 
+handleIpc('pflow:mcp-runtime-info', (event) => {
+  if (!isMainRendererEvent(event)) throw new Error('不允许的 MCP 配置查询调用');
+  const bundled = path.join(__dirname, 'generated/spec-mcp-server.cjs');
+  const unpacked = bundled.replace(/app\.asar([/\\])/, 'app.asar.unpacked$1');
+  const scriptPath = unpacked !== bundled && fs.existsSync(unpacked) ? unpacked : bundled;
+  return {
+    execPath: process.execPath,
+    scriptPath,
+    isPackaged: app.isPackaged,
+    homeDir: os.homedir(),
+    pathSep: path.sep,
+  };
+});
+
 handleIpc('pflow:trash-project', async (event, input) => {
   if (!isMainRendererEvent(event)) throw new Error('不允许的工程删除调用');
   return require('./project-files.cjs').trashProjectArchive(input, file => require('electron').shell.trashItem(file));

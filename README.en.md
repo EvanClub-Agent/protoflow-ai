@@ -50,6 +50,7 @@ Product managers and engineering teams are often stuck between **static wirefram
 - **04 · 12 Native Apache ECharts + Mermaid Diagrams**: Bar, Line, Area, Pie, Donut, Scatter, Radar, Gauge, Funnel, Heatmap, Treemap, and Sankey charts bound directly to project tables, plus Mermaid architecture/sequence templates.
 - **05 · Component Sticky Specs & Closed-Loop Audit**: Pin requirement notes directly onto UI controls, trace schema change impact across menus, and audit broken links or unbound foreign keys.
 - **06 · Self-Hosted Online Sharing & Release Center**: Share password-protected, expiring, versioned `/p/{id}` interactive prototypes via a lightweight Go + PostgreSQL + Nginx stack.
+- **07 · Built-In Read-Only MCP Spec Server**: Connect **Claude Code**, **Cursor**, **Antigravity**, **Windsurf**, or **Codex** directly to a remote `/p/{id}` share URL (`https://.../api/v1/mcp/<shareId>`, zero local tool installation for developers!) or a local `.pflow` file (via Alex Desktop's built-in Node-free runtime or `node ./packages/protoflow-mcp/dist/cli.cjs --project ./app.pflow`) to query ER schemas, SQL DDL drafts, page TSX, action chains, and sticky-note specs on demand.
 
 ---
 

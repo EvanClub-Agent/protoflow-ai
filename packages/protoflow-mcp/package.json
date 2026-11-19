@@ -1,0 +1,32 @@
+{
+  "name": "@protoflow-ai/mcp",
+  "version": "0.0.2",
+  "description": "Read-only Model Context Protocol (MCP) server for Alex (ProtoFlow AI) local .pflow projects and remote published prototype shares.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EvanClub-Agent/protoflow-ai.git",
+    "directory": "packages/protoflow-mcp"
+  },
+  "homepage": "https://github.com/EvanClub-Agent/protoflow-ai",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "protoflow",
+    "prototyping",
+    "spec-driven-development",
+    "er-diagram",
+    "claude-code",
+    "cursor"
+  ],
+  "bin": {
+    "protoflow-mcp": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist/cli.cjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

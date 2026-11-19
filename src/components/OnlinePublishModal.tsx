@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, Globe, Link2, LoaderCircle, LockKeyhole, RefreshCw, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Globe, Link2, LoaderCircle, LockKeyhole, RefreshCw, X, Blocks } from 'lucide-react';
 import { useProtoStore } from '../store/useProtoStore';
 import { usePageStore } from '../proto/store/usePageStore';
 import { createPublishedSnapshot, publishablePages } from '../services/createPublishedSnapshot';
@@ -331,6 +331,23 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                       <ExternalLink size={12} />
                       打开预览
                     </a>
+                    {stateLabel(selected) === '可访问' && (
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => {
+                          onClose();
+                          useProtoStore.getState().setMcpModalOpen(true, {
+                            tab: 'remote',
+                            shareUrl: selected.shareUrl,
+                          });
+                        }}
+                        className={`${button} bg-white hover:bg-blue-50 border border-blue-200 text-blue-700`}
+                      >
+                        <Blocks size={12} />
+                        MCP 接入
+                      </button>
+                    )}
                   </div>
                   {!selected.revokedAt && (
                     <button

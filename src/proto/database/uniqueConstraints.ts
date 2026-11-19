@@ -9,7 +9,9 @@ export function resolveUniqueConstraints(table: ConstraintTable) {
   const constraints = table.uniqueConstraints;
   if (constraints === undefined) return []; // Older projects have no table-level declarations.
   if (!Array.isArray(constraints)) throw new Error(`${table.tableName}.uniqueConstraints 必须是数组`);
+  if (constraints.length === 0) return [];
   const byId = new Map(table.columns.map(c => [c.id, c]));
+  if (byId.size !== table.columns.length) throw new Error(`${table.tableName} 包含重复的字段 ID`);
   const names = new Set(['primary', ...table.columns.filter(c => c.isUnique).map(c => c.name.toLowerCase())]);
   const signature = (ids: string[]) => JSON.stringify([...ids].sort());
   const keys = new Set(table.columns.filter(c => c.isUnique).map(c => signature([c.id])));

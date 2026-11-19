@@ -45,7 +45,7 @@ export function publishableSitemap(): PublishedMenuItem[] {
 export function createPublishedSnapshot(entryPageId: string): PublishedSnapshot {
   const project = useProtoStore.getState(), pages = usePageStore.getState();
   const snapshot: PublishedSnapshot = {
-    formatVersion: 3, projectId: project.currentProjectMeta.projectId, title: project.currentProjectMeta.projectName, entryPageId,
+    formatVersion: 5, projectId: project.currentProjectMeta.projectId, title: project.currentProjectMeta.projectName, entryPageId,
     pages: publishablePages().map(page => {
       const result = parsePageSource(pages.pageSources[page.pageId]);
       if (!result.doc || result.issues.some(i => i.level === 'error')) throw new Error(`页面“${page.title}”有代码错误，修复后才能发布`);
@@ -61,11 +61,12 @@ export function createPublishedSnapshot(entryPageId: string): PublishedSnapshot 
       return { pageId: page.pageId, title: page.title, folderId: page.folderId, doc: result.doc };
     }),
     sitemap: publishableSitemap(),
-    // The V3 share API accepts these table fields. Modeling decisions belong
-    // in the developer handoff; the viewer only consumes the render schema.
-    tables: project.dbTables.map(({ id, tableName, cnName, domain, description, columns, sharedByMenus }) => ({
+    // Format 5 preserves column-level isUnique and table-level uniqueConstraints so remote
+    // MCP consumers can generate accurate DDL, while internal AI modeling notes stay local.
+    tables: project.dbTables.map(({ id, tableName, cnName, domain, description, uniqueConstraints, columns, sharedByMenus }) => ({
       id, tableName, cnName, domain, description, sharedByMenus,
-      columns: columns.map(({ isUnique: _unique, ...column }) => column),
+      ...(uniqueConstraints && uniqueConstraints.length ? { uniqueConstraints } : {}),
+      columns: columns.map(column => ({ ...column })),
     })),
     // Materialize the same data used by local preview, including not-yet-visited
     // tables, so the viewer never generates a different sample on first access.
@@ -75,10 +76,8 @@ export function createPublishedSnapshot(entryPageId: string): PublishedSnapshot 
     stickyNotes: project.stickyNotes.filter(note => Object.prototype.hasOwnProperty.call(pages.pageSources, note.pageId))
       .map(({ id, pageId, targetWidgetId, targetWidgetName, index, text, active }) => ({ id, pageId, targetWidgetId, targetWidgetName, index, text, active })),
   };
-  // Opt-in project notes upgrade the share to format 4; without them the format stays 3 so
-  // publishing keeps working against servers that predate note sharing.
   const shared = publishableNotes(new Set(snapshot.pages.map(page => page.pageId)));
-  if (shared.notes.length) Object.assign(snapshot, { formatVersion: 4, notes: shared.notes, noteAssets: shared.noteAssets });
+  if (shared.notes.length) Object.assign(snapshot, { notes: shared.notes, noteAssets: shared.noteAssets });
   validatePublishedSnapshot(snapshot);
   return structuredClone(snapshot);
 }

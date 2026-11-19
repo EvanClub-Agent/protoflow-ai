@@ -18,7 +18,7 @@
 
 **简体中文** · [English](./README.en.md)
 
-[快速上手](#-60-秒快速上手) · [为什么选 Alex](#-为什么选择-alex) · [核心能力](#-核心能力矩阵) · [架构与工作流](#-系统架构与五步工作流) · [Docker 私有化部署](#-docker-compose-私有化部署3-步启动) · [模型生态](#-支持的-ai-模型服务) · [参与贡献](#-参与贡献pr-友好)
+[快速上手](#-60-秒快速上手) · [为什么选 Alex](#-为什么选择-alex) · [核心能力](#-核心能力矩阵) · [MCP 接入 Coding Agent](#-mcp-规格服务连接-claude-code--cursor--antigravity) · [Docker 私有化部署](#-docker-compose-私有化部署3-步启动) · [模型生态](#-支持的-ai-模型服务) · [参与贡献](#-参与贡献pr-友好)
 
 <br/>
 
@@ -209,6 +209,24 @@ npm run build:linux      # Linux x64 (.deb + .AppImage + .tar.gz)
 - [本地运行诊断机制说明](./docs/runtime-diagnostics.md)
 
 </details>
+
+---
+
+## 🔌 MCP 规格服务（连接 Claude Code / Cursor / Antigravity）
+
+原型确认后进入实际研发时，Alex 内置 **安全只读的 MCP（Model Context Protocol）规格服务**，让外部 Coding Agent 按需读取工程的**路由目录树、ER 物理表、PostgreSQL/MySQL DDL、页面 TSX 结构、交互动作链与组件级产品便签**，告别看图盲猜接口与表结构：
+
+- **远程在线直连（研发零安装）**：产品发布 `/p/{id}` 评审链接后，研发无需安装 Alex 或下载 `.pflow` 文件，点击演示页顶部的 **「MCP 接入」** 即可复制远程 Streamable HTTP 配置：
+  ```json
+  {
+    "mcpServers": {
+      "protoflow": {
+        "url": "https://protoflow.example.com/api/v1/mcp/<shareId>"
+      }
+    }
+  }
+  ```
+- **本地 `.pflow` 实时热读**：在桌面端顶部工具栏点击 **「MCP 接入」**，一键生成针对 **Cursor / Antigravity / Windsurf / Claude Code / Codex** 的本机配置（客户端内置运行时**免装 Node.js** 直接运行，自动检测磁盘 `.pflow` 保存时间毫秒级热重载；源码开发态亦支持 `node ./packages/protoflow-mcp/dist/cli.cjs --project ./app.pflow`）。
 
 ---
 

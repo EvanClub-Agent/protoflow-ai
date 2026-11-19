@@ -25,6 +25,7 @@ import { KnowledgeImpactView } from './components/KnowledgeImpactView';
 import { ClosedLoopAuditView } from './components/ClosedLoopAuditView';
 import { InspectorSidebar } from './components/InspectorSidebar';
 import { DesktopBundleModal } from './components/DesktopBundleModal';
+import { McpConnectModal } from './components/McpConnectModal';
 import { ProjectWelcomeLauncher } from './components/ProjectWelcomeLauncher';
 import { WebPublishModal } from './components/WebPublishModal';
 import { HermesEngineModal } from './components/HermesEngineModal';
@@ -50,6 +51,11 @@ export function App() {
     toggleLeftSidebar,
     rightSidebarCollapsed,
     dockedNoteId,
+    isMcpModalOpen,
+    mcpModalTab,
+    mcpModalShareUrl,
+    setMcpModalOpen,
+    setWebPublishModalOpen,
   } = useProtoStore();
 
   const [useLegacySandbox, setUseLegacySandbox] = useState(false);
@@ -360,6 +366,15 @@ export function App() {
 
       {/* Desktop .pflow Archive & Git Version Control Modal */}
       <DesktopBundleModal />
+
+      {/* Read-Only MCP Spec Server Connection Modal (Local .pflow & Remote Share HTTP) */}
+      <McpConnectModal
+        open={isMcpModalOpen}
+        onClose={() => setMcpModalOpen(false)}
+        initialTab={mcpModalTab}
+        initialShareUrl={mcpModalShareUrl}
+        onOpenPublishModal={() => setWebPublishModalOpen(true)}
+      />
 
       {/* Axure-style Publish to Interactive Web Page / Standalone HTML Modal */}
       <WebPublishModal />

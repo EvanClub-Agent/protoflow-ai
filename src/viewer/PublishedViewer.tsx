@@ -2,7 +2,8 @@ import { publishedMenuIndex } from '../services/publishedSitemap';
 import { PublishedSitemap, PublishedMenuPlaceholder } from './PublishedSitemap';
 import { emptySitemapOverrides } from '../proto/sitemap';
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronRight, LockKeyhole, Moon, PanelLeft, RotateCcw, ShieldCheck, Smartphone, Sun } from 'lucide-react';
+import { AlertCircle, ArrowRight, Blocks, CheckCircle2, ChevronRight, LockKeyhole, Moon, PanelLeft, RotateCcw, ShieldCheck, Smartphone, Sun } from 'lucide-react';
+import { McpConnectModal } from '../components/McpConnectModal';
 import type { Publication } from '../services/publishingClient';
 import { useResolvedTheme } from '../proto/registry/AntdSurface';
 import { MobileViewportShell } from '../proto/mobile/MobileViewportShell';
@@ -222,6 +223,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
   const [snapshot, setSnapshot] = useState<ReadablePublishedSnapshot | null>(null);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [reset, setReset] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 540);
@@ -459,6 +461,14 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
             <PublishedNotesButton />
             <button
               type="button"
+              onClick={() => setMcpOpen(true)}
+              className="flex gap-1.5 items-center rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 font-medium px-2.5 py-1.5 text-xs shrink-0 cursor-pointer transition shadow-2xs"
+            >
+              <Blocks size={13.5} aria-hidden="true" />
+              <span>MCP 接入</span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 hydratePublishedSnapshot(snapshot);
                 setReset(n => n + 1);
@@ -503,6 +513,16 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
             </div>
           </main>
         </div>
+        <McpConnectModal
+          open={mcpOpen}
+          onClose={() => setMcpOpen(false)}
+          initialTab="remote"
+          viewerShareContext={{
+            title: snapshot.title,
+            shareUrl: publication?.shareUrl || `${window.location.origin}${window.location.pathname}`,
+            passwordProtected: Boolean(publication?.passwordProtected),
+          }}
+        />
       </div>
     </PublishedNotesProvider>
   );

@@ -27,15 +27,27 @@ function project(templateId: 'blank_project' | 'customs_erp' = 'blank_project') 
   const makeProject = templateId === 'blank_project' ? projectWithHome : createProjectPayload;
   loadProjectFromBinaryPayload(makeProject({ projectId: 'publish-test', projectName: '我的真实画布', templateId, storageDir: '/private/LOCAL-ONLY-PATH', fileName: 'local.pflow', createdAt: '2026-10-30', updatedAt: '2026-10-30', pageCount: 0, tableCount: 0, stickyCount: 0 }));
 }
-test('modeling decisions stay in the project while an AI table publishes through the existing V3 wire contract', () => {
+test('modeling decisions stay in the project while V5 shares preserve column and composite unique constraints', () => {
   project('customs_erp');
   const [table, ...others] = useProtoStore.getState().dbTables;
   const modeling = {entity:'供应商',grain:'每行一个供应商',reason:'供方准入和采购登记共享主数据'};
-  useProtoStore.setState({dbTables:[{...table,modeling,columns:table.columns.map(c => c.isPrimaryKey ? {...c,isUnique:true} : c)},...others]});
-  const shared = createPublishedSnapshot('acceptance-new').tables[0];
-  assert.deepEqual(Object.keys(shared).sort(), ['cnName','columns','description','domain','id','sharedByMenus','tableName']);
-  assert.deepEqual(shared.columns, table.columns);
+  const nonPk = table.columns.filter(c => !c.isPrimaryKey);
+  const uniqueConstraints = nonPk.length >= 2 ? [{ name: 'uq_supplier_pair', columnIds: [nonPk[0].id, nonPk[1].id] }] : undefined;
+  const updatedColumns = table.columns.map((c, idx) => idx === 1 ? { ...c, isUnique: true } : c);
+  useProtoStore.setState({dbTables:[{...table,modeling,uniqueConstraints,columns:updatedColumns},...others]});
+  const snapshot = createPublishedSnapshot('acceptance-new');
+  assert.equal(snapshot.formatVersion, 5);
+  const shared = snapshot.tables[0];
+  assert.equal('modeling' in shared, false);
+  assert.deepEqual(shared.columns, updatedColumns);
+  assert.deepEqual(shared.uniqueConstraints, uniqueConstraints);
   assert.equal(useProtoStore.getState().dbTables[0].modeling,modeling);
+
+  const legacyV3: any = structuredClone(snapshot);
+  legacyV3.formatVersion = 3;
+  delete legacyV3.notes;
+  delete legacyV3.noteAssets;
+  assert.throws(() => validatePublishedSnapshot(legacyV3), /唯一约束/);
 });
 test('publishing captures user-created pages and exact demo rows, without local archive or AI metadata', () => {
   project();

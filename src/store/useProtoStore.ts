@@ -260,6 +260,12 @@ export interface ProtoStore {
   // Desktop .pflow Bundle Inspector Modal
   isBundleModalOpen: boolean;
 
+  // MCP Spec Server Connection Modal
+  isMcpModalOpen: boolean;
+  mcpModalTab: 'local' | 'remote';
+  mcpModalShareUrl: string | null;
+  setMcpModalOpen: (open: boolean, options?: { tab?: 'local' | 'remote'; shareUrl?: string | null }) => void;
+
   // Axure-style Web Publish & Interactive Web Player Mode ("将设计的东西发布为web页面让用户来进行点击交互")
   isWebPublishModalOpen: boolean;
   isWebPlayerMode: boolean;
@@ -1245,6 +1251,9 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
   showAllComponentPins: true,
   activePopoverWidgetId: null,
   isBundleModalOpen: false,
+  isMcpModalOpen: false,
+  mcpModalTab: 'local',
+  mcpModalShareUrl: null,
   isWebPublishModalOpen: false,
   isWebPlayerMode: false,
 
@@ -1350,6 +1359,12 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
       selectedWidgetId: activePopoverWidgetId || s.selectedWidgetId,
     })),
   setBundleModalOpen: (isBundleModalOpen) => set({ isBundleModalOpen }),
+  setMcpModalOpen: (isMcpModalOpen, options) =>
+    set((s) => ({
+      isMcpModalOpen,
+      ...(options?.tab ? { mcpModalTab: options.tab } : {}),
+      ...(options && 'shareUrl' in options ? { mcpModalShareUrl: options.shareUrl ?? null } : !isMcpModalOpen ? { mcpModalShareUrl: null } : { mcpModalShareUrl: s.mcpModalShareUrl }),
+    })),
   setWebPublishModalOpen: (isWebPublishModalOpen) => set({ isWebPublishModalOpen }),
   setWebPlayerMode: (isWebPlayerMode) =>
     set((s) => ({

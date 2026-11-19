@@ -252,7 +252,10 @@ func TestAccountSessionMigrationPreservesLegacyLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer isolated.Close()
-	prior := strings.TrimSuffix(migrations.All, "\n"+migrations.ClientSessions)
+	prior, _, ok := strings.Cut(migrations.All, "\n"+migrations.ClientSessions)
+	if !ok {
+		t.Fatal("ClientSessions migration marker missing from migrations.All")
+	}
 	if _, err = isolated.Exec(ctx, prior); err != nil {
 		t.Fatal(err)
 	}

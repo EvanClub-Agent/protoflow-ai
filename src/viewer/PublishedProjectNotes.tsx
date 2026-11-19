@@ -18,7 +18,7 @@ export function PublishedProjectNotes({
   onNavigate: (pageId: string) => void;
 }) {
   const notes = useMemo<PublishedNote[]>(
-    () => (snapshot.formatVersion === 4 ? snapshot.notes ?? [] : []),
+    () => (snapshot.formatVersion === 4 || snapshot.formatVersion === 5 ? snapshot.notes ?? [] : []),
     [snapshot]
   );
   const pageNotes = useMemo(() => notes.filter((n) => n.pageIds.includes(activePageId)), [notes, activePageId]);
@@ -130,7 +130,7 @@ function PublishedNoteBody({
   const pageIds = useMemo(() => new Set(snapshot.pages.map((p) => p.pageId)), [snapshot]);
   // Sanitized again on the reader side: the share payload is never trusted as markup.
   const html = useMemo(() => {
-    const assets = snapshot.formatVersion === 4 ? snapshot.noteAssets ?? {} : {};
+    const assets = snapshot.formatVersion === 4 || snapshot.formatVersion === 5 ? snapshot.noteAssets ?? {} : {};
     return sanitizeNoteHtml(note.html, {
       resolveImage: (src) => {
         if (!src.startsWith(NOTE_ASSET_SCHEME)) return null;

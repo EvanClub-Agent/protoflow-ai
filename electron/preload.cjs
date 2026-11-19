@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
   writeUnpackedGitTree: (payload) =>
     ipcRenderer.invoke('pflow:write-unpacked-git-tree', payload),
   readBinaryProject: (payload) => ipcRenderer.invoke('pflow:read-binary-project', payload),
+  mcpRuntimeInfo: () => ipcRenderer.invoke('pflow:mcp-runtime-info'),
   trashProject: (payload) => ipcRenderer.invoke('pflow:trash-project', payload),
   openBinaryProject: () => ipcRenderer.invoke('pflow:open-binary-project'),
   savePflowBundle: (bundleJsonString) =>

@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"bytes"
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 var ErrNotFound = errors.New("publication not found")
@@ -50,13 +53,14 @@ type Snapshot struct {
 		} `json:"doc"`
 	} `json:"pages"`
 	Tables []struct {
-		ID            string            `json:"id"`
-		TableName     string            `json:"tableName"`
-		CNName        string            `json:"cnName"`
-		Domain        string            `json:"domain"`
-		Description   string            `json:"description"`
-		Columns       []json.RawMessage `json:"columns"`
-		SharedByMenus []json.RawMessage `json:"sharedByMenus"`
+		ID                string            `json:"id"`
+		TableName         string            `json:"tableName"`
+		CNName            string            `json:"cnName"`
+		Domain            string            `json:"domain"`
+		Description       string            `json:"description"`
+		UniqueConstraints json.RawMessage   `json:"uniqueConstraints"`
+		Columns           []json.RawMessage `json:"columns"`
+		SharedByMenus     []json.RawMessage `json:"sharedByMenus"`
 	} `json:"tables"`
 	TableRows   map[string][]map[string]any `json:"tableRows"`
 	StickyNotes []struct {
@@ -90,6 +94,13 @@ type NoteAsset struct {
 	Data string `json:"data"`
 }
 
+type PublishedUniqueConstraint struct {
+	Name      string   `json:"name"`
+	ColumnIDs []string `json:"columnIds"`
+}
+
+var constraintNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
+
 const (
 	maxPublishedNotes     = 500
 	maxPublishedNoteHTML  = 512 << 10
@@ -101,18 +112,46 @@ var noteAssetID = regexp.MustCompile(`^img-[a-z0-9]{3,48}$`)
 var noteStatuses = map[string]bool{"draft": true, "pending_confirm": true, "confirmed": true, "implemented": true}
 var notePriorities = map[string]bool{"P0": true, "P1": true, "P2": true}
 var noteMimes = map[string]bool{"image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true}
+var allowedPublishedActions = map[string]bool{
+	"openModal":                true,
+	"openDrawer":               true,
+	"closeOverlay":             true,
+	"submitForm":               true,
+	"resetForm":                true,
+	"confirm":                  true,
+	"toast":                    true,
+	"refresh":                  true,
+	"deleteRow":                true,
+	"updateRow":                true,
+	"importPurchaseOrderLines": true,
+	"returnSelection":          true,
+	"switchTab":                true,
+	"navigate":                 true,
+	"setVar":                   true,
+	"show":                     true,
+	"hide":                     true,
+}
 
 func validateNotes(s *Snapshot, fields map[string]json.RawMessage, pages map[string]bool) error {
-	_, hasNotes := fields["notes"]
-	_, hasAssets := fields["noteAssets"]
-	if s.FormatVersion != 4 {
+	rawNotes, hasNotes := fields["notes"]
+	rawAssets, hasAssets := fields["noteAssets"]
+	if s.FormatVersion < 4 {
 		if hasNotes || hasAssets {
 			return errors.New("此发布格式不包含项目笔记字段")
 		}
 		return nil
 	}
+	if s.FormatVersion == 5 && !hasNotes && !hasAssets {
+		return nil
+	}
 	if s.Notes == nil || len(s.Notes) > maxPublishedNotes {
 		return errors.New("发布笔记必须明确提供，且最多 500 篇")
+	}
+	if hasAssets {
+		trimmedAssets := bytes.TrimSpace(rawAssets)
+		if len(trimmedAssets) == 0 || trimmedAssets[0] != '{' {
+			return errors.New("发布笔记图片集合必须是对象")
+		}
 	}
 	if len(s.NoteAssets) > maxPublishedAssets {
 		return errors.New("发布笔记图片过多")
@@ -126,9 +165,37 @@ func validateNotes(s *Snapshot, fields map[string]json.RawMessage, pages map[str
 			return errors.New("发布笔记图片内容无效或超过 8 MB")
 		}
 	}
+	var rawNoteItems []map[string]json.RawMessage
+	if err := json.Unmarshal(rawNotes, &rawNoteItems); err != nil || len(rawNoteItems) != len(s.Notes) {
+		return errors.New("发布笔记格式无效")
+	}
 	ids := map[string]bool{}
-	for _, n := range s.Notes {
-		if strings.TrimSpace(n.NoteID) == "" || ids[n.NoteID] || strings.TrimSpace(n.Title) == "" || len(n.Title) > 400 || len(n.Icon) > 64 || !noteStatuses[n.Status] || strings.TrimSpace(n.UpdatedAt) == "" || len(n.HTML) > maxPublishedNoteHTML || n.PageIDs == nil {
+	for idx, n := range s.Notes {
+		noteFields := rawNoteItems[idx]
+		if noteFields == nil {
+			return errors.New("发布笔记格式无效")
+		}
+		rawIcon, hasIcon := noteFields["icon"]
+		trimmedIcon := bytes.TrimSpace(rawIcon)
+		if !hasIcon || len(trimmedIcon) == 0 || trimmedIcon[0] != '"' || len(utf16.Encode([]rune(n.Icon))) > 16 {
+			return errors.New("发布笔记图标无效")
+		}
+		if rawPrio, hasPrio := noteFields["priority"]; hasPrio && bytes.Equal(bytes.TrimSpace(rawPrio), []byte("null")) {
+			return errors.New("发布笔记优先级无效")
+		}
+		if rawDate, hasDate := noteFields["meetingDate"]; hasDate && bytes.Equal(bytes.TrimSpace(rawDate), []byte("null")) {
+			return errors.New("发布笔记日期无效")
+		}
+		var rawPageIDs []*string
+		if err := json.Unmarshal(noteFields["pageIds"], &rawPageIDs); err != nil {
+			return errors.New("发布笔记关联页面格式无效")
+		}
+		for _, pid := range rawPageIDs {
+			if pid == nil {
+				return errors.New("发布笔记关联页面格式无效")
+			}
+		}
+		if strings.TrimSpace(n.NoteID) == "" || ids[n.NoteID] || strings.TrimSpace(n.Title) == "" || len(n.Title) > 400 || !noteStatuses[n.Status] || strings.TrimSpace(n.UpdatedAt) == "" || len(n.HTML) > maxPublishedNoteHTML || n.PageIDs == nil {
 			return errors.New("发布笔记标识、标题、状态或内容无效")
 		}
 		if n.Priority != nil && !notePriorities[*n.Priority] {
@@ -153,19 +220,17 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 	if err := d.Decode(&s); err != nil {
 		return nil, errors.New("发布内容格式错误或包含不支持的字段")
 	}
-	if (s.FormatVersion < 1 || s.FormatVersion > 4) || strings.TrimSpace(s.ProjectID) == "" || len(s.ProjectID) > 200 || strings.TrimSpace(s.Title) == "" || len(s.Title) > 500 || len(s.Pages) == 0 || len(s.Pages) > 500 {
+	if (s.FormatVersion < 1 || s.FormatVersion > 5) || strings.TrimSpace(s.ProjectID) == "" || len(s.ProjectID) > 200 || strings.TrimSpace(s.Title) == "" || len(s.Title) > 500 || len(s.Pages) == 0 || len(s.Pages) > 500 {
 		return nil, errors.New("项目标识、标题、页面或格式版本无效")
 	}
 	pages := map[string]bool{}
-	nodes := 0
+	navigationIDs := map[string]bool{}
 	for _, p := range s.Pages {
-		if p.PageID == "" || strings.TrimSpace(p.FolderID) == "" || pages[p.PageID] || strings.TrimSpace(p.Title) == "" {
+		if strings.TrimSpace(p.PageID) == "" || strings.TrimSpace(p.FolderID) == "" || pages[p.PageID] || strings.TrimSpace(p.Title) == "" || p.Doc.Header == nil {
 			return nil, errors.New("页面标识缺失或重复")
 		}
 		pages[p.PageID] = true
-		if err := validateNode(p.Doc.Root, 0, &nodes); err != nil {
-			return nil, err
-		}
+		navigationIDs[p.PageID] = true
 	}
 	if !pages[s.EntryPageID] {
 		return nil, errors.New("入口页面不存在")
@@ -178,17 +243,24 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 		return nil, err
 	}
 	if s.FormatVersion >= 3 {
-		if err := validateSitemap(&s); err != nil {
+		sitemapPageIDs, err := validateSitemap(&s)
+		if err != nil {
 			return nil, err
+		}
+		for id := range sitemapPageIDs {
+			navigationIDs[id] = true
 		}
 	} else if _, present := fields["sitemap"]; present {
 		return nil, errors.New("旧版发布格式不包含菜单目录字段")
 	}
-	if s.FormatVersion == 1 {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &fields); err != nil {
+	nodes := 0
+	for _, p := range s.Pages {
+		seenPfIDs := map[string]bool{}
+		if err := validateNode(p.Doc.Root, 0, &nodes, seenPfIDs, navigationIDs); err != nil {
 			return nil, err
 		}
+	}
+	if s.FormatVersion == 1 {
 		if _, present := fields["stickyNotes"]; present {
 			return nil, errors.New("旧版发布格式不包含便签字段")
 		}
@@ -209,8 +281,11 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 	}
 	tables := map[string]bool{}
 	for _, t := range s.Tables {
-		if t.ID == "" || tables[t.ID] || t.TableName == "" || t.Columns == nil || t.SharedByMenus == nil {
+		if strings.TrimSpace(t.ID) == "" || tables[t.ID] || strings.TrimSpace(t.TableName) == "" || strings.TrimSpace(t.CNName) == "" || t.Columns == nil || t.SharedByMenus == nil {
 			return nil, errors.New("表结构标识无效")
+		}
+		if err := validateTableConstraints(s.FormatVersion, t.TableName, t.Columns, t.UniqueConstraints); err != nil {
+			return nil, err
 		}
 		tables[t.ID] = true
 		if _, ok := s.TableRows[t.ID]; !ok {
@@ -224,7 +299,7 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 		ids := map[string]bool{}
 		for _, row := range rows {
 			key, ok := row["id"].(string)
-			if !ok || key == "" || ids[key] {
+			if !ok || strings.TrimSpace(key) == "" || ids[key] {
 				return nil, errors.New("演示数据的行 ID 缺失或重复")
 			}
 			ids[key] = true
@@ -233,11 +308,144 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 	return &s, nil
 }
 
+func validateTableConstraints(formatVersion int, tableName string, rawColumns []json.RawMessage, rawUniqueConstraints json.RawMessage) error {
+	colByID := map[string]string{}
+	colNames := map[string]bool{}
+	reservedConstraintNames := map[string]bool{"primary": true}
+	seenKeySets := map[string]bool{}
+	var pkIDs []string
+
+	signature := func(ids []string) string {
+		cp := append([]string(nil), ids...)
+		sort.Strings(cp)
+		b, _ := json.Marshal(cp)
+		return string(b)
+	}
+
+	for _, rawCol := range rawColumns {
+		trimmedCol := bytes.TrimSpace(rawCol)
+		if len(trimmedCol) == 0 || trimmedCol[0] != '{' {
+			return errors.New("表字段格式错误")
+		}
+		var colFields map[string]json.RawMessage
+		if err := json.Unmarshal(trimmedCol, &colFields); err != nil || colFields == nil {
+			return errors.New("表字段格式错误")
+		}
+		if formatVersion < 5 {
+			if _, hasUnique := colFields["isUnique"]; hasUnique {
+				return errors.New("旧版发布格式不包含字段唯一约束")
+			}
+			continue
+		}
+		var col struct {
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			DataType     string `json:"dataType"`
+			Nullable     *bool  `json:"nullable"`
+			IsPrimaryKey *bool  `json:"isPrimaryKey"`
+			IsUnique     *bool  `json:"isUnique"`
+		}
+		if err := json.Unmarshal(trimmedCol, &col); err != nil {
+			return errors.New("表字段属性类型无效")
+		}
+		if strings.TrimSpace(col.ID) == "" || col.ID != strings.TrimSpace(col.ID) || colByID[col.ID] != "" {
+			return errors.New("表字段 ID 缺失、包含空白或重复")
+		}
+		if strings.TrimSpace(col.Name) == "" || col.Name != strings.TrimSpace(col.Name) || strings.TrimSpace(col.DataType) == "" || col.Nullable == nil || colNames[col.Name] {
+			return errors.New("表字段标识或属性无效")
+		}
+		if rawPK, present := colFields["isPrimaryKey"]; present {
+			trimmedPK := string(bytes.TrimSpace(rawPK))
+			if trimmedPK != "true" && trimmedPK != "false" {
+				return errors.New("字段 isPrimaryKey 必须是布尔值")
+			}
+		}
+		if rawUnique, present := colFields["isUnique"]; present {
+			trimmedUnique := string(bytes.TrimSpace(rawUnique))
+			if trimmedUnique != "true" && trimmedUnique != "false" {
+				return errors.New("字段 isUnique 必须是布尔值")
+			}
+		}
+		colNames[col.Name] = true
+		colByID[col.ID] = col.Name
+		if col.IsPrimaryKey != nil && *col.IsPrimaryKey {
+			pkIDs = append(pkIDs, col.ID)
+		}
+		if col.IsUnique != nil && *col.IsUnique {
+			reservedConstraintNames[strings.ToLower(col.Name)] = true
+			seenKeySets[signature([]string{col.ID})] = true
+		}
+	}
+
+	if formatVersion < 5 {
+		if len(rawUniqueConstraints) > 0 {
+			return errors.New("旧版发布格式不包含表级唯一约束字段")
+		}
+		return nil
+	}
+
+	seenKeySets[signature(pkIDs)] = true
+
+	if len(rawUniqueConstraints) == 0 {
+		return nil
+	}
+	trimmedUC := bytes.TrimSpace(rawUniqueConstraints)
+	if len(trimmedUC) == 0 || trimmedUC[0] != '[' {
+		return fmt.Errorf("%s.uniqueConstraints 必须是数组", tableName)
+	}
+	var rawUCItems []json.RawMessage
+	if err := json.Unmarshal(trimmedUC, &rawUCItems); err != nil {
+		return fmt.Errorf("%s.uniqueConstraints 必须是数组", tableName)
+	}
+	for _, rawUC := range rawUCItems {
+		trimmedItem := bytes.TrimSpace(rawUC)
+		if len(trimmedItem) == 0 || trimmedItem[0] != '{' {
+			return fmt.Errorf("%s 唯一约束格式无效", tableName)
+		}
+		var uc struct {
+			Name      *string   `json:"name"`
+			ColumnIDs *[]*string `json:"columnIds"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(trimmedItem))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&uc); err != nil || uc.Name == nil || uc.ColumnIDs == nil {
+			return fmt.Errorf("%s 唯一约束格式无效", tableName)
+		}
+		if !constraintNameRe.MatchString(*uc.Name) {
+			return fmt.Errorf("%s 唯一约束名无效", tableName)
+		}
+		lowerName := strings.ToLower(*uc.Name)
+		if reservedConstraintNames[lowerName] {
+			return fmt.Errorf("%s 唯一约束名 %s 重复或已保留", tableName, *uc.Name)
+		}
+		reservedConstraintNames[lowerName] = true
+		rawColIDs := *uc.ColumnIDs
+		if len(rawColIDs) == 0 || len(rawColIDs) > 16 {
+			return fmt.Errorf("%s 唯一约束字段数量无效", tableName)
+		}
+		colIDs := make([]string, 0, len(rawColIDs))
+		localSeen := map[string]bool{}
+		for _, cidPtr := range rawColIDs {
+			if cidPtr == nil || colByID[*cidPtr] == "" || localSeen[*cidPtr] {
+				return fmt.Errorf("%s 唯一约束引用了无效或重复的字段 ID", tableName)
+			}
+			localSeen[*cidPtr] = true
+			colIDs = append(colIDs, *cidPtr)
+		}
+		sig := signature(colIDs)
+		if seenKeySets[sig] {
+			return fmt.Errorf("%s 唯一约束与主键或已有唯一约束重复", tableName)
+		}
+		seenKeySets[sig] = true
+	}
+	return nil
+}
+
 // A menu node ID is not a page ID. Empty/archived entries are retained without
 // inventing a canvas, and every published canvas must keep its exact parent.
-func validateSitemap(s *Snapshot) error {
+func validateSitemap(s *Snapshot) (map[string]bool, error) {
 	if s.Sitemap == nil {
-		return errors.New("发布内容必须包含完整菜单目录")
+		return nil, errors.New("发布内容必须包含完整菜单目录")
 	}
 	ids, pageIDs := map[string]bool{}, map[string]bool{}
 	parents := map[string]string{}
@@ -305,17 +513,78 @@ func validateSitemap(s *Snapshot) error {
 		return nil
 	}
 	if err := visit(s.Sitemap, "", 0); err != nil {
-		return err
+		return nil, err
 	}
 	for id := range parents {
 		if !pageIDs[id] {
-			return errors.New("发布页面缺少对应的菜单项")
+			return nil, errors.New("发布页面缺少对应的菜单项")
 		}
 	}
-	return nil
+	return pageIDs, nil
 }
 
-func validateNode(raw json.RawMessage, depth int, count *int) error {
+func validatePropValue(v any, depth int, navigationIDs map[string]bool) error {
+	if depth > 80 {
+		return errors.New("组件属性嵌套过深")
+	}
+	switch val := v.(type) {
+	case nil, string, bool, float64:
+		return nil
+	case []any:
+		for _, elem := range val {
+			if err := validatePropValue(elem, depth+1, navigationIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	case map[string]any:
+		if kind, _ := val["$kind"].(string); kind == "raw" {
+			return errors.New("页面包含未支持的代码表达式")
+		}
+		if kind, _ := val["$kind"].(string); kind == "actions" {
+			calls, ok := val["calls"].([]any)
+			if !ok {
+				return errors.New("页面动作格式无效")
+			}
+			for _, callItem := range calls {
+				call, ok := callItem.(map[string]any)
+				if !ok {
+					return errors.New("页面动作格式无效")
+				}
+				name, ok := call["name"].(string)
+				if !ok || strings.TrimSpace(name) == "" {
+					return errors.New("动作名不能为空")
+				}
+				args, hasArgs := call["args"].([]any)
+				if !allowedPublishedActions[name] || !hasArgs {
+					return fmt.Errorf("不支持的页面动作：%s", name)
+				}
+				if name == "navigate" {
+					if len(args) == 0 {
+						return errors.New("跳转动作指向未发布的页面")
+					}
+					target, ok := args[0].(string)
+					if !ok || !navigationIDs[target] {
+						return errors.New("跳转动作指向未发布的页面")
+					}
+				}
+			}
+		}
+		for k, item := range val {
+			if k == "__proto__" || k == "prototype" || k == "constructor" {
+				return errors.New("组件属性名无效")
+			}
+			if err := validatePropValue(item, depth+1, navigationIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return errors.New("组件属性无效")
+	}
+}
+
+func validateNode(raw json.RawMessage, depth int, count *int, seenPfIDs map[string]bool, navigationIDs map[string]bool) error {
 	*count++
 	if depth > 80 || *count > 50000 {
 		return errors.New("设计内容超过页面复杂度限制")
@@ -331,14 +600,24 @@ func validateNode(raw json.RawMessage, depth int, count *int) error {
 	if json.Unmarshal(raw, &n) != nil {
 		return errors.New("页面节点格式错误")
 	}
-	if n.Kind == "text" && n.Value != nil {
+	if n.Kind == "text" && n.Value != nil && depth > 0 {
 		return nil
 	}
-	if n.Kind != "node" || n.PfID == "" || n.Type == "" || n.Props == nil || n.Children == nil {
+	if n.Kind != "node" || strings.TrimSpace(n.PfID) == "" || strings.TrimSpace(n.Type) == "" || n.Props == nil || n.Children == nil {
 		return errors.New("页面节点标识或属性缺失")
 	}
+	if depth == 0 && n.Type != "Page" && n.Type != "MobilePage" {
+		return errors.New("页面根组件必须是 Page 或 MobilePage")
+	}
+	if seenPfIDs[n.PfID] {
+		return errors.New("页面组件 ID 重复")
+	}
+	seenPfIDs[n.PfID] = true
+	if err := validatePropValue(n.Props, 0, navigationIDs); err != nil {
+		return err
+	}
 	for _, c := range n.Children {
-		if err := validateNode(c, depth+1, count); err != nil {
+		if err := validateNode(c, depth+1, count, seenPfIDs, navigationIDs); err != nil {
 			return err
 		}
 	}

@@ -1,5 +1,6 @@
 import { validatePublishedSitemap, publishedMenuIndex, type PublishedMenuItem } from './publishedSitemap';
 import type { DBTableSchema, StickyNoteRule } from '../store/useProtoStore';
+import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import { validateNoteAssets, type NoteAsset, type NotePriority, type NoteRequirementStatus } from '../proto/notes';
 import type { ProtoDoc } from '../proto/types';
 import type { Row } from '../proto/runtime/mock';
@@ -32,8 +33,12 @@ export interface PublishedNote {
 export const PUBLISHED_NOTE_HTML_MAX = 512 * 1024;
 export const PUBLISHED_NOTES_MAX = 500;
 export interface PublishedSnapshot {
-  /** 4 = 3 plus read-only project notes; 3 is still produced when no note is shared. */
-  formatVersion: 3 | 4;
+  /**
+   * 3 = sitemap + tables (without unique metadata);
+   * 4 = 3 plus mandatory read-only project notes;
+   * 5 = preserves column isUnique + table uniqueConstraints, with optional read-only project notes.
+   */
+  formatVersion: 3 | 4 | 5;
   notes?: PublishedNote[];
   noteAssets?: Record<string, NoteAsset>;
   sitemap: PublishedMenuItem[];
@@ -58,7 +63,7 @@ function required(value: unknown, name: string): asserts value is string {
  * here and compiled only inside its isolated runtime. Validate before store writes. */
 export function validatePublishedSnapshot(value: unknown): asserts value is ReadablePublishedSnapshot {
   object(value, '发布内容');
-  if (value.formatVersion !== 2 && value.formatVersion !== 3 && value.formatVersion !== 4) throw new Error('此发布格式不受支持，请更新浏览端');
+  if (value.formatVersion !== 2 && value.formatVersion !== 3 && value.formatVersion !== 4 && value.formatVersion !== 5) throw new Error('此发布格式不受支持，请更新浏览端');
   required(value.projectId, '项目 ID'); required(value.title, '项目标题'); required(value.entryPageId, '入口页面');
   if (!Array.isArray(value.pages) || !value.pages.length || value.pages.length > 500) throw new Error('发布页面数量无效');
   const pageIds = new Set<string>(), navigationIds = new Set<string>(); let count = 0;
@@ -86,7 +91,7 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
     navigationIds.add(p.pageId);
     if (pageIds.has(p.pageId)) throw new Error('页面 ID 重复'); pageIds.add(p.pageId);
   }
-  if (value.formatVersion === 3 || value.formatVersion === 4) {
+  if (value.formatVersion === 3 || value.formatVersion === 4 || value.formatVersion === 5) {
     validatePublishedSitemap(value.sitemap, value.pages as PublishedPage[]);
     for (const id of publishedMenuIndex(value.sitemap).keys()) navigationIds.add(id);
   } else if (has(value, 'sitemap')) throw new Error('旧版发布内容不支持菜单目录字段');
@@ -129,10 +134,24 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
     object(table, '表结构'); required(table.id, '表 ID'); required(table.tableName, '表名'); required(table.cnName, '表标题');
     if (tables.has(table.id)) throw new Error('表 ID 重复'); tables.add(table.id);
     if (!Array.isArray(table.columns) || !Array.isArray(table.sharedByMenus)) throw new Error('表字段或关联页面无效');
-    const columns = new Set<string>();
+    const columns = new Set<string>(), columnIds = new Set<string>();
     for (const column of table.columns) {
       object(column, '表字段'); required(column.id, '字段 ID'); required(column.name, '字段名称'); required(column.dataType, '字段类型');
+      if (value.formatVersion >= 5) {
+        if (column.id.trim() !== column.id || columnIds.has(column.id)) throw new Error('表字段 ID 重复或包含首尾空白');
+        columnIds.add(column.id);
+      }
       if (columns.has(column.name) || typeof column.nullable !== 'boolean') throw new Error('表字段重复或属性无效'); columns.add(column.name);
+      if (value.formatVersion < 5) {
+        if (has(column, 'isUnique')) throw new Error('旧版发布格式不包含字段唯一约束');
+      } else if (column.isUnique !== undefined && typeof column.isUnique !== 'boolean') {
+        throw new Error('字段 isUnique 必须是布尔值');
+      }
+    }
+    if (value.formatVersion < 5) {
+      if (has(table, 'uniqueConstraints')) throw new Error('旧版发布格式不包含表级唯一约束');
+    } else {
+      resolveUniqueConstraints(table as unknown as DBTableSchema);
     }
     if (!has(value.tableRows, table.id)) throw new Error(`缺少表 ${table.cnName} 的演示数据`);
   }
@@ -181,8 +200,11 @@ const NOTE_STATUSES = new Set(['draft', 'pending_confirm', 'confirmed', 'impleme
 const NOTE_PRIORITIES = new Set(['P0', 'P1', 'P2']);
 
 function validatePublishedNotes(value: Record<string, unknown>, pageIds: Set<string>) {
-  if (value.formatVersion !== 4) {
+  if (value.formatVersion !== 4 && value.formatVersion !== 5) {
     if (has(value, 'notes') || has(value, 'noteAssets')) throw new Error('此发布格式不包含项目笔记字段');
+    return;
+  }
+  if (value.formatVersion === 5 && !has(value, 'notes') && !has(value, 'noteAssets')) {
     return;
   }
   if (!Array.isArray(value.notes) || value.notes.length > PUBLISHED_NOTES_MAX) throw new Error('发布笔记必须明确提供，且最多 500 篇');

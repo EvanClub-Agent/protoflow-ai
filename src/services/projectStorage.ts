@@ -354,7 +354,7 @@ function applySnapshot(payload: PflowBinaryPayload) {
       ...(state.activePageId === '' ? { leftActivityView: 'pages', leftSidebarTab: 'pages', leftSidebarCollapsed: false } : {}),
       selectedTableId: state.dbTables.length ? state.dbTables[0].id : '',
       selectedWidgetId: '', activePopoverWidgetId: null, isImportModalOpen: false,
-      isBundleModalOpen: false, isWebPublishModalOpen: false, isWebPlayerMode: false,
+      isBundleModalOpen: false, isMcpModalOpen: false, isWebPublishModalOpen: false, isWebPlayerMode: false,
       uiState: 'normal', searchQuery: '', expandedFolders: {}, menuPulseBadges: {}, flowLogs: [],
     });
   } finally { applyingSnapshot = false; }

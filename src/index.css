@@ -1,6 +1,15 @@
 @import "./viewer/releaseWorkspace.css";
 @import "tailwindcss";
 
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 .project-mindmap-svg > svg {
   display: block;
   width: 100%;

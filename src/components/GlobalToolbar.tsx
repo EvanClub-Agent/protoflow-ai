@@ -20,6 +20,7 @@ import {
   ArrowUpCircle,
   BookOpenText,
   Bug,
+  Blocks,
 } from 'lucide-react';
 import { useProtoStore } from '../store/useProtoStore';
 import { useHermesStore } from '../store/useHermesStore';
@@ -40,6 +41,7 @@ export const GlobalToolbar: React.FC = () => {
     showAllComponentPins,
     setShowAllComponentPins,
     setBundleModalOpen,
+    setMcpModalOpen,
     stickyNotes,
     dbTables,
     closedLoopIssues,
@@ -135,6 +137,15 @@ export const GlobalToolbar: React.FC = () => {
                 ? `便签已开启 (${stickyNotes.length})`
                 : '显示需求便签'}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMcpModalOpen(true)}
+            className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1 text-[11px] border border-slate-200 cursor-pointer"
+          >
+            <Blocks className="w-3 h-3 text-blue-600" />
+            <span>MCP 接入</span>
           </button>
 
           <button
@@ -420,6 +431,25 @@ export const GlobalToolbar: React.FC = () => {
 
         <AiBackgroundControl />
         <button type="button" aria-label="运行诊断" title="运行诊断" onClick={openRuntimeDiagnostics} className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><Bug className="w-3.5 h-3.5" /></button>
+
+        <div className="relative group flex items-center">
+          <button
+            type="button"
+            aria-label="MCP 接入配置"
+            onClick={() => setMcpModalOpen(true)}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
+          >
+            <Blocks className="w-3.5 h-3.5" />
+          </button>
+          <div
+            role="tooltip"
+            className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
+          >
+            <span className="relative z-10 text-xs font-medium tracking-tight">
+              MCP 接入 (Coding Agent)
+            </span>
+          </div>
+        </div>
 
         <div className="relative group flex items-center">
           <button

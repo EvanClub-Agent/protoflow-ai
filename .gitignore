@@ -7,6 +7,7 @@ node_modules/
 dist/
 dist-viewer/
 electron/generated/
+packages/protoflow-mcp/dist/
 src/proto/freeform/generatedRuntime.ts
 server/bin/
 dist-ssr/
