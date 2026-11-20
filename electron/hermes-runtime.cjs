@@ -39,13 +39,13 @@ const runtimeEnv = () => ({
     process.env.PATH || "",
   ].join(path.delimiter),
 });
-function runCommand(binary, args, home, timeout = 30000, env = {}) {
+function runCommand(binary, args, home, timeout = 30000, env = {}, baseEnv = runtimeEnv()) {
   return new Promise((resolve) => {
     let output = "";
     let stderr = "";
     let settled = false;
     const child = spawn(binary, args, {
-      env: { ...runtimeEnv(), ...env, HERMES_HOME: home },
+      env: { ...baseEnv, ...env, HERMES_HOME: home },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const done = (result) => {
@@ -321,8 +321,9 @@ function buildFailureEnvelope({
   };
 }
 class HermesRuntime {
-  constructor({ dataDir, emit, nodeBinary = process.execPath, validateDecodedImage, deleteHistorySession, diagnostic, accountProvider = () => ({ status: 'unknown' }) }) {
+  constructor({ dataDir, managedHome = path.join(dataDir, 'hermes-home'), emit, nodeBinary = process.execPath, validateDecodedImage, deleteHistorySession, diagnostic, accountProvider = () => ({ status: 'unknown' }) }) {
     this.dataDir = dataDir;
+    this.managedHome = path.resolve(managedHome);
     this.deleteHistorySession = deleteHistorySession;
     this.chatImages = new ChatImages(dataDir, validateDecodedImage);
     this.emit = emit;
@@ -349,7 +350,7 @@ class HermesRuntime {
     this.cancelVersions = new Map();
     this.lastSessionSetup = new Map();
     this.unconsumedSessionSetup = new Map();
-    this.contextPool = new ContextBridgePool({ env: runtimeEnv() });
+    this.contextPool = new ContextBridgePool({ env: this.envFor(this.settings.home || this.managedHome) });
     this.lastContextBridgeUse = null;
   }
   allLoadedSessions() {
@@ -387,18 +388,36 @@ class HermesRuntime {
       ...(typeof targetPageId === 'string' && targetPageId ? { targetPageId } : {}),
     };
   }
+  envFor(home, launcher) {
+    const env = runtimeEnv();
+    if (home && path.resolve(home) === this.managedHome) {
+      // These source/store overrides belong to the shell that started Alex.
+      for (const name of ['HERMES_INSTALL_DIR', 'HERMES_INSTALL_ROOT', 'HERMES_RUNTIME_DIR', 'HERMES_WEB_DIST'])
+        delete env[name];
+      const selected = launcher ?? (this.settings.home === this.managedHome ? this.settings.binary : undefined);
+      const binary = selected && path.resolve(selected).startsWith(this.managedHome + path.sep) ? selected : this.managedTarget().binary;
+      env.PATH = path.dirname(binary) + path.delimiter + env.PATH;
+    }
+    return env;
+  }
+  runCommand(binary, args, home, timeout, env) {
+    return runCommand(binary, args, home, timeout, env, this.envFor(home));
+  }
   async detect(input = {}) {
-    const home = expand(
-      input.home ||
-        this.settings.home ||
-        process.env.HERMES_HOME ||
-        "~/.hermes",
-    );
-    if (!path.isAbsolute(home))
+    // A saved selection predates managed runtimes. Keep its profile on launch;
+    // only a first run without a selection defaults to the private profile.
+    const configuredHome = input.home ?? this.settings.home ?? this.managedHome;
+    if (typeof configuredHome !== 'string' || !path.isAbsolute(expand(configuredHome)))
       throw new Error("Hermes 配置目录必须是绝对路径");
-    const selected = input.binary || this.settings.binary;
+    const home = expand(configuredHome);
+    const managed = path.resolve(home) === this.managedHome;
+    const sameHome = this.settings.home && path.resolve(home) === path.resolve(expand(this.settings.home));
+    const selected = input.binary || (sameHome && this.settings.binary);
+    if (selected && (typeof selected !== 'string' || !path.isAbsolute(expand(selected))))
+      throw new Error('Hermes 可执行文件必须是绝对路径');
     const candidates = selected
       ? [expand(selected)]
+      : managed ? [this.managedTarget().binary]
       : [...(process.platform === 'win32' && process.env.LOCALAPPDATA
           ? [path.join(process.env.LOCALAPPDATA, 'hermes', 'bin', 'hermes.exe')]
           : []), ...runtimeEnv()
@@ -426,7 +445,7 @@ class HermesRuntime {
         version: "",
         error: "未找到可执行的 Hermes，请先安装或指定正确路径",
       };
-    const version = await runCommand(binary, ["--version"], home);
+    const version = await this.runCommand(binary, ["--version"], home);
     if (!version.ok || !/Hermes Agent/.test(version.output))
       return {
         detected: false,
@@ -443,6 +462,11 @@ class HermesRuntime {
         (path.resolve(expand(this.info.home || home)) === path.resolve(expand(home)) &&
           path.resolve(expand(this.info.binary || binary)) === path.resolve(expand(binary)))),
     );
+    const installDir = /^Install directory: (.+)$/m.exec(version.output)?.[1]?.trim();
+    if (managed && (!path.resolve(binary).startsWith(this.managedHome + path.sep) || !this.isAppManagedInstallation({ home, installDir }) ||
+        hostFs.realpathSync(binary) !== path.join(hostFs.realpathSync(installDir), '.hermes', 'bin', process.platform === 'win32' ? 'hermes.exe' : 'hermes'))) {
+      return { detected: false, connected: false, home, binary, version: '', error: '托管启动器未指向 Alex 的安装目录，请重新准备托管运行时' };
+    }
     return {
       detected: true,
       connected,
@@ -452,35 +476,50 @@ class HermesRuntime {
         .split("\n")[0]
         .replace(/^Hermes Agent\s+/, "")
         .split(" ")[0],
-      installDir: /^Install directory: (.+)$/m.exec(version.output)?.[1]?.trim(),
+      installDir,
       hasConfig: fs.existsSync(path.join(home, "config.yaml")),
     };
   }
-  async connect(input = {}) {
-    if (this.connecting) return this.connecting;
+  async connect(input = {}, { signal, selectOnSuccess = false } = {}) {
+    if (this.connecting) {
+      if (selectOnSuccess || input.home || input.binary) throw new Error('Hermes 正在连接，请稍后再切换环境');
+      return this.connecting;
+    }
     if (this.client && !this.client.closed && !input.home && !input.binary)
       return this.info;
-    if (this.allLoadedSessions().some((s) => s.running))
+    if (this.activeProjectRuns.size || this.allLoadedSessions().some((s) => s.running))
       throw new Error("请先停止当前 AI 任务再切换 Hermes 环境");
-    this.close();
+    let candidateClient;
     this.connecting = (async () => {
       const info = await this.detect(input);
       if (!info.detected) throw new Error(info.error);
-      // The selected installation/profile remains authoritative even if its
-      // ACP component needs repair. Management must not fall back to another
-      // profile after a failed handshake.
-      this.settings = { home: info.home, binary: info.binary };
-      atomicWrite(this.settingsFile, this.settings);
+      const selection = { home: info.home, binary: info.binary };
+      const previous = this.settings;
+      if (this.isAppManagedInstallation(info)) {
+        // Remember the exact old profile and launcher, including when upgrading a managed slot.
+        const external = previous.home && previous.binary && path.resolve(expand(previous.home)) !== this.managedHome
+          ? { home: previous.home, binary: previous.binary } : previous.previousExternal;
+        if (external) selection.previousExternal = external;
+      }
+      const saveSelection = () => {
+        atomicWrite(this.settingsFile, selection);
+        this.settings = selection;
+      };
+      // A first manually selected profile remains available for component repair.
+      // An install or a change of an existing selection commits only after ACP succeeds.
+      const deferSelection = selectOnSuccess || (previous.home && previous.binary &&
+        (previous.home !== info.home || previous.binary !== info.binary));
+      if (!deferSelection) saveSelection();
       let binary = info.binary, args;
       if (info.installDir) {
-        const launch = await runCommand(info.binary, ['--print-runtime-command'], info.home);
+        const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
         let command;
         try { command = JSON.parse(launch.output); } catch {}
         if (!launch.ok || !Array.isArray(command) || !path.isAbsolute(command[0])) throw new Error('Hermes 启动器未提供恢复适配接口');
         const native = require('./hermes-recovery-native.cjs');
         const copy = await native.prepareNativeRecovery(info.installDir, this.dataDir);
         const bootstrap = fs.readFileSync(path.join(__dirname, 'hermes-recovery-gateway.py'), 'utf8');
-        const activated = await runCommand(command[0], ['-I', '-c', bootstrap, copy], info.home, 120000, { ALEX_RECOVERY_DIR: this.recoveryChannelDir });
+        const activated = await this.runCommand(command[0], ['-I', '-c', bootstrap, copy], info.home, 120000, { ALEX_RECOVERY_DIR: this.recoveryChannelDir });
         let activation;
         try { activation = JSON.parse(activated.output.trim().split('\n').at(-1)); } catch {}
         if (!activated.ok || activation?.ready !== true) throw new Error(activation?.error || 'Hermes 限流恢复运行时未能启动');
@@ -492,8 +531,20 @@ class HermesRuntime {
       }
       const client = new AcpClient(binary, {
         home: info.home, args,
-        env: { ...runtimeEnv(), ALEX_RECOVERY_DIR: this.recoveryChannelDir },
+        env: { ...this.envFor(info.home, info.binary), ALEX_RECOVERY_DIR: this.recoveryChannelDir },
       });
+      candidateClient = client;
+      const init = await client.request("initialize", {
+        protocolVersion: 1,
+        clientInfo: { name: "protoflow", version: "0.1.0" },
+        clientCapabilities: { elicitation: { form: {} } },
+      });
+      if (init.protocolVersion !== 1 || !init.agentCapabilities?.loadSession)
+        throw new Error("Hermes ACP 版本不兼容：需要会话恢复支持");
+      signal?.throwIfAborted();
+      if (deferSelection) saveSelection();
+      this.close();
+      this.contextPool.options.env = this.envFor(info.home, info.binary);
       this.client = client;
       client.on("notification", (frame) => this.onNotification(frame));
       client.on("request", (frame) => this.onRequest(frame));
@@ -502,22 +553,16 @@ class HermesRuntime {
         this.questions.clear();
         this.emit({ type: "disconnected", message, reason });
       });
-      const init = await client.request("initialize", {
-        protocolVersion: 1,
-        clientInfo: { name: "protoflow", version: "0.1.0" },
-        clientCapabilities: { elicitation: { form: {} } },
-      });
-      if (init.protocolVersion !== 1 || !init.agentCapabilities?.loadSession)
-        throw new Error("Hermes ACP 版本不兼容：需要会话恢复支持");
       this.info = {
         ...info,
         connected: true,
         capabilities: init.agentCapabilities,
       };
+      if (previous.home !== info.home || previous.binary !== info.binary) this.emit({ type: 'environment-changed' });
       return this.info;
     })()
       .catch((error) => {
-        this.close();
+        candidateClient?.close();
         throw error;
       })
       .finally(() => {
@@ -525,16 +570,23 @@ class HermesRuntime {
       });
     return this.connecting;
   }
+  managedTarget() {
+    const { VERIFIED_HERMES_COMMIT } = require('./hermes-recovery-native.cjs');
+    const installDir = path.join(this.managedHome, 'releases', VERIFIED_HERMES_COMMIT, 'hermes-agent');
+    const binary = path.join(installDir, '.hermes', 'bin', process.platform === 'win32' ? 'hermes.exe' : 'hermes');
+    return { home: this.managedHome, installDir, binary };
+  }
   isAppManagedInstallation(info) {
-    if (!info?.home || !info?.installDir) return false;
-    const managedHome = path.resolve(path.join(this.dataDir, "hermes-home"));
-    const home = path.resolve(expand(info.home));
-    const installDir = path.resolve(expand(info.installDir));
-    return home === managedHome && installDir.startsWith(managedHome + path.sep);
+    if (!info?.home || !info?.installDir || path.resolve(expand(info.home)) !== this.managedHome) return false;
+    try {
+      const relative = path.relative(hostFs.realpathSync(this.managedHome), hostFs.realpathSync(info.installDir));
+      const parts = relative.split(path.sep);
+      return relative === 'hermes-agent' || (parts.length === 3 && parts[0] === 'releases' && parts[2] === 'hermes-agent');
+    } catch { return false; }
   }
   workspaceBinaryIdentity(home, binary) {
     if (typeof home === "string" && typeof binary === "string" && home && binary) {
-      const managedHome = path.resolve(path.join(this.dataDir, "hermes-home"));
+      const managedHome = this.managedHome;
       const resolvedHome = path.resolve(expand(home));
       const resolvedBinary = path.resolve(expand(binary));
       if (
@@ -1004,7 +1056,7 @@ class HermesRuntime {
       return normalized;
     }
     if (!info.reasoningPython) {
-      const launch = await runCommand(info.binary, ['--print-runtime-command'], info.home);
+      const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
       let command;
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0])) {
@@ -1019,7 +1071,7 @@ class HermesRuntime {
     const request = { sessionId, modelId, effort: normalized };
     const result = await new Promise((resolve, reject) => {
       const child = execFile(info.reasoningPython, ['-I','-c',script,info.installDir], {
-        env:{...runtimeEnv(), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
+        env:{...this.envFor(info.home), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
       }, (error, stdout) => {
         if (error) return reject(new Error('未能连接 Hermes 会话设置，请检查连接后重试'));
         try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Hermes 返回的推理设置无效')); }
@@ -1048,7 +1100,7 @@ class HermesRuntime {
       const info = this.info;
       if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error('当前 Hermes 未提供推理设置接口，请更新 Hermes 后重试');
       if (!info.reasoningPython) {
-        const launch = await runCommand(info.binary, ['--print-runtime-command'], info.home);
+        const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
         let command;
         try { command = JSON.parse(launch.output); } catch { /* Older launchers do not expose their runtime. */ }
         if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0]))
@@ -1060,7 +1112,7 @@ class HermesRuntime {
         ...(Object.hasOwn(input,'effort') ? {effort:input.effort} : {}) };
       const result = await new Promise((resolve, reject) => {
         const child = execFile(info.reasoningPython, ['-I','-c',script,info.installDir], {
-          env:{...runtimeEnv(), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
+          env:{...this.envFor(info.home), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
         }, (error, stdout) => {
           if (error) return reject(new Error('未能连接 Hermes 会话设置，请检查连接后重试'));
           try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Hermes 返回的推理设置无效')); }
@@ -1091,7 +1143,7 @@ class HermesRuntime {
     const info = this.info;
     if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error('当前 Hermes 未提供上下文接口，请更新后重试');
     if (!info.contextPython) {
-      const launch = await runCommand(info.binary, ['--print-runtime-command'], info.home);
+      const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
       let command;
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0]))
@@ -1121,7 +1173,7 @@ class HermesRuntime {
     const script = readContextScript();
     return new Promise((resolve, reject) => {
       const child = execFile(bridge.python, ['-I', '-c', script, bridge.installDir], {
-        env: { ...runtimeEnv(), HERMES_HOME: bridge.home }, windowsHide: true,
+        env: { ...this.envFor(bridge.home), HERMES_HOME: bridge.home }, windowsHide: true,
         timeout: request.action === 'compress' ? 0 : 30000, maxBuffer: 256 * 1024,
       }, (error, stdout) => {
         if (error) return reject(new Error('无法连接 Hermes 上下文接口'));
@@ -1170,7 +1222,7 @@ class HermesRuntime {
   async watchContext(s) {
     const bridge = await this.contextBridge();
     const child = spawn(bridge.python, ['-I', '-c', readContextScript(), bridge.installDir], {
-      env: { ...runtimeEnv(), HERMES_HOME: bridge.home }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+      env: { ...this.envFor(bridge.home), HERMES_HOME: bridge.home }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
     let buffer = '', ready, stopped = false;
     const started = new Promise(resolve => { ready = resolve; });
@@ -3416,7 +3468,7 @@ class HermesRuntime {
       throw new Error("暂存区目录不能与当前活动安装目录相同，已拒绝就地改写运行环境");
     }
     if (fs.existsSync(resolvedSlotDir)) {
-      const head = await runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
+      const head = await this.runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
       if (!head.ok || head.output.trim() !== targetCommit) {
         if (resolvedSlotDir === activeInstallDir) {
           throw new Error("当前运行目录与目标暂存槽位冲突且提交不一致，已拒绝就地覆盖");
@@ -3429,21 +3481,21 @@ class HermesRuntime {
       fs.mkdirSync(releasesDir, { recursive: true, mode: 0o700 });
       const tempCloneDir = path.join(releasesDir, ".staging-" + randomUUID());
       try {
-        const cloned = await runCommand(
+        const cloned = await this.runCommand(
           "git",
           ["clone", "--no-checkout", activeInstallDir, tempCloneDir],
           info.home,
           5 * 60 * 1000,
         );
         if (!cloned.ok) throw new Error(describeHermesUpdateError(cloned));
-        const localHasCommit = await runCommand(
+        const localHasCommit = await this.runCommand(
           "git",
           ["-C", tempCloneDir, "cat-file", "-e", `${targetCommit}^{commit}`],
           info.home,
           15000,
         );
         if (!localHasCommit.ok) {
-          const remoteQuery = await runCommand(
+          const remoteQuery = await this.runCommand(
             "git",
             ["-C", activeInstallDir, "remote", "get-url", "origin"],
             info.home,
@@ -3452,8 +3504,8 @@ class HermesRuntime {
           const remoteUrl = remoteQuery.ok && remoteQuery.output.trim()
             ? remoteQuery.output.trim()
             : "https://github.com/NousResearch/hermes-agent.git";
-          await runCommand("git", ["-C", tempCloneDir, "remote", "set-url", "origin", remoteUrl], info.home, 15000);
-          const fetched = await runCommand(
+          await this.runCommand("git", ["-C", tempCloneDir, "remote", "set-url", "origin", remoteUrl], info.home, 15000);
+          const fetched = await this.runCommand(
             "git",
             ["-C", tempCloneDir, "fetch", "--depth", "1", "origin", targetCommit],
             info.home,
@@ -3461,14 +3513,14 @@ class HermesRuntime {
           );
           if (!fetched.ok) throw new Error(describeHermesUpdateError(fetched));
         }
-        const checkedOut = await runCommand(
+        const checkedOut = await this.runCommand(
           "git",
           ["-C", tempCloneDir, "checkout", "--force", "--detach", targetCommit],
           info.home,
           2 * 60 * 1000,
         );
         if (!checkedOut.ok) throw new Error(describeHermesUpdateError(checkedOut));
-        const verifiedHead = await runCommand(
+        const verifiedHead = await this.runCommand(
           "git",
           ["-C", tempCloneDir, "rev-parse", "--verify", "HEAD"],
           info.home,
@@ -3483,7 +3535,7 @@ class HermesRuntime {
         hostFs.rmSync(tempCloneDir, { recursive: true, force: true });
       }
     }
-    const launch = await runCommand(info.binary, ["--print-runtime-command"], info.home, 30000);
+    const launch = await this.runCommand(info.binary, ["--print-runtime-command"], info.home, 30000);
     let currentRuntimeCmd;
     try { currentRuntimeCmd = JSON.parse(launch.output); } catch {}
     if (!launch.ok || !Array.isArray(currentRuntimeCmd) || !path.isAbsolute(currentRuntimeCmd[0])) {
@@ -3494,7 +3546,7 @@ class HermesRuntime {
       "from hermes_cli._launchers import ensure_install_launchers; " +
       "written = ensure_install_launchers(root, root / '.hermes' / 'bin'); " +
       "raise SystemExit(0 if written else 1)";
-    const published = await runCommand(
+    const published = await this.runCommand(
       currentRuntimeCmd[0],
       ["-I", "-c", publishScript, resolvedSlotDir],
       info.home,
@@ -3503,7 +3555,7 @@ class HermesRuntime {
     if (!published.ok || !fs.existsSync(slotBinary)) {
       throw new Error("暂存区 Hermes 启动器生成失败，原环境保持不变");
     }
-    const deps = await runCommand(
+    const deps = await this.runCommand(
       slotBinary,
       ["pm", "install", "--extra", "acp", "--extra", "web"],
       info.home,
@@ -3513,7 +3565,7 @@ class HermesRuntime {
   }
   async verifyStagedRelease(info, { targetCommit, slotDir, slotBinary }) {
     const resolvedSlotDir = path.resolve(slotDir);
-    const head = await runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
+    const head = await this.runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
     if (!head.ok || head.output.trim() !== targetCommit) {
       throw new Error("暂存区 Hermes 提交校验未通过，原环境保持不变");
     }
@@ -3535,7 +3587,7 @@ class HermesRuntime {
       }
       fs.writeFileSync(path.join(verifyHome, "config.yaml"), "updates:\n  check: false\n", { mode: 0o600 });
       copy = await native.prepareNativeRecovery(resolvedSlotDir, verifyRoot);
-      const launch = await runCommand(slotBinary, ["--print-runtime-command"], info.home, 30000);
+      const launch = await this.runCommand(slotBinary, ["--print-runtime-command"], info.home, 30000);
       let command;
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || !path.isAbsolute(command[0])) {
@@ -3549,6 +3601,7 @@ class HermesRuntime {
         verifyHome,
         120000,
         { ALEX_RECOVERY_DIR: verifyRecoveryDir, HERMES_DISABLE_LAZY_INSTALLS: "1" },
+        this.envFor(info.home),
       );
       let activation;
       try { activation = JSON.parse(activated.output.trim().split("\n").at(-1)); } catch {}
@@ -3558,7 +3611,7 @@ class HermesRuntime {
       probeClient = new AcpClient(python, {
         home: verifyHome,
         args: ["-I", "-c", native.launchScript, copy, "acp"],
-        env: { ...runtimeEnv(), ALEX_RECOVERY_DIR: verifyRecoveryDir, HERMES_DISABLE_LAZY_INSTALLS: "1" },
+        env: { ...this.envFor(info.home), ALEX_RECOVERY_DIR: verifyRecoveryDir, HERMES_DISABLE_LAZY_INSTALLS: "1" },
       });
       const init = await probeClient.request("initialize", {
         protocolVersion: 1,
@@ -3571,7 +3624,7 @@ class HermesRuntime {
     } finally {
       try { probeClient?.close(); } catch {}
       if (python && copy) {
-        await runCommand(python, ["-I", "-c", native.launchScript, copy, "gateway", "stop"], verifyHome, 15000).catch(() => {});
+        await runCommand(python, ["-I", "-c", native.launchScript, copy, "gateway", "stop"], verifyHome, 15000, {}, this.envFor(info.home)).catch(() => {});
       }
       hostFs.rmSync(verifyRoot, { recursive: true, force: true });
     }
@@ -3591,7 +3644,7 @@ class HermesRuntime {
     const binName = process.platform === "win32" ? "hermes.exe" : "hermes";
     const defaultSlotDir = path.join(info.home, "releases", targetCommit, "hermes-agent");
     const activeInstallDir = path.resolve(expand(info.installDir));
-    const activeHead = await runCommand(
+    const activeHead = await this.runCommand(
       "git",
       ["-C", activeInstallDir, "rev-parse", "--verify", "HEAD"],
       info.home,

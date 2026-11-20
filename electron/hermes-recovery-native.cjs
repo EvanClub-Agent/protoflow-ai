@@ -78,7 +78,7 @@ function sourceFingerprint(root) {
 function verify(root) {
   for (const [name, hash] of Object.entries(SUPPORTED)) {
     if (digest(fs.readFileSync(path.join(root, name))) !== hash)
-      throw new Error('当前 Hermes 源码版本尚未通过限流恢复兼容验证，请更新 Alex 的运行时适配后重试');
+      throw new Error('当前 Hermes 源码与 Alex 的运行时适配不兼容。请在 AI 管理中心选择“使用 Alex 托管运行时”。');
   }
 }
 function replaceOnce(source, before, after) {
@@ -94,6 +94,9 @@ async function prepareNativeRecovery(root, dataDir) {
   const acpSurface = bundledFs.readFileSync(path.join(__dirname, 'hermes-acp-surface.py'));
   const acpRuntime = bundledFs.readFileSync(path.join(__dirname, 'hermes-acp-runtime.py'));
   const recoveryPolicy = 'bounded-provider-v2:' + digest(Buffer.concat([
+    // The patched PM binds dependencies to this source installation. Two
+    // release slots sharing a profile must not attach to each other's gateway.
+    Buffer.from(JSON.stringify(fs.realpathSync(resolvedRoot))),
     policy,
     acpSurface,
     acpRuntime,

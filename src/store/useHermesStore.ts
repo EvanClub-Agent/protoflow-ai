@@ -87,7 +87,7 @@ interface HermesStore {
   cancelGeneration: Record<string, number>;
   setModalOpen: (open: boolean, tab?: string) => void;
   scanLocalHermes: (home?: string, binary?: string) => Promise<void>;
-  mountDetectedLocalHermes: () => Promise<void>;
+  mountDetectedLocalHermes: (selection?: { home: string; binary?: string }) => Promise<void>;
   bootstrapHermesOnLaunch: (force?: boolean) => Promise<void>;
   disableHermes: () => Promise<void>;
   upgradeHermesRuntime: () => Promise<void>;
@@ -396,7 +396,7 @@ export const useHermesStore = create<HermesStore>((set, get) => ({
   status: "not_installed",
   currentVersion: "",
   updateAvailable: false,
-  hermesHomePath: "~/.hermes",
+  hermesHomePath: "",
   binaryPath: "",
   error: null,
   lastSkillSyncAt: "尚未同步",
@@ -428,15 +428,13 @@ export const useHermesStore = create<HermesStore>((set, get) => ({
       set({ status: "error", error: message(e) });
     }
   },
-  mountDetectedLocalHermes: async () => {
+  mountDetectedLocalHermes: async (selection) => {
     set({ status: "scanning", error: null });
     try {
       listen();
       const s = get();
-      const info = await getHermesApi().connect({
-        home: s.hermesHomePath,
-        binary: s.binaryPath || undefined,
-      });
+      const info = await getHermesApi().connect(selection ?? (s.hermesHomePath
+        ? { home: s.hermesHomePath, binary: s.binaryPath || undefined } : undefined));
       set({
         status: "running",
         currentVersion: info.version,
@@ -448,8 +446,12 @@ export const useHermesStore = create<HermesStore>((set, get) => ({
         contextErrors: {},
       });
       window.localStorage.setItem("protoflow_hermes_enabled", "true");
+      await get().loadInstallation();
     } catch (e) {
-      set({ status: "error", error: message(e) });
+      const current = await getHermesApi().detect().catch(() => null);
+      set({ status: current?.connected ? "running" : "error", error: message(e),
+        ...(current ? { hermesHomePath: current.home, binaryPath: current.binary, currentVersion: current.version } : {}) });
+      await get().loadInstallation().catch(() => {});
       throw e;
     }
   },
@@ -467,7 +469,7 @@ export const useHermesStore = create<HermesStore>((set, get) => ({
       const installation = await getHermesApi().installation();
       set({ installation });
       if (installation.status === 'running' || installation.status === 'cancelling') return;
-      if (installation.needsResume) { set({ status: 'not_installed', error: null }); return; }
+      if (installation.needsResume && !installation.selectedRuntime) { set({ status: 'not_installed', error: null }); return; }
       const detected = await getHermesApi().detect();
       if (!detected.detected) {
         set({ status: 'not_installed', error: null });

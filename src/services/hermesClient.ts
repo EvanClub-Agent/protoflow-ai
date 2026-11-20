@@ -53,6 +53,8 @@ export interface HermesEnvironment {
 export type HermesManagementSection = 'accounts' | 'models' | 'skills' | 'history' | 'memory' | 'tools' | 'plugins' | 'schedules' | 'channels' | 'diagnostics' | 'logs' | 'backup' | 'settings';
 export interface HermesInstallation {
   needsResume?: boolean;
+  selectedRuntime?: 'managed' | 'legacy-managed' | 'external';
+  previousExternal?: { home: string; binary: string };
   status: 'idle' | 'running' | 'cancelling' | 'cancelled' | 'interrupted' | 'error' | 'success';
   phase: string;
   completed: number;

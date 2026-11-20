@@ -1,6 +1,7 @@
 // Real ACP migration of a disposable session whose gateway still holds the old
 // stdio server. Exercises only a test workspace; no real project is opened.
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), assert = require('node:assert/strict');
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require('../electron/hermes-runtime.cjs');
 const { atomicWrite, tools } = require('../electron/protoflow-mcp.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(),'pflow-old-tools-'));
@@ -11,7 +12,7 @@ const runtime = new HermesRuntime({dataDir:dir,emit(e) {
 }});
 (async () => {
   try {
-    await runtime.connect();
+    await runtime.connect(hermesTestEnvironment());
     const scope = { projectId:'tool-upgrade-smoke',kind:'project' }, cwd = runtime.conversationWorkspace(scope);
     const old = tools.filter(t=>!['protoflow_revise_project_page','protoflow_ask_questions','protoflow_move_sitemap_item'].includes(t.name));
     const legacy = path.join(dir,'legacy.cjs');

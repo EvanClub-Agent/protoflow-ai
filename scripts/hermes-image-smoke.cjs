@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require('../electron/hermes-runtime.cjs');
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -33,7 +34,7 @@ const runtime = new HermesRuntime({ dataDir, emit: event => {
     const scope = projectChat
       ? { projectId: 'vision-smoke', kind: 'project', threadId: 'reference-images' }
       : { projectId: 'vision-smoke', pageId: 'image-menu' };
-    const info = await runtime.connect();
+    const info = await runtime.connect(hermesTestEnvironment());
     assert.equal(info.capabilities.promptCapabilities.image, true);
     const session = await runtime.session(scope);
     const requestedModel = process.argv.find(arg => arg.startsWith('--model='))?.slice('--model='.length);

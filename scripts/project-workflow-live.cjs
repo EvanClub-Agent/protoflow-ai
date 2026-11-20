@@ -1,6 +1,7 @@
 // Real Hermes smoke test, isolated from the user's open project and transcript.
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), Module = require('node:module'), assert = require('node:assert/strict');
 const { buildSync } = require('esbuild');
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require('../electron/hermes-runtime.cjs');
 const root = path.resolve(__dirname, '..'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pflow-workflow-live-'));
 const storage = new Map();
@@ -20,7 +21,7 @@ const timeout = setTimeout(() => { console.error('Live test timeout'); runtime.c
 (async () => { try {
   const project = h.createProjectPayload({ projectId: 'workflow-live', projectName: '项目流程测试', templateId:'blank_project',storageDir:dir,fileName:'test.pflow',createdAt:'2026-11-02',updatedAt:'2026-11-02',pageCount:0,tableCount:0,stickyCount:0 });
   h.loadProjectFromBinaryPayload(project); h.useProtoStore.getState().setViewMode('project_ai');
-  await runtime.connect(); h.useHermesStore.setState({status:'running'});
+  await runtime.connect(hermesTestEnvironment()); h.useHermesStore.setState({status:'running'});
   const projectId = project.meta.projectId;
   h.useAiChatStore.getState().switchConversation({kind:'project',projectId});
   if (process.argv.includes('--pending-rule')) {

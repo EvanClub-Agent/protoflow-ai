@@ -32,6 +32,7 @@ import { usePageStore } from '../src/proto/store/usePageStore';
 import { useRuntimeController, type Runtime } from '../src/proto/runtime/runtime';
 
 const { callTool, atomicWrite } = require(path.join(process.cwd(), 'electron/protoflow-mcp.cjs'));
+const { detectTestHermes } = require('../scripts/hermes-test-environment.cjs');
 const { HermesRuntime } = require(path.join(process.cwd(), 'electron/hermes-runtime.cjs'));
 
 const makeProject = (projectId: string) =>
@@ -799,12 +800,12 @@ test('hermes-context.py refresh_prompt and verify_prompt close the loop against 
   });
   let detected: any;
   try {
-    detected = await probeRuntime.detect();
+    detected = await detectTestHermes(probeRuntime);
   } finally {
     fs.rmSync(probeRuntime.dataDir, { recursive: true, force: true });
   }
   if (!detected?.detected || !detected.installDir || !fs.existsSync(detected.installDir)) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
   const launchRaw = execFileSync(detected.binary, ['--print-runtime-command'], {
@@ -1459,12 +1460,12 @@ test('verify_prompt rejects scanner-blocked [BLOCKED] and truncated AGENTS.md ru
   });
   let detected: any;
   try {
-    detected = await probeRuntime.detect();
+    detected = await detectTestHermes(probeRuntime);
   } finally {
     fs.rmSync(probeRuntime.dataDir, { recursive: true, force: true });
   }
   if (!detected?.detected || !detected.installDir || !fs.existsSync(detected.installDir)) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
 
@@ -1579,12 +1580,12 @@ test('real Hermes ACP hot session refreshes cached system_prompt end-to-end acro
   });
   let detected: any;
   try {
-    detected = await probeRuntime.detect();
+    detected = await detectTestHermes(probeRuntime);
   } finally {
     fs.rmSync(probeRuntime.dataDir, { recursive: true, force: true });
   }
   if (!detected?.detected || !detected.installDir || !fs.existsSync(detected.installDir)) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
 

@@ -234,6 +234,8 @@ npm run build:linux      # Linux x64 (.deb + .AppImage + .tar.gz)
 
 在桌面端 **「AI 管理中心」** 一键安装连接 Hermes 后，你可以自由配置熟悉的云端大模型，或通过 **Ollama** 完全离线运行本地模型；**不使用 AI 时，画布设计、数据库建模与在线分享同样 100% 独立可用**。
 
+Alex 默认安装已验证的 Hermes 托管运行时，使用独立的程序、依赖和账号配置。已经连接外部 Hermes 的用户可以在「AI 管理中心」点击「使用 Alex 托管运行时」，然后在新环境中授权账号。旧对话和草稿保存在原环境。原版本与 Alex 兼容时，可在「高级设置」点击「切回原 Hermes 环境」继续使用。
+
 <div align="center">
 
 ![Claude](https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white)

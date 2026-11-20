@@ -2,7 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { runtimeEnv } = require('./hermes-runtime.cjs');
 const { verify, VERIFIED_HERMES_COMMIT } = require('./hermes-recovery-native.cjs');
 
 // Official dashboard routes, verified against Hermes web/src/App.tsx. Never
@@ -72,7 +71,15 @@ class HermesManagement {
     this.dashboard = null;
     this.dashboardStarting = null;
   }
-  snapshot() { return { ...this.state, needsResume: fs.existsSync(path.join(this.dataDir, 'installation-pending')) }; }
+  snapshot() {
+    const { home, binary, previousExternal } = this.runtime.settings;
+    let selectedRuntime;
+    if (home && binary) {
+      if (path.resolve(home) !== this.runtime.managedHome) selectedRuntime = 'external';
+      else selectedRuntime = path.resolve(binary).startsWith(path.join(this.runtime.managedHome, 'releases') + path.sep) ? 'managed' : 'legacy-managed';
+    }
+    return { ...this.state, selectedRuntime, previousExternal, needsResume: fs.existsSync(path.join(this.dataDir, 'installation-pending')) };
+  }
   progress(patch) {
     this.state = { ...this.state, ...patch };
     fs.writeFileSync(this.stateFile, JSON.stringify(this.state), { mode: 0o600 });
@@ -82,7 +89,8 @@ class HermesManagement {
     if (running(this.state)) throw new Error('正在准备 Hermes，请等待完成或取消安装');
   }
   assertNoChat() {
-    if ([...this.runtime.sessions.values()].some(s => s.running)) throw new Error('请先停止正在生成的 AI 任务');
+    if (this.runtime.connecting || this.runtime.allLoadedSessions().some(s => s.running) || this.runtime.activeProjectRuns.size)
+      throw new Error('请先等待连接完成或停止正在生成的 AI 任务');
   }
   startInstall({ repair = false } = {}) {
     if (running(this.state)) return this.snapshot();
@@ -118,28 +126,28 @@ class HermesManagement {
   }
   async install(signal) {
     const pendingFile = path.join(this.dataDir, 'installation-pending');
-    const existing = await this.runtime.detect();
-    signal.throwIfAborted();
-    if (existing.detected && !fs.existsSync(pendingFile)) {
-      // Reuse the user's real installation; never install over it automatically.
-      this.progress({ phase: '连接已有 Hermes' });
-      await this.runtime.connect({ home: existing.home, binary: existing.binary });
+    const target = this.runtime.managedTarget();
+    const { home, installDir: checkout, binary: installedBinary } = target;
+    // Older installers could publish the base checkout on PATH. Only reuse the
+    // release launcher owned by this Alex build, even when the base still works.
+    if (!fs.existsSync(pendingFile) && fs.existsSync(installedBinary)) {
+      const info = await this.runtime.detect({ home, binary: installedBinary });
       signal.throwIfAborted();
-      this.progress({ status: 'success', completed: this.state.total, message: '已连接已有 Hermes。接下来可以连接 AI 账号。' });
+      if (!info.detected || !this.runtime.isAppManagedInstallation(info)) throw new Error('托管运行时的安装目录校验失败');
+      this.verifySource(info.installDir);
+      this.progress({ phase: '连接托管运行时' });
+      await this.connectManaged(home, installedBinary, signal);
+      this.progress({ status: 'success', completed: this.state.total, message: '已连接 Alex 托管运行时。' });
       return;
     }
     if (!['darwin', 'linux', 'win32'].includes(this.platform)) throw new Error('此系统暂不支持自动安装 Hermes');
-    const home = path.join(this.dataDir, 'hermes-home');
-    const checkout = path.join(home, 'hermes-agent');
     fs.mkdirSync(home, { recursive: true, mode: 0o700 });
     // Resume only the app-owned installation, even if the interrupted products
     // stage already published a PATH launcher. Its profile must stay `home`.
     fs.writeFileSync(pendingFile, '', { mode: 0o600 });
     this.progress({ phase: '获取官方安装程序' });
     const windows = this.platform === 'win32';
-    const source = windows
-      ? 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1'
-      : 'https://hermes-agent.nousresearch.com/install.sh';
+    const source = `https://raw.githubusercontent.com/NousResearch/hermes-agent/${VERIFIED_HERMES_COMMIT}/scripts/install.${windows ? 'ps1' : 'sh'}`;
     const response = await this.fetchResource(source, { signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]) });
     if (!response.ok) throw new Error('无法下载官方安装程序，请检查网络连接后重试');
     const script = await response.text();
@@ -155,30 +163,49 @@ class HermesManagement {
     for (const [i, stage] of stages.entries()) {
       signal.throwIfAborted();
       this.progress({ phase: INSTALL_STAGES[stage.name], completed: i });
+      // Upstream's products stage also publishes to ~/.local/bin, edits shell
+      // startup files or registers Windows User PATH. Alex only needs the web UI.
+      if (stage.name === 'products') {
+        await this.prepareManagedDashboard(target, signal);
+        continue;
+      }
       const result = await this.command(binary, [...base, windows ? '-Stage' : '--stage', stage.name, windows ? '-Json' : '--json'], home, signal, 30 * 60 * 1000);
       parseStageResult(result, stage.name);
+      if (stage.name === 'repository') this.verifySource(checkout);
     }
-    // Exact-install launchers are published by official source_completion.
-    const installedBinary = path.join(checkout, '.hermes', 'bin', windows ? 'hermes.exe' : 'hermes');
     this.progress({ phase: '准备应用连接组件', completed: stages.length });
     await this.command(installedBinary, ['pm', 'install', '--extra', 'acp', '--extra', 'web'], home, signal, 20 * 60 * 1000);
     signal.throwIfAborted();
-    if (fs.existsSync(checkout)) verify(checkout);
     this.progress({ phase: '验证 Hermes 连接', completed: stages.length + 1 });
-    await this.runtime.connect({ home, binary: installedBinary });
-    signal.throwIfAborted();
+    await this.connectManaged(home, installedBinary, signal);
     fs.unlinkSync(pendingFile);
     this.progress({ status: 'success', completed: this.state.total, message: 'Hermes 已安装并连接。接下来连接 AI 账号，然后选择模型。' });
+  }
+  verifySource(checkout) { verify(checkout); }
+  async prepareManagedDashboard({ home, binary, installDir }, signal) {
+    // The python-deps stage's PM publishes this checkout's own launcher.
+    const launch = JSON.parse(await this.command(binary, ['--print-runtime-command'], home, signal, 30000));
+    if (!Array.isArray(launch) || typeof launch[0] !== 'string' || !path.isAbsolute(launch[0]))
+      throw new Error('托管启动器未提供 Python 运行路径');
+    const build = [
+      'import sys; from pathlib import Path',
+      'root = Path(sys.argv[1]); sys.path.insert(0, str(root))',
+      'import hermes_bootstrap; from pm.environments import activate_dependencies; activate_dependencies(root)',
+      'from hermes_cli.main_web_build import _build_web_ui',
+      'raise SystemExit(0 if _build_web_ui(root / "web", fatal=True) and (root / "hermes_cli/web_dist/index.html").is_file() else 1)',
+    ].join('\n');
+    await this.command(launch[0], ['-I', '-B', '-c', build, installDir], home, signal, 30 * 60 * 1000);
+  }
+  async connectManaged(home, binary, signal) {
+    signal.throwIfAborted();
+    this.assertNoChat();
+    await this.runtime.connect({ home, binary }, { selectOnSuccess: true, signal });
+    this.stopDashboard();
   }
   command(binary, args, home, signal, timeout) {
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
-      const env = { ...runtimeEnv(), HERMES_HOME: home, HERMES_REPO_URL: 'https://github.com/NousResearch/hermes-agent.git', PYTHONUNBUFFERED: '1' };
-      if (home === path.join(this.dataDir, 'hermes-home')) {
-        // An app-owned fresh installation must not write into an inherited
-        // runtime store or build directory from an unrelated Hermes profile.
-        delete env.HERMES_RUNTIME_DIR; delete env.HERMES_WEB_DIST; delete env.HERMES_INSTALL_DIR;
-      }
+      const env = { ...this.runtime.envFor(home), HERMES_HOME: home, HERMES_REPO_URL: 'https://github.com/NousResearch/hermes-agent.git', PYTHONUNBUFFERED: '1' };
       const child = this.spawnProcess(binary, args, { cwd: this.dataDir, stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true, detached: this.platform !== 'win32',
         env });
@@ -268,7 +295,7 @@ class HermesManagement {
       // the READY sentinel belongs only to our own child process.
       const child = this.spawnProcess(info.binary, ['dashboard', '--host', '127.0.0.1', '--port', '0', '--isolated', '--no-open', '--skip-build'], {
         cwd: this.dataDir, stdio: ['ignore', 'pipe', 'pipe'], detached: this.platform !== 'win32', windowsHide: true,
-        env: { ...runtimeEnv(), HERMES_HOME: info.home, HERMES_PARENT_PID: String(process.pid), PYTHONUNBUFFERED: '1' },
+        env: { ...this.runtime.envFor(info.home), HERMES_HOME: info.home, HERMES_PARENT_PID: String(process.pid), PYTHONUNBUFFERED: '1' },
       });
       const dashboard = { child, identity, origin: null };
       this.dashboard = dashboard;

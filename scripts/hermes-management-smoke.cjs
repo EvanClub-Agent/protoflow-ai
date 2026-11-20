@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require('../electron/hermes-runtime.cjs');
 const { HermesManagement } = require('../electron/hermes-management.cjs');
 const { HermesAccounts } = require('../electron/hermes-accounts.cjs');
@@ -13,8 +14,9 @@ const management = new HermesManagement({ runtime, dataDir: path.join(dir, 'mana
 const accounts = new HermesAccounts({ management, openExternal() { throw new Error('Read-only check cannot start a login'); } });
 (async () => {
   try {
-    const detected = await runtime.detect();
+    const detected = await runtime.detect(hermesTestEnvironment());
     assert.equal(detected.detected, true, 'A working local Hermes is required');
+    runtime.settings = { home: detected.home, binary: detected.binary };
     const url = new URL(await management.managementUrl('models'));
     assert.equal(url.hostname, '127.0.0.1');
     assert.equal(url.pathname, '/models');

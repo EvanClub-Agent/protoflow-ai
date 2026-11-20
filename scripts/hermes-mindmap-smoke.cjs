@@ -7,6 +7,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const { buildSync } = require('esbuild');
 const { JSDOM } = require('jsdom');
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require('../electron/hermes-runtime.cjs');
 const root = path.resolve(__dirname, '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-mindmap-live-'));
@@ -32,11 +33,6 @@ const runtime = new HermesRuntime({ dataDir: dir, emit: event => {
   if (event.type === 'permission') runtime.respondPermission({ id: event.id, optionId: null });
   if (event.type === 'question') runtime.respondQuestion({ id: event.id, answer: null });
 } });
-if (process.env.PFLOW_HERMES_SETTINGS) {
-  const settings = JSON.parse(fs.readFileSync(process.env.PFLOW_HERMES_SETTINGS, 'utf8'));
-  assert.equal(typeof settings.home, 'string'); assert.equal(typeof settings.binary, 'string');
-  runtime.settings = { home: settings.home, binary: settings.binary };
-}
 window.protoflowDesktop = { hermes: {
   onEvent: listener => { listeners.add(listener); return () => listeners.delete(listener); },
   session: input => runtime.session(input), sync: input => runtime.sync(input), execute: input => runtime.execute(input), cancel: input => runtime.cancel(input),
@@ -57,7 +53,7 @@ const timeout = setTimeout(() => { console.error('Real Hermes mindmap test timed
       tableRows: { 'customer-entity': [{ id: 'sample-1', customer_name: '验收测试客户' }] },
     });
     h.loadProjectFromBinaryPayload(payload);
-    await runtime.connect(); h.useHermesStore.setState({ status: 'running' });
+    await runtime.connect(hermesTestEnvironment()); h.useHermesStore.setState({ status: 'running' });
     const before = h.captureProjectPayload().stateSnapshot;
     const diagramType = process.env.PFLOW_HERMES_DIAGRAM_TYPE || 'mindmap';
     const source = await h.generateMindmapWithHermes(scope.projectId, scope.mindmapId, '请根据本工程的实际客户页面，生成所选类型的客户管理图表。必须先使用项目目录、页面源码、便签、表结构、已保存表数据这五类读取工具，脑图包含已实现页面功能、待实现需求、字段与保存的样例数据概况，不超过 15 个节点。不需要向用户提问。', diagramType);

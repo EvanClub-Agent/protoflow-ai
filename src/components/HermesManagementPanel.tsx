@@ -31,6 +31,9 @@ export function HermesEnginePanel({ onClose, embedded = false }: { onClose?: () 
   const [accountsOpen, setAccountsOpen] = useState(false);
   const desktop = Boolean((window as unknown as { protoflowDesktop?: { hermes?: unknown } }).protoflowDesktop?.hermes);
   const installation = h.installation;
+  const external = installation?.selectedRuntime === 'external';
+  const legacyManaged = installation?.selectedRuntime === 'legacy-managed';
+  const previous = installation?.previousExternal;
   const installing = installation?.status === 'running' || installation?.status === 'cancelling';
   const connected = h.status === 'running';
   const detected = Boolean(h.binaryPath && h.currentVersion);
@@ -50,11 +53,6 @@ export function HermesEnginePanel({ onClose, embedded = false }: { onClose?: () 
     if (section === 'accounts') { setAccountsOpen(true); return; }
     void run(`正在打开${label}…`, () => getHermesApi().openManagement({ section }));
   };
-  const connect = () => run('正在连接 Hermes…', async () => {
-    await h.scanLocalHermes();
-    if (useHermesStore.getState().status !== 'detected_local') throw new Error('尚未找到 Hermes，请使用“自动安装并连接”。');
-    await useHermesStore.getState().mountDetectedLocalHermes();
-  });
   if (accountsOpen) return <HermesAccountsPanel onBack={() => setAccountsOpen(false)} />;
   return <section aria-label="AI 管理中心" className="bg-white text-slate-900 flex flex-col h-full p-5 gap-5 overflow-y-auto">
     <header className="flex items-start justify-between gap-3 shrink-0">
@@ -75,17 +73,16 @@ export function HermesEnginePanel({ onClose, embedded = false }: { onClose?: () 
           {connected && <span className="text-xs text-slate-400 font-normal">{h.currentVersion}</span>}
         </div>
         <div className="flex gap-2">
-          {detected && <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在升级 Hermes，完成后会自动重新连接…', h.upgradeHermesRuntime)}>升级 Hermes</button>}
+          {detected && installation?.selectedRuntime === 'managed' && <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在升级 Hermes，完成后会自动重新连接…', h.upgradeHermesRuntime)}>升级 Hermes</button>}
           {connected && <button disabled={locked || executing} className={button} onClick={() => void run('正在重新连接…', h.reconnect)}>重新连接</button>}
         </div>
       </div>
-      <p className="text-xs text-slate-500 leading-5">{connected ? '服务已连接。使用 AI 前，请确认账号已授权，并选择可用模型。' : '自动检测已有安装；首次使用时，应用会为你下载并配置 Hermes。'}</p>
-      {!connected && !installing && <div className="flex flex-wrap gap-2">
+      <p className="text-xs text-slate-500 leading-5">{external ? '当前使用外部 Hermes。切换后，请在托管环境中授权账号。旧对话和草稿保存在原环境，版本兼容时可从高级设置切回。' : legacyManaged ? '当前使用旧版 Alex 安装的 Hermes。切换到独立版本后将继续使用当前账号配置和工作区。' : 'Alex 使用独立的 Hermes 托管运行时。本机其他 Hermes 的升级和降级不影响它。'}</p>
+      {(!connected || external || legacyManaged) && !installing && <div className="flex flex-wrap gap-2">
         <button disabled={!desktop || locked || executing} className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg px-4 py-2.5 disabled:opacity-45" onClick={() => void run('正在准备安装…', h.startInstallation)}>
-          <Download className="w-4 h-4" />{['error', 'cancelled', 'interrupted'].includes(installation?.status ?? '') ? '重试安装并连接' : '自动安装并连接'}
+          <Download className="w-4 h-4" />{external || legacyManaged ? '使用 Alex 托管运行时' : ['error', 'cancelled', 'interrupted'].includes(installation?.status ?? '') ? '重试安装并连接' : '自动安装并连接'}
         </button>
-        <button disabled={!desktop || locked || executing || installation?.needsResume} className={button} onClick={() => void connect()}>已有 Hermes，直接连接</button>
-        {detected && <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在修复连接组件…', h.repairInstallation)}>修复连接组件</button>}
+        {!connected && detected && <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在修复连接组件…', h.repairInstallation)}>修复连接组件</button>}
       </div>}
       {installation && installation.status !== 'idle' && <div aria-live="polite" className="text-xs space-y-2">
         {installing && <><div className="flex items-center gap-2 text-blue-700"><LoaderCircle className="w-3.5 h-3.5 animate-spin" />{installation.phase}<span className="ml-auto text-slate-400">已完成 {installation.completed} / {installation.total} 步</span></div><progress aria-label="Hermes 安装进度" value={installation.completed} max={installation.total} className="w-full h-1.5 accent-blue-600" /><p className="text-slate-500">首次安装需要下载运行组件，请保持网络连接。系统可能弹出组件安装提示。</p><button className={button} disabled={installation.status === 'cancelling'} onClick={() => void run('正在取消…', h.cancelInstallation)}>{installation.status === 'cancelling' ? '正在取消…' : '取消安装'}</button></>}
@@ -124,13 +121,13 @@ export function HermesEnginePanel({ onClose, embedded = false }: { onClose?: () 
       <button aria-expanded={advanced} className="flex gap-1 items-center text-xs text-slate-500" onClick={() => setAdvanced(!advanced)}><ChevronRight className={`w-3 h-3 ${advanced ? 'rotate-90' : ''}`} />高级设置</button>
       {advanced && <div className="space-y-3 mt-3">
         <p className="text-xs text-slate-500">仅在需要使用其他 Hermes 环境时修改。日常使用无需设置路径。</p>
+        {previous && <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在连接原 Hermes 环境…', () => h.mountDetectedLocalHermes(previous))}>切回原 Hermes 环境</button>}
         <label className="block text-xs">Hermes 配置目录<input className="block w-full border border-slate-300 rounded p-2 mt-1" value={home} onChange={e => setHome(e.target.value)} /></label>
         <label className="block text-xs">Hermes 可执行文件<input className="block w-full border border-slate-300 rounded p-2 mt-1" value={binary} onChange={e => setBinary(e.target.value)} placeholder="留空则自动检测" /></label>
         <div className="flex gap-2 flex-wrap">
           <button disabled={!desktop || locked || executing} className={button} onClick={() => void run('正在切换环境…', async () => {
-            await h.scanLocalHermes(home, binary);
-            if (useHermesStore.getState().status !== 'detected_local') throw new Error('所选环境不可用，请检查路径');
-            await useHermesStore.getState().mountDetectedLocalHermes();
+            if (!home.trim()) throw new Error('请输入 Hermes 配置目录');
+            await h.mountDetectedLocalHermes({ home, binary: binary || undefined });
           })}>连接此环境</button>
           <button disabled={!desktop || locked || !connected || executing} className={button} onClick={() => void run('正在断开…', h.disableHermes)}>停用 AI</button>
           <button disabled={managementDisabled} className={button} onClick={() => open('logs', '运行日志')}><ScrollText className="w-3 h-3 inline mr-1" />运行日志</button>

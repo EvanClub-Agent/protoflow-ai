@@ -21,6 +21,7 @@ import { createNoteNode, setPageNoteLinks, updateNoteContent } from '../src/serv
 import type { ProjectPlan } from '../src/services/projectPlan';
 
 const root = process.cwd();
+const { detectTestHermes } = require('../scripts/hermes-test-environment.cjs');
 const { HermesRuntime, taskKeyForExecution, buildFailureEnvelope } = require(path.join(root, 'electron/hermes-runtime.cjs'));
 const { sanitizeFailureEnvelope, runHermesExecuteIpc } = require(path.join(root, 'electron/hermes-ipc-envelope.cjs'));
 const { tools: mcpToolDefs, callTool, callToolAsync, atomicWrite, replayCandidateOperations, readContextFootprint } = require(path.join(root, 'electron/protoflow-mcp.cjs'));
@@ -203,9 +204,9 @@ test('Stage 2 Probes 1-6: real Hermes v0.23.1 ACP/Gateway surface isolation, adm
   let runtimePython = '';
   let detected: any;
   try {
-    detected = await probeDetector.detect();
+    detected = await detectTestHermes(probeDetector);
     if (detected?.detected && detected?.binary && detected?.installDir && fs.existsSync(detected.installDir)) {
-      const cmdRes = spawnSync(detected.binary, ['--print-runtime-command'], { encoding: 'utf8' });
+      const cmdRes = spawnSync(detected.binary, ['--print-runtime-command'], { encoding: 'utf8', env: { ...process.env, HERMES_HOME: detected.home } });
       if (cmdRes.status === 0) {
         const parsed = JSON.parse(cmdRes.stdout);
         if (Array.isArray(parsed) && typeof parsed[0] === 'string' && fs.existsSync(parsed[0])) {
@@ -218,10 +219,11 @@ test('Stage 2 Probes 1-6: real Hermes v0.23.1 ACP/Gateway surface isolation, adm
     fs.rmSync(probeDir, { recursive: true, force: true });
   }
   if (!runtimePython) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
   const pyRes = spawnSync(runtimePython, ['-I', '-B', path.join(root, 'tests/hermes-stage2-acp.test.py')], {
+    env: { ...process.env, HERMES_HOME: detected.home, PFLOW_TEST_HERMES_SOURCE: detected.installDir },
     encoding: 'utf8',
     timeout: 120_000,
   });
@@ -1620,12 +1622,12 @@ test('Probe 12: [P2] regular page/menu conversation protoflow_search_history (me
   });
   let detected: any;
   try {
-    detected = await probeRt.detect();
+    detected = await detectTestHermes(probeRt);
   } finally {
     fs.rmSync(probeRt.dataDir, { recursive: true, force: true });
   }
   if (!detected?.detected || !detected.installDir || !fs.existsSync(detected.installDir)) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
 
@@ -1950,12 +1952,12 @@ test('Probe 14: real local OS-pipe stdio ACP + live Hermes Gateway daemon + MCP 
   });
   let detected: any;
   try {
-    detected = await probeRt.detect();
+    detected = await detectTestHermes(probeRt);
   } finally {
     fs.rmSync(probeRt.dataDir, { recursive: true, force: true });
   }
   if (!detected?.detected || !detected.installDir || !fs.existsSync(detected.installDir)) {
-    t.skip('Local Hermes installation not present');
+    t.skip('Compatible Hermes fixture required (PFLOW_HERMES_SETTINGS)');
     return;
   }
 
@@ -2410,7 +2412,7 @@ test('Probe 15: prepareNativeRecovery inside real Electron runtime handles app.a
   });
   let detected: any;
   try {
-    detected = await probeRt.detect();
+    detected = await detectTestHermes(probeRt);
   } finally {
     fs.rmSync(probeRt.dataDir, { recursive: true, force: true });
   }
@@ -2426,7 +2428,7 @@ test('Probe 15: prepareNativeRecovery inside real Electron runtime handles app.a
     !fs.existsSync(detected.installDir) ||
     !fs.existsSync(electronBin)
   ) {
-    t.skip('Local Hermes installation or Electron binary not present');
+    t.skip('Compatible Hermes fixture (PFLOW_HERMES_SETTINGS) and Electron binary required');
     return;
   }
 

@@ -96,7 +96,7 @@ export function App() {
     if (hermesParam === '1') {
       const hStore = useHermesStore.getState();
       if (params.get('hermesDetected') === '1') {
-        hStore.scanLocalHermes('~/.hermes');
+        hStore.scanLocalHermes();
       }
       hStore.setModalOpen(true, hermesTab ?? 'overview');
     }

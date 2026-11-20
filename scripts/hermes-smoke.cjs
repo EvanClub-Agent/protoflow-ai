@@ -6,6 +6,7 @@ const path = require("node:path");
 const Module = require("node:module");
 const { spawnSync } = require('node:child_process');
 const { buildSync } = require("esbuild");
+const { hermesTestEnvironment } = require('./hermes-test-environment.cjs');
 const { HermesRuntime } = require("../electron/hermes-runtime.cjs");
 const root = path.resolve(__dirname, "..");
 const compiled = buildSync({
@@ -59,11 +60,6 @@ const runtime = new HermesRuntime({
     }
   },
 });
-if (process.env.PFLOW_HERMES_SETTINGS) {
-  const settings = JSON.parse(fs.readFileSync(process.env.PFLOW_HERMES_SETTINGS, 'utf8'));
-  assert.equal(typeof settings.home, 'string'); assert.equal(typeof settings.binary, 'string');
-  runtime.settings = { home: settings.home, binary: settings.binary };
-}
 const timeout = setTimeout(() => { console.error('Real Hermes integration test timed out'); runtime.close(); process.exit(1); }, 240000);
 (async () => {
   try {
@@ -121,7 +117,7 @@ const timeout = setTimeout(() => { console.error('Real Hermes integration test t
       project.stateSnapshot.pageSources.main = 'export default function Page(){return <Page pfId="root" title="季度经营"><Text pfId="content">Keep this</Text><LineChart pfId="existing-profit" title="利润趋势" source="table" table="quarter-records" dimension="quarter" metrics={[{field:"profit",label:"利润"}]}/></Page>}';
     }
     h.loadProjectFromBinaryPayload(project);
-    const info = await runtime.connect();
+    const info = await runtime.connect(hermesTestEnvironment());
     const session = await runtime.session({
       projectId: project.meta.projectId,
       pageId: "main",

@@ -489,6 +489,11 @@ function isMainRendererEvent(event) {
   );
 }
 function emitHermes(event) {
+  if (event.type === 'environment-changed') {
+    hermesManagement?.stopDashboard();
+    if (hermesManagementWindow && !hermesManagementWindow.isDestroyed()) hermesManagementWindow.close();
+    return;
+  }
   if (event.type === 'context-error') captureDiagnostic({source:'main',category:'ai',code:'CONTEXT_BRIDGE_FAILED',stage:'context',message:'AI 上下文连接异常',context:event});
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send('pflow:hermes-event', event);
@@ -498,6 +503,7 @@ function getHermesRuntime() {
   if (!hermesRuntime) hermesRuntime = new HermesRuntime({
     accountProvider: () => publishingClient ? { ...publishingClient.diagnosticAccount(), serviceUrl: publishingClient.serviceUrl } : { status: 'unknown' },
     dataDir: path.join(app.getPath('userData'), 'hermes-integration'),
+    managedHome: path.join(app.getPath('userData'), 'hermes-management', 'hermes-home'),
     emit: emitHermes,
     diagnostic: input => captureDiagnostic({ ...input, context: { ...input.context,
       checks: [...(input.context?.checks ?? []), ...(aiBackground?.checks(input.context) ?? [])] } }),

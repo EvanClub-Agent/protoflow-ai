@@ -21,7 +21,8 @@ from types import SimpleNamespace
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-HERMES_ROOT = Path.home() / ".hermes" / "hermes-agent"
+TEST_HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+HERMES_ROOT = Path(os.environ.get("PFLOW_TEST_HERMES_SOURCE", TEST_HERMES_HOME / "hermes-agent"))
 CONTEXT_SCRIPT = REPO_ROOT / "electron" / "hermes-context.py"
 
 
@@ -272,7 +273,7 @@ class HermesStage2AcpProbes(unittest.IsolatedAsyncioTestCase):
             tmp_path = Path(tmp)
             home = tmp_path / "hermes_home"
             home.mkdir(parents=True)
-            real_default_home = Path.home() / ".hermes"
+            real_default_home = TEST_HERMES_HOME
             for sub in ("installs", "tools"):
                 src_sub = real_default_home / sub
                 if src_sub.exists():
