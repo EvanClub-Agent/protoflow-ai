@@ -2,6 +2,16 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.3] - 2026-11-20
+
+### Fixed
+
+- Alex Desktop now installs its own verified Hermes v0.23.1 runtime by default. Upgrading or downgrading a separate Hermes installation no longer interrupts AI features that use the managed runtime.
+- Existing users can select **使用 Alex 托管运行时** in the AI Management Center and authorize their account there. Conversations and drafts stay in their original profile. **高级设置 → 切回原 Hermes 环境** reconnects to that profile when its Hermes version is compatible.
+- Alex verifies the new connection before saving an environment switch. If the switch fails, the active connection stays available.
+
+---
+
 ## [v0.0.2] - 2026-11-19
 
 ### Added
