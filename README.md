@@ -9,7 +9,7 @@
 描述你的业务，AI 先澄清细节再规划目录、页面与共享物理表；<br/>
 在画布中精修 **PC 中后台** 与 **移动端真机视口**，让表单、列表、图表与审批真正流转起来，一键发布团队在线评审。
 
-**[加入 Alex Discord 社区](https://discord.gg/tScuhYPqT)** · 在 `#chinese` 用中文交流、分享原型，遇到问题可以到 `#help-and-bugs` 提问。
+**[加入 Alex Discord 社区](https://discord.gg/YDnKBhmsrR)** · 在 `#chinese` 用中文交流、分享原型，遇到问题可以到 `#help-and-bugs` 提问。
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563EB?style=flat-square)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/EvanClub-Agent/protoflow-ai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/EvanClub-Agent/protoflow-ai/actions)
