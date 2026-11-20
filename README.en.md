@@ -9,6 +9,8 @@
 Describe your business workflow — Alex clarifies edge cases first, plans your sitemap, pages, and shared relational tables,<br/>
 lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST canvas, and publishes interactive review links in one click.
 
+**[Join the Alex Discord](https://discord.gg/tScuhYPqT)** · Share your prototype in `#general` or ask a question in `#help-and-bugs`.
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563EB?style=flat-square)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/EvanClub-Agent/protoflow-ai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/EvanClub-Agent/protoflow-ai/actions)
 [![Platform](https://img.shields.io/badge/Desktop-macOS_%7C_Windows_%7C_Linux-141413?style=flat-square)](https://github.com/EvanClub-Agent/protoflow-ai/releases)
