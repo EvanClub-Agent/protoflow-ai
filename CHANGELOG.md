@@ -2,6 +2,24 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.6] - 2026-11-21
+
+### Added
+
+- **Bidirectional MCP Prototype Authoring (`--mode readwrite`)**:
+  - Expanded `@protoflow-ai/mcp` from read-only specs into a full 18-tool contract-enforced authoring server: external AI agents (**Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**) can now create `.pflow` projects, organize sitemap folders, design normalized shared ER tables with foreign-key & composite-unique validation, seed coherent preview rows, write or losslessly patch desktop (`<Page>`) and mobile (`<MobilePage>`) pages (`protoflow_write_page` / `protoflow_edit_page_block`), attach sticky-note specs, author Markdown PRDs & Mermaid diagrams, and run closed-loop audits (`protoflow_audit_project`).
+  - Added 4 guided MCP Prompts (`design-full-project`, `design-page`, `refine-page`, `design-database`), the `protoflow://authoring/playbook` resource, and the standalone `alex-protoflow-designer` Agent Skill pack (`SKILL.md` + 4 scenario playbooks).
+- **Live Desktop Canvas Bridge (`--desktop-bridge`) & Multi-Step Undo**:
+  - Enable **MCP → Local → Bidirectional design** in Alex Desktop to expose an authenticated loopback bridge bound to the open `.pflow` project, sharing live `revision`, `activePageId`, and canvas-selected `selectedPfId` with external agents.
+  - Live edits stream directly onto the open canvas through the desktop autosave queue with optimistic `expectedRevision` conflict checks, shared Hermes AI task locking, top-bar undo notices, and focus-aware `Cmd/Ctrl+Z` multi-step undo (preserving native text input undo on macOS/Windows/Linux).
+- **Revision-Bound Visual Preview Capture (`protoflow_capture_preview`)**:
+  - Added an isolated sandboxed offscreen preview renderer (`partition: 'alex-preview'`) that captures high-DPI PNG screenshots of any desktop or mobile page (`scope: "viewport" | "canvas"`, `fullPage: true` up to `2160` CSS px with `truncated` reporting, minimum `1280` CSS px desktop viewport width) without disturbing editor selection, scroll position, or undo history.
+  - Automatically waits for deterministic ECharts canvas rendering (zero entry animation) and sandboxed Freeform `iframe` first paint before capturing, verifying no concurrent project edits occurred mid-capture.
+- **One-Click Client Integrations & Distributable Bundles**:
+  - Added one-click **Install Antigravity plugin** (`~/.gemini/config/plugins/alex-protoflow-designer`), **Export Claude Desktop extension** (`.mcpb` manifest v0.3), and standalone **Codex / Antigravity / Claude Code** skill installers (`$CODEX_HOME/skills` & `~/.agents/skills`) with `.alex-install.json` SHA-256 receipt verification for seamless version upgrades while preserving user-customized files.
+
+---
+
 ## [v0.0.5] - 2026-11-21
 
 ### Added

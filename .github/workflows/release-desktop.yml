@@ -48,6 +48,9 @@ jobs:
           sudo apt-get install -y rpm libfuse2t64 || sudo apt-get install -y rpm libfuse2
       - run: npm ci
       - run: npm run ${{ matrix.script }}
+      - name: Build Client Integration Bundles
+        if: matrix.name == 'linux-x64'
+        run: npm run build:integrations
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -59,6 +62,8 @@ jobs:
             release/*.deb
             release/*.AppImage
             release/*.tar.gz
+            release/integrations/*.zip
+            release/integrations/*.mcpb
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')

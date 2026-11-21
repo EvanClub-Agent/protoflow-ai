@@ -214,11 +214,12 @@ npm run build:linux      # Linux x64 (.deb + .AppImage + .tar.gz)
 
 ---
 
-## 🔌 MCP 规格服务（连接 Claude Code / Cursor / Antigravity）
+## 🔌 MCP 双向设计与规格服务（连接 Codex / Antigravity / Claude）
 
-原型确认后进入实际研发时，Alex 内置 **安全只读的 MCP（Model Context Protocol）规格服务**，让外部 Coding Agent 按需读取工程的**路由目录树、ER 物理表、PostgreSQL/MySQL DDL、页面 TSX 结构、交互动作链与组件级产品便签**，告别看图盲猜接口与表结构：
+Alex 内置 **MCP（Model Context Protocol）双向设计与只读规格服务**，打通从「AI 直接操控画布生成原型 & 数据库」到「研发阶段按需读取规格写生产代码」的完整闭环：
 
-- **远程在线直连（研发零安装）**：产品发布 `/p/{id}` 评审链接后，研发无需安装 Alex 或下载 `.pflow` 文件，点击演示页顶部的 **「MCP 接入」** 即可复制远程 Streamable HTTP 配置：
+- **桌面端双向实时设计（Live Canvas Bridge + 视觉截图复核）**：在桌面端打开 `.pflow` 工程，进入 **「MCP 接入 → 本地 → 双向设计」**，**Codex**、**Google Antigravity**、**Claude Desktop**、**Claude Code** 即可读取当前页面与画布选中组件（`selectedPfId`），调用 18 个契约受控工具直接建表、灌入外键自洽样例数据、生成或无损局部修改桌面/移动端页面、编写需求便签与流程图，并通过 `protoflow_capture_preview` 截取高清画布/手机视口 PNG（自动等待图表与自由组件首帧渲染，支持 `fullPage` 长页检查）自我复核排版；所有外部修改实时上屏落盘并支持顶部提示条与 `Cmd/Ctrl+Z` 逐步撤销。面板内置 **Antigravity 插件一键安装**、**Claude Desktop `.mcpb` 扩展导出** 及三端设计 Skill 安装。
+- **远程在线只读直连（研发零安装）**：产品发布 `/p/{id}` 评审链接后，研发无需安装 Alex 或下载 `.pflow` 文件，点击演示页顶部的 **「MCP 接入」** 即可复制远程 Streamable HTTP 配置读取路由树、ER 表、PostgreSQL/MySQL DDL、页面 TSX 与便签规则：
   ```json
   {
     "mcpServers": {
@@ -228,7 +229,7 @@ npm run build:linux      # Linux x64 (.deb + .AppImage + .tar.gz)
     }
   }
   ```
-- **本地 `.pflow` 实时热读**：在桌面端顶部工具栏点击 **「MCP 接入」**，一键生成针对 **Cursor / Antigravity / Windsurf / Claude Code / Codex** 的本机配置（客户端内置运行时**免装 Node.js** 直接运行，自动检测磁盘 `.pflow` 保存时间毫秒级热重载；源码开发态亦支持 `node ./packages/protoflow-mcp/dist/cli.cjs --project ./app.pflow`）。
+- **本地 `.pflow` 命令行读写 / 热读**：客户端内置运行时**免装 Node.js** 即可直接运行，亦可通过 CLI 连接本地工程（只读 `--project ./app.pflow` 或离线创作 `--mode readwrite --workspace ./projects`，详见 [`packages/protoflow-mcp/README.md`](./packages/protoflow-mcp/README.md)）。
 
 ---
 
