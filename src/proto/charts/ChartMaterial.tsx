@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { CaptureMode } from '../../capture/CaptureMode';
 import type { EChartsType } from 'echarts/core';
 import type { CompProps } from '../registry/components';
 import { useResolvedTheme } from '../registry/AntdSurface';
@@ -11,6 +12,7 @@ import { useI18n } from '../../i18n';
 
 export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const { tr, td } = useI18n();
+  const capturing = useContext(CaptureMode);
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const savedRows = usePageStore(s => s.tableRows);
@@ -41,9 +43,14 @@ export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope })
     const { prepared: config, isDark: dark } = latest.current;
     if (!config.dataset) return;
     const option = buildChartOption(config.type, config.props, config.dataset, dark);
+    if (capturing) {
+      option.animation = false;
+      if (Array.isArray(option.series)) option.series = option.series.map(series => ({ ...series, progressive: 0 }));
+    }
     // Replace stale series when the data/config changes. Merge theme updates
     // into the live model to preserve zoom, legend and visual-map selections.
     instance.setOption(option, { notMerge: applied.current !== config });
+    if (capturing) instance.getZr().flush();
     applied.current = config;
   }
 

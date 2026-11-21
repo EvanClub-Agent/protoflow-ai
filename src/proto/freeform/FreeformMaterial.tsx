@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { CaptureMode } from '../../capture/CaptureMode';
 import { captureDiagnostic, currentDiagnosticLocation } from '../../services/runtimeDiagnostics';
 import type { CompProps } from '../registry/components';
 import { useResolvedTheme } from '../registry/AntdSurface';
@@ -13,6 +14,8 @@ import { useI18n } from '../../i18n';
 
 export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const { tr, td } = useI18n();
+  const capturing = useContext(CaptureMode);
+  const [paintedChannel, setPaintedChannel] = useState<string>();
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const savedRows = usePageStore(s => s.tableRows);
@@ -55,12 +58,13 @@ export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope
   useLayoutEffect(() => {
     if (!frame) return;
     const sendInput = () => {
-      if (!latest.current.inputs.error) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'input', payload: latest.current.inputs.value, theme: latest.current.themeMode }, '*');
+      if (!latest.current.inputs.error) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'input', capture: capturing, payload: latest.current.inputs.value, theme: latest.current.themeMode }, '*');
     };
     const receive = (event: MessageEvent) => {
       if (!iframe.current?.contentWindow || event.source !== iframe.current.contentWindow || event.data?.channel !== frame.channel) return;
       const message = event.data;
       if (message.type === 'ready') { ready.current = true; sendInput(); }
+      if (capturing && message.type === 'painted') setPaintedChannel(frame.channel);
       if (message.type === 'height' && typeof message.payload === 'number' && Number.isFinite(message.payload)) setHeight(Math.min(4000, Math.max(80, message.payload)));
       if (message.type === 'error' && typeof message.payload === 'string') setError(message.payload.slice(0, 1000));
       if (message.type === 'action' && !latest.current.rt.isDesign) {
@@ -73,10 +77,10 @@ export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [frame]);
+  }, [frame, capturing]);
   useEffect(() => {
-    if (frame && ready.current && !inputs.error) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'input', payload: inputs.value, theme: themeMode }, '*');
-  }, [frame, inputs]);
+    if (frame && ready.current && !inputs.error) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'input', capture: capturing, payload: inputs.value, theme: themeMode }, '*');
+  }, [frame, inputs, capturing]);
   useEffect(() => {
     if (frame && ready.current) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'theme', payload: themeMode }, '*');
   }, [frame, themeMode]);
@@ -89,7 +93,8 @@ export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope
   const loadingCls = mobileTheme
     ? `rounded-[22px] p-8 text-center text-xs ${mobileTheme.cardBg} ${mobileTheme.textMuted}`
     : 'rounded-xl bg-slate-50 p-8 text-center text-xs text-slate-500';
-  return <div {...root} className="relative w-full min-w-0" data-freeform-id={node.pfId}>
+  return <div {...root} className="relative w-full min-w-0" data-freeform-id={node.pfId}
+    data-freeform-status={capturing ? (displayError ? 'error' : frame && paintedChannel === frame.channel ? 'ready' : 'loading') : undefined}>
     {displayError ? <div role="alert" className={alertCls}>
       <p className="font-semibold">{tr('这个自由组件需要调整', 'Freeform Widget Needs Adjustment')}</p><p className="break-words">{displayError}</p>
       <button type="button" className="underline cursor-pointer" onClick={() => setAttempt(n => n + 1)}>{tr('重新预览', 'Retry Preview')}</button>

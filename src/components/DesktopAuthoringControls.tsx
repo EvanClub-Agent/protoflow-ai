@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import {
   desktopAuthoringApi, disableDesktopAuthoring, enableDesktopAuthoring, runClientIntegration, useDesktopAuthoring, type SkillClient,
@@ -35,7 +35,7 @@ export function DesktopAuthoringControls() {
         onChange={() => void run(enableDesktopAuthoring)} />{tr('双向设计', 'Bidirectional design')}</label>
     </fieldset>
     {connection && <>
-      <p>{tr('外部 Agent 可以编辑当前打开的工程。返回启动页或关闭双向设计会断开连接。', 'Agents can edit this open project. Returning to the launcher or switching to read-only disconnects them.')}</p>
+      <p>{tr('外部 Agent 可以编辑当前打开的工程。切换工程后，请重新绑定插件或更新扩展的连接文件。返回启动页或关闭双向设计会断开连接。', 'Agents can edit this open project. After switching projects, rebind the plugin or update the extension’s connection file. Returning to the launcher or switching to read-only disconnects agents.')}</p>
       <fieldset disabled={busy} className="flex flex-wrap gap-2">
         <legend className="mb-1 font-semibold">{tr('客户端扩展', 'Client extensions')}</legend>
         <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => void run(async () => {
@@ -69,24 +69,36 @@ export function DesktopAuthoringNotice() {
   const [dismissed, setDismissed] = useState<string | null>(null);
   const projectId = useProtoStore(s => s.currentProjectMeta.projectId);
   const running = useHermesStore(s => s.runningProjects[projectId]);
-  useProjectSaveStore(); // Invalidate undo availability when local edits change the revision.
   const visible = notice?.projectId === projectId ? notice : null;
-  const canUndo = Boolean(visible && !writing && !running && canUndoProjectChange(visible.id));
-  const undo = () => {
-    if (!visible || !canUndoProjectChange(visible.id)) return;
-    undoProjectChange(visible.id);
+  const undoId = visible?.id;
+  const current = useProjectSaveStore(() => Boolean(undoId && canUndoProjectChange(undoId)));
+  const canUndo = current && !writing && !running;
+  const undo = useCallback(() => {
+    if (!canUndo || !undoId || !canUndoProjectChange(undoId)) return false;
+    undoProjectChange(undoId);
     setDismissed(null);
-  };
+    return true;
+  }, [canUndo, undoId]);
   useEffect(() => {
     if (!canUndo) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'z' ||
-          (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]:not([contenteditable=false]), [role=textbox]'))) return;
-      if (visible && canUndoProjectChange(visible.id)) { e.preventDefault(); undo(); }
+    const handleUndo = (event: Event) => {
+      let focused = document.activeElement;
+      while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
+      if (event.defaultPrevented || focused?.closest('input, textarea, select, iframe, [role=textbox], dialog') ||
+          (focused instanceof HTMLElement && focused.isContentEditable)) return;
+      if (undo()) event.preventDefault();
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && !event.isComposing &&
+          event.key.toLowerCase() === 'z') handleUndo(event);
     };
     window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  });
+    window.addEventListener('alex-project-undo', handleUndo);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('alex-project-undo', handleUndo);
+    };
+  }, [canUndo, undo]);
   const shown = visible && visible.id !== dismissed ? visible : null;
   if (!connectionPath && !shown) return null;
   return <div className="flex items-center gap-3 border-b border-blue-200 bg-blue-50 px-4 py-1 text-xs text-blue-900">

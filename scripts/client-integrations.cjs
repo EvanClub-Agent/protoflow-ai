@@ -3,6 +3,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { zipSync } = require('fflate');
 
+const { installDesignerFiles, skillFiles } = require('../electron/designer-install.cjs');
+
 const name = 'alex-protoflow-designer';
 const fileTitle = 'Alex connection file';
 const fileDescription = 'In Alex Desktop, open your project and copy the connection file path from MCP → Bidirectional design.';
@@ -45,9 +47,7 @@ function pluginFiles(root, binding) {
   files['plugin.json'] = json({ ...metadata, displayName: 'Alex ProtoFlow Designer' });
   files['mcp_config.json'] = json(pluginConfig(binding));
   const skill = 'skills/' + name;
-  for (const file of ['SKILL.md', ...fs.readdirSync(path.join(root, skill, 'references')).filter(f => f.endsWith('.md')).map(f => 'references/' + f)]) {
-    files[skill + '/' + file] = fs.readFileSync(path.join(root, skill, file));
-  }
+  for (const [file, bytes] of Object.entries(skillFiles(path.join(root, skill)))) files[skill + '/' + file] = bytes;
   return files;
 }
 
@@ -62,41 +62,16 @@ function writeAtomic(file, bytes) {
 function installPlugin(root, home, binding) {
   if (!path.isAbsolute(binding.connectionFile) || !path.isAbsolute(binding.executable)) throw new Error('Missing desktop connection or executable path');
   const files = pluginFiles(root, binding);
-  const parent = path.join(home, '.gemini/config/plugins');
-  const target = path.join(parent, name);
-  fs.mkdirSync(parent, { recursive: true });
-  const existing = fs.lstatSync(target, { throwIfNoEntry: false });
-  if (existing) {
-    const conflict = new Error('请先移走已有的自定义插件。 Existing plugin differs: ' + target);
-    if (!existing.isDirectory()) throw conflict;
-    const realTarget = fs.realpathSync(target);
-    for (const [relative, bytes] of Object.entries(files)) {
-      const file = path.join(target, relative);
-      if (!fs.lstatSync(file, { throwIfNoEntry: false })?.isFile() || fs.realpathSync(file) !== path.join(realTarget, relative)) throw conflict;
-      const current = fs.readFileSync(file);
-      if (current.equals(bytes)) continue;
-      if (relative !== 'mcp_config.json') throw conflict;
-      let previous;
-      try { previous = JSON.parse(current).mcpServers.protoflow; } catch { throw conflict; }
-      if (!Array.isArray(previous?.args)) throw conflict;
-      const previousFile = previous.args.at(-1);
-      if (typeof previousFile !== 'string' || !path.isAbsolute(previousFile) || typeof previous.command !== 'string' || !path.isAbsolute(previous.command) ||
-          !current.equals(json(pluginConfig({ executable: previous.command, connectionFile: previousFile })))) throw conflict;
-    }
-    const configFile = path.join(target, 'mcp_config.json');
-    if (!fs.readFileSync(configFile).equals(files['mcp_config.json'])) writeAtomic(configFile, files['mcp_config.json']);
-    return target;
-  }
-  const staging = fs.mkdtempSync(path.join(parent, '.alex-plugin-'));
-  try {
-    for (const [relative, bytes] of Object.entries(files)) {
-      const file = path.join(staging, relative);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, bytes);
-    }
-    fs.renameSync(staging, target);
-  } finally { fs.rmSync(staging, { recursive: true, force: true }); }
-  return target;
+  const target = path.join(home, '.gemini/config/plugins', name);
+  return installDesignerFiles(target, 'plugin', files, current => {
+    let previous;
+    try { previous = JSON.parse(current).mcpServers.protoflow; } catch { return false; }
+    if (!Array.isArray(previous?.args)) return false;
+    const connectionFile = previous.args.at(-1);
+    return typeof connectionFile === 'string' && path.isAbsolute(connectionFile) &&
+      typeof previous.command === 'string' && path.isAbsolute(previous.command) &&
+      current.equals(json(pluginConfig({ executable: previous.command, connectionFile })));
+  });
 }
 
 module.exports = { name, claudeBundle, pluginFiles, installPlugin, writeAtomic };

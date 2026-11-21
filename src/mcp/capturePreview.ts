@@ -8,23 +8,25 @@ export const capturePreviewTool: McpToolDefinition = {
   inputSchema: { type: 'object', additionalProperties: false, properties: {
     pageId: { type: 'string', minLength: 1, description: 'Defaults to the active page.' },
     scope: { type: 'string', enum: ['canvas', 'viewport'], default: 'viewport' },
+    fullPage: { type: 'boolean', default: false, description: 'Expand long pages up to 2160 CSS pixels. Check truncated in the result.' },
     waitMs: { type: 'integer', minimum: 0, maximum: 5000, default: 0 },
   } },
 };
 
-export interface CaptureOptions { pageId?: string; scope: 'canvas' | 'viewport'; waitMs: number }
+export interface CaptureOptions { pageId?: string; scope: 'canvas' | 'viewport'; fullPage: boolean; waitMs: number }
 export interface CaptureResult {
   pageId: string; platform: PagePlatform; scope: CaptureOptions['scope']; revision: string;
-  width: number; height: number; data: string;
+  width: number; height: number; data: string; fullPage: boolean; truncated: boolean;
 }
 
 export function parseCaptureOptions(input: unknown): CaptureOptions {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Capture arguments must be an object');
   const args = input as Record<string, unknown>;
-  for (const key of Object.keys(args)) if (!['pageId', 'scope', 'waitMs'].includes(key)) throw new Error('Unknown capture argument: ' + key);
-  const { pageId, scope = 'viewport', waitMs = 0 } = args;
+  for (const key of Object.keys(args)) if (!['pageId', 'scope', 'fullPage', 'waitMs'].includes(key)) throw new Error('Unknown capture argument: ' + key);
+  const { pageId, scope = 'viewport', fullPage = false, waitMs = 0 } = args;
   if (pageId !== undefined && (typeof pageId !== 'string' || !pageId.trim())) throw new Error('Invalid pageId');
   if (scope !== 'canvas' && scope !== 'viewport') throw new Error('Invalid scope');
   if (typeof waitMs !== 'number' || !Number.isInteger(waitMs) || waitMs < 0 || waitMs > 5000) throw new Error('waitMs must be an integer from 0 to 5000');
-  return { pageId, scope, waitMs };
+  if (typeof fullPage !== 'boolean') throw new Error('fullPage must be boolean');
+  return { pageId, scope, fullPage, waitMs };
 }

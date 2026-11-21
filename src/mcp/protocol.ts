@@ -56,7 +56,7 @@ const SERVER_INSTRUCTIONS = [
   '4. Call protoflow_get_implementation_checklist at the end to verify full-stack coverage.',
 ].join(' ');
 
-const authoringInstructions = (desktop: boolean) => [
+const authoringInstructions = (desktop: boolean, capture: boolean) => [
   'Alex (ProtoFlow AI) Read-Write Prototype Authoring MCP Server.',
   desktop
     ? '1. Use protoflow_workspace(action="status") for the live revision, activePageId and selectedPfId. Pass expectedRevision when writing. Open or create other projects in Alex.'
@@ -65,6 +65,7 @@ const authoringInstructions = (desktop: boolean) => [
   '3. Create sitemap folders (protoflow_manage_sitemap), normalized shared ER tables (protoflow_upsert_db_tables), and coherent seed rows (protoflow_manage_table_rows) before writing pages.',
   '4. Create/overwrite pages with protoflow_write_page or edit subtrees losslessly with protoflow_edit_page_block; never mix desktop <Page> and mobile <MobilePage> (M*) components.',
   '5. Attach requirement pins (protoflow_manage_sticky_notes), optional notes/Mermaid flows (protoflow_manage_docs_and_flows), and finish with protoflow_audit_project until healthy is true.',
+  ...(capture ? ['6. After a page edit, call protoflow_capture_preview for a visual check. Use fullPage for content below the fold and inspect the returned revision.'] : []),
 ].join(' ');
 
 const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
@@ -134,7 +135,7 @@ export async function handleSpecMcpRequest(
               name: SPEC_MCP_SERVER_NAME,
               version: SPEC_MCP_SERVER_VERSION,
             },
-            instructions: isReadWrite ? authoringInstructions(loader.transport === 'desktop_bridge') : SERVER_INSTRUCTIONS,
+            instructions: isReadWrite ? authoringInstructions(loader.transport === 'desktop_bridge', live) : SERVER_INSTRUCTIONS,
           },
         };
       }

@@ -423,7 +423,7 @@ ipcMain.on('pflow:mcp-live-reply', (event, result) => {
 handleIpc('pflow:mcp-install-skill', (event, client) => {
   assertAuthoringRenderer(event);
   return require('./desktop-authoring.cjs').installDesignerSkill(client, os.homedir(),
-    path.join(__dirname, '../skills/alex-protoflow-designer'));
+    path.join(__dirname, '../skills/alex-protoflow-designer'), process.env.CODEX_HOME);
 });
 
 function currentConnectionFile(sessionId) {
@@ -699,7 +699,7 @@ handleIpc('pflow:hermes-install-guide', () => require('electron').shell.openExte
 app.whenReady().then(() => {
   initMainI18n(app);
   try { getDiagnostics(); } catch { diagnosticInitError = tr('诊断存储初始化失败', 'Diagnostics storage initialization failed'); }
-  installApplicationMenu({ app, Menu, locale: getMainLocale() });
+  installApplicationMenu({ app, Menu, locale: getMainLocale(), editor: () => mainWindow });
   const iconPath = path.join(__dirname, '../public/icon.png');
   if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
     try {

@@ -34,7 +34,7 @@ Open a saved project, then choose **MCP → Local → Bidirectional design**. Co
 
 Start with `protoflow_workspace` using `action: "status"` to read the live revision, active page and selected component. Inspect the page before editing and include `expectedRevision` on writes. Edits appear on the canvas, use the desktop autosave queue, and can be undone from the top bar or with Cmd/Ctrl+Z. Hermes tasks block external writes until they finish. After a save error, the edit remains visible in Alex and saving can be retried there.
 
-The desktop-only `protoflow_capture_preview` tool accepts an optional `pageId` (active page by default), `scope` (`viewport` or `canvas`), and `waitMs` (0–5000). It renders an isolated preview of the saved and pending editor data, using the current canvas size or a 1280 × 800 reference stage when the canvas is closed. The mobile stage fits the selected device. It returns a PNG image block plus page ID, platform, pixel dimensions and revision. The editor's selection, scroll and undo history stay in place. A change during capture returns a revision conflict.
+The desktop-only `protoflow_capture_preview` tool accepts an optional `pageId` (active page by default), `scope` (`viewport` or `canvas`), `fullPage` (default false), and `waitMs` (0–5000). It renders an isolated preview of the saved and pending editor data, with at least 1280 CSS pixels of desktop page width. Charts finish without entry animation and freeform frames confirm their first render before capture. A material readiness timeout returns an error. Full-page capture expands the page to fit its contents, up to the 2160 CSS-pixel window height. Check `truncated` for content beyond the image. The mobile stage fits the selected device. It returns a PNG image block plus page ID, platform, pixel dimensions and revision. The editor's selection, scroll and undo history stay in place. A change during capture returns a revision conflict.
 
 Returning to the launcher, closing Alex, or selecting **Read-only specs** revokes the connection. Enable it again on the same project to reuse its configuration. Create and switch projects in the desktop launcher. The local file workflow below also supports project creation and switching.
 
@@ -42,7 +42,7 @@ The **Install Antigravity plugin** button installs the designer skill and live M
 
 For distribution, run `npm run build:integrations`. The ZIP and MCPB in `release/integrations/` include a bundled server and request the connection file path during setup. Copy that path from the desktop MCP panel. The portable Antigravity server needs Node.js 20 or newer. The locally installed plugin uses Alex's Electron runtime.
 
-Standalone skill installation and the generated Codex / Claude Code configurations remain available in the same panel. [Antigravity plugins](https://antigravity.google/docs/build-plugins) · [MCPB manifests](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
+The panel also installs standalone skills. Codex uses `$CODEX_HOME/skills` when configured and `~/.agents/skills` otherwise. Reinstalling upgrades unmodified Alex files and preserves customized installations. [Antigravity plugins](https://antigravity.google/docs/build-plugins) · [MCPB manifests](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
 
 ### Option 2: Authoring Mode (`--mode readwrite`) for Codex / Antigravity / Claude Desktop
 
@@ -133,6 +133,7 @@ Or connect to an online share over `stdio`:
 | `protoflow_edit_page_block` | Losslessly append children, replace a node preserving `pfId`, or delete a node on an existing page |
 | `protoflow_manage_sticky_notes` | Attach, update, or delete component-pinned requirement sticky notes |
 | `protoflow_manage_docs_and_flows` | Create/update/delete PRD notes (Markdown), Mermaid mindmaps/flowcharts, and durable project agreements |
+| `protoflow_capture_preview` (desktop bridge only) | Return a PNG of the page viewport or canvas and its revision. Pass `fullPage: true` to include content below the fold. |
 | `protoflow_audit_project` | Full closed-loop static audit across references, ER design, preview FK integrity, and page contracts |
 
 ## License

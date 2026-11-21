@@ -6,7 +6,7 @@ import type { CaptureOptions } from '../mcp/capturePreview';
 
 export interface PreviewSnapshot {
   pageId: string; revision: string; platform: PagePlatform; doc: ProtoDoc;
-  scope: CaptureOptions['scope']; waitMs: number;
+  scope: CaptureOptions['scope']; fullPage: boolean; waitMs: number;
   locale: Locale; theme: 'light' | 'dark'; device: MobileDevicePreset;
   width: number; height: number; meta: PflowProjectMetadata;
   state: Pick<ProjectStateSnapshot, 'dbTables' | 'tableRows' | 'suppliers' | 'purchaseOrderItems' | 'acceptanceOrders' | 'draftAcceptanceHeader' | 'draftAcceptanceLines' | 'widgets'>;

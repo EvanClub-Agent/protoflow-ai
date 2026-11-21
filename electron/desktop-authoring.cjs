@@ -108,26 +108,13 @@ const skillRoots = new Map([
   ['antigravity', ['.gemini', 'config', 'skills']],
 ]);
 
-function installDesignerSkill(client, home, source) {
+function installDesignerSkill(client, home, source, codexHome) {
   const parts = skillRoots.get(client);
   if (!parts) throw new Error('Unknown skill client');
-  const root = path.join(home, ...parts);
-  const target = path.join(root, 'alex-protoflow-designer');
-  fs.mkdirSync(root, { recursive: true });
-  // Stage the whole pack before publishing. Preserve any customized installation.
-  const files = ['SKILL.md', ...fs.readdirSync(path.join(source, 'references')).map(name => path.join('references', name))];
-  if (fs.existsSync(target)) {
-    if (files.every(file => fs.existsSync(path.join(target, file)) &&
-        fs.readFileSync(path.join(target, file)).equals(fs.readFileSync(path.join(source, file))))) return target;
-    throw new Error('已有同名 Skill，请先移走自定义版本。 Existing skill differs: ' + target);
-  }
-  const temp = fs.mkdtempSync(path.join(root, '.alex-skill-'));
-  try {
-    fs.mkdirSync(path.join(temp, 'references'));
-    for (const file of files) fs.copyFileSync(path.join(source, file), path.join(temp, file));
-    fs.renameSync(temp, target);
-  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
-  return target;
+  if (client === 'codex' && codexHome && !path.isAbsolute(codexHome)) throw new Error('CODEX_HOME must be absolute');
+  const root = client === 'codex' && codexHome ? path.join(codexHome, 'skills') : path.join(home, ...parts);
+  const { installDesignerFiles, skillFiles } = require('./designer-install.cjs');
+  return installDesignerFiles(path.join(root, 'alex-protoflow-designer'), 'skill', skillFiles(source));
 }
 
 module.exports = { createDesktopAuthoringBridge, installDesignerSkill };

@@ -48,6 +48,20 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
   componentDidCatch(error: Error) { post('error', error.message); }
   render() { return this.state.failed ? null : this.props.children; }
 }
+function CapturePaint() {
+  React.useEffect(() => {
+    let active = true;
+    const painted = async () => {
+      await document.fonts.ready;
+      await Promise.all(Array.from(document.images, image => image.decode().catch(() => {})));
+      requestAnimationFrame(() => { if (active) post('painted'); });
+    };
+    void painted();
+    return () => { active = false; };
+  }, []);
+  return null;
+}
+
 window.__pfMount = Component => {
   addEventListener('message', event => {
     if (event.source !== parent || event.data?.channel !== config.channel) return;
@@ -59,7 +73,7 @@ window.__pfMount = Component => {
     if (event.data.theme === 'dark' || event.data.theme === 'light') {
       document.documentElement.dataset.theme = event.data.theme;
     }
-    root.render(<Boundary><Component data={event.data.payload} emit={(payload: unknown) => post('action', payload)} /></Boundary>);
+    root.render(<Boundary><Component data={event.data.payload} emit={(payload: unknown) => post('action', payload)} />{event.data.capture === true && <CapturePaint />}</Boundary>);
   });
   post('ready');
   let lastHeight = 0;

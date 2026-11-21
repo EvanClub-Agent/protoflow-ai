@@ -52,14 +52,16 @@ if (!process.versions.electron) {
     const { content } = await request(config, 'tools/call', { name, arguments: args });
     return JSON.parse(content[0].text);
   }
-  async function capture(config, args) {
+  async function capture(config, args, inspectImage) {
     const result = await request(config, 'tools/call', { name: 'protoflow_capture_preview', arguments: args });
     assert.equal(result.content[0].mimeType, 'image/png');
     const bytes = Buffer.from(result.content[0].data, 'base64');
     const meta = JSON.parse(result.content[1].text);
     assert.equal(bytes.readUInt32BE(16), meta.width);
     assert.equal(bytes.readUInt32BE(20), meta.height);
-    const pixels = require('electron').nativeImage.createFromBuffer(bytes).resize({ width: 50 }).toBitmap();
+    const image = require('electron').nativeImage.createFromBuffer(bytes);
+    if (inspectImage) inspectImage(image, meta);
+    const pixels = image.resize({ width: 50 }).toBitmap();
     assert.ok(new Set(pixels).size > 10, 'Preview must contain painted content');
     return meta;
   }
@@ -70,8 +72,13 @@ if (!process.versions.electron) {
     await call(local, 'protoflow_manage_sitemap', { action: 'upsert_folder', folder: { id: 'smoke-folder', title: 'Pages', parentFolderId: null } });
     await call(local, 'protoflow_write_page', { pageId: 'smoke-page', title: 'Smoke', folderId: 'smoke-folder',
       platform: 'desktop', source: 'export default function Page() { return (<Page pfId="smoke-root" title="Smoke"><Tag pfId="smoke-tag">Before</Tag></Page>); }' });
+    const listItems = Array.from({ length: 55 }, (_, i) => `<MListItem pfId="row-${i}" title="Row ${i}" />`).join('');
     await call(local, 'protoflow_write_page', { pageId: 'mobile', title: 'Mobile fixture', platform: 'mobile', folderId: 'smoke-folder',
-      source: 'export default function Page() { return (<MobilePage pfId="m-root"><MTopBar pfId="m-top" title="Mobile fixture" /></MobilePage>); }' });
+      source: `export default function Page() { return (<MobilePage pfId="m-root"><MTopBar pfId="m-top" title="Mobile fixture" /><MListGroup pfId="rows" title="Rows">${listItems}</MListGroup></MobilePage>); }` });
+    const widget = 'export default function Component() { return <section className="sample">Painted</section>; }';
+    const widgetNode = `<Freeform pfId="widget" title="Paint" source={${JSON.stringify(widget)}} css=".sample{height:1080px;background:#f32081}" />`;
+    await call(local, 'protoflow_write_page', { pageId: 'dashboard', title: 'Dashboard', platform: 'desktop', folderId: 'smoke-folder',
+      source: `export default function Page() { return (<Page pfId="dashboard-root"><BarChart pfId="chart" source="sample" />${widgetNode}</Page>); }` });
     assert.ok(!(await request(local, 'tools/list', {})).tools.some(tool => tool.name === 'protoflow_capture_preview'));
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
     require('../electron/main.cjs');
@@ -136,9 +143,29 @@ if (!process.versions.electron) {
     const beforeCapture = await call(config, 'protoflow_workspace', { action: 'status' });
     assert.ok((await request(config, 'tools/list', {})).tools.some(tool => tool.name === 'protoflow_capture_preview'));
     const active = await capture(config, {});
+    assert.ok(active.width >= 1280);
+    const full = await capture(config, { pageId: 'dashboard', fullPage: true }, image => {
+      const bgra = image.toBitmap();
+      let bars = 0, widgetPixels = 0;
+      for (let i = 0; i < bgra.length; i += 4) {
+        if (bgra[i] === 0xc6 && bgra[i + 1] === 0x70 && bgra[i + 2] === 0x54) bars++;
+        if (bgra[i] === 0x81 && bgra[i + 1] === 0x20 && bgra[i + 2] === 0xf3) widgetPixels++;
+      }
+      assert.ok(bars > 500, 'Chart bars must be painted with default waitMs');
+      assert.ok(widgetPixels > 50000, 'Freeform content must be painted with default waitMs');
+    });
+    assert.equal(full.fullPage, true);
+    assert.equal(full.truncated, false);
+    assert.ok(full.height > active.height && full.height >= 1080);
+    const initialized = await request(config, 'initialize', {});
+    assert.match(initialized.instructions, /protoflow_capture_preview/);
     assert.equal(active.pageId, 'smoke-page');
     const phone = await capture(config, { pageId: 'mobile', scope: 'viewport', waitMs: 50 });
     const stage = await capture(config, { pageId: 'mobile', scope: 'canvas' });
+    const longPhone = await capture(config, { pageId: 'mobile', scope: 'viewport', fullPage: true });
+    assert.equal(longPhone.width, phone.width);
+    assert.ok(longPhone.height > phone.height && longPhone.height <= 2160);
+    assert.equal(longPhone.truncated, true);
     assert.equal(phone.pageId, 'mobile');
     assert.equal(phone.platform, 'mobile');
     assert.equal(phone.revision, beforeCapture.revision);
@@ -149,9 +176,32 @@ if (!process.versions.electron) {
     console.log('PASS desktop and mobile PNGs, device crop, stable selection, revision and undo');
     const diskSpec = () => call(local, 'protoflow_get_page_spec', { pageId: 'smoke-page' });
     assert.match((await diskSpec()).pageSourceTsx, /Live update/);
-    await click("[...document.querySelectorAll('button')].find(b => /^(撤销|Undo)$/.test(b.textContent) && !b.disabled)");
+    app.focus({ steal: true }); win.show(); win.focus();
+    const sendUndo = () => {
+      const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+      for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: 'Z', modifiers });
+    };
+    await evalUi("const field = document.createElement('textarea'); field.id='test-text-undo'; document.body.append(field); field.focus()");
+    await win.webContents.insertText('typed');
+    const fieldValue = () => evalUi("document.getElementById('test-text-undo').value");
+    assert.equal(await fieldValue(), 'typed');
+    sendUndo();
+    await until(async () => (await fieldValue()) === '', 'native text undo');
+    assert.match(await text(), /Live update/);
+    await evalUi("document.getElementById('test-text-undo').remove()");
+    sendUndo();
+    await until(async () => (await text())?.includes('Before'), 'project keyboard undo');
+    console.log('PASS native text undo and focused canvas Cmd/Ctrl+Z through Electron keyboard input');
     assert.match(await text(), /Before/);
     await until(async () => (await diskSpec()).pageSourceTsx.includes('Before'), 'undo saved');
+    if (process.platform === 'darwin') {
+      await call(config, 'protoflow_edit_page_block', { pageId: 'smoke-page', targetPfId: 'smoke-tag', mode: 'replace_node',
+        tsx: '<Tag pfId="smoke-tag">Menu undo</Tag>' });
+      const menuUndo = require('electron').Menu.getApplicationMenu().getMenuItemById('alex-undo');
+      assert.equal(menuUndo.accelerator, 'Command+Z');
+      menuUndo.click(undefined, win);
+      await until(async () => (await text())?.includes('Before'), 'AppKit menu command undo');
+    }
     await click("document.querySelector('button[aria-label^=MCP]')");
     await click("[...document.querySelectorAll('label')].find(l => /只读规格|Read-only specs/.test(l.textContent))?.querySelector('input')");
     await assert.rejects(call(config, 'protoflow_workspace', { action: 'status' }), /connection unavailable/);

@@ -18,8 +18,8 @@ import { installTestDom } from './dom';
 const { createDesktopAuthoringBridge, installDesignerSkill } = require('../electron/desktop-authoring.cjs');
 
 test('capture options distinguish absent fields from invalid explicit values', () => {
-  assert.deepEqual(parseCaptureOptions({}), { scope: 'viewport', waitMs: 0, pageId: undefined });
-  for (const value of [null, [], {scope:'window'}, {waitMs:null}, {waitMs:'5'}, {waitMs:5001}, {pageId:' '}, {rect:{}}]) {
+  assert.deepEqual(parseCaptureOptions({}), { scope: 'viewport', fullPage: false, waitMs: 0, pageId: undefined });
+  for (const value of [null, [], {scope:'window'}, {fullPage:1}, {fullPage:null}, {waitMs:null}, {waitMs:'5'}, {waitMs:5001}, {pageId:' '}, {rect:{}}]) {
     assert.throws(() => parseCaptureOptions(value));
   }
 });
@@ -83,7 +83,7 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     useProtoStore.setState({ viewMode: 'db_designer' });
     api.capture = async () => {
       usePageStore.getState().setPageSource(page, source + '\n');
-      return { data: 'stale', width: 1, height: 1 };
+      return { data: 'stale', width: 1, height: 1, truncated: false };
     };
     await assert.rejects(tool('protoflow_capture_preview'), /changed during preview capture/);
     await assert.rejects(rename('stale', first.revision), /冲突|conflict/);
@@ -180,4 +180,56 @@ test('client packages contain a portable stdio server, preserve customized plugi
     assert.throws(() => bind(first), /Existing plugin differs/);
     assert.equal(fs.readFileSync(config, 'utf8'), '{"mcpServers":{"custom":{}}}');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('managed designer installs upgrade verified trees, migrate legacy bindings and preserve local edits', () => {
+  const { installPlugin } = require('../scripts/client-integrations.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-managed-install-'));
+  const assets = path.join(dir, 'assets'), home = path.join(dir, 'account');
+  const skill = path.join(assets, 'skills/alex-protoflow-designer'), codexHome = path.join(dir, 'custom codex');
+  try {
+    fs.cpSync(path.resolve('skills/alex-protoflow-designer'), skill, { recursive: true });
+    fs.mkdirSync(path.join(assets, 'electron/generated'), { recursive: true });
+    fs.copyFileSync('LICENSE', path.join(assets, 'LICENSE'));
+    const writeRelease = (version: string) => {
+      fs.writeFileSync(path.join(assets, 'package.json'), JSON.stringify({ version, license: 'Apache-2.0', author: { name: 'Alex' } }));
+      fs.writeFileSync(path.join(assets, 'electron/generated/spec-mcp-server.cjs'), '// ' + version);
+    };
+    writeRelease('1.0.0');
+    const bind = (project: string) => installPlugin(assets, home, { executable: process.execPath, connectionFile: path.join(dir, project + '.json') });
+    const install = () => installDesignerSkill('codex', home, skill, codexHome);
+    const plugin = bind('A'), installed = install();
+    assert.equal(installed, path.join(codexHome, 'skills/alex-protoflow-designer'));
+    // Receipt-less copies from the same distribution can be adopted on rebind.
+    for (const target of [plugin, installed]) fs.unlinkSync(path.join(target, '.alex-install.json'));
+    bind('B'); install();
+    writeRelease('2.0.0');
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), 'New bundled instructions');
+    fs.unlinkSync(path.join(skill, 'references/axure-reshape.md'));
+    bind('C'); install();
+    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version, '2.0.0');
+    for (const target of [installed, path.join(plugin, 'skills/alex-protoflow-designer')]) {
+      assert.equal(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8'), 'New bundled instructions');
+      assert.equal(fs.existsSync(path.join(target, 'references/axure-reshape.md')), false);
+    }
+    // A competing installer keeps the previous tree intact. A dead writer's
+    // interrupted rename is recovered before the next install checks the hashes.
+    const transaction = path.join(path.dirname(installed), '.' + path.basename(installed) + '.alex-update');
+    fs.mkdirSync(transaction);
+    const owner = (pid: number) => path.join(transaction, 'owner-' + pid + '-d04b82b0-383e-426c-a593-ab2003f41612');
+    fs.writeFileSync(owner(process.pid), '');
+    assert.throws(install, /in progress/);
+    const exited = require('node:child_process').spawnSync(process.execPath, ['-e', '']);
+    assert.equal(exited.status, 0);
+    fs.renameSync(owner(process.pid), owner(exited.pid));
+    fs.renameSync(installed, path.join(transaction, 'previous'));
+    assert.equal(install(), installed);
+    assert.equal(fs.existsSync(transaction), false);
+    fs.writeFileSync(path.join(installed, 'personal.md'), 'My notes');
+    assert.throws(install, /Existing skill differs/);
+    assert.equal(fs.readFileSync(path.join(installed, 'personal.md'), 'utf8'), 'My notes');
+    fs.unlinkSync(path.join(plugin, 'server/cli.cjs'));
+    assert.throws(() => bind('D'), /Existing plugin differs/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.protoflow.args.at(-1), path.join(dir, 'C.json'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

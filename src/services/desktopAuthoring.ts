@@ -21,7 +21,7 @@ type Session = ProjectTarget & { sessionId: string; opened: string };
 type LiveRequest = { sessionId: string; id: string; body: string; deadline: number };
 interface LiveApi {
   open(input: ProjectTarget & { sessionId: string }): Promise<{ connectionPath: string; projectPath: string }>;
-  capture(input: { sessionId: string; requestId: string; snapshot: PreviewSnapshot }): Promise<{ data: string; width: number; height: number }>;
+  capture(input: { sessionId: string; requestId: string; snapshot: PreviewSnapshot }): Promise<{ data: string; width: number; height: number; truncated: boolean }>;
   close(sessionId: string): Promise<void>;
   onRequest(listener: (request: LiveRequest) => void): () => void;
   reply(result: { sessionId: string; id: string; body?: string | null; failed?: boolean }): void;
@@ -115,7 +115,7 @@ function desktopWorkspace(target: Session, filePath: string, request: LiveReques
         projectId: meta.projectId, projectName: meta.projectName, projectMode: meta.projectMode ?? 'desktop',
         revision: revision(), activePageId: activePageId || null, selectedPfId: selected, viewMode };
     },
-    async capturePreview({ pageId: requested, scope, waitMs }) {
+    async capturePreview({ pageId: requested, scope, fullPage, waitMs }) {
       const captured = revision();
       const state = useProtoStore.getState(), pages = usePageStore.getState();
       const pageId = requested === undefined ? state.activePageId : requested;
@@ -127,15 +127,15 @@ function desktopWorkspace(target: Session, filePath: string, request: LiveReques
       const platform = doc.root.type === 'MobilePage' ? 'mobile' : 'desktop';
       const bounds = document.querySelector('.pf-canvas-viewport-shell')?.getBoundingClientRect();
       const device = MOBILE_DEVICE_SPECS[pages.mobileDevice];
-      const width = Math.min(2560, Math.max(platform === 'mobile' ? device.width + 64 : 1, Math.round(bounds?.width || 1280)));
+      const width = Math.min(2560, Math.max(platform === 'mobile' ? device.width + 64 : 1280 + 24, Math.round(bounds?.width || 1280)));
       const height = Math.min(2160, Math.max(platform === 'mobile' ? device.height + 64 : 1, Math.round(bounds?.height || 800)));
       const { dbTables, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets } = state;
-      const snapshot: PreviewSnapshot = { pageId, revision: captured, scope, waitMs, platform, doc, width, height,
+      const snapshot: PreviewSnapshot = { pageId, revision: captured, scope, fullPage, waitMs, platform, doc, width, height,
         theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', locale: getLocale(), device: pages.mobileDevice,
         meta: state.currentProjectMeta, state: { dbTables, tableRows: pages.tableRows, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets } };
       const image = await desktopAuthoringApi()!.capture({ sessionId: target.sessionId, requestId: request.id, snapshot });
       if (revision() !== captured) throw new Error('Project changed during preview capture. Read the current revision and retry.');
-      return { ...image, pageId, platform, scope, revision: captured };
+      return { ...image, pageId, platform, scope, fullPage, revision: captured };
     },
     async load() {
       return { sourceKind: 'local', sourceLabel: filePath, revision: revision(), payload: captureProjectPayload(), uniqueConstraintsComplete: true };

@@ -43,7 +43,7 @@ Never memorize component props from memory — contracts evolve across Alex vers
 
 ## Visual verification on Alex Desktop
 
-After creating or refining a page over `desktop_bridge`, call `protoflow_capture_preview` with its exact `pageId`. Use `scope: "viewport"` for the page surface or phone screen and `"canvas"` for the complete visible stage. Inspect the PNG for clipped controls, text wrapping, and spacing. The accompanying text identifies the page, platform, pixel dimensions and project revision. Use that revision before a corrective edit, then capture again. File and shared-link connections expose the specification tools for inspection.
+After creating or refining a page over `desktop_bridge`, call `protoflow_capture_preview` with its exact `pageId`. Use `scope: "viewport"` for the page surface or phone screen and `"canvas"` for the complete visible stage. For a long page, pass `fullPage: true` and check `truncated` for the capture height limit. Inspect the PNG for clipped controls, text wrapping, and spacing. The accompanying text identifies the page, platform, pixel dimensions and project revision. Use that revision before a corrective edit, then capture again. File and shared-link connections expose the specification tools for inspection.
 
 ## Reference Playbooks (Read On Demand)
 

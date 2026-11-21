@@ -34,7 +34,8 @@ if (process.versions.electron) {
     if (process.platform === 'darwin') {
       const menu = Menu.getApplicationMenu();
       assert.deepEqual(menu.items.map(item => item.label), ['Alex']);
-      for (const role of ['copy', 'paste', 'cut', 'selectall', 'undo', 'redo', 'close']) {
+      assert.equal(menu.getMenuItemById('alex-undo').accelerator, 'Command+Z');
+      for (const role of ['copy', 'paste', 'cut', 'selectall', 'redo', 'close']) {
         assert.ok(menu.items[0].submenu.items.some(item => item.role === role && !item.visible), `missing native shortcut: ${role}`);
       }
     } else assert.equal(Menu.getApplicationMenu(), null);

@@ -10,7 +10,7 @@ async function capturePreview(url, snapshot, signal) {
   }
   const win = new BrowserWindow({
     show: false, focusable: false, frame: false, useContentSize: true, enableLargerThanScreen: true,
-    width, height, backgroundColor: '#ffffff', webPreferences: {
+    width, height: snapshot.fullPage ? 2160 : height, backgroundColor: '#ffffff', webPreferences: {
       preload: path.join(__dirname, 'capture-preload.cjs'), sandbox: true, contextIsolation: true,
       nodeIntegration: false, backgroundThrottling: false, partition: 'alex-preview',
     },
@@ -35,11 +35,13 @@ async function capturePreview(url, snapshot, signal) {
     wc.ipc.on('alex-preview:ready', (event, result) => {
       if (!trusted(event)) return;
       if (result?.error) reject(new Error(String(result.error)));
-      else resolve(result?.rect);
+      else resolve(result);
     });
   });
   try {
-    const [, rect] = await Promise.race([Promise.all([win.loadURL(url), ready]), interrupted]);
+    const [, result] = await Promise.race([Promise.all([win.loadURL(url), ready]), interrupted]);
+    const rect = result?.rect;
+    if (typeof result?.truncated !== 'boolean') throw new Error('Missing preview extent');
     const [w, h] = win.getContentSize();
     if (!rect || !['x', 'y', 'width', 'height'].every(k => Number.isInteger(rect[k])) ||
         rect.x < 0 || rect.y < 0 || rect.width < 1 || rect.height < 1 || rect.x + rect.width > w || rect.y + rect.height > h) {
@@ -49,7 +51,7 @@ async function capturePreview(url, snapshot, signal) {
     if (image.isEmpty()) throw new Error('Empty preview capture');
     const bytes = image.toPNG({ scaleFactor: 1 });
     // PNG IHDR reports the actual pixel dimensions, including the platform backing scale.
-    return { data: bytes.toString('base64'), width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+    return { truncated: result.truncated, data: bytes.toString('base64'), width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   } finally {
     signal.removeEventListener('abort', cancel);
     if (!win.isDestroyed()) win.destroy();
