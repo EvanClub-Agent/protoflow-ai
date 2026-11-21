@@ -2,6 +2,23 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.4] - 2026-11-21
+
+### Added
+
+- **Native Axure RP 9 & RP 11 Binary Import (`.rp` → `.pflow`)**:
+  - Local Worker-based `.rp` binary parser with zero Axure installation or cloud upload required. Restores nested sitemap folders, positioned groups (including hidden groups), static table cells, isolated master-instance widget scopes, multi-state `DynamicPanel`s, and unconditional page links / show-hide / state-switch actions while surfacing unsupported widgets and conditional events in page import notes.
+- **Controlled AI Flow-Layout Reshaping & Relational Schema Migration**:
+  - Added `protoflow_reshape_axure_page`, `protoflow_bind_axure_table`, `protoflow_optimize_axure_block`, and `protoflow_inspect_axure_project` for converting imported RP pages into clean, flow-layout Alex `<Page>` copies alongside the untouched original RP pages.
+  - Synthesizes scattered RP captions and inputs (`nearbyLabel`) into live `QueryForm`s, binds `StaticTable` headers (`headerPfId → tableId / columnId`) to shared physical ER tables without polluting `tableRows` with static sample cells, and threads row-accurate cross-page `navigate(targetPageId, 'row')` into `Descriptions` via `useSourceRow`.
+  - Enforces deterministic host & MCP anti-hallucination guardrails: blocks inverted field bindings, prevents single-row sample actions (such as row-1 `"删除"`) from promoting onto all-row `Table.rowActions`, verifies `retained` subtrees semantically, distinguishes per-turn edits from whole-page flow completion, and itemizes **Converted / Retained / Pending** blocks in confirmation reviews.
+- **Enterprise CRM Contract & Billing Benchmark Showcase (`examples/crm-contract-billing`)**:
+  - Added a complete 5-table, 6-page (4 Desktop + 2 Mobile) enterprise showcase with composite unique constraints, master-detail payment plans, anti-overpayment/invoicing sticky-note rules, and full-stack MCP implementation prompts.
+- **Redesigned Spec MCP Studio Modal & Protocol Hardening**:
+  - Redesigned `McpConnectModal` into a streamlined studio interface with one-click client configs (**Claude Code**, **Cursor**, **Antigravity**, **Codex**, **JSON**) and synced TypeScript + Go Spec MCP tools (`protoflow_get_page_spec` verified Axure lineage metadata, `protoflow_search_spec` coverage, and batch capabilities).
+
+---
+
 ## [v0.0.3] - 2026-11-20
 
 ### Fixed
