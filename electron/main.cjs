@@ -407,6 +407,12 @@ handleIpc('pflow:mcp-live-open', (event, input) => {
   );
   return authoringBridge.open(input);
 });
+handleIpc('pflow:mcp-capture', (event, { sessionId, requestId, snapshot }) => {
+  assertAuthoringRenderer(event);
+  if (!authoringBridge) throw new Error('Desktop connection closed');
+  const signal = authoringBridge.requestSignal(sessionId, requestId);
+  return require('./capture-preview.cjs').capturePreview(new URL('capture.html', event.senderFrame.url).href, snapshot, signal);
+});
 handleIpc('pflow:mcp-live-close', (event, sessionId) => {
   assertAuthoringRenderer(event);
   authoringBridge?.close(sessionId);

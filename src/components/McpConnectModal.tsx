@@ -1266,7 +1266,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                 <Terminal className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
                 <span>{live ? tr('实时设计工具', 'Live design tools') : tr('渐进式规格能力清单', 'Progressive Spec Capabilities')}</span>
                 <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200/80 text-[10px] font-medium text-blue-700">
-                  {live ? '17 Tools · 6 Prompts · 4 Resources' : '6 Tools · 2 Prompts · 3 Resources'}
+                  {live ? '18 Tools · 6 Prompts · 4 Resources' : '6 Tools · 2 Prompts · 3 Resources'}
                 </span>
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">

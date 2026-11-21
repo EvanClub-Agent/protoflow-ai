@@ -12,5 +12,5 @@ export default defineConfig(({ mode }) => ({
       ignored: [/\.pflow$/i, /\.pflow\.[\da-f-]+\.tmp$/i],
     },
   },
-  build: mode === 'viewer' ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } } : undefined,
+  build: mode === 'viewer' ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } } : { rollupOptions: { input: ['index.html', 'capture.html'] } },
 }))

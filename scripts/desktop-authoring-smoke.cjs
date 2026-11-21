@@ -27,7 +27,7 @@ if (!process.versions.electron) {
   const file = path.join(dir, 'live.pflow');
   const base = [path.join(root, 'packages/protoflow-mcp/dist/cli.cjs')];
   const runtime = { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
-  function call(config, name, args) {
+  function request(config, method, params) {
     return new Promise((resolve, reject) => {
       const child = spawn(config.command, config.args, { env: { ...process.env, ...config.env } });
       let out = '', err = '';
@@ -39,20 +39,38 @@ if (!process.versions.electron) {
           assert.equal(code, 0, err);
           const response = JSON.parse(out);
           assert.ok(!response.error, response.error?.message);
-          assert.ok(!response.result.isError, response.result.content[0].text);
-          resolve(JSON.parse(response.result.content[0].text));
+          assert.ok(!response.result.isError, response.result.content?.find(block => block.type === 'text')?.text);
+          resolve(response.result);
         } catch (error) { reject(error); }
       });
-      child.stdin.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n');
+      child.stdin.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) + '\n');
     });
+  }
+  async function call(config, name, args) {
+    const { content } = await request(config, 'tools/call', { name, arguments: args });
+    return JSON.parse(content[0].text);
+  }
+  async function capture(config, args) {
+    const result = await request(config, 'tools/call', { name: 'protoflow_capture_preview', arguments: args });
+    assert.equal(result.content[0].mimeType, 'image/png');
+    const bytes = Buffer.from(result.content[0].data, 'base64');
+    const meta = JSON.parse(result.content[1].text);
+    assert.equal(bytes.readUInt32BE(16), meta.width);
+    assert.equal(bytes.readUInt32BE(20), meta.height);
+    const pixels = require('electron').nativeImage.createFromBuffer(bytes).resize({ width: 50 }).toBitmap();
+    assert.ok(new Set(pixels).size > 10, 'Preview must contain painted content');
+    return meta;
   }
   async function run() {
     const local = { ...runtime, args: [...base, '--rw', '--workspace', dir] };
-    await call(local, 'protoflow_workspace', { action: 'create_project', projectName: 'Live smoke', filePath: file });
+    await call(local, 'protoflow_workspace', { action: 'create_project', projectName: 'Live smoke', projectMode: 'hybrid', filePath: file });
     local.args.push('--project', file);
     await call(local, 'protoflow_manage_sitemap', { action: 'upsert_folder', folder: { id: 'smoke-folder', title: 'Pages', parentFolderId: null } });
     await call(local, 'protoflow_write_page', { pageId: 'smoke-page', title: 'Smoke', folderId: 'smoke-folder',
       platform: 'desktop', source: 'export default function Page() { return (<Page pfId="smoke-root" title="Smoke"><Tag pfId="smoke-tag">Before</Tag></Page>); }' });
+    await call(local, 'protoflow_write_page', { pageId: 'mobile', title: 'Mobile fixture', platform: 'mobile', folderId: 'smoke-folder',
+      source: 'export default function Page() { return (<MobilePage pfId="m-root"><MTopBar pfId="m-top" title="Mobile fixture" /></MobilePage>); }' });
+    assert.ok(!(await request(local, 'tools/list', {})).tools.some(tool => tool.name === 'protoflow_capture_preview'));
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
     require('../electron/main.cjs');
     await app.whenReady();
@@ -82,6 +100,20 @@ if (!process.versions.electron) {
       mode: 'replace_node', tsx: '<Tag pfId="smoke-tag" color="blue">Live update</Tag>' });
     const text = () => evalUi("document.querySelector('[data-pf-id=smoke-tag]')?.textContent");
     assert.match(await text(), /Live update/);
+    const beforeCapture = await call(config, 'protoflow_workspace', { action: 'status' });
+    assert.ok((await request(config, 'tools/list', {})).tools.some(tool => tool.name === 'protoflow_capture_preview'));
+    const active = await capture(config, {});
+    assert.equal(active.pageId, 'smoke-page');
+    const phone = await capture(config, { pageId: 'mobile', scope: 'viewport', waitMs: 50 });
+    const stage = await capture(config, { pageId: 'mobile', scope: 'canvas' });
+    assert.equal(phone.pageId, 'mobile');
+    assert.equal(phone.platform, 'mobile');
+    assert.equal(phone.revision, beforeCapture.revision);
+    assert.equal(phone.width / phone.height, 393 / 852);
+    assert.ok(stage.width > phone.width && stage.height > phone.height);
+    assert.deepEqual(await call(config, 'protoflow_workspace', { action: 'status' }), beforeCapture);
+    await assert.rejects(capture(config, { pageId: 'missing' }), /pageId/);
+    console.log('PASS desktop and mobile PNGs, device crop, stable selection, revision and undo');
     const diskSpec = () => call(local, 'protoflow_get_page_spec', { pageId: 'smoke-page' });
     assert.match((await diskSpec()).pageSourceTsx, /Live update/);
     await click("[...document.querySelectorAll('button')].find(b => /^(撤销|Undo)$/.test(b.textContent) && !b.disabled)");

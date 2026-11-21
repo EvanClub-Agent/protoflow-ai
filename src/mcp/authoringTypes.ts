@@ -67,6 +67,7 @@ export interface AuthoringWorkspace extends WorkspaceLoader {
   readonly mode: McpServerMode;
   readonly canWrite: boolean;
   readonly transport?: ActiveEditorContext['transport'];
+  capturePreview?(options: import('./capturePreview').CaptureOptions): Promise<import('./capturePreview').CaptureResult>;
   hasActiveProject(): boolean;
   getContext(): Promise<ActiveEditorContext>;
   listProjects(dirPath?: string): Promise<{ directory: string; projects: ProjectFileSummary[] }>;

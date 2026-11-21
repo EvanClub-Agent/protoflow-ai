@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { stringify } from 'lossless-json';
-import { tr } from '../i18n/runtime';
+import { getLocale, tr } from '../i18n/runtime';
+import { parsePageSource } from '../proto/dsl/parser';
+import { MOBILE_DEVICE_SPECS } from '../proto/mobile/types';
+import type { PreviewSnapshot } from '../capture/snapshot';
 import { newId } from '../utils/identity';
 import type { AuthoringWorkspace } from '../mcp/authoringTypes';
 import { parseStdioPayload } from '../mcp/wire';
@@ -18,6 +21,7 @@ type Session = ProjectTarget & { sessionId: string; opened: string };
 type LiveRequest = { sessionId: string; id: string; body: string; deadline: number };
 interface LiveApi {
   open(input: ProjectTarget & { sessionId: string }): Promise<{ connectionPath: string; projectPath: string }>;
+  capture(input: { sessionId: string; requestId: string; snapshot: PreviewSnapshot }): Promise<{ data: string; width: number; height: number }>;
   close(sessionId: string): Promise<void>;
   onRequest(listener: (request: LiveRequest) => void): () => void;
   reply(result: { sessionId: string; id: string; body?: string | null; failed?: boolean }): void;
@@ -80,10 +84,10 @@ export async function enableDesktopAuthoring() {
   }
 }
 
-function desktopWorkspace(target: Session, filePath: string, deadline: number): AuthoringWorkspace {
+function desktopWorkspace(target: Session, filePath: string, request: LiveRequest): AuthoringWorkspace {
   const revision = () => {
     const value = desktopProjectRevision();
-    if (!value || session !== target || !projectOpen(target) || Date.now() >= deadline) {
+    if (!value || session !== target || !projectOpen(target) || Date.now() >= request.deadline) {
       throw new Error(tr('桌面连接已过期，请重新读取当前工程', 'Desktop connection expired. Read the active project again.'));
     }
     return value;
@@ -102,6 +106,28 @@ function desktopWorkspace(target: Session, filePath: string, deadline: number): 
       return { transport: 'desktop_bridge', projectPath: filePath, workspaceDir: meta.storageDir,
         projectId: meta.projectId, projectName: meta.projectName, projectMode: meta.projectMode ?? 'desktop',
         revision: revision(), activePageId: activePageId || null, selectedPfId: selected, viewMode };
+    },
+    async capturePreview({ pageId: requested, scope, waitMs }) {
+      const captured = revision();
+      const state = useProtoStore.getState(), pages = usePageStore.getState();
+      const pageId = requested === undefined ? state.activePageId : requested;
+      if (!Object.hasOwn(pages.pageSources, pageId)) throw new Error('No canvas source for pageId: ' + pageId);
+      const parsed = parsePageSource(pages.pageSources[pageId]);
+      if (!parsed.doc || parsed.issues.length) throw new Error('Cannot render page: ' + pageId);
+      const { doc } = parsed;
+      if (doc.root.type !== 'Page' && doc.root.type !== 'MobilePage') throw new Error('Unknown page root: ' + doc.root.type);
+      const platform = doc.root.type === 'MobilePage' ? 'mobile' : 'desktop';
+      const bounds = document.querySelector('.pf-canvas-viewport-shell')?.getBoundingClientRect();
+      const device = MOBILE_DEVICE_SPECS[pages.mobileDevice];
+      const width = Math.min(2560, Math.max(platform === 'mobile' ? device.width + 64 : 1, Math.round(bounds?.width || 1280)));
+      const height = Math.min(2160, Math.max(platform === 'mobile' ? device.height + 64 : 1, Math.round(bounds?.height || 800)));
+      const { dbTables, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets } = state;
+      const snapshot: PreviewSnapshot = { pageId, revision: captured, scope, waitMs, platform, doc, width, height,
+        theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', locale: getLocale(), device: pages.mobileDevice,
+        meta: state.currentProjectMeta, state: { dbTables, tableRows: pages.tableRows, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets } };
+      const image = await desktopAuthoringApi()!.capture({ sessionId: target.sessionId, requestId: request.id, snapshot });
+      if (revision() !== captured) throw new Error('Project changed during preview capture. Read the current revision and retry.');
+      return { ...image, pageId, platform, scope, revision: captured };
     },
     async load() {
       return { sourceKind: 'local', sourceLabel: filePath, revision: revision(), payload: captureProjectPayload(), uniqueConstraintsComplete: true };
@@ -183,7 +209,7 @@ export function startDesktopAuthoring() {
         throw new Error('Desktop request expired');
       }
       const { handleSpecMcpPayload } = await import('../mcp/protocol');
-      const workspace = desktopWorkspace(target, file, request.deadline);
+      const workspace = desktopWorkspace(target, file, request);
       const response = await handleSpecMcpPayload(workspace, parseStdioPayload(request.body));
       api.reply({ id: request.id, sessionId: request.sessionId, body: response === null ? null : stringify(response) });
     }).catch(() => api.reply({ id: request.id, sessionId: request.sessionId, failed: true }));

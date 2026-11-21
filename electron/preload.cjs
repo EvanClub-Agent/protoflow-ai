@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
   readBinaryProject: (payload) => ipcRenderer.invoke('pflow:read-binary-project', payload),
   liveAuthoring: {
     open: input => ipcRenderer.invoke('pflow:mcp-live-open', input),
+    capture: input => ipcRenderer.invoke('pflow:mcp-capture', input),
     close: sessionId => ipcRenderer.invoke('pflow:mcp-live-close', sessionId),
     reply: result => ipcRenderer.send('pflow:mcp-live-reply', result),
     onRequest: listener => {

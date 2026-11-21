@@ -1,3 +1,4 @@
+import { parseCaptureOptions } from '../src/mcp/capturePreview';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +16,13 @@ import { useAccountStore } from '../src/store/useAccountStore';
 import { decodePflowBinary } from '../src/utils/pflowBinaryCodec';
 import { installTestDom } from './dom';
 const { createDesktopAuthoringBridge, installDesignerSkill } = require('../electron/desktop-authoring.cjs');
+
+test('capture options distinguish absent fields from invalid explicit values', () => {
+  assert.deepEqual(parseCaptureOptions({}), { scope: 'viewport', waitMs: 0, pageId: undefined });
+  for (const value of [null, [], {scope:'window'}, {waitMs:null}, {waitMs:'5'}, {waitMs:5001}, {pageId:' '}, {rect:{}}]) {
+    assert.throws(() => parseCaptureOptions(value));
+  }
+});
 
 test('Live MCP uses authenticated loopback, current editor selection, autosave revisions, Hermes lock and project undo', async () => {
   const restoreDom = installTestDom();
@@ -73,7 +81,11 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     pendingProjectAiTasks.delete('live-test');
 
     useProtoStore.setState({ viewMode: 'db_designer' });
-    usePageStore.getState().setPageSource(page, source + '\n');
+    api.capture = async () => {
+      usePageStore.getState().setPageSource(page, source + '\n');
+      return { data: 'stale', width: 1, height: 1 };
+    };
+    await assert.rejects(tool('protoflow_capture_preview'), /changed during preview capture/);
     await assert.rejects(rename('stale', first.revision), /冲突|conflict/);
     const dirty = await status();
     waitForSave = new Promise(resolve => { holdSave = resolve; });

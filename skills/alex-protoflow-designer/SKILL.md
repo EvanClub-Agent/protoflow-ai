@@ -41,6 +41,10 @@ Never memorize component props from memory — contracts evolve across Alex vers
 2. Call `protoflow_get_contracts()` (no args) to inspect compact component names grouped into `desktop`, `mobile`, `universal`, plus `actions`.
 3. Call `protoflow_get_contracts({ componentNames: [...] })` for the exact components you plan to emit; read `valueSchema`, `events`, `parents`, `childTypes`, and `examples`.
 
+## Visual verification on Alex Desktop
+
+After creating or refining a page over `desktop_bridge`, call `protoflow_capture_preview` with its exact `pageId`. Use `scope: "viewport"` for the page surface or phone screen and `"canvas"` for the complete visible stage. Inspect the PNG for clipped controls, text wrapping, and spacing. The accompanying text identifies the page, platform, pixel dimensions and project revision. Use that revision before a corrective edit, then capture again. File and shared-link connections expose the specification tools for inspection.
+
 ## Reference Playbooks (Read On Demand)
 
 Load the matching reference guide before starting complex workflows:

@@ -12,6 +12,7 @@ function createDesktopAuthoringBridge(directory, send) {
     if (!request) return;
     pending.delete(id);
     clearTimeout(request.timer);
+    request.lifetime.abort();
     request.response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     request.response.end(body);
   }
@@ -57,7 +58,8 @@ function createDesktopAuthoringBridge(directory, send) {
         if (pending.size >= 32) return reject(429);
         const id = crypto.randomUUID();
         const deadline = Date.now() + 55_000;
-        pending.set(id, { response: res, timer: setTimeout(() => finish(id, '', 504), deadline - Date.now()) });
+        pending.set(id, { response: res, lifetime: new AbortController(), timer: setTimeout(() => finish(id, '', 504), deadline - Date.now()) });
+        res.once('close', () => { if (!res.writableEnded) finish(id, '', 499); });
         try { send({ sessionId, id, deadline, body: Buffer.concat(chunks).toString('utf8') }); }
         catch { finish(id, '', 503); }
       } catch { if (!res.headersSent && !res.destroyed) reject(400); }
@@ -89,7 +91,11 @@ function createDesktopAuthoringBridge(directory, send) {
     if (active?.sessionId !== sessionId) return;
     finish(id, typeof body === 'string' ? body : '', failed ? 503 : body === null ? 204 : 200);
   }
-  return { open, close, reply };
+  function requestSignal(sessionId, id) {
+    if (!active || active.sessionId !== sessionId || !pending.has(id)) throw new Error('Desktop request expired');
+    return pending.get(id).lifetime.signal;
+  }
+  return { open, close, reply, requestSignal };
 }
 
 const skillRoots = new Map([

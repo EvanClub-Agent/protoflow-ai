@@ -1,3 +1,4 @@
+import { capturePreviewTool } from '../src/mcp/capturePreview';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -820,7 +821,7 @@ test('Authoring Skill Pack: SKILL.md and reference docs exist with valid frontma
   assert.match(fmMatch[1], /^name:\s*alex-protoflow-designer\b/m);
   assert.match(fmMatch[1], /^description:\s*\S+/m);
 
-  const validToolNames = new Set([...SPEC_MCP_TOOLS, ...AUTHORING_MCP_TOOLS].map((t) => t.name));
+  const validToolNames = new Set([...SPEC_MCP_TOOLS, ...AUTHORING_MCP_TOOLS, capturePreviewTool].map((t) => t.name));
   const referencedTools = [...content.matchAll(/\b(protoflow_[a-z0-9_]+)\b/g)].map((m) => m[1]);
   assert.ok(referencedTools.length >= 10, 'SKILL.md should reference core protoflow_* MCP tools');
   for (const toolName of referencedTools) {

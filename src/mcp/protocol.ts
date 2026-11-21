@@ -1,3 +1,4 @@
+import { capturePreviewTool, parseCaptureOptions } from './capturePreview';
 import type { LosslessNumber } from 'lossless-json';
 import { tr } from '../i18n/runtime';
 import {
@@ -114,6 +115,7 @@ export async function handleSpecMcpRequest(
   const params = req.params && typeof req.params === 'object' ? req.params : {};
   const isReadWrite = isAuthoringWorkspace(loader) && loader.mode === 'readwrite';
 
+  const live = isReadWrite && loader.transport === 'desktop_bridge' && typeof loader.capturePreview === 'function';
   try {
     switch (req.method) {
       case 'initialize': {
@@ -145,7 +147,7 @@ export async function handleSpecMcpRequest(
           jsonrpc: '2.0',
           id,
           result: {
-            tools: isReadWrite ? [...SPEC_MCP_TOOLS, ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS)] : SPEC_MCP_TOOLS,
+            tools: isReadWrite ? [...SPEC_MCP_TOOLS, ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS), ...(live ? [capturePreviewTool] : [])] : SPEC_MCP_TOOLS,
           },
         };
 
@@ -163,6 +165,13 @@ export async function handleSpecMcpRequest(
             ? (params.arguments as Record<string, unknown>)
             : {};
         try {
+          if (toolName === capturePreviewTool.name) {
+            if (!live) throw new Error('Preview capture requires a live Alex desktop connection');
+            const { data, ...metadata } = await loader.capturePreview!(parseCaptureOptions(params.arguments === undefined ? {} : params.arguments));
+            return { jsonrpc: '2.0', id, result: { isError: false, content: [
+              { type: 'image', mimeType: 'image/png', data }, { type: 'text', text: JSON.stringify(metadata) },
+            ] } };
+          }
           let output: unknown;
           if (isAuthoringToolName(toolName)) {
             if (!isReadWrite) {
@@ -223,11 +232,11 @@ export async function handleSpecMcpRequest(
             : undefined;
         if (isReadWrite && AUTHORING_PROMPT_NAMES.has(promptName)) {
           const workspace = loader.hasActiveProject() ? await loader.load() : null;
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: getAuthoringPrompt(workspace, promptName, promptArgs),
-          };
+          const prompt = getAuthoringPrompt(workspace, promptName, promptArgs);
+          if (live && ['design-full-project', 'design-page', 'refine-page'].includes(promptName)) {
+            prompt.messages[0].content.text += '\n' + tr('完成页面修改后，可调用 protoflow_capture_preview 复核实际布局和移动端裁切。', 'After editing, use protoflow_capture_preview to verify the rendered layout and mobile viewport.');
+          }
+          return { jsonrpc: '2.0', id, result: prompt };
         }
         const workspace = await loader.load();
         const prompt = getSpecPrompt(workspace, promptName, promptArgs);

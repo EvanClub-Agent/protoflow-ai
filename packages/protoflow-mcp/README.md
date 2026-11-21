@@ -34,6 +34,8 @@ Open a saved project, then choose **MCP → Local → Bidirectional design**. Co
 
 Start with `protoflow_workspace` using `action: "status"` to read the live revision, active page and selected component. Inspect the page before editing and include `expectedRevision` on writes. Edits appear on the canvas, use the desktop autosave queue, and can be undone from the top bar or with Cmd/Ctrl+Z. Hermes tasks block external writes until they finish. After a save error, the edit remains visible in Alex and saving can be retried there.
 
+The desktop-only `protoflow_capture_preview` tool accepts an optional `pageId` (active page by default), `scope` (`viewport` or `canvas`), and `waitMs` (0–5000). It renders an isolated preview of the saved and pending editor data, using the current canvas size or a 1280 × 800 reference stage when the canvas is closed. The mobile stage fits the selected device. It returns a PNG image block plus page ID, platform, pixel dimensions and revision. The editor's selection, scroll and undo history stay in place. A change during capture returns a revision conflict.
+
 Returning to the launcher, closing Alex, or selecting **Read-only specs** revokes the connection. Enable it again on the same project to reuse its configuration. Create and switch projects in the desktop launcher. The local file workflow below also supports project creation and switching.
 
 Use the install buttons to add the bundled designer skill to Codex, Antigravity or Claude Code. Each button uses the client's personal skill directory. Claude Desktop can use the MCP prompts directly. [Codex skills](https://developers.openai.com/codex/skills/) · [Antigravity skills](https://antigravity.google/docs/skills) · [Claude Code skills](https://code.claude.com/docs/en/skills)
