@@ -50,7 +50,9 @@ jobs:
       - run: npm run ${{ matrix.script }}
       - name: Build Client Integration Bundles
         if: matrix.name == 'linux-x64'
-        run: npm run build:integrations
+        run: |
+          npm run build:integrations
+          cp release/integrations/*.zip release/integrations/*.mcpb release/
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -62,8 +64,7 @@ jobs:
             release/*.deb
             release/*.AppImage
             release/*.tar.gz
-            release/integrations/*.zip
-            release/integrations/*.mcpb
+            release/*.mcpb
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
