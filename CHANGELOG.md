@@ -2,6 +2,19 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.5] - 2026-11-21
+
+### Added
+
+- **Full Bilingual Internationalization (`zh-CN` & `en-US`) Across All Surfaces**:
+  - Automatic OS / browser language detection (`zh*` → `zh-CN`, otherwise `en-US`) on first launch with persistent one-click `LanguageSwitch` across the desktop workbench, welcome launcher, published web viewer (`/p/<id>`), release center, standalone/encrypted HTML exports, and official product website (`website/`).
+  - Synchronized Ant Design (`zhCN` / `enUS`), `dayjs` (`zh-cn` / `en`), Tiptap editor placeholders, Electron native macOS application menus, close guards, Python Hermes sidecars (`PROTOFLOW_LOCALE`), mounted Hermes management dashboard windows (live in-place `LanguageSwitcher` sync without page reload), MCP servers, and Go publishing API (`Accept-Language` error localization).
+  - Container-query and flex-wrap layout hardening across narrow sidebars, 332px 4-tab node inspectors, secondary canvas toolbars, and web preview headers to guarantee zero text clipping or layout overflow when switching languages.
+- **Locale-Invariant Business & Relational Data Contracts**:
+  - Localized all 114+ desktop/mobile material metadata entries, starter projects, and page templates while strictly preserving physical schema contracts: foreign-key `value` bindings (including live qualified-supplier filtering across desktop `<Form>` and mobile `<MForm>` / `<MSheetPicker>`), SQL `ENUM(...)` state machines, `¥` RMB currency defaults, typed `{{form.<pfId>.<field>}}` action interpolation (`number`, `boolean`, `null`), legacy `"全部,启用,停用"` query clear compatibility, and live bidirectional translation of active validation errors and toasts.
+
+---
+
 ## [v0.0.4] - 2026-11-21
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "@protoflow-ai/mcp",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Read-only Model Context Protocol (MCP) server for Alex (ProtoFlow AI) local .pflow projects and remote published prototype shares.",
   "license": "Apache-2.0",
   "repository": {
