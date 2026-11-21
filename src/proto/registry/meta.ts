@@ -1,3 +1,4 @@
+import { AXURE_MATERIALS } from '../axure/metadata';
 import { createAntdMaterials, ANTD_EXTRA_PROPS, ANTD_INPUT_APPEARANCE } from './antdMeta';
 import { CELL_EDITORS } from '../table/model';
 import { FREEFORM_MATERIAL } from '../freeform/metadata';
@@ -667,13 +668,14 @@ export const COMPONENTS: ComponentMeta[] = [
     description: '单行文本输入（AntD Input）。',
     props: [
       ...fieldBase,
+      { name: 'initialValue', label: '初始值', kind: 'string' },
       { name: 'prefix', label: '前缀文字(addonBefore/prefix)', kind: 'string' },
       { name: 'suffix', label: '后缀文字(addonAfter/suffix)', kind: 'string' },
       { name: 'maxLength', label: '最大字符数(maxLength)', kind: 'number' },
       { name: 'showCount', label: '显示字数统计(showCount)', kind: 'boolean' },
       { name: 'password', label: '密码框模式', kind: 'boolean' },
     ],
-    events: [{ name: 'onChange', label: '值变化' }],
+    events: [{ name: 'onChange', label: '值变化' }, { name: 'onClick', label: '点击时' }],
     snippet: '<Input label="名称" name="name" />',
   },
   {
@@ -702,10 +704,12 @@ export const COMPONENTS: ComponentMeta[] = [
     description: '多行文本输入（AntD Input.TextArea）。',
     props: [
       ...fieldBase,
+      { name: 'initialValue', label: '初始值', kind: 'string' },
       { name: 'rows', label: '显示行数(rows)', kind: 'number', default: 3 },
       { name: 'maxLength', label: '最大字数(maxLength)', kind: 'number' },
       { name: 'showCount', label: '显示字数统计(showCount)', kind: 'boolean' },
     ],
+    events: [{ name: 'onClick', label: '点击时' }],
     snippet: '<Textarea label="备注" name="remark" span={2} />',
   },
   {
@@ -716,6 +720,7 @@ export const COMPONENTS: ComponentMeta[] = [
     description: '下拉单选/多选（AntD Select）。',
     props: [
       ...fieldBase,
+      { name: 'initialValue', label: '初始值', kind: 'string' },
       OPTION_LIST,
       { name: 'multiple', label: '多选模式(mode="multiple")', kind: 'boolean' },
       { name: 'showSearch', label: '支持输入搜索(showSearch)', kind: 'boolean' },
@@ -1003,12 +1008,16 @@ for (const component of COMPONENTS) {
   if (['Input', 'Textarea', 'NumberInput', 'Select', 'DatePicker', 'DateRange', 'TimePicker', 'Cascader', 'TreeSelect', 'AutoComplete'].includes(component.name)) {
     component.props.push(...ANTD_INPUT_APPEARANCE);
   }
-  if (['Textarea', 'DatePicker', 'DateRange', 'Checkbox'].includes(component.name)) component.events = [{ name: 'onChange', label: '值变化（params.value）' }];
+  if (['Textarea', 'DatePicker', 'DateRange', 'Checkbox'].includes(component.name)) {
+    const existing = component.events ?? [];
+    component.events = [{ name: 'onChange', label: '值变化（params.value）' }, ...existing.filter((e) => e.name !== 'onChange')];
+  }
   if (component.name === 'Pagination') component.events = [{ name: 'onChange', label: '页码变化（params.current / pageSize）' }];
   if (['Alert', 'Tag'].includes(component.name)) component.events = [{ name: 'onClose', label: '关闭' }];
 }
 
 COMPONENTS.push(...MOBILE_COMPONENTS);
+COMPONENTS.push(...AXURE_MATERIALS);
 
 export const COMPONENT_MAP: Record<string, ComponentMeta> = Object.fromEntries(COMPONENTS.map((c) => [c.name, c]));
 

@@ -840,3 +840,216 @@ test('MCP keeps declared numeric ranges and fractional seconds in PostgreSQL DDL
   assert.ok(ddl.includes('"serial_no" NUMERIC(20,0) NOT NULL CHECK ("serial_no" BETWEEN 0 AND 18446744073709551615)'));
   assert.ok(ddl.includes('"counter" BIGINT NULL CHECK ("counter" BETWEEN 0 AND 4294967295)'));
 });
+
+test('Spec MCP: flagship B2B showcase crm-contract-billing.pflow exposes complete ER DDL, PC+Mobile specs, sticky rules, and PRD notes', async () => {
+  const showcaseFile = path.resolve(__dirname, '../examples/crm-contract-billing/crm-contract-billing.pflow');
+  assert.equal(fs.existsSync(showcaseFile), true, 'expected examples/crm-contract-billing/crm-contract-billing.pflow to exist');
+  const loader = createLocalWorkspaceLoader(showcaseFile);
+
+  const callTool = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = (await handleSpecMcpPayload(loader, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name, arguments: args },
+    })) as { result: { isError?: boolean; content: { text: string }[] } };
+    assert.notEqual(res.result.isError, true, `MCP tool ${name} returned error: ${res.result.content?.[0]?.text}`);
+    return JSON.parse(res.result.content[0].text);
+  };
+
+  const overview = await callTool('protoflow_get_project_overview');
+  assert.equal(overview.project.projectName, 'CRM 合同与回款开票业财系统');
+  assert.equal(overview.counts.pages, 6);
+  assert.equal(overview.counts.tables, 5);
+  assert.equal(overview.counts.foreignKeys, 3);
+  assert.equal(overview.counts.activeStickyNotes, 9);
+  assert.equal(overview.counts.notes, 2);
+  assert.equal(overview.counts.mindmaps, 1);
+
+  const dbSchema = await callTool('protoflow_get_database_schema', { dialect: 'postgres' });
+  assert.equal(dbSchema.tableCount, 5);
+  assert.equal(dbSchema.foreignKeys.length, 3);
+  assert.match(dbSchema.ddl, /CONSTRAINT "uq_contract_stage" UNIQUE \("contract_id", "stage_no"\)/);
+  assert.match(dbSchema.ddl, /"credit_code" VARCHAR\(18\) NOT NULL UNIQUE/);
+  assert.match(dbSchema.ddl, /"is_overdue" BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.deepEqual(dbSchema.designReview.tableErrors, []);
+  assert.deepEqual(dbSchema.designReview.relationErrors, []);
+
+  const financeSpec = await callTool('protoflow_get_page_spec', { pageId: 'crm-finance' });
+  assert.equal(financeSpec.page.platform, 'desktop');
+  assert.equal(financeSpec.stickyNotes.length, 2);
+
+  const mobileInvoiceSpec = await callTool('protoflow_get_page_spec', { pageId: 'mob-crm-invoice' });
+  assert.equal(mobileInvoiceSpec.page.platform, 'mobile');
+  assert.equal(mobileInvoiceSpec.stickyNotes.length, 1);
+  assert.match(mobileInvoiceSpec.pageSourceTsx, /MSheetPicker/);
+
+  const docs = await callTool('protoflow_get_docs_and_flows');
+  assert.equal(docs.noteCount, 2);
+  assert.equal(docs.mindmapCount, 1);
+
+  const checklist = await callTool('protoflow_get_implementation_checklist');
+  assert.equal(checklist.summary.pagesToImplement, 6);
+  assert.equal(checklist.summary.tablesToImplement, 5);
+  assert.equal(checklist.summary.activeStickyRules, 9);
+  assert.deepEqual(checklist.openWarnings, []);
+});
+
+test('Spec MCP: exposes Table columns (dataIndex/title), widget props.text, and verified Axure RP lineage', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-axure-mcp-'));
+  try {
+    const filePath = path.join(tmpDir, 'rp-lineage.pflow');
+    const guid = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+    const rawPageId = `rp-page-${guid}`;
+    const optPageId = `rp-optimized-${guid}`;
+
+    const payload = createProjectPayload({
+      projectId: 'proj-rp-mcp',
+      projectName: 'ERP 进货重塑工程',
+      storageDir: tmpDir,
+      fileName: 'rp-lineage.pflow',
+      templateId: 'blank_project',
+      createdAt: '2026-11-21T08:00:00.000Z',
+      updatedAt: '2026-11-21T08:00:00.000Z',
+      pageCount: 2,
+      tableCount: 1,
+      stickyCount: 0,
+    });
+
+    payload.stateSnapshot.designerFolders = [{ id: 'f-erp', title: '采购管理', parentFolderId: null }];
+    payload.stateSnapshot.designerPages = [
+      { pageId: rawPageId, title: '进货量查询（RP原稿）', folderId: 'f-erp' },
+      { pageId: optPageId, title: '进货量查询（优化版）', folderId: 'f-erp' },
+    ];
+    payload.stateSnapshot.sitemapBase = [];
+    payload.stateSnapshot.activePageId = optPageId;
+    payload.stateSnapshot.dbTables = [
+      {
+        id: 't_purchase',
+        tableName: 't_purchase_order',
+        cnName: '采购进货单',
+        domain: '交易域',
+        description: '进货台账',
+        sharedByMenus: [],
+        columns: [
+          { id: 'c_id', name: 'id', dataType: 'VARCHAR(64)', nullable: false, isPrimaryKey: true, comment: '主键' },
+          { id: 'c_no', name: 'po_no', dataType: 'VARCHAR(64)', nullable: false, comment: '进货单号' },
+          { id: 'c_qty', name: 'qty', dataType: 'INT', nullable: false, comment: '进货数量' },
+        ],
+      },
+    ];
+    payload.stateSnapshot.pageSources = {
+      [rawPageId]: [
+        'export default function Page() {',
+        '  return (',
+        `    <Page pfId="root-raw" title="进货量查询（RP原稿）">`,
+        `      <AxureCanvas pfId="rp-canvas-${guid}" width={1200} height={800}>`,
+        `        <StaticTable pfId="rp-grid" x={20} y={40} width={600} height={120} columnWidths={[300, 300]} rowHeights={[40]}>`,
+        `          <StaticTableCell pfId="cell-h1" row={0} col={0} text="进货单号" />`,
+        `          <StaticTableCell pfId="cell-h2" row={0} col={1} text="进货数量" />`,
+        `        </StaticTable>`,
+        `      </AxureCanvas>`,
+        '    </Page>',
+        '  );',
+        '}',
+      ].join('\n'),
+      [optPageId]: [
+        `// @alex-axure-source ${rawPageId}`,
+        'export default function Page() {',
+        '  return (',
+        `    <Page pfId="root-opt" title="进货量查询（优化版）">`,
+        `      <Table pfId="tbl-po" table="t_purchase" columns={[{ dataIndex: 'po_no', title: '进货单号' }, { dataIndex: 'qty', title: '进货数量' }]} />`,
+        '    </Page>',
+        '  );',
+        '}',
+      ].join('\n'),
+    };
+
+    fs.writeFileSync(filePath, encodePflowBinary(payload));
+    const loader = createLocalWorkspaceLoader(filePath);
+    const callTool = async (name: string, args: Record<string, unknown> = {}) => {
+      const res = (await handleSpecMcpPayload(loader, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })) as { result: { isError?: boolean; content: { text: string }[] } };
+      assert.notEqual(res.result.isError, true, res.result.content?.[0]?.text);
+      return JSON.parse(res.result.content[0].text);
+    };
+
+    const overview = await callTool('protoflow_get_project_overview');
+    const rawEntry = overview.pages.find((p: { pageId: string }) => p.pageId === rawPageId);
+    const optEntry = overview.pages.find((p: { pageId: string }) => p.pageId === optPageId);
+    assert.equal(rawEntry.optimizedPageId, optPageId);
+    assert.equal(optEntry.axureSourcePageId, rawPageId);
+
+    const rawSpec = await callTool('protoflow_get_page_spec', { pageId: rawPageId });
+    assert.equal(rawSpec.page.optimizedPageId, optPageId);
+    const gridNode = rawSpec.componentOutline.children[0].children[0];
+    assert.equal(gridNode.children[0].text, '进货单号');
+
+    const optSpec = await callTool('protoflow_get_page_spec', { pageId: optPageId });
+    assert.equal(optSpec.page.axureSourcePageId, rawPageId);
+    assert.deepEqual(optSpec.componentOutline.children[0].summaryProps.columns, [
+      'po_no(进货单号)',
+      'qty(进货数量)',
+    ]);
+
+    const checklist = await callTool('protoflow_get_implementation_checklist');
+    const rawTask = checklist.pageAndApiTasks.find((t: { pageId: string }) => t.pageId === rawPageId);
+    const optTask = checklist.pageAndApiTasks.find((t: { pageId: string }) => t.pageId === optPageId);
+    assert.equal(rawTask.supersededByOptimizedPageId, optPageId);
+    assert.equal(optTask.axureSourcePageId, rawPageId);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('Spec MCP: McpConnectModal renders accessible tablist/tabpanel, VS Code config, and matching visible copy labels', async () => {
+  installTestDom();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(McpConnectModal, {
+          open: true,
+          onClose() {},
+          initialTab: 'remote',
+          initialShareUrl: 'https://proto.example.com/p/share_vscode_1234567890abcd',
+        })
+      );
+    });
+
+    const tabs = renderer.root.findAllByProps({ role: 'tab' });
+    assert.equal(tabs.length, 4);
+    assert.equal(tabs[0].props['aria-selected'], true);
+
+    // Every copy button uses its exact visible label without mismatched aria-label override (WCAG 2.5.3)
+    const copyBtns = renderer.root.findAll(
+      (node) => node.type === 'button' && node.props.command === '--copy'
+    );
+    assert.ok(copyBtns.length >= 2);
+    for (const btn of copyBtns) {
+      assert.equal(btn.props['aria-label'], undefined);
+    }
+
+    // Switch to VS Code tab and verify .vscode/mcp.json servers schema
+    act(() => {
+      tabs[1].props.onClick();
+    });
+    const refreshedTabs = renderer.root.findAllByProps({ role: 'tab' });
+    assert.equal(refreshedTabs[1].props['aria-selected'], true);
+    assert.equal(renderer.root.findAllByProps({ role: 'tabpanel' }).length, 1);
+
+    const codeText = renderer.root.findByType('pre').findByType('code').children.join('');
+    const parsedVscode = JSON.parse(codeText);
+    assert.equal(parsedVscode.servers.protoflow.type, 'http');
+    assert.equal(
+      parsedVscode.servers.protoflow.url,
+      'https://proto.example.com/api/v1/mcp/share_vscode_1234567890abcd'
+    );
+  } finally {
+    if (renderer) act(() => renderer.unmount());
+  }
+});

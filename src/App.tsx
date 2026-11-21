@@ -26,6 +26,7 @@ import { ClosedLoopAuditView } from './components/ClosedLoopAuditView';
 import { InspectorSidebar } from './components/InspectorSidebar';
 import { DesktopBundleModal } from './components/DesktopBundleModal';
 import { McpConnectModal } from './components/McpConnectModal';
+import { useAxureImport } from './components/AxureImportDialog';
 import { ProjectWelcomeLauncher } from './components/ProjectWelcomeLauncher';
 import { WebPublishModal } from './components/WebPublishModal';
 import { HermesEngineModal } from './components/HermesEngineModal';
@@ -37,6 +38,7 @@ import { useUpdateStore } from './store/useUpdateStore';
 import { usePageStore } from './proto/store/usePageStore';
 
 export function App() {
+  const axure = useAxureImport();
   const {
     activePageId,
     currentProjectMeta,
@@ -125,7 +127,8 @@ export function App() {
   if ((isDesktopApp && isWelcomeScreenOpen) || isProjectClosed) {
     return (
       <>
-        <ProjectWelcomeLauncher standalone />
+        {axure.ui}
+        <ProjectWelcomeLauncher standalone onImportRp={axure.pick} />
         <HermesEngineModal />
         <AppUpdateModal />
         {!isProjectClosed && <DesktopBundleModal />}
@@ -136,7 +139,8 @@ export function App() {
   return (
     <div className="h-screen w-screen flex flex-col bg-[#F3F5F8] text-slate-900 overflow-hidden">
       {/* IntelliJ IDEA-style Welcome Launcher Modal when opening the tool or switching projects */}
-      {isWelcomeScreenOpen && <ProjectWelcomeLauncher />}
+      {axure.ui}
+      {isWelcomeScreenOpen && <ProjectWelcomeLauncher onImportRp={axure.pick} />}
 
       {/* Top Antigravity-style Single-Line Draggable Titlebar */}
       <GlobalToolbar />

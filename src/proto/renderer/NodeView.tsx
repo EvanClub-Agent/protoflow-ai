@@ -1,3 +1,4 @@
+import { isAxureMaterial } from '../axure/metadata';
 import React, { createContext, useContext, useLayoutEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, BookmarkPlus, Copy, CornerLeftUp, Trash2 } from 'lucide-react';
 import type { PropValue, ProtoNode } from '../types';
@@ -5,7 +6,7 @@ import { isActionChain, isNode, isRawExpr } from '../types';
 import { COMPONENT_MAP, OVERLAY_TYPES, FIELD_TYPES, PAGE_ROOT_TYPES } from '../registry/meta';
 import { isChartType } from '../charts/model';
 import { REGISTRY, type CompProps, type RootAttrs } from '../registry/components';
-import { interpolate, useRuntime, type Scope } from '../runtime/runtime';
+import { interpolate, usesLiteralLayoutContent, useRuntime, type Scope } from '../runtime/runtime';
 import type { ComponentStickyPinProps } from '../../components/ComponentStickyPin';
 import { FLOW_GRID_CONTAINERS, flowGridSpan, columnSpan, columnWidthLabel, trailingColumnSpace } from './gridLayout';
 
@@ -109,14 +110,14 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
 
   const Impl = REGISTRY[node.type];
   const meta = COMPONENT_MAP[node.type];
-  const text = interpolate(
-    node.children
+  const literalText = node.children
       .filter((c) => !isNode(c))
       .map((c) => (c as { value: string }).value)
-      .join(' '),
-    scope,
-    rt.vars
-  );
+      .join(' ');
+  const frame = node.props.layoutFrame;
+  // Previously imported positioned controls store Axure text and placeholders literally.
+  const literalContent = usesLiteralLayoutContent(frame);
+  const text = literalContent ? literalText : interpolate(literalText, scope, rt.vars);
   const kids = node.children.filter(isNode);
   const childOptions = options?.staticOverlay ? { ...options, staticOverlay: false } : options;
   const children = kids.map((k) => (
@@ -232,7 +233,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
 
   // Freeform source/CSS/data and event placeholders are opaque values. They
   // must survive verbatim until the isolated runtime or event bridge reads them.
-  const resolvedProps = node.type === 'Freeform' || isChartType(node.type) ? { ...node.props } : resolveProps(node.props, scope, rt.vars);
+  const resolvedProps = isAxureMaterial(node.type) || literalContent || node.type === 'Freeform' || isChartType(node.type) ? { ...node.props } : resolveProps(node.props, scope, rt.vars);
   // When placed inside Toolbar / horizontal Space, or when width === 'auto', force compact inline mode on FieldControl
   if ((inFlexRow || rawWidth === 'auto') && FIELD_CONTROL_TYPES.has(node.type)) {
     resolvedProps.width = 'auto';

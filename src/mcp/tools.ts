@@ -1,5 +1,7 @@
+import { verifiedAxureSourceId } from '../proto/axure/task';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
+import { readPageHeader } from '../proto/dsl/header';
 import { parsePageSource } from '../proto/dsl/parser';
 import { walk } from '../proto/dsl/tree';
 import { noteHtmlToMarkdown, noteHtmlToPlainText } from '../proto/notes';
@@ -276,29 +278,65 @@ function buildComponentOutline(node: ProtoNode, depth = 0): OutlineNode {
     }
   }
   if (Array.isArray(node.props.columns)) {
-    summaryProps.columns = node.props.columns
+    const summarizedColumns = node.props.columns
       .map((col: PropValue) => {
-        if (col && typeof col === 'object' && !Array.isArray(col) && 'key' in col) {
+        if (col && typeof col === 'object' && !Array.isArray(col)) {
           const rec = col as Record<string, PropValue>;
-          return `${String(rec.key ?? rec.dataIndex ?? '')}${rec.title ? `(${String(rec.title)})` : ''}`;
+          const fieldKey =
+            typeof rec.dataIndex === 'string' && rec.dataIndex.trim()
+              ? rec.dataIndex.trim()
+              : typeof rec.key === 'string' && rec.key.trim()
+                ? rec.key.trim()
+                : '';
+          const title = typeof rec.title === 'string' ? rec.title.trim() : '';
+          if (fieldKey) return `${fieldKey}${title ? `(${title})` : ''}`;
+          if (title) return title;
         }
         return null;
       })
       .filter(Boolean);
+    if (summarizedColumns.length) {
+      summaryProps.columns = summarizedColumns;
+    }
   }
   const textParts = node.children
     .filter((c) => !isNode(c))
     .map((c) => (c as { value: string }).value.trim())
     .filter(Boolean);
+  const propText =
+    !textParts.length && typeof node.props.text === 'string' && node.props.text.trim()
+      ? node.props.text.trim()
+      : '';
+  const resolvedText = textParts.length ? textParts.join(' ') : propText;
   const childNodes = depth < 8 ? node.children.filter(isNode).map((c) => buildComponentOutline(c, depth + 1)) : [];
 
   return {
     pfId: node.pfId,
     type: node.type,
     ...(Object.keys(summaryProps).length ? { summaryProps } : {}),
-    ...(textParts.length ? { text: textParts.join(' ').slice(0, 120) } : {}),
+    ...(resolvedText ? { text: Array.from(resolvedText).slice(0, 120).join('') } : {}),
     ...(childNodes.length ? { children: childNodes } : {}),
   };
+}
+
+function resolveAxureLineage(
+  pages: readonly { pageId: string; deprecated: boolean }[],
+  pageSources: Record<string, string>
+): { sourceByCopyId: Map<string, string>; activeCopyBySourceId: Map<string, string> } {
+  const sourceByCopyId = new Map<string, string>();
+  const activeCopyBySourceId = new Map<string, string>();
+  const pageIdSet = new Set(pages.map((p) => p.pageId));
+  for (const p of pages) {
+    const rawSource = pageSources[p.pageId];
+    if (!rawSource) continue;
+    const sourceId = verifiedAxureSourceId(p.pageId, readPageHeader(rawSource));
+    if (!sourceId) continue;
+    sourceByCopyId.set(p.pageId, sourceId);
+    if (!p.deprecated && pageIdSet.has(sourceId)) {
+      activeCopyBySourceId.set(sourceId, p.pageId);
+    }
+  }
+  return { sourceByCopyId, activeCopyBySourceId };
 }
 
 function pagePlatform(source: string | undefined): 'desktop' | 'mobile' | 'unknown' {
@@ -318,6 +356,7 @@ export function executeSpecTool(
   const s = payload.stateSnapshot;
   const analysis = analyzeProject(s);
   const tableById = new Map(s.dbTables.map((t) => [t.id, t]));
+  const axureLineage = resolveAxureLineage(analysis.pages, s.pageSources);
 
   switch (name) {
     case 'protoflow_get_project_overview': {
@@ -332,6 +371,8 @@ export function executeSpecTool(
           )
         );
         const stickyCount = s.stickyNotes.filter((n) => n.pageId === p.pageId && n.active).length;
+        const axureSourcePageId = axureLineage.sourceByCopyId.get(p.pageId);
+        const optimizedPageId = axureLineage.activeCopyBySourceId.get(p.pageId);
         return {
           pageId: p.pageId,
           title: p.title,
@@ -339,6 +380,8 @@ export function executeSpecTool(
           platform: pagePlatform(s.pageSources[p.pageId]),
           hasSource: p.hasSource,
           deprecated: p.deprecated,
+          ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(optimizedPageId ? { optimizedPageId } : {}),
           boundTables,
           activeStickyCount: stickyCount,
         };
@@ -610,6 +653,9 @@ export function executeSpecTool(
 
       const agreements = (s.projectAgreements ?? []).filter((a) => a.pageIds.includes(pageId));
 
+      const axureSourcePageId = axureLineage.sourceByCopyId.get(pageId);
+      const optimizedPageId = axureLineage.activeCopyBySourceId.get(pageId);
+
       return {
         page: {
           pageId: pageEntry.pageId,
@@ -618,6 +664,8 @@ export function executeSpecTool(
           platform: pagePlatform(source),
           hasSource: pageEntry.hasSource,
           deprecated: pageEntry.deprecated,
+          ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(optimizedPageId ? { optimizedPageId } : {}),
         },
         tableBindings,
         actions,
@@ -925,11 +973,16 @@ export function executeSpecTool(
           inferredEndpoints.add(`TRANSFER lines ${fromTbl} -> ${toTbl}`);
         }
 
+        const axureSourcePageId = axureLineage.sourceByCopyId.get(p.pageId);
+        const supersededByOptimizedPageId = axureLineage.activeCopyBySourceId.get(p.pageId);
+
         return {
           pageId: p.pageId,
           title: p.title,
           routePath: p.path,
           platform: pagePlatform(s.pageSources[p.pageId]),
+          ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(supersededByOptimizedPageId ? { supersededByOptimizedPageId } : {}),
           inferredBackendOperations: Array.from(inferredEndpoints),
           interactiveActionCount: pageActions.length,
           activeStickyRules: s.stickyNotes

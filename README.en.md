@@ -53,6 +53,7 @@ Product managers and engineering teams are often stuck between **static wirefram
 - **05 · Component Sticky Specs & Closed-Loop Audit**: Pin requirement notes directly onto UI controls, trace schema change impact across menus, and audit broken links or unbound foreign keys.
 - **06 · Self-Hosted Online Sharing & Release Center**: Share password-protected, expiring, versioned `/p/{id}` interactive prototypes via a lightweight Go + PostgreSQL + Nginx stack.
 - **07 · Built-In Read-Only MCP Spec Server**: Connect **Claude Code**, **Cursor**, **Antigravity**, **Windsurf**, or **Codex** directly to a remote `/p/{id}` share URL (`https://.../api/v1/mcp/<shareId>`, zero local tool installation for developers!) or a local `.pflow` file (via Alex Desktop's built-in Node-free runtime or `node ./packages/protoflow-mcp/dist/cli.cjs --project ./app.pflow`) to query ER schemas, SQL DDL drafts, page TSX, action chains, and sticky-note specs on demand.
+- **08 · Native Axure (`.rp`) Binary Import & Controlled AI Flow Reshaping**: Drop Axure RP 9 or RP 11 `.rp` files directly into Alex locally without Axure installed. Edit imported pages visually or let Project AI reshape scattered wireframes and static grids into flow-layout `QueryForm` + `Table` + `Descriptions` backed by shared physical ER tables, with strict per-column mapping, row-action consistency checks, and itemized **Converted / Retained / Pending** confirmation reviews alongside the preserved original RP pages.
 
 ---
 

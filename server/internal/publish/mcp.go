@@ -20,7 +20,7 @@ import (
 
 const (
 	mcpServerName       = "protoflow-spec"
-	mcpServerVersion    = "0.0.2"
+	mcpServerVersion    = "0.0.4"
 	maxMcpRequestBytes  = 64 << 10 // 64 KiB cap for read-only MCP JSON-RPC request bodies
 	maxMcpBatchSize     = 16
 	maxMcpResponseBytes = 4 << 20 // 4 MiB cumulative response cap per HTTP request
@@ -189,18 +189,45 @@ type mcpFkIssue struct {
 // mcpRequestContext caches the decoded snapshot and derived indices across a single HTTP
 // request so batch calls never re-parse or re-walk the published snapshot.
 type mcpRequestContext struct {
-	pub       Publication
-	shareURL  string
-	loaded    bool
-	loadErr   error
-	snap      mcpSnapshot
-	catalog   []pageCatalogEntry
-	pageByID  map[string]mcpPage
-	tableByID map[string]mcpTable
-	allUsages []gin.H
-	allActs   []mcpActionItem
-	allFKs    []mcpForeignKey
-	fkIssues  []mcpFkIssue
+	pub               Publication
+	shareURL          string
+	loaded            bool
+	loadErr           error
+	snap              mcpSnapshot
+	catalog           []pageCatalogEntry
+	pageByID          map[string]mcpPage
+	tableByID         map[string]mcpTable
+	allUsages         []gin.H
+	allActs           []mcpActionItem
+	allFKs            []mcpForeignKey
+	fkIssues          []mcpFkIssue
+	axureSourceByCopy map[string]string
+	axureCopyBySource map[string]string
+}
+
+var remoteAxureCopyRe = regexp.MustCompile(`^rp-optimized-([a-f0-9]{32})$`)
+
+func verifiedRemoteAxureSourceID(copyID string, header []string) string {
+	m := remoteAxureCopyRe.FindStringSubmatch(copyID)
+	if m == nil || len(header) == 0 {
+		return ""
+	}
+	sourceID := "rp-page-" + m[1]
+	expected := "// @alex-axure-source " + sourceID
+	matched := 0
+	for _, line := range header {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "// @alex-axure-source ") {
+			if trimmed != expected {
+				return ""
+			}
+			matched++
+		}
+	}
+	if matched == 1 {
+		return sourceID
+	}
+	return ""
 }
 
 func (rc *mcpRequestContext) ensureLoaded() error {
@@ -269,6 +296,20 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 	}
 
 	rc.allFKs, rc.fkIssues = extractForeignKeys(rc.snap.Tables, tableByName, tableNameCount)
+	rc.axureSourceByCopy = make(map[string]string)
+	rc.axureCopyBySource = make(map[string]string)
+	deprecatedByID := make(map[string]bool, len(rc.catalog))
+	for _, entry := range rc.catalog {
+		deprecatedByID[entry.PageID] = entry.Deprecated
+	}
+	for _, p := range rc.snap.Pages {
+		if srcID := verifiedRemoteAxureSourceID(p.PageID, p.Doc.Header); srcID != "" {
+			rc.axureSourceByCopy[p.PageID] = srcID
+			if !deprecatedByID[p.PageID] && validPageIDs[srcID] {
+				rc.axureCopyBySource[srcID] = p.PageID
+			}
+		}
+	}
 	return nil
 }
 
@@ -1537,12 +1578,39 @@ func printRemoteExpr(v any) string {
 
 func buildRemoteOutline(n mcpNode, depth int) gin.H {
 	summary := gin.H{}
-	for _, k := range []string{"id", "title", "subtitle", "label", "name", "table", "sourceForeignKey", "statusField", "placeholder", "type", "variant"} {
+	for _, k := range []string{"id", "title", "subtitle", "label", "name", "table", "sourceForeignKey", "statusField", "placeholder", "type", "variant", "xField", "yField", "seriesField", "categoryField", "valueField"} {
 		if val, ok := n.Props[k]; ok {
 			switch val.(type) {
 			case string, float64, bool:
 				summary[k] = val
 			}
+		}
+	}
+	if rawCols, ok := n.Props["columns"].([]any); ok {
+		var cols []string
+		for _, item := range rawCols {
+			if rec, ok := item.(map[string]any); ok {
+				fieldKey := ""
+				if di, ok := rec["dataIndex"].(string); ok && strings.TrimSpace(di) != "" {
+					fieldKey = strings.TrimSpace(di)
+				} else if k, ok := rec["key"].(string); ok && strings.TrimSpace(k) != "" {
+					fieldKey = strings.TrimSpace(k)
+				}
+				title := ""
+				if t, ok := rec["title"].(string); ok && strings.TrimSpace(t) != "" {
+					title = strings.TrimSpace(t)
+				}
+				if fieldKey != "" && title != "" {
+					cols = append(cols, fmt.Sprintf("%s(%s)", fieldKey, title))
+				} else if fieldKey != "" {
+					cols = append(cols, fieldKey)
+				} else if title != "" {
+					cols = append(cols, title)
+				}
+			}
+		}
+		if len(cols) > 0 {
+			summary["columns"] = cols
 		}
 	}
 	var texts []string
@@ -1554,16 +1622,21 @@ func buildRemoteOutline(n mcpNode, depth int) gin.H {
 			kids = append(kids, buildRemoteOutline(c, depth+1))
 		}
 	}
+	resolvedText := strings.Join(texts, " ")
+	if resolvedText == "" {
+		if propTxt, ok := n.Props["text"].(string); ok && strings.TrimSpace(propTxt) != "" {
+			resolvedText = strings.TrimSpace(propTxt)
+		}
+	}
 	out := gin.H{"pfId": n.PfID, "type": n.Type}
 	if len(summary) > 0 {
 		out["summaryProps"] = summary
 	}
-	if len(texts) > 0 {
-		txt := strings.Join(texts, " ")
-		if len(txt) > 120 {
-			txt = txt[:120]
+	if resolvedText != "" {
+		if runes := []rune(resolvedText); len(runes) > 120 {
+			resolvedText = string(runes[:120])
 		}
-		out["text"] = txt
+		out["text"] = resolvedText
 	}
 	if len(kids) > 0 {
 		out["children"] = kids
@@ -1642,7 +1715,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			if pg, ok := pageByID[entry.PageID]; ok && pg.Doc.Root.Type == "MobilePage" {
 				platform = "mobile"
 			}
-			pagesOut = append(pagesOut, gin.H{
+			pageItem := gin.H{
 				"pageId":            entry.PageID,
 				"title":             entry.Title,
 				"path":              entry.Path,
@@ -1651,7 +1724,14 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 				"deprecated":        entry.Deprecated,
 				"boundTables":       boundList,
 				"activeStickyCount": stickyCnt,
-			})
+			}
+			if srcID := rc.axureSourceByCopy[entry.PageID]; srcID != "" {
+				pageItem["axureSourcePageId"] = srcID
+			}
+			if optID := rc.axureCopyBySource[entry.PageID]; optID != "" {
+				pageItem["optimizedPageId"] = optID
+			}
+			pagesOut = append(pagesOut, pageItem)
 		}
 
 		tablesOut := make([]gin.H, 0)
@@ -1947,15 +2027,22 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			title = pg.Title
 		}
 
+		pageMeta := gin.H{
+			"pageId":     pageID,
+			"title":      title,
+			"path":       pathStr,
+			"platform":   platform,
+			"hasSource":  hasPage,
+			"deprecated": dep,
+		}
+		if srcID := rc.axureSourceByCopy[pageID]; srcID != "" {
+			pageMeta["axureSourcePageId"] = srcID
+		}
+		if optID := rc.axureCopyBySource[pageID]; optID != "" {
+			pageMeta["optimizedPageId"] = optID
+		}
 		res := gin.H{
-			"page": gin.H{
-				"pageId":     pageID,
-				"title":      title,
-				"path":       pathStr,
-				"platform":   platform,
-				"hasSource":  hasPage,
-				"deprecated": dep,
-			},
+			"page":               pageMeta,
 			"tableBindings":      bindings,
 			"actions":            pageActions,
 			"outgoingNavigation": outNav,
@@ -2095,7 +2182,13 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 					var op string
 					switch a.ActionName {
 					case "submitForm":
-						op = "CREATE/UPDATE via Form (" + a.PfID + ")"
+						formTarget := a.PfID
+						if len(a.Args) > 0 {
+							if targetStr, ok := a.Args[0].(string); ok && targetStr != "" {
+								formTarget = targetStr
+							}
+						}
+						op = "CREATE/UPDATE via Form (" + formTarget + ")"
 					case "updateRow":
 						op = "PATCH/STATE_TRANSITION on " + a.PfID
 					case "deleteRow":
@@ -2118,7 +2211,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			if pg, ok := pageByID[entry.PageID]; ok && pg.Doc.Root.Type == "MobilePage" {
 				platform = "mobile"
 			}
-			pageTasks = append(pageTasks, gin.H{
+			taskItem := gin.H{
 				"pageId":                    entry.PageID,
 				"title":                     entry.Title,
 				"routePath":                 entry.Path,
@@ -2126,7 +2219,14 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 				"inferredBackendOperations": ops,
 				"interactiveActionCount":    actCnt,
 				"activeStickyRules":         rules,
-			})
+			}
+			if srcID := rc.axureSourceByCopy[entry.PageID]; srcID != "" {
+				taskItem["axureSourcePageId"] = srcID
+			}
+			if optID := rc.axureCopyBySource[entry.PageID]; optID != "" {
+				taskItem["supersededByOptimizedPageId"] = optID
+			}
+			pageTasks = append(pageTasks, taskItem)
 		}
 
 		dbTasks := make([]gin.H, 0)

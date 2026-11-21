@@ -1,3 +1,4 @@
+import { appearanceSpecs, frameSpecs, isAxureMaterial, positionedNativeTypes } from '../axure/metadata';
 import {
   COMPONENTS,
   DESKTOP_OVERLAY_TYPES,
@@ -48,6 +49,7 @@ const controlWidth: PropSpec = { name: 'controlWidth', label: '行内控件宽�
 export function materialPropSpecs(component: ComponentMeta): PropSpec[] {
   const isMobile = MOBILE_COMPONENT_NAMES.has(component.name);
   return [...component.props,
+    ...(positionedNativeTypes.has(component.name) ? [{ name: 'layoutFrame', label: '自由定位与外观', kind: 'json' as const }] : []),
     ...(PAGE_ROOT_TYPES.has(component.name) || isMobile || OVERLAY_TYPES.has(component.name) ? [] : COMMON_LAYOUT_PROPS.filter((p) => !component.props.some((own) => own.name === p.name))),
     ...(FIELD_TYPES.has(component.name) && !isMobile ? [controlWidth] : []),
   ];
@@ -92,6 +94,15 @@ export function materialPropSchema(component: ComponentMeta, prop: PropSpec): Va
     if (prop.name === 'metrics') return { type: 'array', items: object({ field: { type: 'string', minLength: 1 }, label: { type: 'string', minLength: 1 } }, ['field', 'label']) };
     if (prop.name === 'height') return { type: 'number', minimum: 180, maximum: 1200, integer: true };
   }
+  if (prop.name === 'layoutFrame' || (component.name === 'StaticTable' && prop.name === 'cellStyle')) {
+    const specs = prop.name === 'cellStyle' ? appearanceSpecs : [...frameSpecs, ...appearanceSpecs];
+    const fields = Object.fromEntries(specs.map(p => [p.name, p.kind === 'number' ? number : p.kind === 'boolean' ? boolean : string]));
+    if (prop.name === 'layoutFrame') fields.literalContent = boolean;
+    return object(fields);
+  }
+  if (isAxureMaterial(component.name) && prop.name === 'runs') return { type: 'array', items: object({ text: string, color: string, fontSize: number, fontWeight: number, fontFamily: string }, ['text']) };
+  if (component.name === 'StaticTable' && ['columnWidths', 'rowHeights'].includes(prop.name)) return { type: 'array', items: { type: 'number', minimum: 0 } };
+  if (isAxureMaterial(component.name) && prop.name === 'selectedOptions') return { type: 'array', items: nonnegativeInteger };
   if (component.name === 'Table' && prop.name === 'cellMerges') {
     const names: ValueSchema = { type: 'array', items: { type: 'string', minLength: 1 } };
     return { type: 'array', items: object({ rowIds: names, fields: names }, ['rowIds', 'fields']) };
@@ -144,7 +155,7 @@ export function getMaterialContracts() {
     ...component,
     ...(DESKTOP_OVERLAY_TYPES.has(component.name) ? { parents: ['Page'] } : {}),
     ...(MOBILE_OVERLAY_TYPES.has(component.name) ? { parents: ['MobilePage'] } : {}),
-    childTypes: ({ Tabs: ['Tab'], MPillTabs: ['MTab'], Collapse: ['CollapsePanel'], Row: ['Col'] } as Record<string, string[]>)[component.name],
+    childTypes: ({ OutlineTree: ['TreeItem'], TreeItem: ['TreeItem'], DynamicPanel: ['PanelState'], StaticTable: ['StaticTableCell'], Tabs: ['Tab'], MPillTabs: ['MTab'], Collapse: ['CollapsePanel'], Row: ['Col'] } as Record<string, string[]>)[component.name],
     props: materialPropSpecs(component).map((prop) => ({ ...prop, valueSchema: materialPropSchema(component, prop) })),
     events: (component.events ?? []).map((event) => ({ ...event, valueSchema: { type: 'actions' as const } })),
     additionalProperties: false,

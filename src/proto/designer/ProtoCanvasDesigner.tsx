@@ -1295,6 +1295,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
             {/* Center Viewport: Design Canvas | Live Preview | Bidirectional TSX Code Editor */}
             <div
+              style={mode === 'preview' && doc.root.children.some(c => c.kind === 'node' && c.type === 'AxureCanvas') ? { contain:'layout' } : undefined}
               data-ai-active={isAiGenerating ? '1' : undefined}
               className="pf-canvas-viewport-shell flex-1 min-h-0 m-1 rounded-[20px] border border-slate-200/90 bg-white shadow-2xs relative flex flex-col overflow-hidden"
             >

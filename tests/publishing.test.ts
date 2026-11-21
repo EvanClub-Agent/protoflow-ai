@@ -11,6 +11,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { captureProjectPayload, createProjectPayload, loadProjectFromBinaryPayload } from '../src/services/projectStorage';
 import { validateProjectPayload } from '../src/services/projectValidation';
 import { createPublishedSnapshot } from '../src/services/createPublishedSnapshot';
+import { parsePageSource } from '../src/proto/dsl/parser';
 import { normalizePublishedSnapshot, validatePublishedSnapshot } from '../src/services/publishedSnapshot';
 import { hydratePublishedSnapshot, PublishedPageView } from '../src/viewer/PublishedViewer';
 import { PublishedNotesButton, PublishedNotesProvider } from '../src/viewer/PublishedNotes';
@@ -61,6 +62,35 @@ test('publishing captures user-created pages and exact demo rows, without local 
   assert.equal('pageSources' in snapshot, false);
   usePageStore.getState().setPageSource('page-home', 'changed locally');
   assert.equal(snapshot.pages[0].doc.root.props.title, '自定义设计');
+});
+test('published RP navigation verifies both copies before preferring an optimized destination', async () => {
+  const restore = installTestDom();
+  const a = 'a'.repeat(32), b = 'b'.repeat(32);
+  const from = 'rp-optimized-' + a, to = 'rp-page-' + b, copy = 'rp-optimized-' + b;
+  const header = (guid:string) => '// @alex-axure-source rp-page-' + guid;
+  const doc = parsePageSource(`${header(a)}\nexport default function Page(){return <Page pfId="root"><Button pfId="next" onClick={()=>navigate("${to}")}>下一页</Button></Page>}`).doc!;
+  const page = {pageId:from,title:'采购',folderId:'folder',doc};
+  usePageStore.setState({pageSources:{}});
+  let destinationHeader:string[] | undefined;
+  let renderer:TestRenderer.ReactTestRenderer;
+  const render = () => React.createElement(PublishedPageView,{page,canNavigate:(id:string)=>[from,to,copy].includes(id),
+    publishedHeader:(id:string)=>id === copy ? destinationHeader : undefined});
+  async function click() {
+    useProtoStore.getState().setActivePage(from);
+    await act(async () => { renderer!.root.findByType('button').props.onClick({stopPropagation(){}}); });
+    return useProtoStore.getState().activePageId;
+  }
+  try {
+    act(() => { renderer=TestRenderer.create(render()); });
+    assert.equal(await click(),to);
+    destinationHeader = [header(a)];
+    assert.equal(await click(),to);
+    destinationHeader = [header(b)];
+    assert.equal(await click(),copy);
+    doc.header = [];
+    act(() => renderer!.update(render()));
+    assert.equal(await click(),to);
+  } finally { act(()=>renderer?.unmount()); restore(); }
 });
 test('the complete built-in canvas publishes all pages and materializes exactly its local data', () => {
   project('customs_erp');

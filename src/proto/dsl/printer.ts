@@ -47,7 +47,7 @@ function printAttr(name: string, v: PropValue, depth: number): string {
 }
 
 function escapeText(s: string): string {
-  return /[{}<>]/.test(s) ? `{${quote(s)}}` : s;
+  return /[{}<>&]|^\s|\s$|\s{2}|[^\S ]/u.test(s) ? `{${quote(s)}}` : s;
 }
 
 function printNode(n: ProtoNode, depth: number): string {

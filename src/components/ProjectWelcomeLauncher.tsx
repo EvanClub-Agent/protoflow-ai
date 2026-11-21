@@ -43,7 +43,8 @@ import {
 export const ProjectWelcomeLauncher: React.FC<{
   /** Desktop app: the launcher fills its own compact native window (no outer backdrop / fake window chrome) */
   standalone?: boolean;
-}> = ({ standalone = false }) => {
+  onImportRp?: () => void;
+}> = ({ standalone = false, onImportRp }) => {
   const {
     recentProjects,
     setWelcomeScreenOpen,
@@ -571,6 +572,10 @@ export const ProjectWelcomeLauncher: React.FC<{
                   </div>
                 </div>
 
+                <button type="button" disabled={isWorking} onClick={onImportRp}
+                  className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-left text-xs text-slate-600 hover:border-blue-400 hover:bg-blue-50">
+                  <strong className="mr-2 text-slate-800">导入 Axure 原型</strong>拖入 RP 9 或 11 的 .rp 文件，或点击选择
+                </button>
                 {/* Project Cards List */}
                 <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
                   {filteredRecent.length === 0 && <p className="py-8 text-center text-sm text-slate-500">暂无最近项目，请新建项目或打开本地工程文件。</p>}
@@ -818,18 +823,18 @@ export const ProjectWelcomeLauncher: React.FC<{
                               suggestedName: '未命名原型项目',
                             },
                             {
+                              id: 'crm_analytics' as const,
+                              title: 'CRM 合同与业财回款系统',
+                              desc: '含商机、合同审批、分期回款核销、数电开票、5 张共表、便签规则与销售移动工作台',
+                              badge: '旗舰多端样板',
+                              suggestedName: 'CRM 合同与回款业财系统',
+                            },
+                            {
                               id: 'mobile_starter' as const,
                               title: 'PC 后台 + 移动协同样板',
                               desc: '同时包含 PC 电商供应链管理后台与现代移动端页面，演示跨端共表',
                               badge: '多端样板',
                               suggestedName: 'Nova 智能移动应用',
-                            },
-                            {
-                              id: 'saas_inventory' as const,
-                              title: 'SaaS 电商进销存样板',
-                              desc: '以 PC 进销存后台为起点，随时可在目录中新增配套移动端审批/扫码页',
-                              badge: '后台起点',
-                              suggestedName: '云仓电商进销存系统',
                             },
                           ]
                         : [
@@ -849,14 +854,14 @@ export const ProjectWelcomeLauncher: React.FC<{
                             },
                             {
                               id: 'crm_analytics' as const,
-                              title: 'CRM 销售数据看板',
-                              desc: '预置月度业绩折线图、大区 ARR 柱状图与企业客户商机 CRUD 台账',
-                              badge: '图表与台账',
-                              suggestedName: 'CRM 销售数据看板',
+                              title: 'CRM 合同与业财回款系统',
+                              desc: '含客户商机、合同主子表、分期回款核销、数电开票、便签规则、PRD 笔记与移动联动',
+                              badge: '业财标杆',
+                              suggestedName: 'CRM 合同与回款业财系统',
                             },
                           ]
                       ).map((tpl) => {
-                        const defaultNames = new Set(['未命名原型项目', '云仓电商进销存系统', 'CRM 销售数据看板', 'Nova 智能移动应用']);
+                        const defaultNames = new Set(['未命名原型项目', '云仓电商进销存系统', 'CRM 销售数据看板', 'CRM 合同与回款业财系统', 'Nova 智能移动应用']);
                         const isSelected = templateId === tpl.id;
                         return (
                           <div

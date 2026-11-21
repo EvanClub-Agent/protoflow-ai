@@ -640,6 +640,87 @@ func TestRemoteStreamableHttpMcpEndpoint(t *testing.T) {
 		t.Fatalf("pageSourceTsx did not format nested rowActions callbacks properly:\n%s", tsx)
 	}
 
+	// 6b. Remote outline extracts Table.columns (dataIndex/title), widget props.text (UTF-8 rune-safe), and verified Axure RP lineage
+	rpGuid := "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+	rpSnap := `{
+	  "formatVersion": 5,
+	  "projectId": "proj-rp-go",
+	  "title": "RP血缘远程校验",
+	  "entryPageId": "rp-optimized-` + rpGuid + `",
+	  "sitemap": [
+	    {
+	      "id": "f-rp", "title": "进货模块", "type": "folder", "deprecated": false,
+	      "children": [
+	        { "id": "n-raw", "title": "进货原稿", "type": "page", "deprecated": false, "pageId": "rp-page-` + rpGuid + `" },
+	        { "id": "n-opt", "title": "进货优化稿", "type": "page", "deprecated": false, "pageId": "rp-optimized-` + rpGuid + `" }
+	      ]
+	    }
+	  ],
+	  "pages": [
+	    {
+	      "pageId": "rp-page-` + rpGuid + `", "title": "进货原稿", "folderId": "f-rp",
+	      "doc": {
+	        "header": [],
+	        "root": {
+	          "kind": "node", "pfId": "raw-root", "type": "Page", "props": { "title": "进货原稿" },
+	          "children": [
+	            { "kind": "node", "pfId": "cell-1", "type": "StaticTableCell", "props": { "text": "` + strings.Repeat("中", 125) + `" }, "children": [] }
+	          ]
+	        }
+	      }
+	    },
+	    {
+	      "pageId": "rp-optimized-` + rpGuid + `", "title": "进货优化稿", "folderId": "f-rp",
+	      "doc": {
+	        "header": ["// @alex-axure-source rp-page-` + rpGuid + `"],
+	        "root": {
+	          "kind": "node", "pfId": "opt-root", "type": "Page", "props": { "title": "进货优化稿" },
+	          "children": [
+	            {
+	              "kind": "node", "pfId": "tbl-po", "type": "Table",
+	              "props": { "columns": [{ "dataIndex": "po_no", "title": "单号" }] },
+	              "children": []
+	            }
+	          ]
+	        }
+	      }
+	    }
+	  ],
+	  "tables": [],
+	  "tableRows": {},
+	  "stickyNotes": []
+	}`
+	store.items["pub-rp-lineage-123456789"] = Publication{
+		ID: "pub-rp-lineage-123456789", ProjectID: "proj-rp-go", Title: "RP血缘远程校验",
+		Snapshot: json.RawMessage(rpSnap), Version: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	rpRawSpec := parseToolMap(rpcCall("pub-rp-lineage-123456789", nil, `{"jsonrpc":"2.0","id":401,"method":"tools/call","params":{"name":"protoflow_get_page_spec","arguments":{"pageId":"rp-page-`+rpGuid+`"}}}`))
+	rpRawPageMeta, _ := rpRawSpec["page"].(map[string]any)
+	if rpRawPageMeta["optimizedPageId"] != "rp-optimized-"+rpGuid {
+		t.Fatalf("expected optimizedPageId on raw RP page, got %+v", rpRawPageMeta)
+	}
+	rpRawOutline, _ := rpRawSpec["componentOutline"].(map[string]any)
+	rpRawKids, _ := rpRawOutline["children"].([]any)
+	rpCellOutline, _ := rpRawKids[0].(map[string]any)
+	rpCellTxt, _ := rpCellOutline["text"].(string)
+	if len([]rune(rpCellTxt)) != 120 {
+		t.Fatalf("expected UTF-8 rune truncation at 120 runes, got %d runes (%q)", len([]rune(rpCellTxt)), rpCellTxt)
+	}
+
+	rpOptSpec := parseToolMap(rpcCall("pub-rp-lineage-123456789", nil, `{"jsonrpc":"2.0","id":402,"method":"tools/call","params":{"name":"protoflow_get_page_spec","arguments":{"pageId":"rp-optimized-`+rpGuid+`"}}}`))
+	rpOptPageMeta, _ := rpOptSpec["page"].(map[string]any)
+	if rpOptPageMeta["axureSourcePageId"] != "rp-page-"+rpGuid {
+		t.Fatalf("expected axureSourcePageId on optimized RP page, got %+v", rpOptPageMeta)
+	}
+	rpOptOutline, _ := rpOptSpec["componentOutline"].(map[string]any)
+	rpOptKids, _ := rpOptOutline["children"].([]any)
+	rpTblOutline, _ := rpOptKids[0].(map[string]any)
+	rpTblSummary, _ := rpTblOutline["summaryProps"].(map[string]any)
+	rpTblCols, _ := rpTblSummary["columns"].([]any)
+	if len(rpTblCols) != 1 || rpTblCols[0] != "po_no(单号)" {
+		t.Fatalf("expected Table columns summary ['po_no(单号)'], got %+v", rpTblCols)
+	}
+
 	// 7. [P2] Explicit sharedByMenus binding on audit-page (without a Table component) is included in tableBindings and module checklist
 	auditSpec := parseToolMap(rpcCall("pub-open-1234567890abcd", nil, `{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"protoflow_get_page_spec","arguments":{"pageId":"audit-page"}}}`))
 	auditBindings, _ := auditSpec["tableBindings"].([]any)

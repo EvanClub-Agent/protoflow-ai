@@ -5,5 +5,12 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => ({
   base: mode === 'viewer' ? '/' : './',
   plugins: [react(), tailwindcss()],
+  server: {
+    watch: {
+      // Desktop autosave replaces the archive via .<name>.pflow.<uuid>.tmp.
+      // Neither file should reload the editor when the project lives under the Vite root.
+      ignored: [/\.pflow$/i, /\.pflow\.[\da-f-]+\.tmp$/i],
+    },
+  },
   build: mode === 'viewer' ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } } : undefined,
 }))

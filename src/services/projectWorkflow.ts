@@ -1,3 +1,6 @@
+import { compactRpReview, expandRpReview } from '../proto/axure/reviewSource';
+import { checkRpTableExtension } from '../proto/axure/schema';
+import { axureCatalog, axureScopePages, axureCopyId, type AxureScope } from '../proto/axure/task';
 import { generationEvidenceIssues, pageGenerationOrder, reviewPageDependencies } from './projectDependencies';
 import { captureRuntimeError, type DiagnosticContext } from './runtimeDiagnostics';
 import { projectDiagnosticContext } from './projectDiagnosticContext';
@@ -457,6 +460,7 @@ export const useProjectWorkflow = create<{
 }));
 const instructions = () => `${buildProtoFlowHermesSkillMarkdown(useProtoStore.getState().dbTables, usePageStore.getState().compositeBlocks, useProtoStore.getState().stickyNotes, 'project', useProtoStore.getState().currentProjectMeta.projectMode ?? 'hybrid')}
 你是服务整个项目的 Agent。根据用户本轮目标自主决定是否读取目录、源码与数据、直接回答、追问，或组合项目工具。方案中每个页面须声明 dependencies 和 acceptanceCases。按业务来源拆解上下游，已知的关系填写准确来源表及引用列 ID，独立页填空数组，待澄清的来源填 pending。验收场景引用原始脑图 ID 与原文；交互场景除规划稳定的 actionPfId（多事件组件如 MBottomDock、Table 行操作等须同时指定 actionEvent 如 onPrimary / rowActions[0].onClick，或写为 dock.onPrimary）外，还应按动作语义填写 actionKind（submitForm / openOverlay / closeOverlay / navigate / updateRow / deleteRow / returnSelection）及对应的 targetId（目标表单 pfId / 弹层 id / 目标 pageId / 选单表格 pfId）、tableId（绑定的表 ID）与 field（状态字段或来源键字段），后续生成严格复用该 ID 与目标绑定，严禁仅用 toast 或 closeOverlay 代替实际保存或状态变更。取消、返回、退出场景也要绑定准确事件：返回菜单用 navigate 与目标 pageId，关闭弹层用 closeOverlay 与所在弹层 id；不得把业务写入绑在取消事件上，也不得用 toast 假装返回。绑定业务数据的统计图在验收场景填写 chart 的 pfId 和 tableId。需要覆盖业务流程或演示统计图时，用 protoflow_add_preview_scenario 在尚无记录的表中写入明示为演示的场景数据，再绑定页面。使用同一主记录的两条明细与另一条主记录验证筛选，不得把演示数当成用户业务数。不要把提问、建方案或逐页生成当作每次请求的必经之路。
+RP 迁移先用 protoflow_inspect_axure_project 在指定页面、目录或全项目按 nextOffset 盘点。结合项目约定区分列表、录入、查询、主单和明细；逐个核对实体及行粒度再选择共享表，同名表头不能证明字段归属。只读分析只给出来源、候选结构、疑问和分批建议。转换任务先用 protoflow_inspect_page（view 为 axure）按页和 pfId 读取证据，按 nextOffset 翻页并核对表头、grid.columnActions 行动作一致性、nearbyLabel 邻近标签、当前及隐藏状态和 importNotes 转换限制。先用 protoflow_get_project 核对表目录，字段依据明确时用 protoflow_upsert_db_table 或 protoflow_upsert_db_column 暂存结构；不能从标题、示例值或字段同名推断主外键、唯一性和必填性，且暂存表结构不等于已完成页面转换（参考工具返回的 rpMigrationProgress）。RP 优化副本默认以标准流式布局为目标：优先调用 protoflow_reshape_axure_page（传入源页 rp-page-... ID，由宿主生成副本 ID 与来源标记；后续可对副本增量调用 protoflow_edit_page_block），将平铺的查询标签/输入框/按钮合成为 QueryForm（target 指向 Table 的 pfId），将业务表格转为绑定真实表的 Table；仅在列动作逐行一致（grid.columnActions 中 consistentAcrossDataRows 为 true 且 requiresConfirmation 为 false，如每行一致的“查看”跳转）时迁入 Table.rowActions（跨页查看使用 navigate(目标页ID, "row") 或行内 openDrawer/openModal 以携带当前行），单行样例动作（如某一行才有的“删除”）严禁直接推广到全表 rowActions。严禁单凭外观静默删掉侧栏 OutlineTree、自定义分页、隐藏 DynamicPanel、未支持占位元件或条件点击警告；所有源页面核心区块必须在 coverage 中逐项交代为 converted（已转换）、retained（保留原控件）或 pending（待确认及原因）。若仅需在原自由画布内做单点替换，仍可使用 protoflow_bind_axure_table 或 protoflow_optimize_axure_block。用户核对候选修改后由宿主应用。
 需要用户决定时可用 protoflow_ask_questions 提供真实选项并等待回答。需要持续生成一整套页面时，可用 protoflow_set_project_plan 提交可执行方案；对已有方案的局部调整可用 protoflow_revise_project_page。合并并移除旧菜单须用明确的 merge 描述来源、目标弹层和展示方式，不能靠全量方案省略页面来暗示删除。先查明原有功能和关联。
 对具体工作可以直接组合工具：例如调整多个页面、移动已有菜单、创建目录、修改表或便签；不需要先建整套方案。工程修改暂存在同一份候选快照，宿主展示变更供用户确认。只读回答不产生修改。不要声称未确认的操作已经执行。使用当前会话注册的工具名（可能带 MCP 前缀），不要依赖历史消息中的可用工具列表。
 只有宿主明确发起已确认方案的单页生成时，才以本轮指定 pageId 为修改范围。读取 dependencyReview、上下游页面和真实来源键。单选引用字段用 returnSelection(表格pfId,显示字段,值字段)，来源行弹层的 Table.sourceForeignKey 指向当前明细表已声明的外键。新建关系后核查 databaseDesignReview 的 affectedRules，按当前来源更新已过时的结构说明，保留待接服务或待业务验证部分。完成可用的组件、交互与弹层并检查结果。`;
@@ -627,8 +631,9 @@ function computeTransitiveBlockedPageIds(plan: ProjectPlan, failedIds: Iterable<
 }
 
 async function turn(scope: HermesProjectConversation, prompt: string, phase: 'conversation' | 'generating', check: () => void,
-  { targetPageId, images, mindmaps, originalText, contextFocus, requestedPage, inheritedSessionEvents, restartFromProject }: { restartFromProject?: boolean; requestedPage?: RequestedPage; contextFocus?: {pageId?:string;folderId?:string}; originalText?: string; targetPageId?: string; images?: HermesImageAttachment[]; mindmaps?: ChatMindmap[]; inheritedSessionEvents?: ProjectSessionSetupEvent[] } = {}) {
+  { targetPageId, images, mindmaps, originalText, contextFocus, requestedPage, inheritedSessionEvents, restartFromProject, rpMigration }: { rpMigration?:{scope:AxureScope;readOnly:boolean}; restartFromProject?: boolean; requestedPage?: RequestedPage; contextFocus?: {pageId?:string;folderId?:string}; originalText?: string; targetPageId?: string; images?: HermesImageAttachment[]; mindmaps?: ChatMindmap[]; inheritedSessionEvents?: ProjectSessionSetupEvent[] } = {}) {
   check();
+  const readOnly = rpMigration?.readOnly;
   const turnStartedAt = nowMs();
   const startedAtIso = new Date().toISOString();
   const chat = useAiChatStore.getState(), key = conversationKey(scope);
@@ -711,6 +716,12 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
     try {
       const preparedTools = await prepareProjectToolsWithMetrics(scope, 'turn_preflight', targetPageId);
       session = preparedTools.session;
+      if (rpMigration) {
+        const required = ['protoflow_inspect_axure_project','protoflow_inspect_page','protoflow_get_project'];
+        if (!readOnly) required.push('protoflow_bind_axure_table','protoflow_optimize_axure_block','protoflow_upsert_db_table','protoflow_upsert_db_column');
+        if (!required.every(tool => preparedTools.session.projectTools?.includes(tool)))
+          throw new Error('当前项目会话尚未加载 RP 迁移工具。请保存工程、重启更新后的 Alex，然后重试。');
+      }
       ensureToolsMs = preparedTools.event.durationMs;
       sessionEvents.push(preparedTools.event);
     } catch (ensureErr) {
@@ -815,6 +826,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
       diagnosticContext = {...diagnosticContext,attempt:runModelInvocations-1,runId:undefined,checks:undefined,boundTableIds:undefined};
       const execSnapshot = {
         ...projectContext(requestedPage, options?.snapshotPayload),
+        ...(rpMigration && {axureMigrationScope:rpMigration.scope}),
         requirementSources,
         ...(mindmaps?.length ? { selectedMindmapIds: mindmaps.map(m => m.mindmapId) } : {}),
       };
@@ -911,6 +923,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
           ...scope,
           clientRequestId,
           workflowPhase: phase,
+          ...(readOnly && {readOnly:true}),
           targetPageId,
           contextFocus: focus,
           snapshot: execSnapshot,
@@ -970,10 +983,10 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
       diagnosticStage = 'validation';
       return result;
     };
-    const taskPrompt = phase === 'conversation'
+    const taskPrompt = readOnly ? '本轮为只读分析，请读取来源证据和表目录，在回复中报告建议、疑问和未完成项。' : phase === 'conversation'
       ? '根据本轮用户意图选择合适工具。纯咨询可直接回答；具体改动可直接暂存，宿主将展示实际变更。'
         + (priorMessage?.status === 'error' ? '\n上一轮宿主报告：' + priorMessage.text + '。请读取当前项目核对实际状态；如果用户要继续，重新提交尚未应用的方案和相关修改。' : '')
-        + (priorDraft ? '\n上一轮以下操作尚未应用。如用户希望保留或调整，请按当前源码重新提交完整候选修改：' + JSON.stringify(priorDraft.operations) : '')
+        + (priorDraft ? '\n上一轮以下操作尚未应用。如用户希望保留或调整，请按当前源码重新提交完整候选修改：' + JSON.stringify(priorDraft.operations.some(op => Object.hasOwn(op.args,'rpSourcePatch')) ? priorDraft.items : priorDraft.operations) : '')
         + (priorDecision ? '\n宿主记录的上次修改结果：' + ({applied:'已应用',discarded:'用户已放弃，未执行',undone:'已撤销，原内容已恢复'}[priorDecision]) + '。请以当前项目为准。' : '')
       : `本轮必须用 protoflow_apply_tsx_patch 或 protoflow_edit_page_block 写入页面 ${targetPageId}（返回 acceptanceReady 与 pendingAcceptanceIssues，结束前须补齐未完成验收项）。其余页面保留。若方案包含 merge，请先读取源页面并把功能并入指定弹层，再在目标页面建立打开入口。源菜单及其引用由宿主在校验通过后处理。`;
     const references = mindmaps?.length
@@ -982,6 +995,15 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
       : '';
     const durable = `本轮先调用 protoflow_get_project_brief，范围：${JSON.stringify(focus ?? {})}。压缩后或历史细节不确定时再次读取；工具返回的持久项目资料优先于旧草稿。必要时用 protoflow_search_history 检索本会话原文。不要猜测已确认约定。\n当前已确认约定数：${brief.agreements.length}；已保存页面进度：${brief.plan?.progress ? `${brief.plan.progress.generatedPageIds.length}/${brief.plan.progress.total}` : '尚无已确认方案'}。`;
     let result = await runModel(`${durable}\n${taskPrompt}${references}\n用户要求：${prompt}`);
+    if (readOnly && (result.operations.length || result.requirementFindings?.length)) throw new Error('只读分析返回了工程修改，已拒绝应用');
+    if (rpMigration && !readOnly) {
+      const authorized = new Set(axureScopePages(axureCatalog(base.stateSnapshot),rpMigration.scope).map(p=>axureCopyId(p.pageId)));
+      for (const op of result.operations) {
+        if (op.tool === 'protoflow_apply_tsx_patch' && typeof op.args.pageId === 'string' && authorized.has(op.args.pageId)) continue;
+        if (!['protoflow_upsert_db_table','protoflow_upsert_db_column','protoflow_ask_questions'].includes(op.tool))
+          throw new Error('RP 迁移建议包含所选范围以外的修改');
+      }
+    }
     let activeRequirementFindings: RequirementSubmission[] | undefined = result.requirementFindings;
     const records = () => collectRequirementRecords(requirementSources, activeRequirementFindings, base.stateSnapshot.databaseRequirements);
     if (phase === 'conversation') {
@@ -997,7 +1019,8 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         } finally {
           hostValidationMs = roundMs(hostValidationMs + (nowMs() - valStartedAt));
         }
-        chat.updateMessage(replyId, { status: 'done', text: result.text.trim() || '请确认下方问题。', projectQuestions: questions });
+        chat.updateMessage(replyId, { status: 'done', text: result.text.trim() || '请确认下方问题。', projectQuestions: questions,
+          ...(rpMigration && {rpQuestionScope:rpMigration.scope}) });
         outcome = 'questions';
         return 'questions';
       }
@@ -1011,13 +1034,17 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         try {
           const collectedRecords = records();
           prepared = prepareProjectChanges(base, result.operations, undefined, undefined, true, collectedRecords, requestedPage);
+          if (rpMigration) for (const table of prepared.next.stateSnapshot.dbTables)
+            checkRpTableExtension(base.stateSnapshot.dbTables.find(t=>t.id === table.id),table);
           const existingIssues = new Set(analyzeProject(base.stateSnapshot).issues);
           const introduced = analyzeProject(prepared.next.stateSnapshot).issues.filter(issue => !existingIssues.has(issue));
           if (introduced.length) throw new Error('本次修改会产生无效的项目关联：' + introduced.slice(0,4).join('；'));
           review = {
             ...(requestedPage && { requestedPage }),
-            baseDigest: await revisionDigest(revision), operations: result.operations, requirementRecords: collectedRecords,
-            items: [...(reviewOnly ? ['保存需求原文与数据库约束的核对结果'] : []), ...describeChanges(base.stateSnapshot, prepared.next.stateSnapshot, result.operations, prepared.mergedSourceId), ...prepared.databaseRisks.map(risk => `数据模型待复核 · ${risk}`)],
+            baseDigest: await revisionDigest(revision),
+            operations: await compactRpReview(base.stateSnapshot.pageSources, result.operations, revisionDigest),
+            requirementRecords: collectedRecords,
+            items: [...(reviewOnly ? ['保存需求原文与数据库约束的核对结果'] : []), ...describeChanges(base.stateSnapshot, prepared.next.stateSnapshot, result.operations, prepared.mergedSourceId, rpMigration?.scope), ...prepared.databaseRisks.map(risk => `数据模型待复核 · ${risk}`)],
           };
         } finally {
           hostValidationMs = roundMs(hostValidationMs + (nowMs() - valStartedAt));
@@ -1284,12 +1311,12 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
     recordTurnMetrics(key, turnMetrics);
   }
 }
-export async function discussProject(projectId: string, prompt: string, files: ChatImageDraft[] = [], mindmapIds: string[] = [], contextFocus?: {pageId?:string;folderId?:string}, requestedPage?: RequestedPage) {
+export async function discussProject(projectId: string, prompt: string, files: ChatImageDraft[] = [], mindmapIds: string[] = [], contextFocus?: {pageId?:string;folderId?:string}, requestedPage?: RequestedPage, rpMigration?:{scope:AxureScope; readOnly:boolean}) {
   if (!prompt.trim() && !files.length && !mindmapIds.length) throw new Error('请输入项目需求，或添加脑图、参考图片');
   return task(projectId, async (scope, check) => {
     const existingPlan = useProtoStore.getState().projectPlan;
     const latest = useAiChatStore.getState().byConversation[conversationKey(scope)]?.at(-1);
-    if (!files.length && !mindmapIds.length && !contextFocus && isResumeCommand(prompt) && existingPlan?.approved &&
+    if (!rpMigration && !files.length && !mindmapIds.length && !contextFocus && isResumeCommand(prompt) && existingPlan?.approved &&
         !latest?.projectQuestions && !latest?.projectChangeReview && !existingPlan.discussionPending) {
       useAiChatStore.getState().addMessage({ ...scope, role:'user', status:'done', text:prompt });
       return generatePlanPages(scope, check);
@@ -1298,12 +1325,12 @@ export async function discussProject(projectId: string, prompt: string, files: C
     const images = files.length ? await saveChatImages(scope, files) : undefined;
     check();
     const old = useProtoStore.getState().projectPlan;
-    if (old && !old.discussionPending) {
+    if (!rpMigration && old && !old.discussionPending) {
       useProtoStore.setState({ projectPlan: { ...old, discussionPending:true } });
       await flushProjectChanges(); check();
     }
     const defaultPrompt = mindmaps ? '请根据所选脑图和随附资料，规划项目的目录、菜单和页面原型，给出生成方案。' : '请结合当前项目分析这些参考图片。';
-    const outcome = await turn(scope, prompt.trim() || defaultPrompt, 'conversation', check, { images, mindmaps, originalText:prompt, contextFocus, requestedPage });
+    const outcome = await turn(scope, prompt.trim() || defaultPrompt, 'conversation', check, { images, mindmaps, originalText:prompt, contextFocus, requestedPage, rpMigration });
     const message = outcome === 'questions' ? '等待你回答问题' : outcome === 'review' ? '已准备修改，等待你查看并应用。'
       : outcome === 'answer' ? '本轮没有提交工程修改。' : '已收到新方案，请确认生成范围。';
     useProjectWorkflow.setState(s => ({ status: { ...s.status, [conversationKey(scope)]: message } }));
@@ -1327,8 +1354,10 @@ export async function resolveProjectReview(projectId: string, messageId: string,
       const revision = projectRevision(), base = captureProjectPayload();
       if (await revisionDigest(revision) !== review.baseDigest) throw new Error('提出修改后工程已变化，请让 AI 按当前工程重新调整。');
       check();
+      const operations = await expandRpReview(base.stateSnapshot.pageSources,review.operations,revisionDigest);
+      check();
       if (latest()?.id !== messageId) throw new Error('该修改建议已被新的对话取代');
-      applyProjectChanges(base, revision, review.operations, undefined, messageId, undefined, true, review.requirementRecords, review.requestedPage);
+      applyProjectChanges(base, revision, operations, undefined, messageId, undefined, true, review.requirementRecords, review.requestedPage);
     }
     const acceptedPlan = generate ? useProtoStore.getState().projectPlan : null;
     const message = generate ? '已确认方案，目录、菜单和数据表已就绪。' : accept ? '已应用本次修改。' : '已放弃本次修改。';

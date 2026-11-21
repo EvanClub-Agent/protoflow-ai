@@ -44,6 +44,8 @@ import { useHermesStore } from '../store/useHermesStore';
 import { useAiPreviewStore } from '../store/useAiPreviewStore';
 import { AiStreamingPreview } from '../proto/designer/AiStreamingPreview';
 import { conversationKey, type HermesProjectConversation } from '../services/hermesConversation';
+import { axureCatalog, applyRpTaskDraft, clearRpTaskDraft, resolveSubmittedRpMigration, axureScopeFocus, type AxureScope } from '../proto/axure/task';
+import { formatRpReviewArgs } from '../proto/axure/reviewSource';
 import { ProjectContextPanel, type ProjectContextFocus } from './ProjectContextPanel';
 import { discussProject, generateProject, projectPlanProgress, resolveProjectReview, resumePriorPlan, useProjectWorkflow } from '../services/projectWorkflow';
 import { HermesSessionControls } from './HermesSessionControls';
@@ -122,6 +124,24 @@ function ProjectChatPane({scope,index}: {
   const workspace = useProtoStore(s => s.mindmaps);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [contextFocus, setContextFocus] = useState<ProjectContextFocus>({});
+  const activePageId = useProtoStore(s => s.activePageId);
+  const designerFolders = usePageStore(s => s.designerFolders);
+  const sitemapOverrides = usePageStore(s => s.sitemapOverrides);
+  const sitemapBase = usePageStore(s => s.sitemapBase);
+  const catalog = useMemo(() => axureCatalog({designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources}),
+    [designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources]);
+  const [focusChosen,setFocusChosen] = useState(false);
+  const selectFocus = (focus:ProjectContextFocus) => { setFocusChosen(true); setContextFocus(focus); };
+  const effectiveFocus = draft.rpTask ? axureScopeFocus(draft.rpTask.scope) : contextFocus;
+  const rpScopeId = effectiveFocus.pageId ? 'page:' + effectiveFocus.pageId : effectiveFocus.folderId ? 'folder:' + effectiveFocus.folderId
+    : !draft.rpTask && !focusChosen && catalog.pages.some(p=>p.pageId === activePageId) ? 'page:' + activePageId : 'project';
+  const rpOptions = useMemo(() => [
+    {value:'project',label:`全工程（${catalog.pages.length} 页）`,scope:{kind:'project'} as AxureScope},
+    ...catalog.folders.map(f=>({value:'folder:'+f.folderId,label:`${f.path}（${f.pageCount} 页）`,scope:{kind:'folder',folderId:f.folderId} as AxureScope})),
+    ...catalog.pages.map(p=>({value:'page:'+p.pageId,label:p.path,scope:{kind:'page',pageId:p.pageId} as AxureScope})),
+  ],[catalog]);
+  const rpSelection = rpOptions.find(option=>option.value === rpScopeId);
+  const rpScopeControlId = useId();
   const updateDraft = (change: (current: ProjectDraft) => ProjectDraft) => setDrafts(previous =>
     new Map(previous).set(key, change(previous.get(key) ?? emptyDraft)));
   const setPrompt = (text: string) => updateDraft(current => ({ ...current, text }));
@@ -143,6 +163,22 @@ function ProjectChatPane({scope,index}: {
   const list = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  function prepareRpTask(readOnly:boolean, selection = rpSelection) {
+    if (!selection) return;
+    const {scope:target,label} = selection;
+    selectFocus(axureScopeFocus(target));
+    updateDraft(current => applyRpTaskDraft(current, target, label, readOnly));
+    textareaRef.current?.focus();
+  }
+  function changeContext(focus:ProjectContextFocus) {
+    if (draft.rpTask) {
+      const id = focus.pageId ? 'page:' + focus.pageId : focus.folderId ? 'folder:' + focus.folderId : 'project';
+      const selected = rpOptions.find(option => option.value === id);
+      if (selected) { prepareRpTask(draft.rpTask.readOnly,selected); return; }
+      updateDraft(clearRpTaskDraft);
+    }
+    selectFocus(focus);
+  }
   useEffect(() => {
     useAiChatStore.getState().switchConversation(scope);
   }, [key]);
@@ -230,15 +266,18 @@ function ProjectChatPane({scope,index}: {
       if (mounted.current) setPreparing(false);
     }
   };
-  const hasDraft = Boolean(prompt.trim() || images.length || mindmapIds.length);
+  const hasDraft = Boolean(prompt.trim() || draft.rpTask || images.length || mindmapIds.length);
   const handleSubmit = () => {
     if (busy || !connected || reading.current || !hasDraft) return;
     if (useAiChatStore.getState().projectIndexes[projectId]?.activeId !== index.activeId) return;
     const submitted = draft;
+    const rpMigration = resolveSubmittedRpMigration(submitted.rpTask, questionMessage?.rpQuestionScope);
+    const submitText = submitted.text.trim() || submitted.rpTask?.text || '';
+    const submitFocus = rpMigration ? axureScopeFocus(rpMigration.scope) : contextFocus;
     const cleared: ProjectDraft = { text: '', images: [], mindmapIds: [] };
     updateDraft(() => cleared);
     void run(async () => {
-      try { await discussProject(projectId, submitted.text, submitted.images, submitted.mindmapIds, contextFocus); }
+      try { await discussProject(projectId, submitText, submitted.images, submitted.mindmapIds, submitFocus, undefined, rpMigration); }
       catch (cause) {
         // A delayed failure may restore only its own untouched draft.
         setDrafts(previous => previous.get(key) === cleared ? new Map(previous).set(key, submitted) : previous);
@@ -258,7 +297,9 @@ function ProjectChatPane({scope,index}: {
       return `${idx + 1}. 针对「${q.question}」：${ans}`;
     });
     setReopenedQuestionId(null);
-    void run(() => discussProject(projectId, lines.join('\n'), [], [], contextFocus));
+    const target = questionMessage?.rpQuestionScope;
+    void run(() => discussProject(projectId, lines.join('\n'), [], [], target ? axureScopeFocus(target) : contextFocus,
+      undefined, target ? {scope:target,readOnly:false} : undefined));
   };
   const totalPages = plan?.pages.length ?? 0;
   const progressPct = totalPages > 0 ? Math.round((completed.length / totalPages) * 100) : 0;
@@ -422,7 +463,7 @@ function ProjectChatPane({scope,index}: {
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        setPrompt(tpl.prompt);
+                        updateDraft(current => ({ ...current, text: tpl.prompt, rpTask: undefined }));
                         textareaRef.current?.focus();
                       }}
                       className="group text-left rounded-2xl border border-slate-200/90 bg-white p-3.5 hover:border-blue-400 hover:bg-blue-50/30 transition shadow-2xs flex flex-col justify-between gap-2.5 cursor-pointer disabled:opacity-50"
@@ -834,7 +875,7 @@ function ProjectChatPane({scope,index}: {
                         <dd className="whitespace-pre-wrap break-words leading-relaxed">{page.requirements}</dd>
                       </div>)}
                     </dl> : <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-600">
-                      {JSON.stringify(lastMessage.projectChangeReview.operations.map(op => op.args), null, 2)}
+                      {JSON.stringify(lastMessage.projectChangeReview.operations.map(op => formatRpReviewArgs(op.args)), null, 2)}
                     </pre>}
                   </details>
                   {combinedProposal && <details className="rounded-xl border border-slate-200/80 px-3 py-2">
@@ -937,7 +978,7 @@ function ProjectChatPane({scope,index}: {
               </div>
             )}
 
-            <ProjectContextPanel key={key} scope={scope} busy={Boolean(projectBusy || otherRunning)} focus={contextFocus} onFocus={setContextFocus} />
+            <ProjectContextPanel key={key} scope={scope} busy={Boolean(projectBusy || otherRunning)} focus={effectiveFocus} onFocus={changeContext} />
             <form
               onDragOver={event => {
                 if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = running || preparing ? 'none' : 'copy'; }
@@ -952,6 +993,39 @@ function ProjectChatPane({scope,index}: {
               }}
               className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-2.5 transition-all focus-within:bg-white focus-within:border-blue-500/80 focus-within:shadow-[0_2px_14px_-3px_rgba(37,99,235,0.14)]"
             >
+              {catalog.pages.length > 0 && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                <label htmlFor={rpScopeControlId}>RP 迁移范围</label>
+                <select id={rpScopeControlId} className="max-w-60 rounded border border-slate-300 bg-white px-2 py-1"
+                  disabled={running || Boolean(otherRunning)} value={rpSelection?.value ?? ''}
+                  onChange={event => {
+                    const selected = rpOptions.find(option=>option.value === event.target.value);
+                    if (!selected) return;
+                    if (draft.rpTask) prepareRpTask(draft.rpTask.readOnly,selected);
+                    else selectFocus(axureScopeFocus(selected.scope));
+                  }}>
+                  <option value="" disabled>选择导入范围</option>
+                  <option value="project">{rpOptions[0].label}</option>
+                  <optgroup label="目录">{rpOptions.filter(o=>o.scope.kind === 'folder').map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+                  <optgroup label="页面">{rpOptions.filter(o=>o.scope.kind === 'page').map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+                </select>
+                <button type="button" className="rounded border bg-white px-2 py-1 disabled:opacity-40" disabled={!rpSelection || running || Boolean(otherRunning)}
+                  onClick={() => prepareRpTask(true)}>只读分析</button>
+                <button type="button" className="rounded border border-blue-200 bg-white px-2 py-1 text-blue-700 disabled:opacity-40"
+                  disabled={!rpSelection || running || Boolean(otherRunning)} onClick={() => prepareRpTask(false)}>转换物料并生成表结构</button>
+              </div>}
+              {draft.rpTask && <div role="status" className={`mb-2 flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${draft.rpTask.readOnly ? 'border-amber-200 bg-amber-50/80 text-amber-900' : 'border-blue-200 bg-blue-50/80 text-blue-900'}`}>
+                <span className="min-w-0 truncate">
+                  <strong>{draft.rpTask.readOnly ? 'RP 只读分析' : 'RP 转换与建表'}</strong>
+                  {' · '}
+                  {rpSelection?.label ?? draft.rpTask.label ?? '已选范围'}
+                  <span className="ml-2 opacity-75">（下方提示词可自由修改）</span>
+                </span>
+                <button type="button" disabled={running || Boolean(otherRunning)} className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-black/5 disabled:opacity-40"
+                  onClick={() => updateDraft(clearRpTaskDraft)}>
+                  <X size={13} />
+                  <span>{draft.rpTask.readOnly ? '取消只读任务' : '取消转换任务'}</span>
+                </button>
+              </div>}
               {!!mindmapIds.length && <ul aria-label="待发送脑图" className="mb-2 flex flex-wrap gap-1.5">
                 {mindmapIds.map(id => {
                   const node = workspace.nodes.find(item => item.kind === 'mindmap' && item.id === id);

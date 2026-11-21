@@ -1,3 +1,4 @@
+import { readPageHeader } from './header';
 import { parse } from '@babel/parser';
 import type * as t from '@babel/types';
 import type {
@@ -42,10 +43,7 @@ export function parsePageSource(source: string, options: { strict?: boolean } = 
     }
   }
 
-  const header = source
-    .split('\n')
-    .filter((l, i, arr) => l.trim().startsWith('//') && arr.slice(0, i).every((x) => x.trim().startsWith('//')))
-    .map((l) => l.trim());
+  const header = readPageHeader(source);
 
   const rootJsx = findRootJsx(file);
   if (!rootJsx) {

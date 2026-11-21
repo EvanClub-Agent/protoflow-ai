@@ -1,3 +1,5 @@
+import { AXURE_LEAF_KINDS } from '../axure/metadata';
+import { AxureCanvas, AxureWidget, DynamicPanel, OutlineTree, TreeItem, StaticTable, textFrameStyle } from '../axure/materials';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
 import { useSourceRow } from '../runtime/sourceRow';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -113,6 +115,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 // ───────────────────────── Form & Inline Toolbar context ─────────────────────────
 interface FormCtxValue {
   formId: string;
+  editingSource?: boolean;
   cols: number;
   grid: 'twelve' | 'cells';
   controlMaxWidth?: number;
@@ -147,6 +150,9 @@ const inputCls = `${inputClsBase} ${inputSizeCls.middle}`;
 
 export interface FieldDef {
   type: string;
+  initialValue?: string;
+  layoutFrame?: Record<string, unknown>;
+  onClick?: PropValue;
   name?: string;
   label?: string;
   labelLayout?: '' | 'horizontal' | 'vertical' | 'inline';
@@ -224,11 +230,12 @@ export interface FieldDef {
 const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?: boolean; root?: RootAttrs }> = ({ def, rt, scope, inline, root }) => {
   const form = useContext(FormCtx);
   const inToolbar = useContext(InlineToolbarCtx);
-  const [local, setLocal] = useState<unknown>('');
+  const [local, setLocal] = useState<unknown>(def.initialValue ?? '');
   // Unbound controls keep local state; node identity is never a substitute for a business field.
   const name = def.name;
   const bound = form !== null && typeof name === 'string' && name.length > 0;
-  const value = bound ? form.values[name] ?? '' : local;
+  const initialValue = form?.editingSource ? '' : def.initialValue ?? '';
+  const value = bound ? (Object.hasOwn(form.values,name) ? form.values[name] : initialValue) : local;
   const setValue = (v: unknown) => {
     if (def.disabled || form?.disabled || def.readOnly) return;
     if (bound) form.setValue(name, v);
@@ -244,7 +251,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
 
   let control: React.ReactNode;
   if (ANTD_FIELD_KINDS.has(def.type)) {
-    control = <AntdFieldControl def={def} value={value} onChange={setValue} disabled={disabled} size={effSize} placeholder={placeholder} error={error} />;
+    control = <AntdFieldControl def={def} value={value} onChange={setValue} disabled={disabled} size={effSize} placeholder={placeholder} error={error} onClick={def.onClick && !rt.isDesign && !disabled ? () => rt.run(def.onClick,scope) : undefined} />;
   } else switch (def.type) {
     case 'upload': {
       const uType = def.listType ?? 'button';
@@ -323,6 +330,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       ? widthMap[def.width]
       : Math.min(12, Math.max(1, Number(def.span ?? 1)) * baseColSpan);
   const rootAttrs = root ?? { 'data-pf-id': def.pfId ?? '' };
+  if (def.layoutFrame && !form && !def.label) return <div className="h-full w-full">{control}</div>;
   if (inline) return <div {...rootWith(rootAttrs, {})}>{control}</div>;
 
   // QueryForm owns one cell per condition. Label sizing must never change grid spans.
@@ -446,7 +454,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
 
 const fieldFromProps = (type: string) =>
   function FieldComp({ p, rt, scope, root, node }: CompProps) {
-    return <FieldControl def={{ ...(p as FieldDef), type, pfId: node.pfId }} rt={rt} scope={scope} root={root} />;
+    return <FieldControl key={p.initialValue} def={{ ...(p as FieldDef), type, pfId: node.pfId }} rt={rt} scope={scope} root={root} />;
   };
 
 // ───────────────────────── Components ─────────────────────────
@@ -499,6 +507,8 @@ const Button: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
   const Icon = p.icon ? ICONS[p.icon as string] : null;
   return <AntdSurface><AntButton
     {...root}
+    autoInsertSpace={p.layoutFrame ? false : undefined}
+    style={p.layoutFrame ? { ...textFrameStyle(p.layoutFrame), boxShadow: 'none' } : root.style}
     type={p.type === 'danger' ? 'default' : p.type}
     danger={p.danger || p.type === 'danger'} ghost={p.ghost} size={p.size}
     shape={p.shape} block={p.block} disabled={p.disabled} loading={p.loading}
@@ -880,7 +890,10 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   };
   const search = () => {
     if (rt.isDesign) return;
-    if (p.target) rt.setFilter(p.target as string, values);
+    const effectiveValues: Record<string, unknown> = {};
+    for (const f of fields) if (f?.name && f.initialValue !== undefined) effectiveValues[f.name] = f.initialValue;
+    Object.assign(effectiveValues, values);
+    if (p.target) rt.setFilter(p.target as string, effectiveValues);
     rt.run(p.onSearch as PropValue, scope);
   };
   return (
@@ -900,7 +913,7 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             <button
               type="button"
               onClick={() => {
-                setValues({});
+                setValues(Object.fromEntries(fields.filter((f) => f?.name && f.initialValue !== undefined).map((f) => [f.name!, ''])));
                 if (!rt.isDesign && p.target) rt.setFilter(p.target as string, {});
               }}
               className={cx('h-8 px-3 rounded-md border text-[13px] whitespace-nowrap cursor-pointer', BTN_CLS.default)}
@@ -1315,11 +1328,17 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   );
 };
 
-const Descriptions: React.FC<CompProps> = ({ p, root, scope }) => {
+const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const tables = useMaterialTables();
   const table = tables.find((t) => t.id === p.table);
   const rows = useTableRows(table?.id);
-  const row = (scope.row ?? (scope.params?.row as Row | undefined) ?? rows[0]) as Row | undefined;
+  const hasFieldItems = Array.isArray(p.items) && p.items.some((it: unknown) => Boolean(it && typeof it === 'object' && 'field' in it && (it as { field?: unknown }).field));
+  const navSource = useSourceRow(scope, rt.pageId, Boolean(table || hasFieldItems));
+  const scopedRow =
+    navSource.row && (!table || !navSource.tableId || navSource.tableId === table.id)
+      ? navSource.row
+      : undefined;
+  const row = (scopedRow ?? (!navSource.tableId ? rows[0] : undefined)) as Row | undefined;
   const items: { label: string; value: React.ReactNode }[] =
     Array.isArray(p.items) && p.items.length
       ? (p.items as { label: string; field?: string; value?: string }[]).map((it) => ({ label: it.label, value: it.field ? renderCell(row?.[it.field], undefined, it.field) : it.value ?? '—' }))
@@ -1488,6 +1507,7 @@ const Text: React.FC<CompProps> = ({ p, text, root }) => (
         p.delete && 'line-through',
         p.code && 'font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[12px]'
       ),
+      style: p.layoutFrame && textFrameStyle(p.layoutFrame),
     })}
   >
     <span>{text || '文本'}</span>
@@ -1532,8 +1552,9 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
   const cols = Math.max(1, Math.min(4, Number(p.cols ?? 2)));
   const row = (scope.row ?? scope.params?.row) as Row | undefined;
   // Edit mode: prefill from the row passed into the overlay
+  const editingSource = Boolean(row && p.table && (scope.tableId ?? scope.params?.tableId) === p.table);
   useEffect(() => {
-    if (!rt.isDesign && row && p.table && (scope.tableId ?? scope.params?.tableId) === p.table && Object.keys(values).length === 0) {
+    if (!rt.isDesign && row && editingSource && Object.keys(values).length === 0) {
       const { id: _id, ...rest } = row;
       rt.setFormValues(node.pfId, rest);
     }
@@ -1541,6 +1562,7 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
   }, [row?.id, scope.tableId, scope.params?.tableId, p.table]);
   const ctx: FormCtxValue = {
     formId: node.pfId,
+    editingSource,
     cols,
     grid: 'twelve',
     labelWidth: Number(p.labelWidth ?? 96),
@@ -1737,6 +1759,8 @@ const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind
 };
 
 export const REGISTRY: Record<string, React.FC<CompProps>> = {
+  AxureCanvas, AxureWidget, PositionedGroup: AxureCanvas, PanelState: AxureCanvas, DynamicPanel, OutlineTree, TreeItem, StaticTable,
+  ...Object.fromEntries(Object.keys(AXURE_LEAF_KINDS).map(name => [name, AxureWidget])),
   Freeform: FreeformMaterial,
   ...ANTD_COMPONENTS,
   Page,

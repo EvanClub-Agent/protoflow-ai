@@ -147,7 +147,7 @@ export function validateMaterialDoc(doc: ProtoDoc): MaterialIssue[] {
       const nestedEvent =
         (/^rowActions\[\d+\]$/.test(path) && key === 'onClick' && ['Table', 'MTaskList'].includes(node.type)) ||
         (/^items\[\d+\]$/.test(path) && key === 'onClick' && ['MBentoGrid', 'MTabBar', 'MListGroup'].includes(node.type)) ||
-        (/^fields\[\d+\]$/.test(path) && key === 'onChange' && ['Form', 'QueryForm'].includes(node.type));
+        (/^fields\[\d+\]$/.test(path) && (key === 'onChange' || key === 'onClick') && ['Form', 'QueryForm'].includes(node.type));
       inspectExpressions(node, item, `${path}.${key}`, nestedEvent);
     }
   };

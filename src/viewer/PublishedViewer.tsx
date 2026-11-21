@@ -41,8 +41,8 @@ export function hydratePublishedSnapshot(snapshot: unknown) {
   useProtoStore.setState({ dbTables: copy.tables, activePageId: copy.entryPageId, navigationSource: null, stickyNotes: [], suppliers: [], purchaseOrderItems: [], acceptanceOrders: [], closedLoopIssues: [], draftAcceptanceLines: [], showAllComponentPins: false, isWebPlayerMode: true });
 }
 
-export function PublishedPageView({ page, canNavigate }: { page: PublishedPage; canNavigate?: (pageId: string) => boolean }) {
-  const runtime = useRuntimeController(page.doc, page.pageId, false, canNavigate);
+export function PublishedPageView({ page, canNavigate, publishedHeader }: { page: PublishedPage; canNavigate?: (pageId: string) => boolean; publishedHeader?: (id:string) => readonly string[] | undefined }) {
+  const runtime = useRuntimeController(page.doc, page.pageId, false, canNavigate, publishedHeader);
   const isMobile = page.doc.root.type === 'MobilePage';
   const workspaceTheme = useResolvedTheme();
   const [previewAppearance, setPreviewAppearance] = useState<MobileAppearance | null>(null);
@@ -400,6 +400,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
   }
 
   const page = snapshot.pages.find(p => p.pageId === activeId);
+  const hasAxureCanvas = page?.doc.root.children.some(c => c.kind === 'node' && c.type === 'AxureCanvas');
   const activeMenuTitle = page?.title ?? menuIndex.get(activeId)?.item.title;
 
   return (
@@ -494,7 +495,9 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               }}
             />
           )}
-          <main data-testid="published-content" className={`min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-5 ${page?.doc.root.type === 'MobilePage' ? 'max-[540px]:p-0' : ''}`}>
+          <main data-testid="published-content" style={hasAxureCanvas ? { contain:'layout' } : undefined}
+            className={`min-h-0 min-w-0 flex-1 ${hasAxureCanvas ? 'overflow-hidden' : 'overflow-auto p-3 sm:p-5'} ${page?.doc.root.type === 'MobilePage' ? 'max-[540px]:p-0' : ''}`}>
+            <div className={hasAxureCanvas ? 'h-full overflow-auto p-3 sm:p-5' : 'contents'}>
             <div
               data-testid="published-canvas"
               className={
@@ -504,12 +507,14 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               }
             >
               {page ? (
-                <PublishedPageView key={`${page.pageId}:${reset}`} page={page} canNavigate={id => canVisit(snapshot,id)} />
+                <PublishedPageView key={`${page.pageId}:${reset}`} page={page} canNavigate={id => canVisit(snapshot,id)}
+                  publishedHeader={id => snapshot.pages.find(p => p.pageId === id)?.doc.header} />
               ) : menuIndex.has(activeId) ? (
                 <PublishedMenuPlaceholder item={menuIndex.get(activeId)!.item} />
               ) : (
                 <div role="alert" className="p-8 text-sm text-slate-500">目标页面未发布，请从左侧目录选择页面。</div>
               )}
+            </div>
             </div>
           </main>
         </div>

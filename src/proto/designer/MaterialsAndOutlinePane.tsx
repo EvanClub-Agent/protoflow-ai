@@ -69,6 +69,7 @@ import {
   ChevronsUpDown,
   type LucideIcon,
 } from 'lucide-react';
+import { isAxureMaterial } from '../axure/metadata';
 import {
   COMPONENTS,
   CATEGORY_LABELS,
@@ -324,16 +325,18 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
 
   const { dbTables } = useProtoStore();
   const isMobilePage = root.type === 'MobilePage';
+  const hasAxureCanvas = root.children.some((c) => isNode(c) && c.type === 'AxureCanvas');
   const platformComponents = React.useMemo(
     () =>
       COMPONENTS.filter(
         (c) =>
           !PAGE_ROOT_TYPES.has(c.name) &&
+          (hasAxureCanvas || !isAxureMaterial(c.name)) &&
           (isMobilePage
             ? MOBILE_COMPONENT_NAMES.has(c.name) || UNIVERSAL_COMPONENT_NAMES.has(c.name)
             : !MOBILE_COMPONENT_NAMES.has(c.name)),
       ),
-    [isMobilePage],
+    [isMobilePage, hasAxureCanvas],
   );
   const platformComposites = React.useMemo(
     () =>
@@ -599,7 +602,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                 <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span className="text-xs font-semibold text-slate-800 truncate">物料组件库</span>
                 <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono">
-                  {COMPONENTS.length - 1}
+                  {platformComponents.length}
                 </span>
               </>
             )}

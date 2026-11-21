@@ -144,18 +144,19 @@ export function createProjectPayload(meta: PflowProjectMetadata): PflowBinaryPay
       schemaVersion: 7,
       meta: {
         ...meta,
-        projectMode: meta.projectMode ?? 'desktop',
+        projectMode: meta.projectMode ?? 'hybrid',
         pageCount: Object.keys(crm.pageSources).length,
         tableCount: crm.dbTables.length,
-        stickyCount: 0,
+        stickyCount: crm.stickyNotes.length,
       },
       stateSnapshot: {
         projectPlan: null,
         projectAgreements: [],
-        mindmaps: emptyMindmaps(),
+        mindmaps: crm.mindmaps,
+        projectNotes: crm.projectNotes,
         activePageId: crm.entryPageId,
         dbTables: crm.dbTables,
-        stickyNotes: [],
+        stickyNotes: crm.stickyNotes,
         suppliers: [],
         purchaseOrderItems: [],
         acceptanceOrders: [],
@@ -320,6 +321,14 @@ export function loadProjectFromBinaryPayload(input: unknown, overrideDir?: strin
   if (overrideFile !== undefined) payload.meta.fileName = overrideFile;
   validateProjectPayload(payload);
   autosave?.assertCanReplace();
+  const current = useProtoStore.getState();
+  if (!autosave && !current.isProjectClosed && current.currentProjectMeta.projectId !== payload.meta.projectId &&
+      current.recentProjects.some(meta => meta.projectId === current.currentProjectMeta.projectId) &&
+      browserFiles.has(current.currentProjectMeta.projectId)) {
+    // A browser import also switches projects. Keep edits to the previously
+    // opened file available through Recent Projects for the current session.
+    browserFiles.set(current.currentProjectMeta.projectId, captureProjectPayload());
+  }
   applySnapshot(payload);
   autosave?.opened(payload);
   remember(payload);

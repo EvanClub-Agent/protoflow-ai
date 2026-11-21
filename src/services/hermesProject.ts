@@ -31,6 +31,7 @@ import type { PflowBinaryPayload } from "../utils/pflowBinaryCodec";
 import { checkAiPagePlatform, type RequestedPage } from './projectPagePlatform';
 import { OVERLAY_TYPES } from '../proto/registry/meta';
 import { verifyDependencyFootprint, type DependencyFootprintV3 } from './dependencyFootprint';
+import { reshapeAxurePage } from '../proto/axure/optimization';
 
 export function projectContext(requestedPage?: RequestedPage, payloadOverride?: PflowBinaryPayload) {
   const p = payloadOverride ?? captureProjectPayload();
@@ -411,6 +412,21 @@ export function prepareProjectChanges(
       throw new Error(
         `AI 结果未通过契约校验：${introduced.slice(0, 4).join("；")}`,
       );
+  }
+  const latestRpCoverageByCopy = new Map<string, unknown>();
+  for (const op of operations) {
+    if (op.tool === 'protoflow_apply_tsx_patch' && typeof op.args.pageId === 'string') {
+      if (op.args.rpCoverage !== undefined) latestRpCoverageByCopy.set(op.args.pageId, op.args.rpCoverage);
+      else latestRpCoverageByCopy.delete(op.args.pageId);
+    }
+  }
+  for (const [copyId, rpCoverage] of latestRpCoverageByCopy) {
+    const match = /^rp-optimized-([0-9a-f]{32})$/.exec(copyId);
+    if (!match) continue;
+    const srcPageId = 'rp-page-' + match[1];
+    if (Object.hasOwn(s.pageSources, srcPageId) && Object.hasOwn(s.pageSources, copyId)) {
+      reshapeAxurePage(s, srcPageId, s.pageSources[copyId], rpCoverage);
+    }
   }
   for (const op of operations)
     if (op.tool === "protoflow_run_closed_loop_audit") {

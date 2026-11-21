@@ -11,7 +11,9 @@ import { parsePageSource } from '../src/proto/dsl/parser';
 import { printPageSource } from '../src/proto/dsl/printer';
 import { walk } from '../src/proto/dsl/tree';
 import { formFieldSpecs, RuntimeProvider, useRuntimeController, type Runtime } from '../src/proto/runtime/runtime';
-import { NodeView } from '../src/proto/renderer/NodeView';
+import { NodeView, ScopeProvider } from '../src/proto/renderer/NodeView';
+import { usePageStore } from '../src/proto/store/usePageStore';
+import { useProtoStore } from '../src/store/useProtoStore';
 import { StructuredPropEditor } from '../src/proto/designer/StructuredPropEditor';
 import { OptionsPropEditor } from '../src/proto/designer/OptionsPropEditor';
 import antdTheme from 'antd/es/theme';
@@ -20,11 +22,23 @@ import { installTestDom } from './dom';
 
 const added = ['Flex', 'Collapse', 'CollapsePanel', 'Avatar', 'Badge', 'Progress', 'Image', 'Skeleton', 'Spin', 'Tooltip', 'Popover', 'Popconfirm', 'TimePicker', 'Slider', 'Rate', 'Cascader', 'TreeSelect', 'AutoComplete', 'Segmented'];
 
+test('a positioned RP button keeps its exact two-character label', () => {
+  const restore = installTestDom();
+  const node = parseSnippetNode('<Button pfId="remove" layoutFrame={{width:33,height:22}}>删除</Button>')!;
+  let view:TestRenderer.ReactTestRenderer;
+  try {
+    act(() => { view=TestRenderer.create(React.createElement(RuntimeProvider,{value:runtime()},React.createElement(NodeView,{node}))); });
+    const button = view!.root.findByType('button');
+    assert.ok(button.findAll(el=>el.type === 'span' && el.children.join('') === '删除').length);
+  } finally { act(()=>view?.unmount()); restore(); }
+});
+
 test('query labels do not change column spans; width limits and collapsing preserve exact filter values', async () => {
   const restore = installTestDom();
   const filters: unknown[] = [];
   const rt = runtime(); rt.setFilter = (target, values) => { filters.push([target, values]); };
-  const fields = Array.from({ length: 7 }, (_, i) => ({ name: `field_${i}`, label: `查询项${i}`, type: i === 0 ? 'dateRange' : 'input' }));
+  const fields = Array.from({ length: 7 }, (_, i) => ({ name: `field_${i}`, label: `查询项${i}`, type: i === 0 ? 'dateRange' : 'input',
+    ...(i === 1 && {initialValue:'华东库'}) }));
   const node = parseSnippetNode(`<QueryForm pfId="query" target="table" cols={4} labelWidth={104} defaultExpanded fields={${JSON.stringify(fields)}} />`)!;
   let renderer: TestRenderer.ReactTestRenderer;
   const render = () => React.createElement(RuntimeProvider, { value: rt }, React.createElement(NodeView, { node }));
@@ -32,6 +46,7 @@ test('query labels do not change column spans; width limits and collapsing prese
     act(() => { renderer = TestRenderer.create(render()); });
     const controls = () => renderer!.root.findAllByType(AntdFieldControl);
     assert.equal(controls().length, 7);
+    assert.equal(controls()[1].props.value,'华东库');
     const cells = renderer!.root.findByProps({ 'data-query-fields': true }).findAll(n => n.type === 'div' && n.props.style?.gridColumn !== undefined);
     assert.equal(cells.length, 7);
     assert.ok(cells.every(cell => cell.props.style.gridColumn === 'span 1 / span 1'));
@@ -43,11 +58,14 @@ test('query labels do not change column spans; width limits and collapsing prese
     assert.equal(controls().length, 4);
     const search = renderer!.root.findAllByType('button').find(b => b.findAll(n => n.type === 'span' && n.children.includes('查询')).length)!;
     act(() => search.props.onClick());
-    assert.deepEqual(filters.at(-1), ['table', { field_6: '保留的筛选值' }]);
+    assert.deepEqual(filters.at(-1), ['table', { field_1:'华东库',field_6: '保留的筛选值' }]);
     act(() => button('展开').props.onClick());
     assert.equal(controls()[6].props.value, '保留的筛选值');
     act(() => button('重置').props.onClick());
     assert.deepEqual(filters.at(-1), ['table', {}]);
+    assert.equal(controls()[1].props.value,'');
+    act(() => search.props.onClick());
+    assert.deepEqual(filters.at(-1), ['table', {field_1:''}]);
     node.props.controlMaxWidth = 180; node.props.rangeMaxWidth = 280;
     act(() => renderer!.update(render()));
     assert.equal(controls()[0].parent!.props.style.maxWidth, 280);
@@ -166,6 +184,42 @@ test('onChange submission validates the new field value in the same event', asyn
     assert.equal(rt!.vars.submitted, 'yes');
     assert.deepEqual(rt!.formErrors.form, {});
   } finally { act(() => renderer?.unmount()); restore(); }
+});
+
+test('form submits the displayed default, preserves an explicit clear and keeps an existing missing field empty', async () => {
+  const restore = installTestDom();
+  const table = 'test-form-defaults';
+  const savedRow = {id:'existing'};
+  useProtoStore.setState({dbTables:[{id:table,tableName:'t_rp_form',cnName:'仓库',description:'测试',domain:'仓储',sharedByMenus:[],
+    columns:[{id:'c1',name:'warehouse',dataType:'TEXT',nullable:true,comment:'仓库'}]}]});
+  usePageStore.setState({tableRows:{[table]:[savedRow]}});
+  const doc = parsePageSource(`export default function Page(){return <Page pfId="root"><Form pfId="form" table="${table}">
+    <Input pfId="warehouse" name="warehouse" initialValue="{{params.depot}}"/></Form></Page>}`).doc!;
+  const createScope = {params:{depot:'华东库'}};
+  const editScope = {...createScope,row:savedRow,tableId:table};
+  let editing = false, rt:Runtime, view:TestRenderer.ReactTestRenderer;
+  const Harness = () => {
+    rt = useRuntimeController(doc,'rp-form-test',false);
+    return React.createElement(RuntimeProvider,{value:rt},React.createElement(ScopeProvider,{value:editing ? editScope : createScope},
+      React.createElement(NodeView,{node:doc.root})));
+  };
+  const submit = () => act(async () => { await rt!.run({$kind:'actions',calls:[{name:'submitForm',args:['form']}]},editing ? editScope : createScope); });
+  const field = () => view!.root.findByType(AntdFieldControl);
+  const rows = () => usePageStore.getState().getRows(table);
+  try {
+    act(() => { view = TestRenderer.create(React.createElement(Harness)); });
+    assert.equal(field().props.value,'华东库');
+    await submit();
+    assert.equal(rows()[0].warehouse,'华东库');
+    act(() => field().props.onChange(''));
+    await submit();
+    assert.equal(rows()[0].warehouse,'');
+    editing = true;
+    act(() => view!.update(React.createElement(Harness,{key:'edit'})));
+    assert.equal(field().props.value,'');
+    await submit();
+    assert.deepEqual(rows().find(row=>row.id === savedRow.id),savedRow);
+  } finally { act(() => view?.unmount()); restore(); }
 });
 
 test('visual option editor preserves typed values and requires explicit values for new rows', () => {

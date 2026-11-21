@@ -1,6 +1,14 @@
 @import "./viewer/releaseWorkspace.css";
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'FontAwesome';
+  src: url('./assets/fontawesome-4.7.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 dialog:modal {
   overscroll-behavior: contain;
 }

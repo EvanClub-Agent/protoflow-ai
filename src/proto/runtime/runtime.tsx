@@ -1,4 +1,6 @@
 import { diagramRelations } from '../database/relations';
+import { readPageHeader } from '../dsl/header';
+import { axureSourcePagePattern, axureCopyId, verifiedAxureSourceId } from '../axure/task';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActionChain, PropValue, ProtoDoc, ProtoNode } from '../types';
 import { isActionChain, isNode } from '../types';
@@ -101,26 +103,48 @@ function findById(doc: ProtoDoc | null, pfId: string): ProtoNode | null {
   return found;
 }
 
-/** Field specs of a Form: child field components + `fields` prop items. */
-export function formFieldSpecs(form: ProtoNode): { name: string; label: string; required: boolean }[] {
-  const out: { name: string; label: string; required: boolean }[] = [];
-  walk(form, (n) => {
-    if (n !== form && FIELD_TYPES.has(n.type) && typeof n.props.name === 'string') {
-      out.push({ name: n.props.name, label: String(n.props.label ?? n.props.name), required: n.props.required === true });
+export function usesLiteralLayoutContent(frame: PropValue | undefined) {
+  return Boolean(frame && typeof frame === 'object' && !Array.isArray(frame) &&
+    (!('literalContent' in frame) || frame.literalContent !== false));
+}
+
+/** Field specs use the same interpolation and literal import rules as the rendered control. */
+export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<string,unknown> = {}): { name: string; label: string; required: boolean; initialValue?: string }[] {
+  const out: { name: string; label: string; required: boolean; initialValue?: string }[] = [];
+  const initial = (field:ProtoNode['props'], owner:ProtoNode) => typeof field.initialValue === 'string'
+    ? {initialValue:usesLiteralLayoutContent(owner.props.layoutFrame) ? field.initialValue : interpolate(field.initialValue,scope,vars)}
+    : {};
+  function visit(n:ProtoNode) {
+    if (n.type === 'Form' || n.type === 'MForm' || n.type === 'QueryForm') return;
+    if (FIELD_TYPES.has(n.type) && typeof n.props.name === 'string') {
+      out.push({
+        name: n.props.name,
+        label: String(n.props.label ?? n.props.name),
+        required: n.props.required === true,
+        ...initial(n.props,n),
+      });
     }
-  });
-  if (out.length === 0 && Array.isArray(form.props.fields)) {
+    for (const child of n.children) if (isNode(child)) visit(child);
+  }
+  const children = form.children.filter(isNode);
+  children.forEach(visit);
+  if (!children.length && Array.isArray(form.props.fields)) {
     for (const f of form.props.fields) {
       if (f && typeof f === 'object' && !Array.isArray(f) && typeof (f as Record<string, PropValue>).name === 'string') {
         const ff = f as Record<string, PropValue>;
-        out.push({ name: ff.name as string, label: String(ff.label ?? ff.name), required: ff.required === true });
+        out.push({
+          name: ff.name as string,
+          label: String(ff.label ?? ff.name),
+          required: ff.required === true,
+          ...initial(ff,form),
+        });
       }
     }
   }
   return out;
 }
 
-export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDesign: boolean, canNavigate?: (pageId: string) => boolean): Runtime {
+export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDesign: boolean, canNavigate?: (pageId: string) => boolean, publishedHeader?: (id:string) => readonly string[] | undefined): Runtime {
   const [overlays, setOverlays] = useState<OverlayEntry[]>([]);
   const [vars, setVars] = useState<Record<string, unknown>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
@@ -260,9 +284,19 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               clearFormsIn(form);
               break;
             }
-            const values = stateRef.current.formValues[form.pfId] ?? {};
+            const rawValues = stateRef.current.formValues[form.pfId] ?? {};
+            const specs = formFieldSpecs(form,scope,vars);
+            const table = typeof form.props.table === 'string' ? form.props.table : '';
+            const source = rowOf();
+            const editingSource = Boolean(table && source && tableOf() === table);
+            const values: Record<string, unknown> = { ...rawValues };
+            if (!editingSource) {
+              for (const f of specs) {
+                if (!Object.hasOwn(values,f.name) && f.initialValue !== undefined) values[f.name] = f.initialValue;
+              }
+            }
             const errs: Record<string, string> = {};
-            for (const f of formFieldSpecs(form)) {
+            for (const f of specs) {
               const v = values[f.name];
               if (f.required && (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0))) {
                 errs[f.name] = `请填写${f.label}`;
@@ -274,9 +308,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               return;
             }
             setFormErrors((fe) => ({ ...fe, [form.pfId]: {} }));
-            const table = typeof form.props.table === 'string' ? form.props.table : '';
             if (table) {
-              const source = rowOf();
               if (source && !tableOf()) { toast('当前记录缺少来源表，无法确定表单写入对象', 'error'); return; }
               const row = source && tableOf() === table ? source : submittedRows.current[form.pfId];
               if (row) {
@@ -389,9 +421,18 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             break;
           case 'navigate': {
             const st = useProtoStore.getState();
-            const target = str(0);
-            const available = canNavigate ? canNavigate(target) : projectPageCatalog(pages).some(p => p.pageId === target && p.hasSource && !p.deprecated);
-            if (!available) {
+            const rawTarget = str(0);
+            const isAvailable = (id: string) => canNavigate ? canNavigate(id) : projectPageCatalog(pages).some(p => p.pageId === id && p.hasSource && !p.deprecated);
+            let target = rawTarget;
+            if (verifiedAxureSourceId(pageId,docRef.current?.header) && axureSourcePagePattern.test(rawTarget)) {
+              const optimizedTarget = axureCopyId(rawTarget);
+              const header = canNavigate ? publishedHeader?.(optimizedTarget)
+                : Object.hasOwn(pages.pageSources,optimizedTarget) ? readPageHeader(pages.pageSources[optimizedTarget]) : undefined;
+              if (verifiedAxureSourceId(optimizedTarget,header) === rawTarget && isAvailable(optimizedTarget)) {
+                target = optimizedTarget;
+              }
+            }
+            if (!isAvailable(target)) {
               toast(`跳转目标不可用：${String(a[0])}`, 'error');
               return;
             }
@@ -421,7 +462,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isDesign, toast, canNavigate, selectTab]
+    [isDesign, toast, canNavigate, publishedHeader, pageId, selectTab, vars]
   );
 
   const reset = useCallback(() => {

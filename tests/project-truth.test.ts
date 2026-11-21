@@ -17,6 +17,11 @@ import { ClosedLoopAuditView } from '../src/components/ClosedLoopAuditView';
 import { DesktopBundleModal } from '../src/components/DesktopBundleModal';
 import { ProjectTableData } from '../src/components/ProjectTableData';
 import { parsePageSource } from '../src/proto/dsl/parser';
+import { walk } from '../src/proto/dsl/tree';
+import { pageContractErrors } from '../src/proto/ai/pageContract';
+import { reviewDatabaseDesign } from '../src/proto/database/designReview';
+import { JSDOM } from 'jsdom';
+import { createPublishedSnapshot } from '../src/services/createPublishedSnapshot';
 import { useRuntimeController, type Runtime } from '../src/proto/runtime/runtime';
 import { useHermesStore } from '../src/store/useHermesStore';
 import type { HermesDesktopApi, HermesOperation } from '../src/services/hermesClient';
@@ -507,9 +512,50 @@ test('community starter templates saas_inventory and crm_analytics validate clea
       assert.ok(!serialized.includes(forbidden), `${tpl} must not include ${forbidden}`);
     }
     if (tpl === 'crm_analytics') {
-      assert.equal(payload.stateSnapshot.dbTables.length, 2);
+      assert.equal(payload.stateSnapshot.dbTables.length, 5);
+      assert.equal(Object.keys(payload.stateSnapshot.pageSources).length, 6);
+      assert.equal(payload.stateSnapshot.stickyNotes.length, 9);
+      assert.equal(payload.stateSnapshot.mindmaps.nodes.length, 1);
+      assert.equal(payload.stateSnapshot.projectNotes?.nodes.length, 3);
       assert.ok(payload.stateSnapshot.pageSources['crm-dashboard'].includes('LineChart'));
       assert.ok(payload.stateSnapshot.pageSources['crm-dashboard'].includes('BarChart'));
+
+      // Every page (PC + Mobile) must satisfy strict pageContractErrors with 0 errors
+      for (const [pageId, src] of Object.entries(payload.stateSnapshot.pageSources)) {
+        const issues = pageContractErrors(src, payload.stateSnapshot.dbTables, {
+          tableRows: payload.stateSnapshot.tableRows,
+        });
+        assert.deepEqual(issues, [], `crm_analytics page ${pageId} contract errors: ${issues.join('; ')}`);
+      }
+
+      // Every sticky note must bind to an exact existing pfId on its page
+      for (const sn of payload.stateSnapshot.stickyNotes) {
+        const parsed = parsePageSource(payload.stateSnapshot.pageSources[sn.pageId]);
+        assert.ok(parsed.doc, `failed to parse ${sn.pageId}`);
+        const pfIds = new Set<string>();
+        walk(parsed.doc.root, (node) => pfIds.add(node.pfId));
+        assert.ok(
+          pfIds.has(sn.targetWidgetId),
+          `sticky note ${sn.id} targetWidgetId ${sn.targetWidgetId} missing on page ${sn.pageId}`
+        );
+      }
+
+      // ER model must pass reviewDatabaseDesign with 0 tableErrors and 0 relationErrors
+      const dbReview = reviewDatabaseDesign(payload.stateSnapshot.dbTables);
+      assert.deepEqual(dbReview.tableErrors, []);
+      assert.deepEqual(dbReview.relationErrors, []);
+
+      // Must publish cleanly as a Format V5 snapshot with uniqueConstraints & shareable PRD notes
+      const prevDOMParser = globalThis.DOMParser;
+      globalThis.DOMParser = new JSDOM('').window.DOMParser;
+      try {
+        loadProjectFromBinaryPayload(payload);
+        const published = createPublishedSnapshot('crm-dashboard');
+        assert.equal(published.formatVersion, 5);
+        assert.equal(published.notes?.length, 2);
+      } finally {
+        globalThis.DOMParser = prevDOMParser;
+      }
     }
   }
 });

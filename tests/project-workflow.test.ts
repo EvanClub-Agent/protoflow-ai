@@ -1018,3 +1018,70 @@ test('stopping or dropping mid-page with an uncertain draft persists needsArchiv
     }
   }
 });
+
+test('read-only RP analysis reaches the native read-only entry point, keeps a confirmed plan active, and rejects returned mutations', async () => {
+  const scope = fixture('rp-read-only-workflow');
+  useProtoStore.setState({projectPlan:{...plan,approved:true,discussionPending:false}});
+  const initial = captureProjectPayload().stateSnapshot;
+  const task = {scope:{kind:'project'} as const,readOnly:true};
+  transport(async input => {
+    assert.equal(input.readOnly,true);
+    assert.deepEqual(input.snapshot.axureMigrationScope,task.scope);
+    return response([],'需要确认库存单每行的粒度');
+  });
+  await discussProject(scope.projectId,'分析来源',[],[],{},undefined,task);
+  assert.deepEqual(captureProjectPayload().stateSnapshot,initial);
+  transport(async () => response([{tool:'protoflow_upsert_db_table',args:{table:memberTable}}]));
+  await assert.rejects(discussProject(scope.projectId,'再核对一次',[],[],{},undefined,task),/只读/);
+  assert.deepEqual(captureProjectPayload().stateSnapshot,initial);
+});
+
+test('RP conversion keeps its scope through clarification and persists only the confirmed copy and shared schema', async () => {
+  const scope = fixture('rp-confirm-workflow');
+  const {importAxureRp} = await import('../src/proto/axure/import');
+  const imported = await importAxureRp(fs.readFileSync('tests/fixtures/axure9-editable-layout.rp'));
+  const [page] = imported.designerPages, id = page.pageId;
+  const base = captureProjectPayload();
+  Object.assign(base.stateSnapshot,{designerFolders:imported.designerFolders,designerPages:imported.designerPages,
+    pageSources:imported.pageSources,activePageId:id});
+  loadProjectFromBinaryPayload(base);
+  useAiChatStore.getState().switchConversation(scope);
+  const migration = {scope:{kind:'page' as const,pageId:id}, readOnly:false};
+  const ask = [{question:'每行代表什么？',options:['一张库存单','一条商品明细']}];
+  const latest = () => useAiChatStore.getState().messages.at(-1)!;
+  transport(async () => response([{tool:'protoflow_ask_questions',args:{questions:ask}}]));
+  await discussProject(scope.projectId,'请核对每行代表什么',[],[],{pageId:id},undefined,migration);
+  assert.deepEqual(latest().rpQuestionScope,migration.scope);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(),'rp-confirm-')), file = path.join(dir,'context.json');
+  const db = {id:'stock-documents',tableName:'t_stock_documents',cnName:'库存单',domain:'库存',description:'库存单登记',sharedByMenus:[],
+    modeling:{entity:'库存单',grain:'每行一张库存单',reason:'单号与仓库来自原型表头'},
+    columns:[{id:'document-number',name:'document_no',dataType:'TEXT',nullable:false,isPrimaryKey:true,comment:'单号'},
+      {id:'warehouse-name',name:'warehouse_name',dataType:'TEXT',nullable:true,comment:'仓库'}]};
+  try {
+    let optimizedId = '';
+    transport(async input => {
+      assert.deepEqual(input.snapshot.axureMigrationScope,migration.scope);
+      atomicWrite(file,{...scope,active:true,runId:'verification',workflowPhase:input.workflowPhase,snapshot:input.snapshot,operations:[]});
+      const call = (name:string,args:Record<string,unknown>={}) => callTool(file,name,args);
+      const grid = call('protoflow_inspect_page',{pageId:id,view:'axure',limit:60}).records.find((r:any)=>r.type === 'StaticTable');
+      call('protoflow_get_project');
+      call('protoflow_upsert_db_table',{table:db});
+      const mappings = grid.grid.firstRow.map((cell:any,i:number)=>({headerPfId:cell.pfId,role:'field',columnId:db.columns[i].id}));
+      optimizedId = call('protoflow_bind_axure_table',{pageId:id,targetPfId:grid.pfId,tableId:db.id,mappings}).optimizedPageId;
+      return response(JSON.parse(fs.readFileSync(file,'utf8')).operations);
+    });
+    await discussProject(scope.projectId,'每行一张库存单，单号唯一标识单据',[],[],{pageId:id},undefined,migration);
+    assert.ok(latest().projectChangeReview?.items.some(i=>i.includes('原表头「单号」 → t_stock_documents.document_no')));
+    assert.deepEqual(useProtoStore.getState().dbTables,[]);
+    assert.deepEqual(usePageStore.getState().pageSources,imported.pageSources);
+    useAiChatStore.setState({byConversation:{},messages:[],conversation:null});
+    useAiChatStore.getState().switchConversation(scope);
+    assert.ok(latest().projectChangeReview?.operations.some(op=>op.args.rpSourcePatch));
+    await resolveProjectReview(scope.projectId,latest().id,true);
+    const saved = decodePflowBinary(encodePflowBinary(captureProjectPayload())).stateSnapshot;
+    assert.equal(saved.pageSources[id],imported.pageSources[id]);
+    assert.match(saved.pageSources[optimizedId],/table="stock-documents"/);
+    assert.deepEqual(saved.dbTables,[db]);
+    assert.deepEqual(saved.tableRows,{});
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});

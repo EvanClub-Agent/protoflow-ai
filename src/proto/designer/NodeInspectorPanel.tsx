@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { positionedNativeTypes } from '../axure/metadata';
 import { OptionsPropEditor } from './OptionsPropEditor';
 import { StructuredPropEditor } from './StructuredPropEditor';
 import { FreeformInspector } from '../freeform/FreeformInspector';
@@ -138,6 +139,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
         (selectedNode.type === 'Descriptions' || selectedNode.type === 'Timeline')
       )
   );
+  const frame = selectedNode.props.layoutFrame as Record<string, PropValue> | undefined;
+  const inPositionedCanvas = positionedNativeTypes.has(selectedNode.type) &&
+    ['AxureCanvas', 'PositionedGroup', 'PanelState'].includes(nodePath[nodePath.length - 2]?.type ?? '');
   const eventSpecs = meta?.events ?? [];
 
   const pageStickies = stickyNotes.filter((s) => s.pageId === pageId);
@@ -853,6 +857,20 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 />
               </div>
             )}
+
+            {inPositionedCanvas && <details className="space-y-2 rounded-lg border border-slate-200 p-2">
+              <summary className="cursor-pointer text-xs font-semibold">位置与外观</summary>
+              <div className="mt-2 grid grid-cols-2 gap-2">{Object.entries({ x: '横坐标', y: '纵坐标', width: '宽度', height: '高度' }).map(([key,label]) =>
+                <label key={key}>{label}<input type="number" className="w-full rounded border px-2 py-1" value={typeof frame?.[key] === 'number' ? Number(frame[key]) : ''}
+                  onChange={e => { const next = { ...frame }; if (e.target.value === '') delete next[key]; else next[key] = Number(e.target.value); onPropChange(selectedNode.pfId,'layoutFrame',next); }} /></label>)}</div>
+              <label className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/50 px-2.5 py-1.5 text-xs cursor-pointer">
+                <span>初始隐藏 (hidden)</span>
+                <input type="checkbox" className="w-4 h-4 accent-blue-600 rounded cursor-pointer" checked={frame?.hidden === true}
+                  onChange={e => { const next = { ...frame }; if (e.target.checked) next.hidden = true; else delete next.hidden; onPropChange(selectedNode.pfId, 'layoutFrame', next); }} />
+              </label>
+              <StructuredPropEditor key={selectedNode.pfId + JSON.stringify(frame)} label="定位与样式参数" value={frame}
+                onChange={value => onPropChange(selectedNode.pfId, 'layoutFrame', value)} />
+            </details>}
 
             {/* Dynamic Prop Controls */}
             {propSpecs.map((propMeta) => {

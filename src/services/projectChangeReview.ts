@@ -1,3 +1,6 @@
+import { axureBindingChanges, axureReshapeReviewItems } from '../proto/axure/review';
+import { evaluateAxureMigrationProgress } from '../proto/axure/optimization';
+import type { AxureScope } from '../proto/axure/task';
 import type { HermesOperation } from './hermesClient';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 import { folderOptions, sitemapItemLocation } from '../proto/sitemap';
@@ -30,8 +33,15 @@ export async function revisionDigest(revision: string) {
 
 // Summarize validated operations using the candidate catalogue, never the
 // assistant's prose. The same operations are replayed on confirmation.
-export function describeChanges(before: ProjectStateSnapshot, after: ProjectStateSnapshot, operations: HermesOperation[], mergedSourceId?:string): string[] {
+export function describeChanges(
+  before: ProjectStateSnapshot,
+  after: ProjectStateSnapshot,
+  operations: HermesOperation[],
+  mergedSourceId?: string,
+  rpMigrationScope?: AxureScope,
+): string[] {
   const items = new Set<string>();
+  const reviewedPages = new Set<string>();
   const folders = folderOptions(after.designerFolders, after.sitemapOverrides, after.sitemapBase);
   const folderName = (id: unknown) => id === null ? '顶层' : folders.find(f => f.id === id)?.path ?? String(id);
   const combinedPlan = includesPlanAndSchema(operations) ? after.projectPlan : undefined;
@@ -65,7 +75,22 @@ export function describeChanges(before: ProjectStateSnapshot, after: ProjectStat
       case 'protoflow_apply_tsx_patch': {
         const id = args.pageId as string;
         const item = sitemapItemLocation(after, {kind:'page', id});
-        items.add(`${Object.hasOwn(before.pageSources, id) ? '修改' : '创建'}页面「${item.title}」（${id}）`); break;
+        items.add(`${Object.hasOwn(before.pageSources, id) ? '修改' : '创建'}页面「${item.title}」（${id}）`);
+        if (!reviewedPages.has(id)) {
+          const latestArgs =
+            [...operations].reverse().find(o => o.tool === 'protoflow_apply_tsx_patch' && o.args.pageId === id)?.args ?? args;
+          if (latestArgs.rpCoverage) {
+            for (const line of axureReshapeReviewItems(id, after.pageSources[id], after.pageSources, after.dbTables, latestArgs.rpCoverage)) {
+              items.add(line);
+            }
+          } else {
+            for (const binding of axureBindingChanges(id,before.pageSources[id],after.pageSources[id],after.pageSources,after.dbTables)) {
+              items.add(binding);
+            }
+          }
+          reviewedPages.add(id);
+        }
+        break;
       }
       case 'protoflow_upsert_db_table': {
         const table = after.dbTables.find(t => t.id === (args.table as {id:string}).id)!;
@@ -101,6 +126,35 @@ export function describeChanges(before: ProjectStateSnapshot, after: ProjectStat
     for (const [id,source] of Object.entries(after.pageSources)) {
       if (id !== after.projectPlan?.revision?.pageId && source !== before.pageSources[id] && !operations.some(op => op.tool === 'protoflow_apply_tsx_patch' && op.args.pageId === id))
         items.add(`更新「${sitemapItemLocation(after,{kind:'page',id}).title}」中的旧菜单跳转`);
+    }
+  }
+  if (rpMigrationScope) {
+    const progress = evaluateAxureMigrationProgress(after, rpMigrationScope, operations);
+    if (progress.totalScopePages > 0) {
+      if (progress.stagedThisTurnCount === 0) {
+        if (progress.flowReshapedPageCount === 0 && progress.partiallyOptimizedPageCount === 0) {
+          items.add(`表结构已准备，页面尚未转换（待转换页面：${progress.unconvertedPages.map(p => p.title).join('、')}）`);
+        } else if (progress.unconvertedPageCount > 0 || progress.partiallyOptimizedPageCount > 0) {
+          const pendingTitles = [
+            ...progress.unconvertedPages.map(p => p.title),
+            ...progress.partiallyOptimizedPages.map(p => `${p.title}（仅局部优化）`),
+          ];
+          items.add(`表结构已准备，页面尚未在本轮转换（待完成整页流式重塑：${pendingTitles.join('、')}）`);
+        } else {
+          items.add('本轮仅更新表结构，未修改已流式重塑的页面副本');
+        }
+      } else {
+        if (progress.partiallyOptimizedPageCount > 0) {
+          items.add(
+            `仅完成局部原位替换、尚未整页流式重塑（${progress.partiallyOptimizedPageCount} 页）：${progress.partiallyOptimizedPages.map(p => p.title).join('、')}`,
+          );
+        }
+        if (progress.unconvertedPageCount > 0) {
+          items.add(
+            `尚未转换的 RP 页面（${progress.unconvertedPageCount} 页）：${progress.unconvertedPages.map(p => p.title).join('、')}`,
+          );
+        }
+      }
     }
   }
   return [...items];

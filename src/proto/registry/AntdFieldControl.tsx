@@ -1,4 +1,5 @@
 import React from 'react';
+import { positionedStyle } from '../axure/materials';
 import Input from 'antd/es/input';
 import InputNumber from 'antd/es/input-number';
 import Select from 'antd/es/select';
@@ -32,6 +33,7 @@ interface Props {
   size: 'small' | 'middle' | 'large';
   placeholder: string;
   error?: string;
+  onClick?: () => void;
 }
 
 /** Dates remain strings in the DSL/runtime, never Dayjs objects in saved data. */
@@ -43,9 +45,9 @@ export function parseMaterialDate(value: unknown, format: string) {
   return parsed.locale('zh-cn');
 }
 
-function renderControl({ def, value, onChange, disabled, size, placeholder, error }: Props) {
+function renderControl({ def, value, onChange, disabled, size, placeholder, error, onClick }: Props) {
   const locked = disabled || Boolean(def.readOnly);
-  const common = { size, placeholder, disabled, status: error ? 'error' as const : def.status, variant: def.variant, style: { width: '100%' } };
+  const common = { size, onClick, placeholder, disabled, status: error ? 'error' as const : def.status, variant: def.variant, style: def.layoutFrame ? positionedStyle(def.layoutFrame) : { width: '100%' } };
   const textProps = { ...common, value: typeof value === 'string' ? value : '', readOnly: def.readOnly, allowClear: def.allowClear && !def.readOnly, maxLength: def.maxLength, showCount: def.showCount, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value) };
   switch (def.type) {
     case 'input':

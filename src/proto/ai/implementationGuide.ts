@@ -94,6 +94,13 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     limits: ['移动端视口模拟 iPhone 标准屏/Pro/Pro Max，拍照与扫码为原型态交互模拟，不调用物理硬件摄像头。'],
   },
   {
+    id: 'axure', title: '编辑与重塑导入的 Axure 页面', when: '从 RP 工程导入后，将页面重塑为标准流式物料，或局部调整定位元件、文本与跨页跳转。',
+    components: ['Page', 'PageHeader', 'Card', 'Toolbar', 'QueryForm', 'Table', 'Form', 'Descriptions', 'Modal', 'Drawer', 'AxureCanvas', 'AxureWidget', 'PositionedGroup', 'OutlineTree', 'TreeItem', 'DynamicPanel', 'PanelState', 'StaticTable', 'StaticTableCell', 'VectorShape', 'Hotspot', 'EmbeddedPicture', 'ListSelect', 'ListBox', 'CheckControl', 'RadioControl'], actions: ['navigate', 'openDrawer', 'openModal', 'submitForm', 'show', 'hide', 'switchTab'],
+    implementation: ['优化副本默认以标准流式 <Page> 为目标：先调用 protoflow_inspect_axure_project 盘点，再用 protoflow_inspect_page(view="axure") 核对控件、nearbyLabel、grid.columnActions 行动作一致性与 importNotes。', '调用 protoflow_reshape_axure_page 传入源页 rp-page-... ID（由宿主确定副本 ID 与来源标记）：将平铺的查询标签/输入框/按钮合并为 QueryForm（target 指向 Table）；将 StaticTable 转为 Table 时，coverage.converted 须直接指向 Table 的 pfId 并提交 tableId 与逐列 columnMappings（headerPfId → field/columnId、index、checkbox、radio、actions 或 pending），确保 Table.columns 与已确认映射一致且不颠倒字段；仅在 grid.columnActions 显示逐行一致且无需额外确认时迁入 Table.rowActions，并保持源单元格动作链、目标页及当前行参数（如 navigate(目标页ID,"row") 或 openDrawer），单行样例里的“删除”等不得推广到全表。', 'coverage.retained 仅用于保持原物料类型、内容、面板状态和交互不变的区块（仅允许流式排版调整坐标）；发生物料或语义变化的区块、侧栏 OutlineTree、隐藏 DynamicPanel、未支持占位或条件点击警告不得静默删除或虚假声明为保留，须据实列为 converted 或 pending。局部原位微调仍可用 protoflow_bind_axure_table 或 protoflow_optimize_axure_block。'],
+    acceptance: ['QueryForm 能按字段实际筛选目标 Table；行操作“查看”从被点击的具体行打开正确目标记录；确认单完整展示已转换、保留与待确认项。'],
+    limits: ['未支持元件和条件/多分支点击在导入时仅保留占位或说明，重塑时须显式列为待确认。'],
+  },
+  {
     id: 'custom', title: '独特展示与局部交互', when: '座位图、拖拽看板、日历排程、关系图、特殊动效等标准组合难以表达的区域。',
     components: ['Freeform', 'Modal', 'Drawer'],
     actions: ['openModal', 'openDrawer', 'navigate', 'setVar', 'toast'],

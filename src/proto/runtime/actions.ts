@@ -113,9 +113,9 @@ export const ACTIONS: ActionSpec[] = [
   {
     name: 'switchTab',
     title: '切换页签',
-    description: '切换 Tabs / MPillTabs 到第 index 个页签（从 0 开始）。',
+    description: '按从 0 开始的索引切换页签或动态面板状态。',
     args: [
-      { name: 'tabs', label: '页签组件', kind: 'nodeRef', refTypes: ['Tabs', 'MPillTabs'] },
+      { name: 'tabs', label: '页签组件', kind: 'nodeRef', refTypes: ['Tabs', 'MPillTabs', 'DynamicPanel'] },
       { name: 'index', label: '序号', kind: 'number' },
     ],
   },
