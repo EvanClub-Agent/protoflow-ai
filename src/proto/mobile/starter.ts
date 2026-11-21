@@ -4,10 +4,239 @@ import type { DesignerPage } from '../store/usePageStore';
 import type { Row } from '../runtime/mock';
 import { parsePageSource } from '../dsl/parser';
 import { printPageSource } from '../dsl/printer';
+import { isEnLocale } from '../../i18n/runtime';
 
 function norm(tsx: string): string {
   const res = parsePageSource(tsx);
   return res.doc ? printPageSource(res.doc) : tsx;
+}
+
+function createEnglishMobileStarterDataset(): {
+  dbTables: DBTableSchema[];
+  tableRows: Record<string, Row[]>;
+  designerFolders: DesignerFolder[];
+  designerPages: DesignerPage[];
+  pageSources: Record<string, string>;
+  entryPageId: string;
+} {
+  const dbTables: DBTableSchema[] = [
+    {
+      id: 't_mob_catalog',
+      tableName: 't_mob_catalog',
+      cnName: 'Featured Products & Services',
+      domain: 'Mobile Experience',
+      description: 'Backs the consumer waterfall feed and interactive booking/checkout sheet',
+      sharedByMenus: [
+        {
+          pageId: 'mob-explore',
+          menuTitle: 'Explore Home',
+          accessMode: 'READ 查询',
+          fieldMappingNote: 'Read-only catalog feed; demo reservations confirm without mutating catalog items',
+        },
+      ],
+      columns: [
+        { id: 'c_mc_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Primary Key ID' },
+        { id: 'c_mc_title', name: 'item_name', dataType: 'VARCHAR(120)', nullable: false, comment: 'Product / Service Name' },
+        { id: 'c_mc_sub', name: 'subtitle', dataType: 'VARCHAR(200)', nullable: true, comment: 'Key Highlights' },
+        { id: 'c_mc_price', name: 'price_text', dataType: 'VARCHAR(40)', nullable: false, comment: 'Display Price' },
+        { id: 'c_mc_tag', name: 'tag', dataType: 'VARCHAR(40)', nullable: true, comment: 'Featured Badge' },
+        { id: 'c_mc_spec', name: 'spec', dataType: 'VARCHAR(60)', nullable: true, comment: 'Default Edition' },
+      ],
+    },
+    {
+      id: 't_mob_tasks',
+      tableName: 't_mob_tasks',
+      cnName: 'Mobile Collaboration Tasks',
+      domain: 'Mobile Experience',
+      description: 'Backs B2B mobile approvals, task status transitions, and field data entry',
+      sharedByMenus: [
+        {
+          pageId: 'mob-tasks',
+          menuTitle: 'Tasks & Approvals',
+          accessMode: 'STATE 状态流转',
+          fieldMappingNote: 'Pill tabs filter by status, with one-tap approval and bottom-sheet task creation',
+        },
+      ],
+      columns: [
+        { id: 'c_mt_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Primary Key ID' },
+        { id: 'c_mt_title', name: 'task_title', dataType: 'VARCHAR(120)', nullable: false, comment: 'Task Title' },
+        { id: 'c_mt_dept', name: 'owner_dept', dataType: 'VARCHAR(80)', nullable: false, comment: 'Department' },
+        { id: 'c_mt_amt', name: 'budget_amount', dataType: 'DECIMAL(12,2)', nullable: true, comment: 'Budget Amount' },
+        { id: 'c_mt_status', name: 'status', dataType: 'VARCHAR(32)', nullable: false, comment: 'Status (Pending/Completed/Rejected)' },
+        { id: 'c_mt_remark', name: 'remark', dataType: 'VARCHAR(255)', nullable: true, comment: 'Notes' },
+      ],
+    },
+  ];
+
+  const tableRows: Record<string, Row[]> = {
+    t_mob_catalog: [
+      { id: 'cat-1', item_name: 'Spatial ANC Headphones Ultra', subtitle: 'Adaptive transparency · 42h battery', price_text: '¥249', tag: 'AI Hardware', spec: 'Starlight Silver' },
+      { id: 'cat-2', item_name: 'Smart Voice Note Capsule', subtitle: 'Multilingual live transcript & mindmaps', price_text: '¥149', tag: 'Productivity', spec: 'Pro Bundle' },
+      { id: 'cat-3', item_name: 'Magnetic GaN Desk Dock', subtitle: '140W fast charge · hidden cable routing', price_text: '¥79', tag: 'Desk Setup', spec: 'Obsidian Black' },
+      { id: 'cat-4', item_name: 'Enterprise Knowledge Cloud', subtitle: 'End-to-end encrypted · cross-device sync', price_text: '¥19/mo', tag: 'Cloud SaaS', spec: 'Team Plan' },
+    ],
+    t_mob_tasks: [
+      { id: 'tsk-1', task_title: 'Q4 Flagship Store Visual Refresh PO', owner_dept: 'Brand Experience', budget_amount: 68500, status: 'Pending', remark: 'Includes downtown flagship display fixtures' },
+      { id: 'tsk-2', task_title: 'East Region Smart Terminal Replenishment', owner_dept: 'Supply Chain Ops', budget_amount: 124000, status: 'Pending', remark: 'Requires outbound scan verification by Friday' },
+      { id: 'tsk-3', task_title: 'Annual Enterprise VIP Tier Upgrade Plan', owner_dept: 'Commercial Growth', budget_amount: 32000, status: 'Completed', remark: 'Co-signed by Legal and Finance' },
+    ],
+  };
+
+  const designerFolders: DesignerFolder[] = [
+    { id: 'fld-mobile-app', title: 'Mobile App Screens', parentFolderId: null },
+  ];
+
+  const tabBarSnippet = (activeKey: string) => `<MTabBar variant="floating" activeKey="${activeKey}" items={[
+        { key: 'explore', title: 'Explore', icon: 'Sparkles', page: 'mob-explore' },
+        { key: 'tasks', title: 'Tasks', icon: 'Layers', badge: '2', page: 'mob-tasks' },
+        { key: 'ai', title: 'Assistant', icon: 'Compass', page: 'mob-assistant' },
+        { key: 'mine', title: 'Profile', icon: 'User', page: 'mob-profile' }
+      ]} />`;
+
+  const pageSources: Record<string, string> = {
+    'mob-explore': norm(`// @protoflow page: mob-explore
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="Explore Home" accent="gemini" surfaceBg="mist">
+      <MTopBar title="Nova Hub" leftMode="sparkle" titleDropdown={true} rightIcon="avatar" onRightClick={() => navigate('mob-profile')} />
+      <MHeroHeader mode="greeting" eyebrow="Modern Gemini Mobile UX" title="Hi, Alex" subtitle="Consumer-grade polish meets fast enterprise workflows" />
+      <MSearchPill placeholder="Search products, services, or ideas..." target="feed-main" showFilter={false} />
+      <MBentoGrid cols={2} layout="equal" items={[
+        { title: 'AI Assistant', subtitle: 'Natural chat & summaries', icon: 'Sparkles', badge: 'NEW', tone: 'violet', onClick: () => navigate('mob-assistant') },
+        { title: 'Task Queue', subtitle: '2 priority approvals waiting', icon: 'Layers', badge: '2', tone: 'blue', onClick: () => navigate('mob-tasks') }
+      ]} />
+      <MSurface title="Featured Picks" tone="card">
+        <MFeedList
+          pfId="feed-main"
+          table="t_mob_catalog"
+          layout="waterfall"
+          titleField="item_name"
+          subtitleField="subtitle"
+          priceField="price_text"
+          tagField="tag"
+          actionText="Select"
+          onItemClick={() => openDrawer('sheet-order')}
+        />
+      </MSurface>
+      ${tabBarSnippet('explore')}
+      <MBottomSheet id="sheet-order" title="Select Edition & Confirm" subtitle="Interactive reservation demo without mutating catalog items" size="medium">
+        <MListGroup title="Selected Item" items={[{ title: 'Item Name', value: '{{row.item_name}}' }]} />
+        <MForm pfId="mform-catalog" title="Preferences">
+          <MChipSelect label="Edition" name="spec" options="Standard,Pro Bundle,Enterprise" required={true} />
+        </MForm>
+        <MBottomDock mode="commerce" summaryLabel="Price" price="{{row.price_text}}" primaryText="Confirm" onPrimary={() => { submitForm('mform-catalog'); toast('Reservation confirmed'); closeOverlay(); }} />
+      </MBottomSheet>
+    </MobilePage>
+  );
+}
+`),
+    'mob-tasks': norm(`// @protoflow page: mob-tasks
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="Tasks & Approvals" accent="gemini" surfaceBg="mist">
+      <MTopBar title="Mobile Approval Hub" leftMode="back" rightIcon="plus" onLeftClick={() => navigate('mob-explore')} onRightClick={() => openDrawer('sheet-new-task')} />
+      <MStatCard title="Pending Weekly Volume" value="¥192,500" trend="+14.2%" trendTone="up" sparkline={true} />
+      <MSearchPill placeholder="Search task title or department..." target="task-list-main" showFilter={false} />
+      <MPillTabs variant="pill" target="task-list-main" filterField="status" items={[
+        { title: 'All', value: '' },
+        { title: 'Pending', value: 'Pending', badge: '2' },
+        { title: 'Completed', value: 'Completed' }
+      ]} />
+      <MTaskList
+        pfId="task-list-main"
+        table="t_mob_tasks"
+        titleField="task_title"
+        statusField="status"
+        fields={[
+          { dataIndex: 'owner_dept', title: 'Department' },
+          { dataIndex: 'budget_amount', title: 'Budget', render: 'money' },
+          { dataIndex: 'remark', title: 'Notes' }
+        ]}
+        rowActions={[
+          { label: 'Reject', danger: true, onClick: () => { updateRow({ status: 'Rejected' }); toast('Marked as rejected', 'warning'); } },
+          { label: 'Approve', primary: true, onClick: () => { updateRow({ status: 'Completed' }); toast('Approved'); } }
+        ]}
+        onCardClick={() => openDrawer('sheet-task-detail')}
+      />
+      ${tabBarSnippet('tasks')}
+      <MBottomSheet id="sheet-task-detail" title="Task Details" size="medium">
+        <MListGroup title="Overview" table="t_mob_tasks" />
+        <MBottomDock mode="action" secondaryText="Close" primaryText="Approve" onSecondary={() => closeOverlay()} onPrimary={() => { updateRow({ status: 'Completed' }); toast('Approved'); closeOverlay(); }} />
+      </MBottomSheet>
+      <MBottomSheet id="sheet-new-task" title="Create Record" size="tall">
+        <MForm pfId="mform-new-task" table="t_mob_tasks">
+          <MField label="Task Title" name="task_title" placeholder="Enter request title" required={true} />
+          <MSheetPicker label="Department" name="owner_dept" options="Brand Experience,Supply Chain Ops,AI Platform R&D,Commercial Growth" required={true} />
+          <MField label="Budget Amount" name="budget_amount" inputType="amount" placeholder="0.00" />
+          <MChipSelect label="Initial Status" name="status" required={true} options="Pending,Completed" />
+          <MField label="Notes" name="remark" inputType="textarea" placeholder="Add context..." />
+        </MForm>
+        <MBottomDock mode="action" secondaryText="Cancel" primaryText="Submit" onSecondary={() => closeOverlay()} onPrimary={() => { submitForm('mform-new-task'); toast('Task created'); closeOverlay(); }} />
+      </MBottomSheet>
+    </MobilePage>
+  );
+}
+`),
+    'mob-assistant': norm(`// @protoflow page: mob-assistant
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="AI Assistant" accent="gemini" surfaceBg="mist">
+      <MTopBar title="Gemini 2.5 Pro" leftMode="back" titleDropdown={true} rightIcon="more" onLeftClick={() => navigate('mob-explore')} />
+      <MChatStream assistantName="Gemini" messages={[
+        { role: 'user', title: 'Summarize my pending mobile approvals and featured catalog updates' },
+        { role: 'assistant', title: 'Live workspace synced: 2 tasks are pending (¥192,500 total), including East Region smart terminal replenishment due Friday.', highlight: 'Tap a quick action below to jump straight to approvals or ask a follow-up.' }
+      ]} />
+      <MBentoGrid cols={2} layout="equal" items={[
+        { title: 'Review Approvals', subtitle: 'Process 2 pending requests', icon: 'Zap', tone: 'blue', onClick: () => navigate('mob-tasks') },
+        { title: 'Browse Catalog', subtitle: 'View 4 featured items', icon: 'ShoppingBag', tone: 'emerald', onClick: () => navigate('mob-explore') }
+      ]} />
+      <MComposerBar placeholder="Ask Gemini or enter a business command..." suggestions="Weekly executive summary,Find overdue items,Draft launch copy" docked={true} onSend={() => toast('Sent to AI assistant')} />
+    </MobilePage>
+  );
+}
+`),
+    'mob-profile': norm(`// @protoflow page: mob-profile
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="User Profile" accent="gemini" surfaceBg="mist">
+      <MTopBar title="My Workspace" leftMode="none" rightIcon="bell" onRightClick={() => toast('No new notifications', 'info')} />
+      <MHeroHeader mode="banner" eyebrow="PRO MEMBER" title="Alex · Product Architect" subtitle="Real-time cross-device sync & AI insights active" actionText="View Perks" onAction={() => openModal('dlg-vip')} />
+      <MBentoGrid cols={2} layout="equal" items={[
+        { title: 'My Tasks', subtitle: 'Synced with live tables', icon: 'Layers', badge: '2', tone: 'blue', onClick: () => navigate('mob-tasks') },
+        { title: 'Saved Items', subtitle: '12 bookmarked ideas', icon: 'Bookmark', tone: 'violet', onClick: () => navigate('mob-explore') }
+      ]} />
+      <MListGroup title="Preferences & General" items={[
+        { title: 'Active Workspace', description: 'Current: HQ Digital Hub', value: 'Verified', icon: 'Compass', arrow: true },
+        { title: 'Smart Alerts', description: 'Priority approvals pushed instantly', value: 'Enabled', icon: 'Bell', arrow: true },
+        { title: 'Privacy & Security', value: 'End-to-End', icon: 'Shield', arrow: true }
+      ]} />
+      ${tabBarSnippet('mine')}
+      <MDialog id="dlg-vip" title="Pro Workspace Active" description="Your account supports unlimited cross-platform previews, shared database tables, and live AI generation." confirmText="Awesome" />
+    </MobilePage>
+  );
+}
+`),
+  };
+
+  const designerPages: DesignerPage[] = [
+    { pageId: 'mob-explore', title: 'Explore Home', folderId: 'fld-mobile-app', platform: 'mobile' },
+    { pageId: 'mob-tasks', title: 'Tasks & Approvals', folderId: 'fld-mobile-app', platform: 'mobile' },
+    { pageId: 'mob-assistant', title: 'AI Assistant', folderId: 'fld-mobile-app', platform: 'mobile' },
+    { pageId: 'mob-profile', title: 'User Profile', folderId: 'fld-mobile-app', platform: 'mobile' },
+  ];
+
+  return {
+    dbTables,
+    tableRows,
+    designerFolders,
+    designerPages,
+    pageSources,
+    entryPageId: 'mob-explore',
+  };
 }
 
 export function createMobileStarterDataset(): {
@@ -18,6 +247,9 @@ export function createMobileStarterDataset(): {
   pageSources: Record<string, string>;
   entryPageId: string;
 } {
+  if (isEnLocale()) {
+    return createEnglishMobileStarterDataset();
+  }
   const dbTables: DBTableSchema[] = [
     {
       id: 't_mob_catalog',

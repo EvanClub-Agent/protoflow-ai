@@ -3,6 +3,7 @@ import { BookOpenText, ChevronLeft, X } from 'lucide-react';
 import type { PublishedNote, ReadablePublishedSnapshot } from '../services/publishedSnapshot';
 import { NOTE_ASSET_SCHEME, NOTE_PRIORITY_OPTIONS, NOTE_STATUS_OPTIONS, noteAssetDataUrl } from '../proto/notes';
 import { sanitizeNoteHtml } from '../proto/noteHtmlSanitize';
+import { useI18n } from '../i18n';
 
 const statusMeta = (id: string) => NOTE_STATUS_OPTIONS.find((s) => s.id === id);
 const priorityMeta = (id?: string) => NOTE_PRIORITY_OPTIONS.find((p) => p.id === id);
@@ -17,6 +18,7 @@ export function PublishedProjectNotes({
   activePageId: string;
   onNavigate: (pageId: string) => void;
 }) {
+  const { tr } = useI18n();
   const notes = useMemo<PublishedNote[]>(
     () => (snapshot.formatVersion === 4 || snapshot.formatVersion === 5 ? snapshot.notes ?? [] : []),
     [snapshot]
@@ -39,30 +41,30 @@ export function PublishedProjectNotes({
           setScope(pageNotes.length ? 'page' : 'all');
           setOpen(true);
         }}
-        aria-label={`查看需求说明（本页 ${pageNotes.length} 篇）`}
+        aria-label={tr(`查看需求说明（本页 ${pageNotes.length} 篇）`, `View specs (${pageNotes.length} on this page)`)}
         className="flex items-center gap-1.5 rounded-lg border border-blue-200/90 bg-blue-50/90 hover:bg-blue-100/80 px-2.5 py-1.5 text-xs font-medium text-blue-800 shrink-0 cursor-pointer transition shadow-2xs"
       >
         <BookOpenText size={13.5} className="text-blue-600" />
-        <span>需求说明 ({pageNotes.length})</span>
+        <span>{tr(`需求说明 (${pageNotes.length})`, `Specs (${pageNotes.length})`)}</span>
       </button>
       {open && (
         <aside
           role="dialog"
-          aria-label="需求说明（只读）"
+          aria-label={tr('需求说明（只读）', 'Specs (Read-only)')}
           className="fixed right-0 top-12 bottom-0 z-40 flex w-[min(560px,100vw)] flex-col border-l border-slate-200 bg-white shadow-2xl"
         >
           <header className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
             <div className="flex min-w-0 items-center gap-2">
               {selected && (
-                <button type="button" aria-label="返回列表" onClick={() => setSelectedId(null)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 cursor-pointer">
+                <button type="button" aria-label={tr('返回列表', 'Back to list')} onClick={() => setSelectedId(null)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 cursor-pointer shrink-0">
                   <ChevronLeft size={15} />
                 </button>
               )}
               <BookOpenText size={15} className="shrink-0 text-blue-600" />
-              <span className="truncate text-sm font-semibold text-slate-900">{selected ? selected.title : '需求说明'}</span>
-              <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] text-slate-500">只读</span>
+              <span className="truncate text-sm font-semibold text-slate-900">{selected ? selected.title : tr('需求说明', 'Specs')}</span>
+              <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] text-slate-500">{tr('只读', 'Read-only')}</span>
             </div>
-            <button type="button" aria-label="关闭需求说明" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer">
+            <button type="button" aria-label={tr('关闭需求说明', 'Close specs')} onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer shrink-0">
               <X size={15} />
             </button>
           </header>
@@ -70,7 +72,7 @@ export function PublishedProjectNotes({
             <PublishedNoteBody note={selected} snapshot={snapshot} onNavigate={(id) => { onNavigate(id); setSelectedId(null); }} />
           ) : (
             <>
-              <div className="flex gap-1 border-b border-slate-100 px-4 py-2 text-xs" role="tablist">
+              <div className="flex flex-wrap gap-1 border-b border-slate-100 px-4 py-2 text-xs" role="tablist">
                 {(['page', 'all'] as const).map((s) => (
                   <button
                     key={s}
@@ -80,12 +82,18 @@ export function PublishedProjectNotes({
                     onClick={() => setScope(s)}
                     className={`rounded-md px-2.5 py-1 font-medium cursor-pointer ${scope === s ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
                   >
-                    {s === 'page' ? `本页相关 (${pageNotes.length})` : `全部 (${notes.length})`}
+                    {s === 'page'
+                      ? tr(`本页相关 (${pageNotes.length})`, `This Page (${pageNotes.length})`)
+                      : tr(`全部 (${notes.length})`, `All (${notes.length})`)}
                   </button>
                 ))}
               </div>
               <ul className="flex-1 space-y-2 overflow-y-auto p-4">
-                {list.length === 0 && <li className="py-10 text-center text-xs text-slate-400">当前页面没有关联的需求说明，可切换到「全部」查看。</li>}
+                {list.length === 0 && (
+                  <li className="py-10 text-center text-xs text-slate-400">
+                    {tr('当前页面没有关联的需求说明，可切换到「全部」查看。', 'No specs are linked to this page. Switch to "All" to browse all shared notes.')}
+                  </li>
+                )}
                 {list.map((note) => {
                   const status = statusMeta(note.status);
                   const priority = priorityMeta(note.priority);
@@ -127,6 +135,7 @@ function PublishedNoteBody({
   snapshot: ReadablePublishedSnapshot;
   onNavigate: (pageId: string) => void;
 }) {
+  const { tr } = useI18n();
   const pageIds = useMemo(() => new Set(snapshot.pages.map((p) => p.pageId)), [snapshot]);
   // Sanitized again on the reader side: the share payload is never trusted as markup.
   const html = useMemo(() => {
@@ -146,8 +155,8 @@ function PublishedNoteBody({
       <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
         {status && <span className={`rounded border px-1.5 py-px ${status.badgeClass}`}>{status.label}</span>}
         {note.priority && <span className="rounded border border-slate-200 px-1.5 py-px">{note.priority}</span>}
-        {note.meetingDate && <span>沟通日期 {note.meetingDate}</span>}
-        <span>更新于 {note.updatedAt.slice(0, 16).replace('T', ' ')}</span>
+        {note.meetingDate && <span>{tr(`沟通日期 ${note.meetingDate}`, `Meeting date ${note.meetingDate}`)}</span>}
+        <span>{tr(`更新于 ${note.updatedAt.slice(0, 16).replace('T', ' ')}`, `Updated ${note.updatedAt.slice(0, 16).replace('T', ' ')}`)}</span>
       </div>
       <div
         className="pf-notion-editor"

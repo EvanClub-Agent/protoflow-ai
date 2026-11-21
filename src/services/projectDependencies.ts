@@ -1,4 +1,5 @@
 import type { ProjectPlan } from './projectPlan';
+import { tr } from '../i18n/runtime';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 import { isChartType } from '../proto/charts/model';
 import { parsePageSource } from '../proto/dsl/parser';
@@ -44,7 +45,7 @@ export function validatePageEvidence(page: ProjectPlan['pages'][number]) {
     !d || !text(d.sourcePageId) || !text(d.requirement) || d.sourcePageId === page.pageId ||
     !['pending','reuse','foreignKey'].includes(d.kind) || (d.kind !== 'pending' && !text(d.sourceTableId)) ||
     (d.kind === 'foreignKey' && (!text(d.tableId) || !text(d.foreignKeyColumnId) || !text(d.sourceColumnId)))))) {
-    throw new Error(`页面 ${page.pageId} 的上游数据依赖无效，请指定来源页面、需求和准确的表及外键字段 ID`);
+    throw new Error(tr(`页面 ${page.pageId} 的上游数据依赖无效，请指定来源页面、需求和准确的表及外键字段 ID`, `Invalid upstream data dependency on page ${page.pageId}; specify source page, requirement, and exact table/foreign-key column IDs`));
   }
   if (page.acceptanceCases !== undefined && (!Array.isArray(page.acceptanceCases) || page.acceptanceCases.some(c =>
     !c || !text(c.scenario) || !text(c.expected) || (c.actionPfId !== undefined && !text(c.actionPfId)) ||
@@ -55,7 +56,7 @@ export function validatePageEvidence(page: ProjectPlan['pages'][number]) {
     (c.field !== undefined && !text(c.field)) ||
     (c.chart !== undefined && (!c.chart || !text(c.chart.pfId) || !text(c.chart.tableId))) ||
     (c.source !== undefined && (!c.source || !text(c.source.mindmapId) || !text(c.source.quote)))))) {
-    throw new Error(`页面 ${page.pageId} 的验收场景、预期动作目标或脑图来源无效`);
+    throw new Error(tr(`页面 ${page.pageId} 的验收场景、预期动作目标或脑图来源无效`, `Invalid acceptance case, action target, or mindmap source on page ${page.pageId}`));
   }
 }
 

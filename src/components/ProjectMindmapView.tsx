@@ -35,8 +35,9 @@ import { MINDMAP_THEMES, renderMermaidDiagram, type MindmapThemeId } from '../se
 import { conversationKey } from '../services/hermesConversation';
 import { useMindmapAiStore } from '../services/hermesMindmap';
 import { MindmapAiPanel } from './MindmapAiPanel';
+import { useI18n } from '../i18n';
 
-const starterSource = `mindmap
+const starterSourceZh = `mindmap
   root((项目规划))
     项目目标
       用户需求
@@ -49,18 +50,56 @@ const starterSource = `mindmap
       开发与验收
 `;
 
-const SNIPPET_TEMPLATES: { label: string; desc: string; code: string; mode: 'replace' | 'append' }[] = [
-  {
-    label: '项目规划全景思维导图 (Mindmap)',
-    desc: '目标、模块拆解与交付里程碑',
-    mode: 'replace',
-    code: starterSource,
-  },
-  {
-    label: '采购审批管理流程图 (Flowchart TB)',
-    desc: '多级子图、条件分支与自定义节点配色',
-    mode: 'replace',
-    code: `---
+const starterSourceEn = `mindmap
+  root((Project Plan))
+    Objectives
+      User Needs
+      Core Value
+    Modules
+      Core Features
+      Next Iteration
+    Delivery Plan
+      Prototype Design
+      Build & Acceptance
+`;
+
+function getSnippetTemplates(tr: <T extends string>(zh: T, en: string) => string, isEn: boolean): { label: string; desc: string; code: string; mode: 'replace' | 'append' }[] {
+  return [
+    {
+      label: tr('项目规划全景思维导图 (Mindmap)', 'Project Overview Mindmap'),
+      desc: tr('目标、模块拆解与交付里程碑', 'Objectives, module breakdown & delivery milestones'),
+      mode: 'replace',
+      code: isEn ? starterSourceEn : starterSourceZh,
+    },
+    {
+      label: tr('采购审批管理流程图 (Flowchart TB)', 'Procurement Approval Flowchart (TB)'),
+      desc: tr('多级子图、条件分支与自定义节点配色', 'Subgraphs, decision branches & custom node colors'),
+      mode: 'replace',
+      code: isEn
+        ? `---
+config:
+  layout: dagre
+---
+flowchart TB
+  START(["Start Procurement"]) --> A1["Submit Request"]
+  subgraph PLAN["1. Planning & Approval"]
+    A1 --> A2{"Within Budget?"}
+    A2 -->|Approved| A3["Create Procurement Plan"]
+    A2 -->|Rejected| A1
+  end
+  subgraph SOURCE["2. Sourcing & Order"]
+    A3 --> B1{"Sourcing Mode"}
+    B1 -->|Catalog| B2["Create Purchase Order"]
+    B1 -->|RFQ| B3["Compare Quotes & Award"]
+    B3 --> B2
+  end
+  B2 --> DONE(["Receiving & Payment"])
+  classDef approval fill:#fff3cd,stroke:#d39e00,color:#664d03
+  classDef success fill:#d1e7dd,stroke:#198754,color:#0f5132
+  class A2,B1 approval
+  class B2,DONE success
+`
+        : `---
 config:
   layout: dagre
 ---
@@ -83,12 +122,25 @@ flowchart TB
   class A2,B1 approval
   class B2,DONE success
 `,
-  },
-  {
-    label: '前后端业务调用时序图 (Sequence)',
-    desc: '用户、前端页面、服务端与数据库交互链路',
-    mode: 'replace',
-    code: `sequenceDiagram
+    },
+    {
+      label: tr('前后端业务调用时序图 (Sequence)', 'End-to-End Sequence Diagram'),
+      desc: tr('用户、前端页面、服务端与数据库交互链路', 'User, frontend page, service layer & database sequence'),
+      mode: 'replace',
+      code: isEn
+        ? `sequenceDiagram
+  autonumber
+  actor User as Operator
+  participant Page as Prototype Page
+  participant Service as Domain Service
+  participant DB as Business Table
+  User->>Page: Select booked invoices & click "Batch Pay"
+  Page->>Service: Validate invoice status & payment date
+  Service->>DB: Write payment date, operator & status
+  DB-->>Service: Return updated rows
+  Service-->>Page: Refresh grid & show confirmation
+`
+        : `sequenceDiagram
   autonumber
   actor User as 业务人员
   participant Page as 前端原型页面
@@ -100,12 +152,12 @@ flowchart TB
   DB-->>Service: 返回更新结果
   Service-->>Page: 刷新列表并提示登记成功
 `,
-  },
-  {
-    label: '核心单据 ER 实体关系图 (ER Diagram)',
-    desc: '梳理主单据表、明细子表与基础字典表关联',
-    mode: 'replace',
-    code: `erDiagram
+    },
+    {
+      label: tr('核心单据 ER 实体关系图 (ER Diagram)', 'Core Entity ER Diagram'),
+      desc: tr('梳理主单据表、明细子表与基础字典表关联', 'Header tables, line-item detail tables & master lookups'),
+      mode: 'replace',
+      code: `erDiagram
   SUPPLIER ||--o{ INVOICE : issues
   INVOICE ||--|{ PAYMENT_RECORD : settles
   SUPPLIER {
@@ -126,14 +178,15 @@ flowchart TB
     string operator_name
   }
 `,
-  },
-  {
-    label: '追加思维导图分支节点',
-    desc: '在当前思维导图末尾追加一个二级分支',
-    mode: 'append',
-    code: `\n    新增业务分支\n      子功能点一\n      子功能点二`,
-  },
-];
+    },
+    {
+      label: tr('追加思维导图分支节点', 'Append Mindmap Branch'),
+      desc: tr('在当前思维导图末尾追加一个二级分支', 'Append a secondary branch at the end of the mindmap'),
+      mode: 'append',
+      code: isEn ? `\n    New Branch\n      Sub-feature 1\n      Sub-feature 2` : `\n    新增业务分支\n      子功能点一\n      子功能点二`,
+    },
+  ];
+}
 
 type Preview = { source: string; dark: boolean; themeId: MindmapThemeId; svg: string; error: string; diagramType: string | null };
 
@@ -147,6 +200,7 @@ function download(content: string, type: string, fileName: string) {
 }
 
 export function ProjectMindmapView({ projectId }: { projectId: string }) {
+  const { tr } = useI18n();
   const data = useProtoStore(state => state.mindmaps);
   const selectedId = useProtoStore(state => state.selectedMindmapNodeId);
   const selected = data.nodes.find(node => node.id === selectedId);
@@ -164,12 +218,18 @@ export function ProjectMindmapView({ projectId }: { projectId: string }) {
                 <Network size={24} />
               </div>
               <h1 className="text-sm font-semibold text-slate-800">
-                {selected ? mindmapPath(data, selected.id) : '项目脑图'}
+                {selected ? mindmapPath(data, selected.id) : tr('项目脑图', 'Project Mindmaps')}
               </h1>
               <p className="max-w-80 text-xs leading-6 text-slate-500">
                 {selected
-                  ? '在此目录中新建或选择脑图菜单。目录的页面关联会用于其下各张脑图的生成。'
-                  : '在左侧新建脑图目录或菜单，按不同模块整理思路。每个脑图菜单独立编辑和生成。'}
+                  ? tr(
+                      '在此目录中新建或选择脑图菜单。目录的页面关联会用于其下各张脑图的生成。',
+                      'Create or select a mindmap item in this folder. Folder page links are inherited when generating diagrams inside it.'
+                    )
+                  : tr(
+                      '在左侧新建脑图目录或菜单，按不同模块整理思路。每个脑图菜单独立编辑和生成。',
+                      'Create folders or mindmap items on the left to organize ideas by module. Each mindmap is edited and generated independently.'
+                    )}
               </p>
             </div>
           </>
@@ -180,6 +240,9 @@ export function ProjectMindmapView({ projectId }: { projectId: string }) {
 }
 
 function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mindmapId: string }) {
+  const { isEn, tr, td } = useI18n();
+  const starterSource = isEn ? starterSourceEn : starterSourceZh;
+  const snippetTemplates = getSnippetTemplates(tr, isEn);
   const data = useProtoStore(state => state.mindmaps);
   const node = data.nodes.find(node => node.id === mindmapId);
   const source = node?.kind === 'mindmap' ? node.source : '';
@@ -286,14 +349,14 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
     : undefined;
   const activeDocUrl = activeTemplate?.docs ?? 'https://mermaid.js.org/intro/syntax-reference.html';
   const topBtnClass =
-    'inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs';
+    'inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0 cursor-pointer transition shadow-2xs';
   const hudPillClass =
-    'inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white/95 backdrop-blur-md px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer transition';
+    'inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white/95 backdrop-blur-md px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer transition';
   const dockIconBtnClass =
     'flex h-8 w-8 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer transition';
 
   return (
-    <section aria-label="项目脑图工作区" className="flex h-full min-h-0 flex-col bg-white">
+    <section aria-label={tr('项目脑图工作区', 'Project mindmap workspace')} className="flex h-full min-h-0 flex-col bg-white">
       {/* Official mermaid.ai style Top Studio Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/90 bg-white px-4 py-2.5 shrink-0">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -301,7 +364,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
             <Network size={15} />
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs">
-            <span className="font-medium text-[#ff3670] shrink-0">项目脑图</span>
+            <span className="font-medium text-[#ff3670] shrink-0">{tr('项目脑图', 'Mindmap')}</span>
             <span className="text-slate-300">/</span>
             <h1 className="truncate text-sm font-semibold text-slate-900">{title}</h1>
             <span className="hidden sm:inline-block truncate max-w-56 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
@@ -310,17 +373,17 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
           </div>
           <span
             role="status"
-            className="ml-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600"
+            className="ml-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 whitespace-nowrap shrink-0"
           >
             {isRendering ? (
               <>
                 <Loader2 size={11} className="animate-spin text-blue-600" />
-                正在绘制…
+                {tr('正在绘制…', 'Rendering…')}
               </>
             ) : currentPreview?.error ? (
-              <span className="text-amber-600">需要修正语法</span>
+              <span className="text-amber-600">{tr('需要修正语法', 'Syntax error')}</span>
             ) : (
-              <span className="text-emerald-600">● 实时预览</span>
+              <span className="text-emerald-600">{tr('● 实时预览', '● Live Preview')}</span>
             )}
           </span>
         </div>
@@ -330,10 +393,10 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
             type="button"
             className={topBtnClass}
             disabled={!hasSource}
-            onClick={() => download(source, 'text/plain;charset=utf-8', `${fileName}-脑图.mmd`)}
+            onClick={() => download(source, 'text/plain;charset=utf-8', `${fileName}-${tr('脑图', 'mindmap')}.mmd`)}
           >
             <Code2 size={14} />
-            导出源码
+            {tr('导出源码', 'Export .mmd')}
           </button>
           <button
             type="button"
@@ -341,19 +404,19 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
             disabled={!currentPreview?.svg}
             onClick={() => {
               if (currentPreview?.svg)
-                download(currentPreview.svg, 'image/svg+xml;charset=utf-8', `${fileName}-脑图.svg`);
+                download(currentPreview.svg, 'image/svg+xml;charset=utf-8', `${fileName}-${tr('脑图', 'mindmap')}.svg`);
             }}
           >
             <Download size={14} />
-            导出 SVG
+            {tr('导出 SVG', 'Export SVG')}
           </button>
           <button
             type="button"
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white cursor-pointer transition shadow-2xs"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white whitespace-nowrap shrink-0 cursor-pointer transition shadow-2xs"
             onClick={() => setBundleModalOpen(true)}
           >
             <FileDown size={14} />
-            导出工程
+            {tr('导出工程', 'Export Project')}
           </button>
         </div>
       </header>
@@ -378,7 +441,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
             >
               <Code2 size={15} className="text-slate-700" />
               <span>Code</span>
-              <span className="sr-only">脑图源码</span>
+              <span className="sr-only">{tr('脑图源码', 'Mindmap source')}</span>
             </label>
 
             <div className="flex items-center gap-2">
@@ -388,7 +451,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 aria-checked={autoUpdate}
                 onClick={() => setAutoUpdate(prev => !prev)}
                 className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 cursor-pointer"
-                title="开启后修改源码自动实时重绘脑图"
+                title={tr('开启后修改源码自动实时重绘脑图', 'Automatically re-render diagram as you edit code')}
               >
                 <span
                   className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
@@ -411,7 +474,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                   className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-teal-700 cursor-pointer"
                 >
                   <RefreshCw size={11} />
-                  刷新
+                  {tr('刷新', 'Render')}
                 </button>
               )}
 
@@ -425,7 +488,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                     ? 'bg-slate-800 text-white'
                     : 'text-slate-700 hover:bg-white/70'
                 }`}
-                title="查看 Mermaid 图表语法"
+                title={tr('查看 Mermaid 图表语法', 'View Mermaid diagram syntax reference')}
               >
                 <BookOpen size={12} />
                 <span>Docs</span>
@@ -435,7 +498,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 type="button"
                 onClick={() => setCodeCollapsed(true)}
                 className="rounded-md p-1 text-slate-500 hover:bg-white/70 hover:text-slate-800 cursor-pointer max-lg:hidden"
-                title="收起代码面板"
+                title={tr('收起代码面板', 'Collapse code panel')}
               >
                 <X size={14} />
               </button>
@@ -448,25 +511,37 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
           {docsOpen && (
             <div className="shrink-0 border-b border-slate-200 bg-slate-50/90 px-3.5 py-2.5 text-[11px] leading-5 text-slate-600 space-y-1">
               <div className="flex items-center justify-between font-semibold text-slate-800">
-                <span>Mermaid 图表语法</span>
+                <span>{tr('Mermaid 图表语法', 'Mermaid Syntax Reference')}</span>
                 <span className="font-mono text-[10px] text-teal-700">
                   {currentPreview?.diagramType === null || !currentPreview
                     ? 'Mermaid'
-                    : mermaidTypeLabel(currentPreview.diagramType)}
+                    : td(mermaidTypeLabel(currentPreview.diagramType))}
                 </span>
               </div>
-              <p>
-                思维导图用 <code>mindmap</code> 和缩进；流程图用 <code>flowchart TB</code> 与箭头；时序图用{' '}
-                <code>sequenceDiagram</code>；数据关系用 <code>erDiagram</code>。
-              </p>
-              <p>支持 YAML 配置、子图、连线文字及自定义样式。选择上方模板类型可一键载入 31 种图表模板。</p>
+              {isEn ? (
+                <>
+                  <p>
+                    Use <code>mindmap</code> with indentation for mindmaps; <code>flowchart TB</code> with arrows for flowcharts;{' '}
+                    <code>sequenceDiagram</code> for sequences; and <code>erDiagram</code> for entity relations.
+                  </p>
+                  <p>Supports YAML frontmatter, subgraphs, edge labels, and custom styles. Use the template picker above for 31 diagram types.</p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    思维导图用 <code>mindmap</code> 和缩进；流程图用 <code>flowchart TB</code> 与箭头；时序图用{' '}
+                    <code>sequenceDiagram</code>；数据关系用 <code>erDiagram</code>。
+                  </p>
+                  <p>支持 YAML 配置、子图、连线文字及自定义样式。选择上方模板类型可一键载入 31 种图表模板。</p>
+                </>
+              )}
               <a
                 href={activeDocUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-block font-medium text-teal-700 hover:text-teal-800 underline"
               >
-                打开当前图表官方语法文档 ↗
+                {tr('打开当前图表官方语法文档 ↗', 'Open official Mermaid syntax docs ↗')}
               </a>
             </div>
           )}
@@ -485,11 +560,11 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
 
             <textarea
               id="project-mindmap-source"
-              aria-label="脑图源码"
+              aria-label={tr('脑图源码', 'Mindmap source')}
               value={source}
               spellCheck={false}
               wrap="off"
-              placeholder={'mindmap\n  root((我的项目))\n    第一个想法\n    第二个想法'}
+              placeholder={tr('mindmap\n  root((我的项目))\n    第一个想法\n    第二个想法', 'mindmap\n  root((My Project))\n    First Idea\n    Second Idea')}
               onChange={event => updateSource(event.target.value)}
               onScroll={event => {
                 if (gutterRef.current) {
@@ -505,9 +580,9 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
             {snippetsOpen && (
               <div className="border-b border-slate-200/80 bg-white p-2.5 space-y-1.5 max-h-48 overflow-y-auto">
                 <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  快速插入模板与片段
+                  {tr('快速插入模板与片段', 'Quick Templates & Snippets')}
                 </div>
-                {SNIPPET_TEMPLATES.map((tpl, idx) => (
+                {snippetTemplates.map((tpl, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -522,7 +597,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                       <div className="text-[10.5px] text-slate-500 truncate">{tpl.desc}</div>
                     </div>
                     <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-teal-700 border border-slate-200/80">
-                      {tpl.mode === 'append' ? '+ 追加' : '应用'}
+                      {tpl.mode === 'append' ? tr('+ 追加', '+ Append') : tr('应用', 'Apply')}
                     </span>
                   </button>
                 ))}
@@ -537,7 +612,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               <span className="inline-flex items-center gap-1.5">
                 <Braces size={13} className="text-slate-500" />
                 <span>Snippets</span>
-                <span className="text-[11px] font-normal text-slate-400">· 常用图表模板</span>
+                <span className="text-[11px] font-normal text-slate-400">{tr('· 常用图表模板', '· Common Diagram Snippets')}</span>
               </span>
               {snippetsOpen ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronUp size={14} className="text-slate-400" />}
             </button>
@@ -560,7 +635,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                   type="button"
                   onClick={() => setCodeCollapsed(false)}
                   className={hudPillClass}
-                  title="展开左侧代码编辑器"
+                  title={tr('展开左侧代码编辑器', 'Expand left code editor')}
                 >
                   <PanelLeftOpen size={14} className="text-teal-600" />
                   <span>Code</span>
@@ -575,9 +650,9 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                   type="button"
                   onClick={() => setThemeMenuOpen(prev => !prev)}
                   className={hudPillClass}
-                  title="切换脑图配色主题"
+                  title={tr('切换脑图配色主题', 'Switch diagram color theme')}
                 >
-                  <span>{activeTheme.label}</span>
+                  <span>{td(activeTheme.label)}</span>
                   <span
                     className="inline-block h-3.5 w-3.5 rounded-full border border-white shadow-2xs"
                     style={{
@@ -602,8 +677,8 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                             : 'text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <span>{theme.label}</span>
-                        <span className="flex items-center gap-0.5">
+                        <span className="truncate">{td(theme.label)}</span>
+                        <span className="flex items-center gap-0.5 shrink-0">
                           {theme.swatch.map((color, i) => (
                             <span
                               key={i}
@@ -623,7 +698,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 type="button"
                 onClick={() => setCompactPad(prev => !prev)}
                 className={hudPillClass}
-                title="切换画布留白密度"
+                title={tr('切换画布留白密度', 'Toggle canvas padding density')}
               >
                 <span>{compactPad ? 'Compact' : 'Adaptive'}</span>
                 <GitBranch size={13} className="text-slate-500" />
@@ -635,7 +710,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                   type="button"
                   onClick={toggleFlowDirection}
                   className={hudPillClass}
-                  title="切换流程图排列方向 (Top to bottom / Left to right)"
+                  title={tr('切换流程图排列方向 (Top to bottom / Left to right)', 'Toggle flowchart direction (Top to bottom / Left to right)')}
                 >
                   <span>{isHorizontalFlow ? 'Left to right' : 'Top to bottom'}</span>
                   {isHorizontalFlow ? (
@@ -648,7 +723,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
 
               {/* Diagram Type Badge */}
               <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white/95 backdrop-blur-md px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
-                <span>{currentPreview?.diagramType ? mermaidTypeLabel(currentPreview.diagramType) : 'Mermaid'}</span>
+                <span>{currentPreview?.diagramType ? td(mermaidTypeLabel(currentPreview.diagramType)) : 'Mermaid'}</span>
                 <Network size={13} className="text-slate-500" />
               </span>
 
@@ -657,7 +732,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 type="button"
                 onClick={resetView}
                 className={hudPillClass}
-                title="自动居中并重置缩放比例"
+                title={tr('自动居中并重置缩放比例', 'Center diagram and reset zoom')}
               >
                 <span>Auto</span>
                 <Sparkles size={12} className="text-teal-600" />
@@ -671,7 +746,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               type="button"
               onClick={() => setCodeCollapsed(prev => !prev)}
               className={dockIconBtnClass}
-              title={codeCollapsed ? '展开源码面板' : '收起源码面板'}
+              title={codeCollapsed ? tr('展开源码面板', 'Expand code panel') : tr('收起源码面板', 'Collapse code panel')}
             >
               {codeCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
             </button>
@@ -680,13 +755,13 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               onClick={() => {
                 updateSource(
                   source.trim()
-                    ? `${source.trimEnd()}\n    新分支\n      子节点\n`
+                    ? `${source.trimEnd()}\n    ${tr('新分支', 'New Branch')}\n      ${tr('子节点', 'Child Node')}\n`
                     : starterSource
                 );
               }}
               className={dockIconBtnClass}
               disabled={currentPreview?.diagramType !== 'mindmap'}
-              title={currentPreview?.diagramType === 'mindmap' ? '快速追加分支节点' : '追加分支仅适用于思维导图'}
+              title={currentPreview?.diagramType === 'mindmap' ? tr('快速追加分支节点', 'Quick-append branch node') : tr('追加分支仅适用于思维导图', 'Append branch applies to mindmaps only')}
             >
               <Type size={15} />
             </button>
@@ -695,10 +770,10 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               disabled={!currentPreview?.svg}
               onClick={() => {
                 if (currentPreview?.svg)
-                  download(currentPreview.svg, 'image/svg+xml;charset=utf-8', `${fileName}-脑图.svg`);
+                  download(currentPreview.svg, 'image/svg+xml;charset=utf-8', `${fileName}-${tr('脑图', 'mindmap')}.svg`);
               }}
               className={dockIconBtnClass}
-              title="下载 SVG 矢量图"
+              title={tr('下载 SVG 矢量图', 'Download SVG vector graphic')}
             >
               <ImageIcon size={15} />
             </button>
@@ -706,7 +781,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               type="button"
               onClick={() => setDocsOpen(prev => !prev)}
               className={dockIconBtnClass}
-              title="打开或关闭语法参考"
+              title={tr('打开或关闭语法参考', 'Toggle syntax reference')}
             >
               <BookOpen size={15} />
             </button>
@@ -720,27 +795,27 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               className={`${dockIconBtnClass} ${
                 panMode ? 'bg-blue-600 text-white hover:bg-blue-700 hover:text-white' : ''
               }`}
-              title={panMode ? '抓手拖拽平移已开启（按住画布可自由拖动）' : '点击开启抓手拖拽平移模式'}
+              title={panMode ? tr('抓手拖拽平移已开启（按住画布可自由拖动）', 'Hand pan mode enabled (drag canvas to pan)') : tr('点击开启抓手拖拽平移模式', 'Enable hand drag-to-pan mode')}
             >
               <Hand size={15} />
             </button>
             <button
               type="button"
-              aria-label="放大脑图"
+              aria-label={tr('放大脑图', 'Zoom in mindmap')}
               disabled={zoom >= 3}
               onClick={() => setZoom(value => Math.min(3, value + 0.25))}
               className={dockIconBtnClass}
-              title="放大脑图"
+              title={tr('放大脑图', 'Zoom in')}
             >
               <ZoomIn size={15} />
             </button>
             <button
               type="button"
-              aria-label="缩小脑图"
+              aria-label={tr('缩小脑图', 'Zoom out mindmap')}
               disabled={zoom <= 0.5}
               onClick={() => setZoom(value => Math.max(0.5, value - 0.25))}
               className={dockIconBtnClass}
-              title="缩小脑图"
+              title={tr('缩小脑图', 'Zoom out')}
             >
               <ZoomOut size={15} />
             </button>
@@ -748,16 +823,16 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
               type="button"
               onClick={resetView}
               className="flex h-7 min-w-8 items-center justify-center rounded-lg px-1 text-[11px] font-bold tabular-nums text-slate-700 hover:bg-slate-100 cursor-pointer"
-              title="重置为 1:1 比例"
+              title={tr('重置为 1:1 比例', 'Reset to 1:1')}
             >
               {zoom === 1 ? '1:1' : `${Math.round(zoom * 100)}%`}
             </button>
             <button
               type="button"
-              aria-label="适应画布"
+              aria-label={tr('适应画布', 'Fit canvas')}
               onClick={resetView}
               className={dockIconBtnClass}
-              title="适应画布"
+              title={tr('适应画布', 'Fit canvas')}
             >
               <Maximize2 size={14} />
             </button>
@@ -815,9 +890,12 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200/80 text-[#ff3670]">
                   <Network size={28} strokeWidth={1.5} />
                 </div>
-                <h2 className="text-sm font-semibold text-slate-800">从一个想法开始</h2>
+                <h2 className="text-sm font-semibold text-slate-800">{tr('从一个想法开始', 'Start from an Idea')}</h2>
                 <p className="mt-1.5 max-w-72 text-xs leading-6 text-slate-500">
-                  梳理项目目标、拆解功能模块，或选择图表模板手工制作，也可以让 Hermes 按指定类型生成。
+                  {tr(
+                    '梳理项目目标、拆解功能模块，或选择图表模板手工制作，也可以让 Hermes 按指定类型生成。',
+                    'Map out project objectives, break down modules, pick a diagram template manually, or ask Hermes to generate one.'
+                  )}
                 </p>
                 <button
                   type="button"
@@ -825,7 +903,7 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                   className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#ff3670] px-4 py-2 text-xs font-semibold text-white hover:bg-[#e62960] cursor-pointer shadow-sm shadow-rose-500/20 transition"
                 >
                   <Plus size={14} />
-                  使用脑图模板
+                  {tr('使用脑图模板', 'Use Mindmap Template')}
                 </button>
               </div>
             ) : currentPreview?.error ? (
@@ -834,14 +912,14 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 className="mx-auto my-12 max-w-lg rounded-2xl border border-amber-200/90 bg-white/95 backdrop-blur-md p-5 text-sm shadow-lg"
               >
                 <p className="flex items-center gap-2 font-semibold text-slate-800">
-                  <AlertCircle size={16} className="text-amber-600" />
-                  暂时无法预览，请检查 Mermaid 语法
+                  <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                  {tr('暂时无法预览，请检查 Mermaid 语法', 'Cannot render preview — please check Mermaid syntax')}
                 </p>
                 <pre className="mt-3 rounded-xl bg-amber-50/60 p-3 whitespace-pre-wrap break-words font-mono text-xs leading-6 text-slate-700 border border-amber-100">
-                  {currentPreview.error}
+                  {td(currentPreview.error)}
                 </pre>
                 <p className="mt-3 text-xs text-slate-500">
-                  源码已保留，修正后将自动重新绘制。
+                  {tr('源码已保留，修正后将自动重新绘制。', 'Source code is preserved; fixing syntax will re-render automatically.')}
                 </p>
               </div>
             ) : currentPreview?.svg ? (
@@ -860,14 +938,14 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
                 <div
                   className="project-mindmap-svg h-full w-full"
                   role="img"
-                  aria-label={`${projectName}的脑图`}
+                  aria-label={tr(`${projectName}的脑图`, `Mindmap of ${projectName}`)}
                   dangerouslySetInnerHTML={{ __html: currentPreview.svg }}
                 />
               </div>
             ) : (
               <div className="flex h-full min-h-52 items-center justify-center gap-2 text-xs text-slate-400">
                 <Loader2 size={14} className="animate-spin text-teal-600" />
-                正在生成脑图预览…
+                {tr('正在生成脑图预览…', 'Generating mindmap preview…')}
               </div>
             )}
           </div>
@@ -880,9 +958,12 @@ function MindmapDocumentView({ projectId, mindmapId }: { projectId: string; mind
       </div>
 
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-white px-4 py-1.5 text-[11px] text-slate-500">
-        <span>{desktop ? '随当前工程自动保存' : '浏览器模式 · 请导出工程保存修改'}</span>
-        <span>
-          每个脑图菜单独立保存 · {lineCount} 行 · {source.length.toLocaleString()} 字符
+        <span>{desktop ? tr('随当前工程自动保存', 'Auto-saved with current project') : tr('浏览器模式 · 请导出工程保存修改', 'Browser mode · Export project to save changes')}</span>
+        <span className="tabular-nums">
+          {tr(
+            `每个脑图菜单独立保存 · ${lineCount} 行 · ${source.length.toLocaleString()} 字符`,
+            `Saved per mindmap item · ${lineCount} lines · ${source.length.toLocaleString()} chars`
+          )}
         </span>
       </footer>
     </section>

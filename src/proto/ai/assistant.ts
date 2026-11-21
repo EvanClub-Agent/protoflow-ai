@@ -14,6 +14,7 @@ import { MATERIAL_GENERATION_RULES } from './materialInstructions';
 import { tableConfigErrors } from '../table/model';
 import { freeformBindingErrors } from '../freeform/contract';
 import { isChartType, chartConfigErrors } from '../charts/model';
+import { isEnLocale, tr } from '../../i18n/runtime';
 
 export interface PageValidationIssue {
   id: string;
@@ -85,7 +86,10 @@ export function validatePageDoc(doc: ProtoDoc, dbTables: DBTableSchema[]): PageV
           severity: 'error',
           pfId: node.pfId,
           nodeType: node.type,
-          message: `<${node.type}> 绑定的物理表 "${tbl}" 在当前数据库模型中不存在，请选择真实业务表`,
+          message: tr(
+            `<${node.type}> 绑定的物理表 "${tbl}" 在当前数据库模型中不存在，请选择真实业务表`,
+            `<${node.type}> is bound to non-existent database table "${tbl}". Select an existing table.`
+          ),
         });
       }
     }
@@ -93,18 +97,22 @@ export function validatePageDoc(doc: ProtoDoc, dbTables: DBTableSchema[]): PageV
     if (node.type === 'PickerInput' && typeof node.props.overlay === 'string') {
       const targetId = node.props.overlay;
       if (targetId && !overlayIds.has(targetId)) {
+        const pickerLabel = typeof node.props.label === 'string' ? node.props.label : tr('数据', 'Record');
         issues.push({
           id: `picker-${node.pfId}-${targetId}`,
           severity: 'error',
           pfId: node.pfId,
           nodeType: node.type,
-          message: `选择器 <PickerInput> 引用了未定义的弹框 id="${targetId}"`,
-          fixLabel: `自动生成弹框 #${targetId}`,
+          message: tr(
+            `选择器 <PickerInput> 引用了未定义的弹框 id="${targetId}"`,
+            `<PickerInput> references undefined Modal id="${targetId}"`
+          ),
+          fixLabel: tr(`自动生成弹框 #${targetId}`, `Generate Modal #${targetId}`),
           fixAction: {
             kind: 'create_overlay',
             overlayType: 'Modal',
             overlayId: targetId,
-            title: `${typeof node.props.label === 'string' ? node.props.label : '数据'}选择弹框`,
+            title: tr(`${pickerLabel}选择弹框`, `Select ${pickerLabel}`),
           },
         });
       }
@@ -122,13 +130,21 @@ export function validatePageDoc(doc: ProtoDoc, dbTables: DBTableSchema[]): PageV
             severity: 'error',
             pfId: node.pfId,
             nodeType: node.type,
-            message: `动作 ${c.name}('${targetId}') 指向的${isModal ? '弹框 <Modal>' : '抽屉 <Drawer>'} 尚未创建`,
-            fixLabel: `一键生成 ${isModal ? 'Modal' : 'Drawer'} #${targetId}`,
+            message: tr(
+              `动作 ${c.name}('${targetId}') 指向的${isModal ? '弹框 <Modal>' : '抽屉 <Drawer>'} 尚未创建`,
+              `Action ${c.name}('${targetId}') references missing ${isModal ? '<Modal>' : '<Drawer>'}`
+            ),
+            fixLabel: tr(
+              `一键生成 ${isModal ? 'Modal' : 'Drawer'} #${targetId}`,
+              `Create ${isModal ? 'Modal' : 'Drawer'} #${targetId}`
+            ),
             fixAction: {
               kind: 'create_overlay',
               overlayType: isModal ? 'Modal' : 'Drawer',
               overlayId: targetId,
-              title: isModal ? `新建业务弹框 (${targetId})` : `业务详情抽屉 (${targetId})`,
+              title: isModal
+                ? tr(`新建业务弹框 (${targetId})`, `New Modal (${targetId})`)
+                : tr(`业务详情抽屉 (${targetId})`, `Detail Drawer (${targetId})`),
             },
           });
         }
@@ -145,8 +161,16 @@ export function buildOverlayNode(
   title: string,
   defaultTable?: string
 ): ProtoNode {
+  const en = isEnLocale();
   if (overlayType === 'MBottomSheet') {
-    const mobileSnippet = `<MBottomSheet id="${overlayId}" title="${title}" size="medium">
+    const mobileSnippet = en
+      ? `<MBottomSheet id="${overlayId}" title="${title}" size="medium">
+      <MForm pfId="mform-${overlayId}">
+        <MField label="Name" name="name" placeholder="Enter value..." required={true} />
+      </MForm>
+      <MBottomDock mode="action" secondaryText="Cancel" primaryText="Save" onSecondary={() => closeOverlay()} onPrimary={() => { submitForm('mform-${overlayId}'); toast('Saved'); closeOverlay(); }} />
+    </MBottomSheet>`
+      : `<MBottomSheet id="${overlayId}" title="${title}" size="medium">
       <MForm pfId="mform-${overlayId}">
         <MField label="名称" name="name" placeholder="请输入..." required={true} />
       </MForm>
@@ -163,27 +187,45 @@ export function buildOverlayNode(
     );
   }
   if (overlayType === 'MDialog') {
-    const dlgSnippet = `<MDialog id="${overlayId}" title="${title}" description="请确认是否执行此操作？" confirmText="确认" cancelText="取消" />`;
+    const desc = tr('请确认是否执行此操作？', 'Are you sure you want to proceed?');
+    const confirmTxt = tr('确认', 'Confirm');
+    const cancelTxt = tr('取消', 'Cancel');
+    const dlgSnippet = `<MDialog id="${overlayId}" title="${title}" description="${desc}" confirmText="${confirmTxt}" cancelText="${cancelTxt}" />`;
     return (
       parseSnippetNode(dlgSnippet) ?? {
         kind: 'node',
         pfId: `pf_${overlayId}`,
         type: 'MDialog',
-        props: { id: overlayId, title, description: '请确认是否执行此操作？', confirmText: '确认', cancelText: '取消' },
+        props: { id: overlayId, title, description: desc, confirmText: confirmTxt, cancelText: cancelTxt },
         children: [],
       }
     );
   }
   const snippet =
     overlayType === 'Modal'
-      ? `<Modal id="${overlayId}" title="${title}" width={680} footer={false}>
+      ? en
+        ? `<Modal id="${overlayId}" title="${title}" width={680} footer={false}>
+          <Form pfId="form-${overlayId}" ${defaultTable ? `table="${defaultTable}"` : ''} cols={2} />
+          <Toolbar align="right">
+            <Button onClick={() => closeOverlay()}>Cancel</Button>
+            <Button type="primary" onClick={() => { submitForm('form-${overlayId}'); toast('Saved'); closeOverlay(); }}>Save</Button>
+          </Toolbar>
+        </Modal>`
+        : `<Modal id="${overlayId}" title="${title}" width={680} footer={false}>
           <Form pfId="form-${overlayId}" ${defaultTable ? `table="${defaultTable}"` : ''} cols={2} />
           <Toolbar align="right">
             <Button onClick={() => closeOverlay()}>取消</Button>
             <Button type="primary" onClick={() => { submitForm('form-${overlayId}'); toast('保存成功'); closeOverlay(); }}>保存</Button>
           </Toolbar>
         </Modal>`
-      : `<Drawer id="${overlayId}" title="${title}" width={540}>
+      : en
+        ? `<Drawer id="${overlayId}" title="${title}" width={540}>
+          <Descriptions title="Details" ${defaultTable ? `table="${defaultTable}"` : ''} column={2} />
+          <Toolbar align="right">
+            <Button onClick={() => closeOverlay()}>Close</Button>
+          </Toolbar>
+        </Drawer>`
+        : `<Drawer id="${overlayId}" title="${title}" width={540}>
           <Descriptions title="详细信息" ${defaultTable ? `table="${defaultTable}"` : ''} column={2} />
           <Toolbar align="right">
             <Button onClick={() => closeOverlay()}>关闭</Button>
@@ -249,5 +291,9 @@ ${tableLines}
 
 ## 4. 弹框与抽屉嵌套规则
 - 桌面端 <Page> 将所有 <Modal id="..."> 与 <Drawer id="..."> 声明在根组件末尾；移动端 <MobilePage> 将所有 <MBottomSheet id="...">（由 openDrawer 打开）与 <MDialog id="...">（由 openModal 打开）声明在根组件末尾。
-- 弹层内部的按钮或表格行操作可以继续调用 openModal('...') 或 openDrawer('...') 实现多级弹层嵌套；桌面端单选关联字段可调用 returnSelection('表格pfId', '显示字段', '来源键字段')，将名称显示在界面并把真实引用值写入主表单。`;
+- 弹层内部的按钮或表格行操作可以继续调用 openModal('...') 或 openDrawer('...') 实现多级弹层嵌套；桌面端单选关联字段可调用 returnSelection('表格pfId', '显示字段', '来源键字段')，将名称显示在界面并把真实引用值写入主表单。${
+    isEnLocale()
+      ? '\n\n## 5. Language Preference (Active UI Locale: English)\n- Unless the user explicitly requests Chinese, reply in English and generate all default UI labels, button text, titles, placeholders, and summaries in idiomatic English.'
+      : ''
+  }`;
 }

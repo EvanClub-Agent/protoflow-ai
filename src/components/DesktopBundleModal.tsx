@@ -18,6 +18,7 @@ import {
 import { useProtoStore } from '../store/useProtoStore';
 import { usePageStore } from '../proto/store/usePageStore';
 import { captureProjectPayload } from '../services/projectStorage';
+import { useI18n, tr as syncTr } from '../i18n';
 import {
   encodePflowBinary,
   generateUnpackedGitFiles,
@@ -64,10 +65,16 @@ function fileIconForPath(path: string) {
 }
 
 /** Binary entries (note images) are summarised instead of dumping base64 into the preview/diff. */
-const previewContent = (f: UnpackedGitFileEntry) =>
-  f.encoding === 'base64'
-    ? `[二进制图片 · ${Math.max(1, Math.round((f.content.length * 3) / 4 / 1024))} KB · 内容指纹 ${f.relativePath.split('/').pop()}]`
+const previewContent = (f: UnpackedGitFileEntry) => {
+  const kb = Math.max(1, Math.round((f.content.length * 3) / 4 / 1024));
+  const hash = f.relativePath.split('/').pop();
+  return f.encoding === 'base64'
+    ? syncTr(
+        `[二进制图片 · ${kb} KB · 内容指纹 ${hash}]`,
+        `[Binary image · ${kb} KB · Content hash ${hash}]`
+      )
     : f.content;
+};
 
 export const DesktopBundleModal: React.FC = () => {
   const open = useProtoStore(s => s.isBundleModalOpen);
@@ -76,6 +83,7 @@ export const DesktopBundleModal: React.FC = () => {
 };
 
 function ProjectFiles() {
+  const { locale, tr, td } = useI18n();
   const open = useProtoStore((s) => s.isBundleModalOpen);
   const setOpen = useProtoStore((s) => s.setBundleModalOpen);
   const protoState = useProtoStore();
@@ -152,7 +160,7 @@ function ProjectFiles() {
           : 'modified';
       return [{ path, status, diff: lineDiff(before, after) }];
     });
-  }, [baseline, files]);
+  }, [baseline, files, locale]);
 
   if (!open) return null;
 
@@ -179,11 +187,11 @@ function ProjectFiles() {
         a.href = url;
         a.download = snapshot.meta.fileName;
         a.click();
-        setMessage(`已触发下载 ${a.download}`);
+        setMessage(tr(`已触发下载 ${a.download}`, `Started downloading ${a.download}`));
       } finally { URL.revokeObjectURL(url); }
     } catch (err) {
       setFailed(true);
-      setMessage(err instanceof Error ? err.message : '下载失败');
+      setMessage(err instanceof Error ? td(err.message) : tr('下载失败', 'Download failed'));
     }
   };
 
@@ -209,21 +217,21 @@ function ProjectFiles() {
           binaryBundle: { fileName: snapshot.meta.fileName, binaryBytes: bytes },
         });
         setMessage(result.saved
-          ? `源码与工程文件已导出${result.targetDir ? `：${result.targetDir}` : ''}`
-          : '已取消目录导出。');
+          ? tr(`源码与工程文件已导出${result.targetDir ? `：${result.targetDir}` : ''}`, `Exported source & project files${result.targetDir ? `: ${result.targetDir}` : ''}`)
+          : tr('已取消目录导出。', 'Directory export cancelled.'));
       } else if (host.showDirectoryPicker) {
         // Freeze source files and archive together before waiting for the picker.
         const directory = await host.showDirectoryPicker({ mode: 'readwrite' });
         const count = await writeUnpackedGitTreeToDirectoryHandle(directory, snapshotFiles, { fileName: snapshot.meta.fileName, bytes });
-        setMessage(`源码与工程文件已导出：${directory.name}（${count} 个文件）`);
+        setMessage(tr(`源码与工程文件已导出：${directory.name}（${count} 个文件）`, `Exported source & project files: ${directory.name} (${count} files)`));
       } else {
         setFailed(true);
-        setMessage('当前运行环境不支持目录导出，请直接下载 .pflow 文件。');
+        setMessage(tr('当前运行环境不支持目录导出，请直接下载 .pflow 文件。', 'Directory export is not supported in this environment — please download the .pflow file instead.'));
       }
     } catch (err) {
       const cancelled = typeof err === 'object' && err !== null && 'name' in err && err.name === 'AbortError';
       setFailed(!cancelled);
-      setMessage(cancelled ? '已取消目录导出。' : err instanceof Error ? err.message : '目录导出失败');
+      setMessage(cancelled ? tr('已取消目录导出。', 'Directory export cancelled.') : err instanceof Error ? td(err.message) : tr('目录导出失败', 'Directory export failed'));
     } finally { setExporting(false); }
   };
 
@@ -232,7 +240,7 @@ function ProjectFiles() {
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-[2px] p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="工程文件与导出"
+      aria-label={tr('工程文件与导出', 'Project Files & Export')}
     >
       <div className="flex h-[84vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-800 shadow-2xl">
         {/* Top Modal Header */}
@@ -243,16 +251,16 @@ function ProjectFiles() {
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-bold tracking-tight text-slate-900 truncate">
-                工程文件 · {current.meta.projectName}
+                {tr(`工程文件 · ${current.meta.projectName}`, `Project Files · ${current.meta.projectName}`)}
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                源码目录记录导出时的工程快照。工程更新后，请重新导出供研发使用。
+                {tr('源码目录记录导出时的工程快照。工程更新后，请重新导出供研发使用。', 'Exported source trees capture a point-in-time snapshot. Re-export after updating the project for engineering handoff.')}
               </p>
             </div>
           </div>
           <button
             type="button"
-            aria-label="关闭工程文件"
+            aria-label={tr('关闭工程文件', 'Close project files')}
             disabled={exporting}
             onClick={() => setOpen(false)}
             className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 cursor-pointer shrink-0"
@@ -263,7 +271,7 @@ function ProjectFiles() {
 
         {/* Action & Tab Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/90 bg-slate-50/70 px-5 py-2.5 text-xs shrink-0">
-          <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-200/60 p-0.5">
+          <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-200/60 p-0.5 tabular-nums">
             <button
               type="button"
               onClick={() => setTab('files')}
@@ -274,7 +282,7 @@ function ProjectFiles() {
               }`}
             >
               <Code2 className="h-3.5 w-3.5" />
-              {`当前文件 (${files.length})`}
+              {tr(`当前文件 (${files.length})`, `Current Files (${files.length})`)}
             </button>
             <button
               type="button"
@@ -286,7 +294,7 @@ function ProjectFiles() {
               }`}
             >
               <FileDiff className="h-3.5 w-3.5" />
-              {`本次查看期间的变化 (${diffs.length})`}
+              {tr(`本次查看期间的变化 (${diffs.length})`, `Changes Since Opened (${diffs.length})`)}
             </button>
           </div>
 
@@ -298,7 +306,7 @@ function ProjectFiles() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3.5 py-1.5 font-semibold text-slate-700 shadow-2xs transition hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700 cursor-pointer"
             >
               <Download size={14} className="text-blue-600" />
-              下载 .pflow
+              {tr('下载 .pflow', 'Download .pflow')}
             </button>
             <button
               type="button"
@@ -307,7 +315,7 @@ function ProjectFiles() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 font-semibold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
             >
               <FolderOutput size={14} />
-              {exporting ? '正在导出...' : '导出源码目录'}
+              {exporting ? tr('正在导出...', 'Exporting...') : tr('导出源码目录', 'Export Source Tree')}
             </button>
           </div>
         </div>
@@ -328,14 +336,14 @@ function ProjectFiles() {
           {/* Left File Explorer Tree */}
           <aside className="w-80 shrink-0 overflow-y-auto border-r border-slate-200/90 bg-slate-50/50 p-3">
             <div className="mb-2 flex items-center justify-between px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              <span>{tab === 'files' ? '工程产物目录树' : '变更文件列表'}</span>
-              <span className="font-mono">{list.length} 项</span>
+              <span>{tab === 'files' ? tr('工程产物目录树', 'Project Artifact Tree') : tr('变更文件列表', 'Changed Files')}</span>
+              <span className="font-mono tabular-nums">{tr(`${list.length} 项`, `${list.length} items`)}</span>
             </div>
 
             {tab === 'diff' && diffs.length === 0 ? (
               <div className="mt-4 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
                 <Package className="mb-2 h-6 w-6 text-slate-400" />
-                <span>本次查看期间没有变化。</span>
+                <span>{tr('本次查看期间没有变化。', 'No changes since this dialog was opened.')}</span>
               </div>
             ) : (
               <div className="space-y-1">
@@ -346,7 +354,7 @@ function ProjectFiles() {
                       key={item.path}
                       type="button"
                       onClick={() => setSelectedPath(item.path)}
-                      className={`group flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition cursor-pointer ${
+                      className={`group flex w-full min-w-0 items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition cursor-pointer ${
                         isActive
                           ? 'bg-blue-50/90 text-blue-700 font-semibold ring-1 ring-blue-200/80 shadow-2xs'
                           : 'text-slate-700 hover:bg-white hover:shadow-2xs'
@@ -369,10 +377,10 @@ function ProjectFiles() {
                           }`}
                         >
                           {item.status === 'added'
-                            ? '新增'
+                            ? tr('新增', 'Added')
                             : item.status === 'deleted'
-                            ? '删除'
-                            : '修改'}
+                            ? tr('删除', 'Deleted')
+                            : tr('修改', 'Modified')}
                         </span>
                       )}
                     </button>
@@ -388,18 +396,18 @@ function ProjectFiles() {
               <div className="flex items-center gap-2 min-w-0">
                 <Code2 className="h-3.5 w-3.5 text-blue-400 shrink-0" />
                 <span className="truncate font-mono text-[11px] text-slate-200">
-                  {active?.path || '未选择文件'}
+                  {active?.path || tr('未选择文件', 'No file selected')}
                 </span>
               </div>
               {active?.content && (
-                <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                <span className="rounded bg-slate-800 px-2 py-0.5 font-mono tabular-nums text-[10px] text-slate-400 shrink-0">
                   {active.content.split('\n').length} lines
                 </span>
               )}
             </div>
             <div className="flex-1 overflow-auto p-4">
               <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-slate-200">
-                {active?.content || '请选择左侧文件查看内容。'}
+                {active?.content || tr('请选择左侧文件查看内容。', 'Select a file on the left to inspect its contents.')}
               </pre>
             </div>
           </main>

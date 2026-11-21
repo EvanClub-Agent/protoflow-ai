@@ -1,4 +1,5 @@
 import { validatePublishedSitemap, publishedMenuIndex, type PublishedMenuItem } from './publishedSitemap';
+import { tr } from '../i18n/runtime';
 import type { DBTableSchema, StickyNoteRule } from '../store/useProtoStore';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import { validateNoteAssets, type NoteAsset, type NotePriority, type NoteRequirementStatus } from '../proto/notes';
@@ -56,109 +57,109 @@ export type LegacyPublishedSnapshot = Omit<PublishedSnapshot, 'formatVersion' | 
 export type ReadablePublishedSnapshot = PublishedSnapshot | LegacyPublishedSnapshot;
 const has = (o: object, key: string) => Object.prototype.hasOwnProperty.call(o, key);
 function required(value: unknown, name: string): asserts value is string {
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} 不能为空`);
+  if (typeof value !== 'string' || !value.trim()) throw new Error(tr(`${name} 不能为空`, `${name} cannot be empty`));
 }
 
 /** Standard nodes are interpreted by registries. Freeform source is validated
  * here and compiled only inside its isolated runtime. Validate before store writes. */
 export function validatePublishedSnapshot(value: unknown): asserts value is ReadablePublishedSnapshot {
-  object(value, '发布内容');
-  if (value.formatVersion !== 2 && value.formatVersion !== 3 && value.formatVersion !== 4 && value.formatVersion !== 5) throw new Error('此发布格式不受支持，请更新浏览端');
-  required(value.projectId, '项目 ID'); required(value.title, '项目标题'); required(value.entryPageId, '入口页面');
-  if (!Array.isArray(value.pages) || !value.pages.length || value.pages.length > 500) throw new Error('发布页面数量无效');
+  object(value, tr('发布内容', 'published snapshot'));
+  if (value.formatVersion !== 2 && value.formatVersion !== 3 && value.formatVersion !== 4 && value.formatVersion !== 5) throw new Error(tr('此发布格式不受支持，请更新浏览端', 'Unsupported published snapshot version; please update the viewer'));
+  required(value.projectId, tr('项目 ID', 'Project ID')); required(value.title, tr('项目标题', 'Project title')); required(value.entryPageId, tr('入口页面', 'Entry page'));
+  if (!Array.isArray(value.pages) || !value.pages.length || value.pages.length > 500) throw new Error(tr('发布页面数量无效', 'Invalid published page count'));
   const pageIds = new Set<string>(), navigationIds = new Set<string>(); let count = 0;
   const checkProp = (v: unknown, depth: number): void => {
-    if (depth > 80) throw new Error('组件属性嵌套过深');
+    if (depth > 80) throw new Error(tr('组件属性嵌套过深', 'Component props nested too deeply'));
     if (v === null || typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v)) return;
     if (Array.isArray(v)) { v.forEach(x => checkProp(x, depth + 1)); return; }
-    object(v, '组件属性');
-    if (v.$kind === 'raw') throw new Error('页面包含未支持的代码表达式，请在设计器中修正后再发布');
+    object(v, tr('组件属性', 'component props'));
+    if (v.$kind === 'raw') throw new Error(tr('页面包含未支持的代码表达式，请在设计器中修正后再发布', 'Page contains unsupported code expressions; fix them in the designer before publishing'));
     if (v.$kind === 'actions') {
-      if (!Array.isArray(v.calls)) throw new Error('页面动作格式无效');
+      if (!Array.isArray(v.calls)) throw new Error(tr('页面动作格式无效', 'Invalid page action format'));
       for (const call of v.calls) {
-        object(call, '动作'); required(call.name, '动作名');
-        if (!has(ACTION_MAP, call.name) || !Array.isArray(call.args)) throw new Error(`不支持的页面动作：${call.name}`);
-        if (call.name === 'navigate' && (typeof call.args[0] !== 'string' || !navigationIds.has(call.args[0]))) throw new Error('跳转动作指向未发布的页面');
+        object(call, tr('动作', 'action')); required(call.name, tr('动作名', 'Action name'));
+        if (!has(ACTION_MAP, call.name) || !Array.isArray(call.args)) throw new Error(tr(`不支持的页面动作：${call.name}`, `Unsupported page action: ${call.name}`));
+        if (call.name === 'navigate' && (typeof call.args[0] !== 'string' || !navigationIds.has(call.args[0]))) throw new Error(tr('跳转动作指向未发布的页面', 'Navigation action points to an unpublished page'));
       }
     }
     for (const [key, item] of Object.entries(v)) {
-      if (key === '__proto__' || key === 'prototype' || key === 'constructor') throw new Error('组件属性名无效');
+      if (key === '__proto__' || key === 'prototype' || key === 'constructor') throw new Error(tr('组件属性名无效', 'Invalid component prop name'));
       checkProp(item, depth + 1);
     }
   };
   for (const p of value.pages) {
-    object(p, '页面'); required(p.pageId, '页面 ID'); required(p.title, '页面标题'); required(p.folderId, '页面目录');
+    object(p, tr('页面', 'page')); required(p.pageId, tr('页面 ID', 'Page ID')); required(p.title, tr('页面标题', 'Page title')); required(p.folderId, tr('页面目录', 'Page folder'));
     navigationIds.add(p.pageId);
-    if (pageIds.has(p.pageId)) throw new Error('页面 ID 重复'); pageIds.add(p.pageId);
+    if (pageIds.has(p.pageId)) throw new Error(tr('页面 ID 重复', 'Duplicate page ID')); pageIds.add(p.pageId);
   }
   if (value.formatVersion === 3 || value.formatVersion === 4 || value.formatVersion === 5) {
     validatePublishedSitemap(value.sitemap, value.pages as PublishedPage[]);
     for (const id of publishedMenuIndex(value.sitemap).keys()) navigationIds.add(id);
-  } else if (has(value, 'sitemap')) throw new Error('旧版发布内容不支持菜单目录字段');
+  } else if (has(value, 'sitemap')) throw new Error(tr('旧版发布内容不支持菜单目录字段', 'Legacy published snapshot does not support sitemap field'));
   for (const p of value.pages) {
-    object(p.doc, '页面内容');
-    if (!Array.isArray(p.doc.header) || !p.doc.header.every((s: unknown) => typeof s === 'string')) throw new Error('页面头信息无效');
+    object(p.doc, tr('页面内容', 'page document'));
+    if (!Array.isArray(p.doc.header) || !p.doc.header.every((s: unknown) => typeof s === 'string')) throw new Error(tr('页面头信息无效', 'Invalid page header'));
     const ids = new Set<string>();
     const node = (n: unknown, depth: number): void => {
-      if (++count > 50000 || depth > 80) throw new Error('设计内容超过页面复杂度限制');
-      object(n, '页面节点');
+      if (++count > 50000 || depth > 80) throw new Error(tr('设计内容超过页面复杂度限制', 'Design content exceeds page complexity limit'));
+      object(n, tr('页面节点', 'page node'));
       if (n.kind === 'text' && typeof n.value === 'string') return;
-      if (n.kind !== 'node') throw new Error('页面节点类型无效');
-      required(n.pfId, '组件 ID'); required(n.type, '组件类型');
-      if (ids.has(n.pfId) || !has(COMPONENT_MAP, n.type)) throw new Error(`组件 ID 重复或不支持组件 ${n.type}`);
-      ids.add(n.pfId); object(n.props, '组件属性'); checkProp(n.props, 0);
-      if (!Array.isArray(n.children)) throw new Error('组件子节点无效');
+      if (n.kind !== 'node') throw new Error(tr('页面节点类型无效', 'Invalid page node kind'));
+      required(n.pfId, tr('组件 ID', 'Component ID')); required(n.type, tr('组件类型', 'Component type'));
+      if (ids.has(n.pfId) || !has(COMPONENT_MAP, n.type)) throw new Error(tr(`组件 ID 重复或不支持组件 ${n.type}`, `Duplicate component ID or unsupported component ${n.type}`));
+      ids.add(n.pfId); object(n.props, tr('组件属性', 'component props')); checkProp(n.props, 0);
+      if (!Array.isArray(n.children)) throw new Error(tr('组件子节点无效', 'Invalid component children'));
       n.children.forEach(c => node(c, depth + 1));
     };
     node(p.doc.root, 0);
-    if (!PAGE_ROOT_TYPES.has(p.doc.root.type)) throw new Error('页面根组件必须是 Page 或 MobilePage');
+    if (!PAGE_ROOT_TYPES.has(p.doc.root.type)) throw new Error(tr('页面根组件必须是 Page 或 MobilePage', 'Page root component must be Page or MobilePage'));
   }
-  if (!pageIds.has(value.entryPageId)) throw new Error('入口页面不存在');
-  if (!Array.isArray(value.stickyNotes) || value.stickyNotes.length > 10000) throw new Error('发布便签必须明确提供，且最多 10000 条');
+  if (!pageIds.has(value.entryPageId)) throw new Error(tr('入口页面不存在', 'Entry page does not exist'));
+  if (!Array.isArray(value.stickyNotes) || value.stickyNotes.length > 10000) throw new Error(tr('发布便签必须明确提供，且最多 10000 条', 'Published stickyNotes must be provided and cannot exceed 10,000 items'));
   const noteIds = new Set<string>();
   for (const note of value.stickyNotes) {
-    object(note, '便签'); required(note.id, '便签 ID'); required(note.pageId, '便签页面 ID'); required(note.targetWidgetId, '便签区域 ID'); required(note.text, '便签内容');
-    if (noteIds.has(note.id)) throw new Error('便签 ID 重复'); noteIds.add(note.id);
-    if (!pageIds.has(note.pageId)) throw new Error('便签引用未发布的页面');
-    const label = `页面 ${note.pageId} 的便签 ${note.id}`;
-    if (typeof note.targetWidgetName !== 'string') throw new Error(`${label} 的组件名称（targetWidgetName）必须是文本`);
-    if (typeof note.active !== 'boolean') throw new Error(`${label} 的启用状态（active）必须是布尔值`);
+    object(note, tr('便签', 'sticky note')); required(note.id, tr('便签 ID', 'Sticky note ID')); required(note.pageId, tr('便签页面 ID', 'Sticky note page ID')); required(note.targetWidgetId, tr('便签区域 ID', 'Sticky note target ID')); required(note.text, tr('便签内容', 'Sticky note text'));
+    if (noteIds.has(note.id)) throw new Error(tr('便签 ID 重复', 'Duplicate sticky note ID')); noteIds.add(note.id);
+    if (!pageIds.has(note.pageId)) throw new Error(tr('便签引用未发布的页面', 'Sticky note references an unpublished page'));
+    const label = tr(`页面 ${note.pageId} 的便签 ${note.id}`, `Sticky note ${note.id} on page ${note.pageId}`);
+    if (typeof note.targetWidgetName !== 'string') throw new Error(tr(`${label} 的组件名称（targetWidgetName）必须是文本`, `${label} targetWidgetName must be a string`));
+    if (typeof note.active !== 'boolean') throw new Error(tr(`${label} 的启用状态（active）必须是布尔值`, `${label} active must be a boolean`));
     validateStickyNoteIndex(note.index, label);
     // Deleted target regions remain reviewable in the notes list, explicitly
     // marked as missing. Never attach them to another component by name.
   }
-  if (!Array.isArray(value.tables)) throw new Error('表结构必须是数组');
-  object(value.tableRows, '演示数据');
+  if (!Array.isArray(value.tables)) throw new Error(tr('表结构必须是数组', 'tables must be an array'));
+  object(value.tableRows, tr('演示数据', 'tableRows'));
   const tables = new Set<string>();
   for (const table of value.tables) {
-    object(table, '表结构'); required(table.id, '表 ID'); required(table.tableName, '表名'); required(table.cnName, '表标题');
-    if (tables.has(table.id)) throw new Error('表 ID 重复'); tables.add(table.id);
-    if (!Array.isArray(table.columns) || !Array.isArray(table.sharedByMenus)) throw new Error('表字段或关联页面无效');
+    object(table, tr('表结构', 'table schema')); required(table.id, tr('表 ID', 'Table ID')); required(table.tableName, tr('表名', 'Table name')); required(table.cnName, tr('表标题', 'Table title'));
+    if (tables.has(table.id)) throw new Error(tr('表 ID 重复', 'Duplicate table ID')); tables.add(table.id);
+    if (!Array.isArray(table.columns) || !Array.isArray(table.sharedByMenus)) throw new Error(tr('表字段或关联页面无效', 'Invalid table columns or sharedByMenus'));
     const columns = new Set<string>(), columnIds = new Set<string>();
     for (const column of table.columns) {
-      object(column, '表字段'); required(column.id, '字段 ID'); required(column.name, '字段名称'); required(column.dataType, '字段类型');
+      object(column, tr('表字段', 'table column')); required(column.id, tr('字段 ID', 'Column ID')); required(column.name, tr('字段名称', 'Column name')); required(column.dataType, tr('字段类型', 'Column dataType'));
       if (value.formatVersion >= 5) {
-        if (column.id.trim() !== column.id || columnIds.has(column.id)) throw new Error('表字段 ID 重复或包含首尾空白');
+        if (column.id.trim() !== column.id || columnIds.has(column.id)) throw new Error(tr('表字段 ID 重复或包含首尾空白', 'Duplicate or untrimmed column ID'));
         columnIds.add(column.id);
       }
-      if (columns.has(column.name) || typeof column.nullable !== 'boolean') throw new Error('表字段重复或属性无效'); columns.add(column.name);
+      if (columns.has(column.name) || typeof column.nullable !== 'boolean') throw new Error(tr('表字段重复或属性无效', 'Duplicate column name or invalid nullable flag')); columns.add(column.name);
       if (value.formatVersion < 5) {
-        if (has(column, 'isUnique')) throw new Error('旧版发布格式不包含字段唯一约束');
+        if (has(column, 'isUnique')) throw new Error(tr('旧版发布格式不包含字段唯一约束', 'Legacy published format does not support column isUnique'));
       } else if (column.isUnique !== undefined && typeof column.isUnique !== 'boolean') {
-        throw new Error('字段 isUnique 必须是布尔值');
+        throw new Error(tr('字段 isUnique 必须是布尔值', 'Column isUnique must be a boolean'));
       }
     }
     if (value.formatVersion < 5) {
-      if (has(table, 'uniqueConstraints')) throw new Error('旧版发布格式不包含表级唯一约束');
+      if (has(table, 'uniqueConstraints')) throw new Error(tr('旧版发布格式不包含表级唯一约束', 'Legacy published format does not support table uniqueConstraints'));
     } else {
       resolveUniqueConstraints(table as unknown as DBTableSchema);
     }
-    if (!has(value.tableRows, table.id)) throw new Error(`缺少表 ${table.cnName} 的演示数据`);
+    if (!has(value.tableRows, table.id)) throw new Error(tr(`缺少表 ${table.cnName} 的演示数据`, `Missing preview rows for table ${table.cnName}`));
   }
   for (const [id, rows] of Object.entries(value.tableRows)) {
-    if (!tables.has(id) || !Array.isArray(rows)) throw new Error('演示数据引用未知表');
+    if (!tables.has(id) || !Array.isArray(rows)) throw new Error(tr('演示数据引用未知表', 'tableRows references an unknown table'));
     const ids = new Set<string>();
-    for (const row of rows) { object(row, '数据行'); required(row.id, '行 ID'); if (ids.has(row.id)) throw new Error('数据行 ID 重复'); ids.add(row.id); }
+    for (const row of rows) { object(row, tr('数据行', 'data row')); required(row.id, tr('行 ID', 'Row ID')); if (ids.has(row.id)) throw new Error(tr('数据行 ID 重复', 'Duplicate data row ID')); ids.add(row.id); }
   }
   for (const page of value.pages as PublishedPage[]) {
     const chartRows = value.tableRows as Record<string, unknown>;
@@ -169,11 +170,11 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
     walk(page.doc.root, node => {
       if (node.type === 'Table') {
         const issues = tableBindingErrors(node.props, value.tables as DBTableSchema[], value.tableRows);
-        if (issues.length) throw new Error(`表格 ${node.pfId} 未通过发布检查：${issues.join('，')}`);
+        if (issues.length) throw new Error(tr(`表格 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Table ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }
       if (node.type === 'MTaskList' || node.type === 'MFeedList') {
         const issues = sourceForeignKeyErrors(node.props, value.tables as DBTableSchema[]);
-        if (issues.length) throw new Error(`移动列表 ${node.pfId} 未通过发布检查：${issues.join('，')}`);
+        if (issues.length) throw new Error(tr(`移动列表 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Mobile list ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }
       if (isChartType(node.type)) {
         chartIds.add(node.pfId);
@@ -189,9 +190,9 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
       errors.push(...freeformBindingErrors(node.props, value.tables as DBTableSchema[]));
     });
     if (freeformIds.size) errors.push(...validateMaterialDoc(page.doc).filter(issue => freeformIds.has(issue.pfId)).map(issue => issue.message));
-    if (errors.length) throw new Error(`自由组件未通过发布检查：${errors.join('；')}`);
+    if (errors.length) throw new Error(tr(`自由组件未通过发布检查：${errors.join('；')}`, `Freeform component failed publish check: ${errors.join('; ')}`));
     if (chartIds.size) chartErrors.push(...validateMaterialDoc(page.doc).filter(issue => chartIds.has(issue.pfId)).map(issue => issue.message));
-    if (chartErrors.length) throw new Error(`数据图表未通过发布检查：${chartErrors.join('；')}`);
+    if (chartErrors.length) throw new Error(tr(`数据图表未通过发布检查：${chartErrors.join('；')}`, `Chart failed publish check: ${chartErrors.join('; ')}`));
   }
   validatePublishedNotes(value, pageIds);
 }
@@ -201,29 +202,29 @@ const NOTE_PRIORITIES = new Set(['P0', 'P1', 'P2']);
 
 function validatePublishedNotes(value: Record<string, unknown>, pageIds: Set<string>) {
   if (value.formatVersion !== 4 && value.formatVersion !== 5) {
-    if (has(value, 'notes') || has(value, 'noteAssets')) throw new Error('此发布格式不包含项目笔记字段');
+    if (has(value, 'notes') || has(value, 'noteAssets')) throw new Error(tr('此发布格式不包含项目笔记字段', 'This published format does not support project notes'));
     return;
   }
   if (value.formatVersion === 5 && !has(value, 'notes') && !has(value, 'noteAssets')) {
     return;
   }
-  if (!Array.isArray(value.notes) || value.notes.length > PUBLISHED_NOTES_MAX) throw new Error('发布笔记必须明确提供，且最多 500 篇');
+  if (!Array.isArray(value.notes) || value.notes.length > PUBLISHED_NOTES_MAX) throw new Error(tr('发布笔记必须明确提供，且最多 500 篇', 'Published notes must be an array of at most 500 notes'));
   validateNoteAssets(value.noteAssets ?? {});
   const ids = new Set<string>();
   for (const note of value.notes) {
-    object(note, '发布笔记');
-    required(note.noteId, '笔记 ID');
-    required(note.title, '笔记标题');
-    if (ids.has(note.noteId)) throw new Error('发布笔记 ID 重复');
+    object(note, tr('发布笔记', 'published note'));
+    required(note.noteId, tr('笔记 ID', 'Note ID'));
+    required(note.title, tr('笔记标题', 'Note title'));
+    if (ids.has(note.noteId)) throw new Error(tr('发布笔记 ID 重复', 'Duplicate published note ID'));
     ids.add(note.noteId);
-    if (typeof note.icon !== 'string' || note.icon.length > 16) throw new Error('发布笔记图标无效');
-    if (!NOTE_STATUSES.has(note.status as string)) throw new Error('发布笔记状态无效');
-    if (note.priority !== undefined && !NOTE_PRIORITIES.has(note.priority as string)) throw new Error('发布笔记优先级无效');
-    if (note.meetingDate !== undefined && typeof note.meetingDate !== 'string') throw new Error('发布笔记日期无效');
-    required(note.updatedAt, '笔记更新时间');
-    if (typeof note.html !== 'string' || note.html.length > PUBLISHED_NOTE_HTML_MAX) throw new Error(`笔记《${note.title}》内容过长，无法发布`);
+    if (typeof note.icon !== 'string' || note.icon.length > 16) throw new Error(tr('发布笔记图标无效', 'Invalid published note icon'));
+    if (!NOTE_STATUSES.has(note.status as string)) throw new Error(tr('发布笔记状态无效', 'Invalid published note status'));
+    if (note.priority !== undefined && !NOTE_PRIORITIES.has(note.priority as string)) throw new Error(tr('发布笔记优先级无效', 'Invalid published note priority'));
+    if (note.meetingDate !== undefined && typeof note.meetingDate !== 'string') throw new Error(tr('发布笔记日期无效', 'Invalid published note date'));
+    required(note.updatedAt, tr('笔记更新时间', 'Note updatedAt'));
+    if (typeof note.html !== 'string' || note.html.length > PUBLISHED_NOTE_HTML_MAX) throw new Error(tr(`笔记《${note.title}》内容过长，无法发布`, `Note "${note.title}" is too large to publish`));
     if (!Array.isArray(note.pageIds) || note.pageIds.some((id) => typeof id !== 'string' || !pageIds.has(id))) {
-      throw new Error(`笔记《${note.title}》关联了未发布的页面`);
+      throw new Error(tr(`笔记《${note.title}》关联了未发布的页面`, `Note "${note.title}" links to an unpublished page`));
     }
   }
 }
@@ -231,10 +232,10 @@ function validatePublishedNotes(value: Record<string, unknown>, pageIds: Set<str
 /** V1 shares predate note publishing. Keep them readable with an explicitly
  * empty note collection; only a new publication can supply the missing notes. */
 export function normalizePublishedSnapshot(value: unknown): ReadablePublishedSnapshot {
-  object(value, '发布内容');
+  object(value, tr('发布内容', 'published snapshot'));
   let candidate: unknown = value;
   if (value.formatVersion === 1) {
-    if (has(value, 'stickyNotes')) throw new Error('旧版发布内容包含不符合版本的便签字段');
+    if (has(value, 'stickyNotes')) throw new Error(tr('旧版发布内容包含不符合版本的便签字段', 'V1 published snapshot unexpectedly contains stickyNotes'));
     candidate = { ...value, formatVersion: 2, stickyNotes: [] };
   }
   validatePublishedSnapshot(candidate);

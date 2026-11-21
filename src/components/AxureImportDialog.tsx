@@ -5,6 +5,7 @@ import type { AxureImport } from '../proto/axure/import';
 import { flushProjectChanges, loadProjectFromBinaryPayload } from '../services/projectStorage';
 import { createAxureProject } from '../services/axureProject';
 import { encodePflowBinary } from '../utils/pflowBinaryCodec';
+import { useI18n, tr as syncTr } from '../i18n';
 
 interface ImportBridge {
   isElectron?: boolean;
@@ -13,6 +14,7 @@ interface ImportBridge {
 }
 
 function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
+  const { tr, td } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -24,9 +26,9 @@ function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
     let disposed = false;
     let worker: Worker | undefined;
     async function read() {
-      if (files.length !== 1) throw new Error('请每次选择一个 .rp 文件');
+      if (files.length !== 1) throw new Error(syncTr('请每次选择一个 .rp 文件', 'Please select one .rp file at a time'));
       const file = files[0];
-      if (file.size > MAX_RP_BYTES) throw new Error('文件超过 128 MiB 导入上限');
+      if (file.size > MAX_RP_BYTES) throw new Error(syncTr('文件超过 128 MiB 导入上限', 'File exceeds the 128 MiB import limit'));
       const bytes = await file.arrayBuffer();
       if (disposed) return;
       worker = new RpWorker();
@@ -34,10 +36,10 @@ function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
         if ('error' in data) setError(data.error); else setProject(data.project);
         worker?.terminate();
       };
-      worker.onerror = () => { setError('本地解析器运行失败，请重新选择文件'); worker?.terminate(); };
+      worker.onerror = () => { setError(syncTr('本地解析器运行失败，请重新选择文件', 'Local parser failed — please reselect the file')); worker?.terminate(); };
       worker.postMessage(bytes, [bytes]);
     }
-    void read().catch(e => { if (!disposed) setError(String(e)); });
+    void read().catch(e => { if (!disposed) setError(e instanceof Error ? e.message : String(e)); });
     return () => { disposed = true; worker?.terminate(); el.close(); };
   }, [files]);
 
@@ -52,7 +54,7 @@ function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
       await flushProjectChanges();
       if (desktop?.isElectron) {
         const result = await desktop.writeBinaryProject({ dirPath: payload.meta.storageDir, fileName: payload.meta.fileName, binaryBytes });
-        if (!result.saved) throw new Error('工程未保存，请重试');
+        if (!result.saved) throw new Error(tr('工程未保存，请重试', 'Project was not saved — please retry'));
       } else {
         const url = URL.createObjectURL(new Blob([binaryBytes], { type: 'application/octet-stream' }));
         const a = document.createElement('a');
@@ -65,29 +67,41 @@ function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
     finally { busy.current = false; setSaving(false); }
   };
 
+  const totalWidgets = project ? project.report.reduce((n, p) => n + p.widgets, 0) : 0;
+  const totalClicks = project ? project.report.reduce((n, p) => n + p.clicks, 0) : 0;
+  const totalLinks = project ? project.report.reduce((n, p) => n + p.links, 0) : 0;
+  const warningPages = project ? project.report.filter(p => p.warnings.length > 0).length : 0;
+
   return <dialog ref={dialog} aria-labelledby="rp-import-title" onCancel={e => { e.preventDefault(); if (!busy.current) close(); }}
     className="m-auto w-[520px] max-w-[94vw] max-h-[85vh] overscroll-contain rounded-2xl border border-slate-200 bg-white p-5 text-slate-800 shadow-xl backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-slate-900/40">
-    <h2 id="rp-import-title" className="text-base font-semibold">导入 Axure 原型</h2>
-    <p className="mt-1 break-all text-xs text-slate-500">{files.map(f => f.name).join('、')}</p>
-    {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-    {!project && !error && <p role="status" className="mt-4 text-sm">正在本机解析 RP 文件…</p>}
-    {project && <div className="my-4 space-y-2 text-sm">
-      <p>Axure RP {project.version} · {project.report.length} 个页面 · {project.report.reduce((n, p) => n + p.widgets, 0)} 个已转换元件 · {project.report.reduce((n, p) => n + p.clicks, 0)} 个已转换点击事件（含 {project.report.reduce((n, p) => n + p.links, 0)} 个页面跳转）</p>
-      <p className="text-xs text-slate-600">生成可编辑的 .pflow 工程。表格单元格、文本和表单控件可单独编辑。{project.report.filter(p => p.warnings.length > 0).length} 页有转换限制，可在下方核对。</p>
+    <h2 id="rp-import-title" className="text-base font-semibold">{tr('导入 Axure 原型', 'Import Axure Prototype')}</h2>
+    <p className="mt-1 break-all text-xs text-slate-500">{files.map(f => f.name).join(tr('、', ', '))}</p>
+    {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{td(error)}</p>}
+    {!project && !error && <p role="status" className="mt-4 text-sm">{tr('正在本机解析 RP 文件…', 'Parsing .rp file locally…')}</p>}
+    {project && <div className="my-4 space-y-2 text-sm tabular-nums">
+      <p>{tr(
+        `Axure RP ${project.version} · ${project.report.length} 个页面 · ${totalWidgets} 个已转换元件 · ${totalClicks} 个已转换点击事件（含 ${totalLinks} 个页面跳转）`,
+        `Axure RP ${project.version} · ${project.report.length} page(s) · ${totalWidgets} widget(s) converted · ${totalClicks} click action(s) (${totalLinks} page links)`
+      )}</p>
+      <p className="text-xs text-slate-600">{tr(
+        `生成可编辑的 .pflow 工程。表格单元格、文本和表单控件可单独编辑。${warningPages} 页有转换限制，可在下方核对。`,
+        `Creates an editable .pflow project with individually editable table cells, text, and form controls. ${warningPages} page(s) have conversion notes listed below.`
+      )}</p>
       <ul className="max-h-52 space-y-2 overflow-auto rounded-lg border border-slate-200 p-3">
-        {project.report.map((p, i) => <li key={project.designerPages[i].pageId}><b>{p.title}</b> · {p.widgets} 个元件
-          {p.warnings.length > 0 && <div className="mt-1 text-xs text-amber-700">{p.warnings.join('；')}</div>}</li>)}
+        {project.report.map((p, i) => <li key={project.designerPages[i].pageId}><b>{p.title}</b> · {tr(`${p.widgets} 个元件`, `${p.widgets} widgets`)}
+          {p.warnings.length > 0 && <div className="mt-1 text-xs text-amber-700">{p.warnings.map(w => td(w)).join(tr('；', '; '))}</div>}</li>)}
       </ul>
     </div>}
     <div className="mt-5 flex justify-end gap-2">
-      <button type="button" autoFocus disabled={saving} onClick={close} className="rounded-lg border px-3 py-2 text-xs">取消</button>
+      <button type="button" autoFocus disabled={saving} onClick={close} className="rounded-lg border px-3 py-2 text-xs">{tr('取消', 'Cancel')}</button>
       {project && <button type="button" disabled={saving} onClick={save} className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-50">
-        {saving ? '正在保存…' : '导入为新工程'}</button>}
+        {saving ? tr('正在保存…', 'Saving…') : tr('导入为新工程', 'Import as New Project')}</button>}
     </div>
   </dialog>;
 }
 
 export function useAxureImport() {
+  const { tr } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[] | null>(null);
   useEffect(() => {
@@ -110,7 +124,7 @@ export function useAxureImport() {
     };
   }, []);
   return { pick: () => input.current?.click(), ui: <>
-    <input ref={input} type="file" accept=".rp" hidden aria-label="选择 Axure RP 文件" onChange={e => {
+    <input ref={input} type="file" accept=".rp" hidden aria-label={tr('选择 Axure RP 文件', 'Select Axure RP file')} onChange={e => {
       const file = e.currentTarget.files?.[0];
       if (file) setFiles([file]);
       e.currentTarget.value = '';

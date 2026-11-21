@@ -22,6 +22,21 @@ import {
   type NoteLedgerSortKey,
 } from '../proto/notesLedger';
 import { openNoteNode, updateNoteMeta, type NoteMetaPatch } from '../services/notesWorkspace';
+import { useI18n } from '../i18n';
+
+const LEDGER_STATUS_EN: Record<NoteRequirementStatus, string> = {
+  draft: 'Draft',
+  pending_confirm: 'Pending',
+  confirmed: 'Confirmed',
+  implemented: 'Implemented',
+};
+
+const LEDGER_INSIGHT_EN: Record<string, string> = {
+  pending_confirm: 'Pending Confirmation',
+  confirmed_not_implemented: 'Confirmed · Not Built',
+  open_tasks: 'Has Open To-Dos',
+  p0: 'P0 Critical',
+};
 
 export type NotesOverviewMode = 'cards' | 'table' | 'kanban';
 
@@ -72,6 +87,9 @@ export function NotesLedger({
   folderId: string | null;
   mode: 'table' | 'kanban';
 }) {
+  const { isEn, tr, td } = useI18n();
+  const statusLabel = (id: NoteRequirementStatus, rawLabel: string) =>
+    isEn ? LEDGER_STATUS_EN[id] ?? td(rawLabel) : rawLabel;
   const data = useProtoStore((s) => s.projectNotes);
   const layout = usePageStore();
   const [filter, setFilter] = useState<NoteLedgerFilter>({});
@@ -97,7 +115,7 @@ export function NotesLedger({
       updateNoteMeta(projectId, noteId, change);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '属性未保存');
+      setError(err instanceof Error ? err.message : tr('属性未保存', 'Failed to save property'));
     }
   };
 
@@ -107,15 +125,18 @@ export function NotesLedger({
   if (!rows.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center text-xs text-slate-500">
-        这里还没有笔记。用上方模板新建一篇后，即可在台账中统一管理状态、优先级与对接人。
+        {tr(
+          '这里还没有笔记。用上方模板新建一篇后，即可在台账中统一管理状态、优先级与对接人。',
+          'No notes here yet. Create a note from the templates above to track statuses, priorities, and stakeholders in the ledger.'
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-3" aria-label="需求台账">
+    <div className="space-y-3" aria-label={tr('需求台账', 'Requirement ledger')}>
       {/* Insight chips: one click reproduces the answer as a filter. */}
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="台账快捷统计">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={tr('台账快捷统计', 'Ledger quick insights')}>
         {insights.map((insight) => {
           const active = JSON.stringify(filter) === JSON.stringify(insight.filter);
           return (
@@ -124,11 +145,11 @@ export function NotesLedger({
               type="button"
               aria-pressed={active}
               onClick={() => setFilter(active ? {} : insight.filter)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium cursor-pointer transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap cursor-pointer transition ${
                 toneClass[insight.tone]
               } ${active ? 'ring-2 ring-blue-500' : 'hover:shadow-xs'}`}
             >
-              <span>{insight.label}</span>
+              <span>{isEn ? LEDGER_INSIGHT_EN[insight.id] ?? td(insight.label) : insight.label}</span>
               <span className="font-bold tabular-nums">{insight.count}</span>
             </button>
           );
@@ -137,19 +158,19 @@ export function NotesLedger({
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-[11px]">
-        <Filter size={12} className="text-slate-400" />
+        <Filter size={12} className="text-slate-400 shrink-0" />
         <div className="relative">
           <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
-            aria-label="搜索台账"
+            aria-label={tr('搜索台账', 'Search ledger')}
             value={filter.query ?? ''}
             onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
-            placeholder="标题 / 正文 / 对接人"
+            placeholder={tr('标题 / 正文 / 对接人', 'Title / body / stakeholder')}
             className="w-40 rounded-md border border-slate-200 bg-white py-1 pl-6 pr-2 text-[11px] text-slate-800 focus:outline-none focus:border-blue-600"
           />
         </div>
-        <div className="flex items-center gap-1" role="group" aria-label="按状态筛选">
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label={tr('按状态筛选', 'Filter by status')}>
           {NOTE_STATUS_OPTIONS.map((s) => {
             const active = filter.statuses?.includes(s.id) ?? false;
             return (
@@ -158,17 +179,17 @@ export function NotesLedger({
                 type="button"
                 aria-pressed={active}
                 onClick={() => setFilter((f) => ({ ...f, statuses: toggleIn(f.statuses, s.id) }))}
-                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 cursor-pointer ${
+                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 whitespace-nowrap cursor-pointer ${
                   active ? s.badgeClass : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${s.dotClass}`} />
-                {s.label}
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${s.dotClass}`} />
+                {statusLabel(s.id, s.label)}
               </button>
             );
           })}
         </div>
-        <div className="flex items-center gap-1" role="group" aria-label="按优先级筛选">
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label={tr('按优先级筛选', 'Filter by priority')}>
           {[...NOTE_PRIORITY_OPTIONS.map((p) => p.id), 'none' as const].map((p) => {
             const active = filter.priorities?.includes(p) ?? false;
             return (
@@ -177,25 +198,25 @@ export function NotesLedger({
                 type="button"
                 aria-pressed={active}
                 onClick={() => setFilter((f) => ({ ...f, priorities: toggleIn(f.priorities, p) }))}
-                className={`rounded-md border px-1.5 py-0.5 cursor-pointer ${
+                className={`rounded-md border px-1.5 py-0.5 whitespace-nowrap cursor-pointer ${
                   active
                     ? priorityMeta(p === 'none' ? undefined : p)?.badgeClass ?? 'bg-slate-100 text-slate-700 border-slate-300'
                     : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                {p === 'none' ? '未设' : p}
+                {p === 'none' ? tr('未设', 'Unset') : p}
               </button>
             );
           })}
         </div>
         {facets.stakeholders.length > 0 && (
           <select
-            aria-label="按对接人筛选"
+            aria-label={tr('按对接人筛选', 'Filter by stakeholder')}
             value={filter.stakeholder ?? ''}
             onChange={(e) => setFilter((f) => ({ ...f, stakeholder: e.target.value || undefined }))}
             className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700"
           >
-            <option value="">全部对接人</option>
+            <option value="">{tr('全部对接人', 'All stakeholders')}</option>
             {facets.stakeholders.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -205,37 +226,37 @@ export function NotesLedger({
         )}
         {facets.tags.length > 0 && (
           <select
-            aria-label="按标签筛选"
+            aria-label={tr('按标签筛选', 'Filter by tag')}
             value={filter.tag ?? ''}
             onChange={(e) => setFilter((f) => ({ ...f, tag: e.target.value || undefined }))}
             className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700"
           >
-            <option value="">全部标签</option>
+            <option value="">{tr('全部标签', 'All tags')}</option>
             {facets.tags.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {td(t)}
               </option>
             ))}
           </select>
         )}
-        <span className="ml-auto text-slate-500">
-          显示 {visible.length} / {rows.length} 篇
+        <span className="ml-auto text-slate-500 tabular-nums whitespace-nowrap">
+          {tr(`显示 ${visible.length} / ${rows.length} 篇`, `Showing ${visible.length} / ${rows.length}`)}
         </span>
         {!isFilterEmpty(filter) && (
           <button
             type="button"
             onClick={() => setFilter({})}
-            className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 cursor-pointer"
+            className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 whitespace-nowrap cursor-pointer"
           >
             <X size={11} />
-            清除筛选
+            {tr('清除筛选', 'Clear filters')}
           </button>
         )}
       </div>
 
       {error && (
         <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
-          {error}
+          {td(error)}
         </div>
       )}
 
@@ -255,17 +276,6 @@ export function NotesLedger({
   );
 }
 
-const COLUMNS: { key: NoteLedgerSortKey; label: string; className?: string }[] = [
-  { key: 'title', label: '笔记', className: 'min-w-[220px]' },
-  { key: 'status', label: '状态' },
-  { key: 'priority', label: '优先级' },
-  { key: 'stakeholder', label: '对接人' },
-  { key: 'meetingDate', label: '沟通日期' },
-  { key: 'relatedPages', label: '关联页面' },
-  { key: 'openTasks', label: '未完成待办' },
-  { key: 'updatedAt', label: '更新时间' },
-];
-
 function LedgerTable({
   projectId,
   rows,
@@ -281,12 +291,25 @@ function LedgerTable({
   onPatch: (noteId: string, change: NoteMetaPatch) => void;
   pageTitles: Map<string, string>;
 }) {
+  const { isEn, tr, td } = useI18n();
+  const statusLabel = (id: NoteRequirementStatus, rawLabel: string) =>
+    isEn ? LEDGER_STATUS_EN[id] ?? td(rawLabel) : rawLabel;
+  const columns: { key: NoteLedgerSortKey; label: string; className?: string }[] = [
+    { key: 'title', label: tr('笔记', 'Note'), className: 'min-w-[220px]' },
+    { key: 'status', label: tr('状态', 'Status') },
+    { key: 'priority', label: tr('优先级', 'Priority') },
+    { key: 'stakeholder', label: tr('对接人', 'Stakeholder') },
+    { key: 'meetingDate', label: tr('沟通日期', 'Meeting Date') },
+    { key: 'relatedPages', label: tr('关联页面', 'Linked Pages') },
+    { key: 'openTasks', label: tr('未完成待办', 'Open To-Dos') },
+    { key: 'updatedAt', label: tr('更新时间', 'Updated') },
+  ];
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full text-left text-xs" aria-label="需求台账表">
+      <table className="w-full text-left text-xs" aria-label={tr('需求台账表', 'Requirement ledger table')}>
         <thead className="bg-slate-50 text-[11px] text-slate-500">
           <tr>
-            {COLUMNS.map((col) => {
+            {columns.map((col) => {
               const active = sort.key === col.key;
               const Icon = !active ? ArrowUpDown : sort.direction === 'asc' ? ArrowUp : ArrowDown;
               return (
@@ -317,8 +340,8 @@ function LedgerTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-slate-400">
-                没有符合筛选条件的笔记
+              <td colSpan={columns.length} className="px-3 py-8 text-center text-slate-400">
+                {tr('没有符合筛选条件的笔记', 'No notes match the current filters')}
               </td>
             </tr>
           ) : (
@@ -339,28 +362,28 @@ function LedgerTable({
                 </td>
                 <td className="px-3 py-2">
                   <select
-                    aria-label={`${row.title} 的状态`}
+                    aria-label={tr(`${row.title} 的状态`, `Status of ${row.title}`)}
                     value={row.status}
                     onChange={(e) => onPatch(row.noteId, { status: e.target.value as NoteRequirementStatus })}
                     className={`rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${statusMeta(row.status).badgeClass}`}
                   >
                     {NOTE_STATUS_OPTIONS.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.label}
+                        {statusLabel(s.id, s.label)}
                       </option>
                     ))}
                   </select>
                 </td>
                 <td className="px-3 py-2">
                   <select
-                    aria-label={`${row.title} 的优先级`}
+                    aria-label={tr(`${row.title} 的优先级`, `Priority of ${row.title}`)}
                     value={row.priority ?? ''}
                     onChange={(e) => onPatch(row.noteId, { priority: (e.target.value || undefined) as NotePriority | undefined })}
                     className={`rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${
                       priorityMeta(row.priority)?.badgeClass ?? 'bg-white text-slate-400 border-slate-200'
                     }`}
                   >
-                    <option value="">未设</option>
+                    <option value="">{tr('未设', 'Unset')}</option>
                     {NOTE_PRIORITY_OPTIONS.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.id}
@@ -379,7 +402,7 @@ function LedgerTable({
                 <td className="px-3 py-2">
                   <input
                     type="date"
-                    aria-label={`${row.title} 的沟通日期`}
+                    aria-label={tr(`${row.title} 的沟通日期`, `Meeting date of ${row.title}`)}
                     value={row.meetingDate ?? ''}
                     onChange={(e) => onPatch(row.noteId, { meetingDate: e.target.value })}
                     className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700"
@@ -387,7 +410,7 @@ function LedgerTable({
                 </td>
                 <td className="px-3 py-2 text-slate-600 tabular-nums">
                   <span
-                    title={row.relatedPageIds.map((id) => pageTitles.get(id) ?? id).join('、') || '未关联页面'}
+                    title={row.relatedPageIds.map((id) => pageTitles.get(id) ?? id).join(tr('、', ', ')) || tr('未关联页面', 'No linked pages')}
                     className="inline-flex items-center gap-1"
                   >
                     <FileText size={11} className="text-slate-400" />
@@ -404,7 +427,7 @@ function LedgerTable({
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-[11px] text-slate-500">
+                <td className="px-3 py-2 whitespace-nowrap text-[11px] text-slate-500 tabular-nums">
                   {row.updatedAt.slice(0, 16).replace('T', ' ')}
                 </td>
               </tr>
@@ -425,6 +448,7 @@ function StakeholderCell({
   value: string;
   onCommit: (value: string) => void;
 }) {
+  const { tr } = useI18n();
   const [draft, setDraft] = useState(value);
   const commit = () => {
     if (draft.trim() !== value) onCommit(draft.trim());
@@ -432,7 +456,7 @@ function StakeholderCell({
   return (
     <input
       type="text"
-      aria-label={`${label} 的对接人`}
+      aria-label={tr(`${label} 的对接人`, `Stakeholder of ${label}`)}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -440,7 +464,7 @@ function StakeholderCell({
         if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') setDraft(value);
       }}
-      placeholder="未填写"
+      placeholder={tr('未填写', 'Unset')}
       className="w-24 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[11px] text-slate-800 placeholder:text-slate-400 hover:border-slate-200 focus:outline-none focus:border-blue-600"
     />
   );
@@ -459,15 +483,19 @@ function LedgerKanban({
   onPatch: (noteId: string, change: NoteMetaPatch) => void;
   pageTitles: Map<string, string>;
 }) {
+  const { isEn, tr, td } = useI18n();
+  const statusLabel = (id: NoteRequirementStatus, rawLabel: string) =>
+    isEn ? LEDGER_STATUS_EN[id] ?? td(rawLabel) : rawLabel;
   const [dropTarget, setDropTarget] = useState<NoteRequirementStatus | null>(null);
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="需求状态看板">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label={tr('需求状态看板', 'Requirement status board')}>
       {NOTE_STATUS_OPTIONS.map((column) => {
         const cards = rows.filter((row) => row.status === column.id);
+        const colLabel = statusLabel(column.id, column.label);
         return (
           <section
             key={column.id}
-            aria-label={`${column.label}（${cards.length}）`}
+            aria-label={tr(`${column.label}（${cards.length}）`, `${colLabel} (${cards.length})`)}
             onDragOver={(e) => {
               if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
               e.preventDefault();
@@ -483,20 +511,20 @@ function LedgerKanban({
                 onPatch(noteId, { status: column.id });
               }
             }}
-            className={`flex min-h-[220px] flex-col rounded-xl border bg-slate-50/60 p-2 transition ${
+            className={`flex min-h-[220px] flex-col rounded-xl border bg-slate-50/60 p-2 transition min-w-0 ${
               dropTarget === column.id ? 'border-blue-400 ring-2 ring-blue-200/70' : 'border-slate-200'
             }`}
           >
             <header className="mb-2 flex items-center justify-between px-1 text-[11px] font-semibold text-slate-600">
-              <span className="inline-flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${column.dotClass}`} />
-                {column.label}
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${column.dotClass}`} />
+                <span className="truncate">{colLabel}</span>
               </span>
-              <span className="rounded-md bg-white px-1.5 text-slate-500 tabular-nums border border-slate-200">{cards.length}</span>
+              <span className="rounded-md bg-white px-1.5 text-slate-500 tabular-nums border border-slate-200 shrink-0">{cards.length}</span>
             </header>
             <div className="flex-1 space-y-2">
               {cards.length === 0 && (
-                <p className="px-2 py-6 text-center text-[11px] text-slate-400">拖拽卡片到这里切换状态</p>
+                <p className="px-2 py-6 text-center text-[11px] text-slate-400">{tr('拖拽卡片到这里切换状态', 'Drag cards here to change status')}</p>
               )}
               {cards.map((row) => {
                 const priority = priorityMeta(row.priority);
@@ -513,10 +541,10 @@ function LedgerKanban({
                     <button
                       type="button"
                       onClick={() => openNoteNode(projectId, row.noteId)}
-                      className="flex w-full items-start gap-1.5 text-left cursor-pointer group"
+                      className="flex w-full items-start gap-1.5 text-left cursor-pointer group min-w-0"
                     >
                       <span className="shrink-0">{row.icon}</span>
-                      <span className="min-w-0 flex-1 font-medium text-slate-900 group-hover:text-blue-600 line-clamp-2">
+                      <span className="min-w-0 flex-1 font-medium text-slate-900 group-hover:text-blue-600 line-clamp-2 break-words">
                         {row.title}
                       </span>
                     </button>
@@ -526,28 +554,28 @@ function LedgerKanban({
                         <span className={`rounded border px-1 py-px font-medium ${priority.badgeClass}`}>{priority.id}</span>
                       )}
                       {row.stakeholder && <span className="truncate">👤 {row.stakeholder}</span>}
-                      {row.meetingDate && <span>📅 {row.meetingDate}</span>}
+                      {row.meetingDate && <span className="tabular-nums">📅 {row.meetingDate}</span>}
                       {row.totalTasks > 0 && (
-                        <span className={row.openTasks ? 'text-amber-700' : 'text-emerald-700'}>
+                        <span className={`tabular-nums ${row.openTasks ? 'text-amber-700' : 'text-emerald-700'}`}>
                           ☑ {row.totalTasks - row.openTasks}/{row.totalTasks}
                         </span>
                       )}
                       {row.relatedPageIds.length > 0 && (
-                        <span title={row.relatedPageIds.map((id) => pageTitles.get(id) ?? id).join('、')}>
+                        <span className="tabular-nums" title={row.relatedPageIds.map((id) => pageTitles.get(id) ?? id).join(tr('、', ', '))}>
                           📄 {row.relatedPageIds.length}
                         </span>
                       )}
                     </div>
                     {/* Keyboard / non-drag alternative for changing the lane. */}
                     <select
-                      aria-label={`移动「${row.title}」到其他状态`}
+                      aria-label={tr(`移动「${row.title}」到其他状态`, `Move "${row.title}" to another status`)}
                       value={row.status}
                       onChange={(e) => onPatch(row.noteId, { status: e.target.value as NoteRequirementStatus })}
                       className="mt-2 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600"
                     >
                       {NOTE_STATUS_OPTIONS.map((s) => (
                         <option key={s.id} value={s.id}>
-                          移到：{s.label}
+                          {tr(`移到：${s.label}`, `Move to: ${statusLabel(s.id, s.label)}`)}
                         </option>
                       ))}
                     </select>

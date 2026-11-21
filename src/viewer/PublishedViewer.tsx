@@ -18,8 +18,10 @@ import type { Row } from '../proto/runtime/mock';
 import { PublishedNotesButton, PublishedNotesProvider } from './PublishedNotes';
 import { PublishedProjectNotes } from './PublishedProjectNotes';
 import { ThemeSwitch, useThemePreference } from '../components/ThemeSwitch';
+import { LanguageSwitch } from '../components/LanguageSwitch';
 import { AlexLogo } from '../components/AlexLogo';
 import { ReleaseCenterView } from './ReleaseCenterView';
+import { getAcceptLanguageHeader, isEnLocale, td, tr as trRuntime, useI18n } from '../i18n';
 
 export function isReleaseAdminRoute(pathname = window.location.pathname, search = window.location.search): boolean {
   if (/^\/(?:releases|updates)\/admin(?:\/|$)/.test(pathname)) return true;
@@ -42,6 +44,7 @@ export function hydratePublishedSnapshot(snapshot: unknown) {
 }
 
 export function PublishedPageView({ page, canNavigate, publishedHeader }: { page: PublishedPage; canNavigate?: (pageId: string) => boolean; publishedHeader?: (id:string) => readonly string[] | undefined }) {
+  const { tr } = useI18n();
   const runtime = useRuntimeController(page.doc, page.pageId, false, canNavigate, publishedHeader);
   const isMobile = page.doc.root.type === 'MobilePage';
   const workspaceTheme = useResolvedTheme();
@@ -111,18 +114,18 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
             <button
               type="button"
               onClick={() => setPreviewAppearance(effectiveAppearance === 'dark' ? 'light' : 'dark')}
-              title="切换移动端屏幕明暗预览"
+              title={tr('切换移动端屏幕明暗预览', 'Toggle mobile screen light/dark preview')}
               className="px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1 text-slate-600 hover:bg-slate-100 cursor-pointer transition"
             >
               {effectiveAppearance === 'dark' ? (
                 <>
                   <Moon size={12} className="text-violet-600" />
-                  <span>深色</span>
+                  <span>{tr('深色', 'Dark')}</span>
                 </>
               ) : (
                 <>
                   <Sun size={12} className="text-amber-500" />
-                  <span>浅色</span>
+                  <span>{tr('浅色', 'Light')}</span>
                 </>
               )}
             </button>
@@ -152,15 +155,15 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
       </>
     )}
     {!isMobile && runtime.confirmState && (
-      <div role="dialog" aria-modal="true" aria-label="操作确认" className="fixed inset-0 z-[90] bg-slate-900/45 backdrop-blur-[2px] flex items-center justify-center p-5">
+      <div role="dialog" aria-modal="true" aria-label={tr('操作确认', 'Confirm Action')} className="fixed inset-0 z-[90] bg-slate-900/45 backdrop-blur-[2px] flex items-center justify-center p-5">
         <div className="bg-white rounded-2xl border border-slate-200/90 p-5 max-w-sm w-full shadow-2xl space-y-4">
           <div className="space-y-1.5">
-            <h2 className="text-sm font-bold text-slate-900">操作确认</h2>
+            <h2 className="text-sm font-bold text-slate-900">{tr('操作确认', 'Confirm Action')}</h2>
             <p className="text-xs leading-5 text-slate-600">{runtime.confirmState.message}</p>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => runtime.resolveConfirm(false)} className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-medium rounded-lg cursor-pointer transition">取消</button>
-            <button type="button" onClick={() => runtime.resolveConfirm(true)} className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition">确认执行</button>
+            <button type="button" onClick={() => runtime.resolveConfirm(false)} className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-medium rounded-lg cursor-pointer transition">{tr('取消', 'Cancel')}</button>
+            <button type="button" onClick={() => runtime.resolveConfirm(true)} className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition">{tr('确认执行', 'Confirm')}</button>
           </div>
         </div>
       </div>
@@ -179,10 +182,18 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
 }
 
 async function viewRequest(id: string, password?: string, signal?: AbortSignal) {
-  const response = await fetch(`/api/v1/view/${id}${password === undefined ? '' : '/open'}`, { method: password === undefined ? 'GET' : 'POST', headers: password === undefined ? undefined : { 'Content-Type': 'application/json' }, body: password === undefined ? undefined : JSON.stringify({ password }), cache: 'no-store', credentials: 'omit', signal });
+  const headers = isEnLocale()
+    ? {
+        ...(password === undefined ? {} : { 'Content-Type': 'application/json' }),
+        'Accept-Language': getAcceptLanguageHeader(),
+      }
+    : password === undefined
+      ? undefined
+      : { 'Content-Type': 'application/json' };
+  const response = await fetch(`/api/v1/view/${id}${password === undefined ? '' : '/open'}`, { method: password === undefined ? 'GET' : 'POST', headers, body: password === undefined ? undefined : JSON.stringify({ password }), cache: 'no-store', credentials: 'omit', signal });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : '无法读取分享，请稍后重试');
-  if (!data) throw new Error('分享服务返回了无效内容');
+  if (!response.ok) throw new Error(typeof data?.error === 'string' ? td(data.error) : trRuntime('无法读取分享，请稍后重试', 'Unable to load share. Please try again later.'));
+  if (!data) throw new Error(trRuntime('分享服务返回了无效内容', 'Share service returned an invalid payload'));
   return data;
 }
 
@@ -218,6 +229,7 @@ export function PublishedViewer() {
 }
 
 function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: () => void }) {
+  const { tr } = useI18n();
   const theme = useThemePreference();
   const [publication, setPublication] = useState<Publication | null>(null);
   const [snapshot, setSnapshot] = useState<ReadablePublishedSnapshot | null>(null);
@@ -233,7 +245,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
   const id = /^\/p\/([A-Za-z0-9_-]{20,80})\/?$/.exec(window.location.pathname)?.[1];
   const accept = (data: any) => {
     const content = normalizePublishedSnapshot(data.snapshot);
-    if (data.publication?.id !== id || data.publication.projectId !== content.projectId) throw new Error('分享内容与链接不一致');
+    if (data.publication?.id !== id || data.publication.projectId !== content.projectId) throw new Error(trRuntime('分享内容与链接不一致', 'Shared payload does not match link'));
     hydratePublishedSnapshot(content);
     let pageId: string;
     try { pageId = decodeURIComponent(window.location.hash.slice(1)); } catch { pageId = ''; }
@@ -245,12 +257,12 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
     const abort = new AbortController(); let alive = true;
     const load = async () => {
       try {
-        if (!id) throw new Error('分享链接无效，请使用发布者提供的完整链接');
+        if (!id) throw new Error(trRuntime('分享链接无效，请使用发布者提供的完整链接', 'Invalid share link. Please use the complete URL provided by the publisher.'));
         const meta = await viewRequest(id, undefined, abort.signal);
-        if (meta.id !== id || typeof meta.passwordProtected !== 'boolean') throw new Error('分享记录格式无效');
+        if (meta.id !== id || typeof meta.passwordProtected !== 'boolean') throw new Error(trRuntime('分享记录格式无效', 'Invalid share metadata format'));
         if (!alive) return; setPublication(meta);
         if (!meta.passwordProtected) { const data = await viewRequest(id, '', abort.signal); if (alive) accept(data); }
-      } catch (e) { if (alive) setError(e instanceof Error ? e.message : '无法加载分享'); }
+      } catch (e) { if (alive) setError(e instanceof Error ? e.message : trRuntime('无法加载分享', 'Unable to load share')); }
       finally { if (alive) setBusy(false); }
     };
     void load(); return () => { alive = false; abort.abort(); };
@@ -282,35 +294,35 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.09),transparent_60%)]"
         />
-        <div className="relative z-10 w-full max-w-[420px] rounded-2xl border border-slate-200/90 bg-white p-7 sm:p-8 shadow-xl shadow-slate-900/5 space-y-6">
+        <div className="relative z-10 w-full max-w-[440px] rounded-2xl border border-slate-200/90 bg-white p-7 sm:p-8 shadow-xl shadow-slate-900/5 space-y-6">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <AlexLogo size={40} className="rounded-xl shadow-xs shrink-0" />
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-extrabold text-slate-900 tracking-tight">Alex</div>
-                <div className="text-[11px] text-slate-500">在线交互原型演示沙盒</div>
+                <div className="text-[11px] text-slate-500">{tr('在线交互原型演示沙盒', 'Interactive Prototype Sandbox')}</div>
               </div>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full border border-blue-200/80 bg-blue-50/80 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 shrink-0">
               {publication?.passwordProtected ? <LockKeyhole size={11} /> : <ShieldCheck size={11} />}
-              {publication?.passwordProtected ? '密码保护' : '在线分享'}
+              {publication?.passwordProtected ? tr('密码保护', 'Protected') : tr('在线分享', 'Live Share')}
               {publication?.version ? ` · v${publication.version}` : ''}
             </span>
           </div>
 
           <div className="space-y-1.5 border-t border-slate-100 pt-5">
             <h1 className="text-lg font-bold text-slate-900 tracking-tight break-words">
-              {publication?.title ?? '在线原型'}
+              {publication?.title ?? tr('在线原型', 'Interactive Prototype')}
             </h1>
             <p className="text-xs text-slate-500 leading-5">
-              支持页面目录跳转、表单联动、数据流转与需求便签查阅
+              {tr('支持页面目录跳转、表单联动、数据流转与需求便签查阅', 'Supports sitemap navigation, interactive forms, data flows, and spec annotations')}
             </p>
           </div>
 
           {busy && !publication?.passwordProtected ? (
             <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-5 flex items-center justify-center gap-2.5">
               <span className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin shrink-0" />
-              <p role="status" className="text-xs font-medium text-slate-600">正在加载分享…</p>
+              <p role="status" className="text-xs font-medium text-slate-600">{tr('正在加载分享…', 'Loading shared prototype…')}</p>
             </div>
           ) : publication?.passwordProtected ? (
             <form
@@ -323,7 +335,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
                 try {
                   accept(await viewRequest(id, password));
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : '无法打开分享');
+                  setError(e instanceof Error ? e.message : tr('无法打开分享', 'Unable to unlock share'));
                 } finally {
                   setBusy(false);
                 }
@@ -332,17 +344,17 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               <div className="space-y-2">
                 <p className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
                   <LockKeyhole size={13.5} className="text-blue-600 shrink-0" />
-                  请输入发布者提供的访问密码。
+                  {tr('请输入发布者提供的访问密码。', 'Please enter the access password provided by the publisher.')}
                 </p>
                 <div className="relative">
                   <LockKeyhole size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    aria-label="访问密码"
+                    aria-label={tr('访问密码', 'Access password')}
                     type="password"
                     required
                     autoFocus
                     autoComplete="current-password"
-                    placeholder="输入演示访问密码..."
+                    placeholder={tr('输入演示访问密码...', 'Enter access password...')}
                     maxLength={128}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -355,7 +367,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
                 disabled={busy}
                 className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60 text-white font-semibold py-2.5 px-4 text-sm shadow-xs shadow-blue-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition"
               >
-                <span>{busy ? '正在验证密码…' : '查看原型'}</span>
+                <span>{busy ? tr('正在验证密码…', 'Verifying password…') : tr('查看原型', 'Open Prototype')}</span>
                 <ArrowRight size={15} />
               </button>
             </form>
@@ -364,7 +376,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           {error && (
             <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-3.5 py-2.5 flex items-start gap-2">
               <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
-              <p role="alert" className="text-xs font-medium text-rose-700 leading-5">{error}</p>
+              <p role="alert" className="text-xs font-medium text-rose-700 leading-5">{td(error)}</p>
             </div>
           )}
 
@@ -376,23 +388,26 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
                 className="w-full rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
               >
                 <RotateCcw size={13.5} />
-                重新加载
+                {tr('重新加载', 'Reload')}
               </button>
               <button
                 type="button"
                 onClick={onOpenReleaseCenter}
-                className="w-full rounded-xl bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 font-semibold py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
+                className="w-full rounded-xl bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 font-semibold py-2.5 px-3 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
               >
-                <span>前往桌面端版本发布与下载中心 (/releases)</span>
-                <ArrowRight size={13.5} />
+                <span>{tr('前往桌面端版本发布与下载中心 (/releases)', 'Go to Desktop Release & Download Center (/releases)')}</span>
+                <ArrowRight size={13.5} className="shrink-0" />
               </button>
             </div>
           )}
 
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-            <span>Alex · 在线分享</span>
-            <ThemeSwitch {...theme} />
-            <span>演示操作仅影响当前浏览</span>
+          <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+            <span>{tr('Alex · 在线分享', 'Alex · Live Share')}</span>
+            <div className="flex items-center gap-1.5">
+              <ThemeSwitch {...theme} />
+              <LanguageSwitch />
+            </div>
+            <span>{tr('演示操作仅影响当前浏览', 'Demo actions stay in this tab')}</span>
           </div>
         </div>
       </main>
@@ -411,8 +426,8 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
             <button
               type="button"
               onClick={() => setSidebarCollapsed(c => !c)}
-              aria-label={sidebarCollapsed ? '展开左侧目录' : '收起左侧目录'}
-              title={sidebarCollapsed ? '展开左侧目录' : '收起左侧目录'}
+              aria-label={sidebarCollapsed ? tr('展开左侧目录', 'Expand sidebar') : tr('收起左侧目录', 'Collapse sidebar')}
+              title={sidebarCollapsed ? tr('展开左侧目录', 'Expand sidebar') : tr('收起左侧目录', 'Collapse sidebar')}
               className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer shrink-0 ${
                 !sidebarCollapsed
                   ? 'text-slate-800 bg-slate-100 hover:bg-slate-200/70'
@@ -431,7 +446,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
                 {snapshot.title}
               </h1>
               <span className="hidden md:inline-flex items-center rounded-md bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0">
-                版本 {publication?.version ?? 1}
+                {tr(`版本 ${publication?.version ?? 1}`, `v${publication?.version ?? 1}`)}
               </span>
             </div>
 
@@ -446,11 +461,15 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <p className="hidden lg:flex items-center gap-1.5 text-[11px] text-slate-400 mr-1">
+            <p className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-400 mr-1 whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              在线原型 · 版本 {publication?.version} · 演示操作仅影响当前浏览
+              {tr(
+                `在线原型 · 版本 ${publication?.version} · 演示操作仅影响当前浏览`,
+                `Live Prototype · v${publication?.version} · Demo actions stay local`
+              )}
             </p>
             <ThemeSwitch {...theme} />
+            <LanguageSwitch />
             <PublishedProjectNotes
               snapshot={snapshot}
               activePageId={activeId}
@@ -466,7 +485,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               className="flex gap-1.5 items-center rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 font-medium px-2.5 py-1.5 text-xs shrink-0 cursor-pointer transition shadow-2xs"
             >
               <Blocks size={13.5} aria-hidden="true" />
-              <span>MCP 接入</span>
+              <span>{tr('MCP 接入', 'MCP')}</span>
             </button>
             <button
               type="button"
@@ -477,7 +496,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               className="flex gap-1.5 items-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 font-medium px-2.5 py-1.5 text-xs shrink-0 cursor-pointer transition shadow-2xs"
             >
               <RotateCcw size={13.5} className="text-slate-500" />
-              重置演示
+              {tr('重置演示', 'Reset Demo')}
             </button>
           </div>
         </header>
@@ -512,7 +531,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               ) : menuIndex.has(activeId) ? (
                 <PublishedMenuPlaceholder item={menuIndex.get(activeId)!.item} />
               ) : (
-                <div role="alert" className="p-8 text-sm text-slate-500">目标页面未发布，请从左侧目录选择页面。</div>
+                <div role="alert" className="p-8 text-sm text-slate-500">{tr('目标页面未发布，请从左侧目录选择页面。', 'Target page is not published. Please select a page from the sidebar.')}</div>
               )}
             </div>
             </div>

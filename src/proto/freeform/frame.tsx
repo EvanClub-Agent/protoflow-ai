@@ -14,16 +14,17 @@ const config = window.__pfConfig;
 const post = (type: string, payload?: unknown) => parent.postMessage({ channel: config.channel, type, payload }, '*');
 let sliceStarted: number | undefined;
 let exhausted = false;
+const isEnFrame = typeof navigator !== 'undefined' && /^en\b/i.test(navigator.language || '');
 window.__pfGuard = () => {
-  if (exhausted) throw new Error('交互计算时间过长，请简化后重试');
+  if (exhausted) throw new Error(isEnFrame ? 'Interaction took too long; please simplify and retry' : '交互计算时间过长，请简化后重试');
   if (sliceStarted === undefined) {
     sliceStarted = performance.now();
     queueMicrotask(() => { sliceStarted = undefined; });
   }
   if (performance.now() - sliceStarted > 120) {
     exhausted = true;
-    post('error', '交互计算时间过长，请简化后重试');
-    throw new Error('自由组件执行超时');
+    post('error', isEnFrame ? 'Interaction took too long; please simplify and retry' : '交互计算时间过长，请简化后重试');
+    throw new Error(isEnFrame ? 'Freeform component execution timed out' : '自由组件执行超时');
   }
 };
 window.React = React;

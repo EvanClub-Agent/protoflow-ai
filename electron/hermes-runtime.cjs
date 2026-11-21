@@ -11,6 +11,7 @@ const { spawn, execFile } = require("node:child_process");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { performance } = require("node:perf_hooks");
 const { AcpClient } = require("./hermes-acp.cjs");
+const { tr, isMainEn, getMainLocale } = require("./i18n.cjs");
 const { conversationScope, conversationKey } = require('./hermes-conversation.cjs');
 const { ChatImages } = require('./chat-images.cjs');
 const { atomicWrite, replayCandidateOperations } = require("./protoflow-mcp.cjs");
@@ -32,6 +33,7 @@ const expand = (p) =>
       : p;
 const runtimeEnv = () => ({
   ...process.env,
+  PROTOFLOW_LOCALE: getMainLocale(),
   PATH: [
     path.join(os.homedir(), ".local/bin"),
     "/opt/homebrew/bin",
@@ -56,7 +58,7 @@ function runCommand(binary, args, home, timeout = 30000, env = {}, baseEnv = run
     };
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      done({ ok: false, output: "Hermes 命令超时", timedOut: true });
+      done({ ok: false, output: tr("Hermes 命令超时", "Hermes command timed out"), timedOut: true });
     }, timeout);
     child.stdout.on("data", (d) => {
       output = (output + d).slice(-16000);
@@ -70,12 +72,21 @@ function runCommand(binary, args, home, timeout = 30000, env = {}, baseEnv = run
 function describeHermesUpdateError(result) {
   const details = `${result.output}\n${result.stderr}`;
   if (result.timedOut || /timed?\s*out|timeout|Failed to fetch updates|Could not resolve host|unable to access/i.test(details)) {
-    return 'AI 组件更新暂时无法连接下载服务，请稍后重试。软件本身的内网更新不受影响。';
+    return tr(
+      'AI 组件更新暂时无法连接下载服务，请稍后重试。软件本身的内网更新不受影响。',
+      'AI component update cannot reach the download service right now. Please try again later. Intranet app updates are unaffected.',
+    );
   }
   if (/permission denied|access is denied|EACCES/i.test(details)) {
-    return 'AI 组件的安装目录无法写入，请联系管理员处理目录权限后重试。';
+    return tr(
+      'AI 组件的安装目录无法写入，请联系管理员处理目录权限后重试。',
+      'Cannot write to the AI component installation directory. Please contact your administrator to check directory permissions and retry.',
+    );
   }
-  return 'AI 组件更新未完成，请稍后重试。详细原因已保存在 AI 组件的更新日志中。';
+  return tr(
+    'AI 组件更新未完成，请稍后重试。详细原因已保存在 AI 组件的更新日志中。',
+    'AI component update did not complete. Please try again later. Details have been saved to the AI component update log.',
+  );
 }
 const roundMs = (value) => Number(Math.max(0, value).toFixed(2));
 function safeRemoveFile(targetFile) {
@@ -350,7 +361,7 @@ class HermesRuntime {
     this.cancelVersions = new Map();
     this.lastSessionSetup = new Map();
     this.unconsumedSessionSetup = new Map();
-    this.contextPool = new ContextBridgePool({ env: this.envFor(this.settings.home || this.managedHome) });
+    this.contextPool = new ContextBridgePool({ env: () => this.envFor(this.settings.home || this.managedHome) });
     this.lastContextBridgeUse = null;
   }
   allLoadedSessions() {
@@ -408,13 +419,13 @@ class HermesRuntime {
     // only a first run without a selection defaults to the private profile.
     const configuredHome = input.home ?? this.settings.home ?? this.managedHome;
     if (typeof configuredHome !== 'string' || !path.isAbsolute(expand(configuredHome)))
-      throw new Error("Hermes 配置目录必须是绝对路径");
+      throw new Error(tr("Hermes 配置目录必须是绝对路径", "Hermes home directory must be an absolute path"));
     const home = expand(configuredHome);
     const managed = path.resolve(home) === this.managedHome;
     const sameHome = this.settings.home && path.resolve(home) === path.resolve(expand(this.settings.home));
     const selected = input.binary || (sameHome && this.settings.binary);
     if (selected && (typeof selected !== 'string' || !path.isAbsolute(expand(selected))))
-      throw new Error('Hermes 可执行文件必须是绝对路径');
+      throw new Error(tr('Hermes 可执行文件必须是绝对路径', 'Hermes executable path must be an absolute path'));
     const candidates = selected
       ? [expand(selected)]
       : managed ? [this.managedTarget().binary]
@@ -443,7 +454,7 @@ class HermesRuntime {
         home,
         binary: "",
         version: "",
-        error: "未找到可执行的 Hermes，请先安装或指定正确路径",
+        error: tr("未找到可执行的 Hermes，请先安装或指定正确路径", "Executable Hermes binary not found. Please install Hermes or specify a valid path"),
       };
     const version = await this.runCommand(binary, ["--version"], home);
     if (!version.ok || !/Hermes Agent/.test(version.output))
@@ -453,7 +464,7 @@ class HermesRuntime {
         home,
         binary,
         version: "",
-        error: "该路径无法运行 Hermes",
+        error: tr("该路径无法运行 Hermes", "Unable to run Hermes from the specified path"),
       };
     const connected = Boolean(
       this.client &&
@@ -465,7 +476,7 @@ class HermesRuntime {
     const installDir = /^Install directory: (.+)$/m.exec(version.output)?.[1]?.trim();
     if (managed && (!path.resolve(binary).startsWith(this.managedHome + path.sep) || !this.isAppManagedInstallation({ home, installDir }) ||
         hostFs.realpathSync(binary) !== path.join(hostFs.realpathSync(installDir), '.hermes', 'bin', process.platform === 'win32' ? 'hermes.exe' : 'hermes'))) {
-      return { detected: false, connected: false, home, binary, version: '', error: '托管启动器未指向 Alex 的安装目录，请重新准备托管运行时' };
+      return { detected: false, connected: false, home, binary, version: '', error: tr('托管启动器未指向 Alex 的安装目录，请重新准备托管运行时', 'Managed launcher does not point to the Alex installation directory; please prepare the managed runtime again') };
     }
     return {
       detected: true,
@@ -482,13 +493,13 @@ class HermesRuntime {
   }
   async connect(input = {}, { signal, selectOnSuccess = false } = {}) {
     if (this.connecting) {
-      if (selectOnSuccess || input.home || input.binary) throw new Error('Hermes 正在连接，请稍后再切换环境');
+      if (selectOnSuccess || input.home || input.binary) throw new Error(tr('Hermes 正在连接，请稍后再切换环境', 'Hermes is currently connecting; please wait before switching environments'));
       return this.connecting;
     }
     if (this.client && !this.client.closed && !input.home && !input.binary)
       return this.info;
     if (this.activeProjectRuns.size || this.allLoadedSessions().some((s) => s.running))
-      throw new Error("请先停止当前 AI 任务再切换 Hermes 环境");
+      throw new Error(tr("请先停止当前 AI 任务再切换 Hermes 环境", "Please stop active AI tasks before switching the Hermes environment"));
     let candidateClient;
     this.connecting = (async () => {
       const info = await this.detect(input);
@@ -515,14 +526,14 @@ class HermesRuntime {
         const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
         let command;
         try { command = JSON.parse(launch.output); } catch {}
-        if (!launch.ok || !Array.isArray(command) || !path.isAbsolute(command[0])) throw new Error('Hermes 启动器未提供恢复适配接口');
+        if (!launch.ok || !Array.isArray(command) || !path.isAbsolute(command[0])) throw new Error(tr('Hermes 启动器未提供恢复适配接口', 'Hermes launcher does not expose the recovery adapter interface'));
         const native = require('./hermes-recovery-native.cjs');
         const copy = await native.prepareNativeRecovery(info.installDir, this.dataDir);
         const bootstrap = fs.readFileSync(path.join(__dirname, 'hermes-recovery-gateway.py'), 'utf8');
         const activated = await this.runCommand(command[0], ['-I', '-c', bootstrap, copy], info.home, 120000, { ALEX_RECOVERY_DIR: this.recoveryChannelDir });
         let activation;
         try { activation = JSON.parse(activated.output.trim().split('\n').at(-1)); } catch {}
-        if (!activated.ok || activation?.ready !== true) throw new Error(activation?.error || 'Hermes 限流恢复运行时未能启动');
+        if (!activated.ok || activation?.ready !== true) throw new Error(activation?.error || tr('Hermes 限流恢复运行时未能启动', 'Hermes rate-limit recovery runtime failed to start'));
         info.recoverySourceDir = copy;
         info.contextPython = command[0];
         info.recoveryPolicy = 'bounded-provider-v1';
@@ -540,7 +551,7 @@ class HermesRuntime {
         clientCapabilities: { elicitation: { form: {} } },
       });
       if (init.protocolVersion !== 1 || !init.agentCapabilities?.loadSession)
-        throw new Error("Hermes ACP 版本不兼容：需要会话恢复支持");
+        throw new Error(tr("Hermes ACP 版本不兼容：需要会话恢复支持", "Incompatible Hermes ACP version: session recovery support is required"));
       signal?.throwIfAborted();
       if (deferSelection) saveSelection();
       this.close();
@@ -601,7 +612,7 @@ class HermesRuntime {
   }
   workspace(projectId) {
     if (typeof projectId !== "string" || !projectId.trim())
-      throw new Error("缺少项目 ID");
+      throw new Error(tr("缺少项目 ID", "Missing project ID"));
     const identity = JSON.stringify([
       this.settings.home,
       this.workspaceBinaryIdentity(this.settings.home, this.settings.binary),
@@ -670,7 +681,7 @@ class HermesRuntime {
       if (!fs.existsSync(binding)) continue;
       const saved = JSON.parse(fs.readFileSync(binding, 'utf8'));
       if (saved.projectId === scope.projectId && conversationKey(saved) === conversationKey(scope))
-        throw new Error('这条会话在其他 Hermes 环境中有记录，请切回原环境后重试');
+        throw new Error(tr('这条会话在其他 Hermes 环境中有记录，请切回原环境后重试', 'This conversation belongs to another Hermes environment; please switch back to the original environment and retry'));
     }
   }
   mcp(dir, binding) {
@@ -682,7 +693,11 @@ class HermesRuntime {
           path.join(__dirname, "protoflow-mcp.cjs"),
           path.join(dir, "context.json"),
         ],
-        env: [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }, ...(binding ? [{name: 'PROTOFLOW_TOOL_BINDING', value: binding}] : [])],
+        env: [
+          { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+          ...(binding ? [{ name: 'PROTOFLOW_TOOL_BINDING', value: binding }] : []),
+          ...(isMainEn() ? [{ name: 'PROTOFLOW_LOCALE', value: 'en-US' }] : []),
+        ],
       },
     ];
   }
@@ -703,7 +718,7 @@ class HermesRuntime {
     const setupStartedAt = performance.now();
     const scope = conversationScope(input), { projectId } = scope;
     const { fresh = false, refresh = false } = input;
-    if (scope.kind === 'project' && fresh) throw new Error('请通过新建会话保留原项目对话');
+    if (scope.kind === 'project' && fresh) throw new Error(tr('请通过新建会话保留原项目对话', 'Create a new conversation instead of resetting an existing project chat'));
     const key = conversationKey(scope);
     const connectStartedAt = performance.now();
     await this.connect();
@@ -722,7 +737,7 @@ class HermesRuntime {
       (previous.expectedSkillDigest ?? null) !== currentSkillDigest ||
       (nativePrompt && currentSkillDigest !== null && (previous.appliedSkillDigest ?? null) !== currentSkillDigest && !previous.pendingRefreshEpoch && !previous.freshlyCreated)
     ));
-    if (previous?.running && (fresh || refresh || toolsChanged || skillChanged)) throw new Error("当前项目有任务正在执行");
+    if (previous?.running && (fresh || refresh || toolsChanged || skillChanged)) throw new Error(tr("当前项目有任务正在执行", "A task is currently running in this project"));
     if (previous && !fresh && !refresh && !toolsChanged && !skillChanged) {
       this.lastSessionSetup.set(key, {
         durationMs: roundMs(performance.now() - setupStartedAt),
@@ -738,18 +753,18 @@ class HermesRuntime {
     }
     const dir = this.conversationWorkspace(scope),
       savedFile = path.join(dir, "session.json");
-    if (scope.kind === 'project' && fs.existsSync(path.join(dir, 'deleted.json'))) throw new Error('这条项目会话已删除，请切换会话');
+    if (scope.kind === 'project' && fs.existsSync(path.join(dir, 'deleted.json'))) throw new Error(tr('这条项目会话已删除，请切换会话', 'This project conversation has been deleted; please switch to another conversation'));
     let saved;
     if (!fresh) {
       try {
         saved = JSON.parse(fs.readFileSync(savedFile, "utf8"));
-        if (!saved || typeof saved.sessionId !== 'string' || !saved.sessionId.trim()) throw new Error('会话标识无效');
+        if (!saved || typeof saved.sessionId !== 'string' || !saved.sessionId.trim()) throw new Error(tr('会话标识无效', 'Invalid session ID'));
       } catch (error) {
-        if (error.code !== 'ENOENT') throw new Error('读取当前菜单的 Hermes 会话失败，原记录未覆盖');
+        if (error.code !== 'ENOENT') throw new Error(tr('读取当前菜单的 Hermes 会话失败，原记录未覆盖', 'Failed to read the Hermes session for this menu; original record was preserved'));
       }
     }
     if (saved && conversationKey(saved) !== key)
-      throw new Error("会话项目或菜单归属不一致");
+      throw new Error(tr("会话项目或菜单归属不一致", "Session project or menu ownership mismatch"));
     if (scope.kind === 'project' && !saved) this.assertProjectChatEnvironment(scope, dir);
     const reloadReason = !previous
       ? (saved ? 'cold_load' : 'new_session')
@@ -783,7 +798,7 @@ class HermesRuntime {
       const refreshed = await this.nativeContext({ action: 'refresh_prompt', sessionId: saved.sessionId });
       promptRefreshMs = roundMs(performance.now() - refreshStartedAt);
       if (!Number.isSafeInteger(refreshed?.requestedEpoch) || refreshed.requestedEpoch <= 0)
-        throw new Error('Hermes 未能登记会话指令刷新');
+        throw new Error(tr('Hermes 未能登记会话指令刷新', 'Hermes failed to register the session instruction refresh'));
       pendingRefreshEpoch = refreshed.requestedEpoch;
       this.writeSkillState(dir, {
         sessionId: saved.sessionId,
@@ -823,7 +838,7 @@ class HermesRuntime {
     const acpSessionRpcMs = roundMs(performance.now() - acpRpcStartedAt);
     const sessionId = saved ? saved.sessionId : response.sessionId;
     if (saved && response.sessionId !== undefined && response.sessionId !== saved.sessionId)
-      throw new Error('Hermes 恢复了其他会话，已保留原记录');
+      throw new Error(tr('Hermes 恢复了其他会话，已保留原记录', 'Hermes restored a different session; original record was preserved'));
     // A new ACP session exists even if tool registration fails below. Remember
     // its exact ID for retries. An explicit menu reset keeps the old binding until successful.
     if (usesMaterials && !saved && !fresh && typeof sessionId === 'string' && sessionId.trim())
@@ -833,13 +848,13 @@ class HermesRuntime {
       !response.models ||
       !Array.isArray(response.models.availableModels)
     )
-      throw new Error("Hermes 未提供有效会话或模型目录，请更新 Hermes");
+      throw new Error(tr("Hermes 未提供有效会话或模型目录，请更新 Hermes", "Hermes did not return a valid session or model catalog; please update Hermes"));
     let projectTools;
     if (binding) {
       let receipt;
       try { receipt = JSON.parse(fs.readFileSync(path.join(dir, 'tool-registration.json'), 'utf8')); } catch {}
       if (receipt?.binding !== binding || !Array.isArray(receipt.tools) || !receipt.tools.length) {
-        throw new Error('Hermes 未加载当前项目工具，请刷新 AI 会话后重试。');
+        throw new Error(tr('Hermes 未加载当前项目工具，请刷新 AI 会话后重试。', 'Hermes did not load the project tools; please refresh the AI session and retry.'));
       }
       projectTools = receipt.tools;
     }
@@ -901,10 +916,10 @@ class HermesRuntime {
   }
   deleteProjectChat(input) {
     const scope = conversationScope(input);
-    if (scope.kind !== 'project') throw new Error('只能删除项目 AI 会话');
+    if (scope.kind !== 'project') throw new Error(tr('只能删除项目 AI 会话', 'Only project AI conversations can be deleted'));
     return this.locked(scope.projectId, async () => {
       const key = conversationKey(scope), session = this.sessions.get(key);
-      if (this.isConversationRunning(key)) throw new Error('请先停止当前会话的任务');
+      if (this.isConversationRunning(key)) throw new Error(tr('请先停止当前会话的任务', 'Please stop the active task in this conversation first'));
       const dir = this.conversationWorkspace(scope);
       const savedFile = path.join(dir, 'session.json'), marker = path.join(dir, 'deleted.json');
       const identityKey = JSON.stringify([this.settings.home, this.settings.binary]);
@@ -913,11 +928,11 @@ class HermesRuntime {
       // renderer transcript until no installation still owns this chat.
       if (!fs.existsSync(savedFile)) this.assertProjectChatEnvironment(scope, dir);
       if (!fs.existsSync(marker)) {
-        if (session && !fs.existsSync(savedFile)) throw new Error('缺少 Hermes 会话绑定，未删除聊天记录');
+        if (session && !fs.existsSync(savedFile)) throw new Error(tr('缺少 Hermes 会话绑定，未删除聊天记录', 'Missing Hermes session binding; chat history was not deleted'));
         if (fs.existsSync(savedFile)) {
           const saved = JSON.parse(fs.readFileSync(savedFile, 'utf8'));
           if (conversationKey(saved) !== key || typeof saved.sessionId !== 'string' || !saved.sessionId.trim() ||
-              (session && session.sessionId !== saved.sessionId)) throw new Error('项目会话归属不一致，无法删除');
+              (session && session.sessionId !== saved.sessionId)) throw new Error(tr('项目会话归属不一致，无法删除', 'Project conversation ownership mismatch; cannot delete'));
           await this.deleteHistorySession?.(saved.sessionId, identityKey);
         }
         const pageRunsDir = path.join(dir, 'page-runs');
@@ -997,11 +1012,11 @@ class HermesRuntime {
         120000,
       );
       if (response.sessionId !== undefined && response.sessionId !== s.sessionId)
-        throw new Error("Hermes 返回了其他会话的模型状态");
+        throw new Error(tr("Hermes 返回了其他会话的模型状态", "Hermes returned model state for a different session"));
       if (!response.models || !Array.isArray(response.models.availableModels))
-        throw new Error("Hermes 未返回切换后的模型状态");
+        throw new Error(tr("Hermes 未返回切换后的模型状态", "Hermes did not return the updated model state"));
       if (response.models.currentModelId !== modelId)
-        throw new Error("Hermes 尚未切换到所选模型，请刷新后重试");
+        throw new Error(tr("Hermes 尚未切换到所选模型，请刷新后重试", "Hermes has not switched to the selected model yet; please refresh and retry"));
       s.models = response.models;
       return response.models;
     } finally {
@@ -1034,12 +1049,12 @@ class HermesRuntime {
   async changeModel(input) {
     const scope = conversationScope(input), { modelId } = input;
     const key = conversationKey(scope);
-    if (this.isConversationRunning(key)) throw new Error("请先停止生成，再切换当前会话模型");
+    if (this.isConversationRunning(key)) throw new Error(tr("请先停止生成，再切换当前会话模型", "Please stop generation before switching the conversation model"));
     await this.ensureSession(scope);
     const s = this.sessions.get(key);
-    if (this.isConversationRunning(key)) throw new Error("请先停止生成，再切换当前会话模型");
+    if (this.isConversationRunning(key)) throw new Error(tr("请先停止生成，再切换当前会话模型", "Please stop generation before switching the conversation model"));
     if (!s.models.availableModels.some((m) => m.modelId === modelId))
-      throw new Error("该模型不在 Hermes 当前可用模型列表中");
+      throw new Error(tr("该模型不在 Hermes 当前可用模型列表中", "Selected model is not in Hermes's available model list"));
     await this.setSessionModelInternal(s, modelId, { reload: true });
     s.preferredEffort = null;
     this.persistConversationPreferredEffort(s);
@@ -1048,7 +1063,7 @@ class HermesRuntime {
   async applySessionEffort(sessionId, modelId, effort, { requireResetBridge = false } = {}) {
     if (effort === undefined) return undefined;
     if (effort !== null && (typeof effort !== 'string' || !effort.trim())) {
-      throw new Error('推理强度无效');
+      throw new Error(tr('推理强度无效', 'Invalid reasoning effort'));
     }
     const normalized = effort === null ? null : effort.trim();
     const info = this.info;
@@ -1061,7 +1076,7 @@ class HermesRuntime {
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0])) {
         if (normalized !== null || requireResetBridge) {
-          throw new Error('当前 Hermes 启动器未提供会话设置接口，请更新后重试');
+          throw new Error(tr('当前 Hermes 启动器未提供会话设置接口，请更新后重试', 'Current Hermes launcher does not provide the session settings interface; please update and retry'));
         }
         return null;
       }
@@ -1073,14 +1088,14 @@ class HermesRuntime {
       const child = execFile(info.reasoningPython, ['-I','-c',script,info.installDir], {
         env:{...this.envFor(info.home), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
       }, (error, stdout) => {
-        if (error) return reject(new Error('未能连接 Hermes 会话设置，请检查连接后重试'));
-        try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Hermes 返回的推理设置无效')); }
+        if (error) return reject(new Error(tr('未能连接 Hermes 会话设置，请检查连接后重试', 'Failed to connect to Hermes session settings; please check the connection and retry')));
+        try { resolve(JSON.parse(stdout)); } catch { reject(new Error(tr('Hermes 返回的推理设置无效', 'Hermes returned invalid reasoning settings'))); }
       });
       child.stdin.on('error', () => {}); child.stdin.end(JSON.stringify(request));
     });
     if (result?.error) throw new Error(result.error);
     if (result?.sessionId !== sessionId || result?.modelId !== modelId) {
-      throw new Error('Hermes 返回了其他会话或无效的推理设置');
+      throw new Error(tr('Hermes 返回了其他会话或无效的推理设置', 'Hermes returned reasoning settings for another session or in an invalid format'));
     }
     return normalized === null
       ? null
@@ -1093,18 +1108,18 @@ class HermesRuntime {
       const session = this.sessions.get(key);
       if (!session || scope.kind === 'mindmap' || session.sessionId !== input.sessionId ||
           !input.modelId || session.models.currentModelId !== input.modelId)
-        throw new Error('对话或模型已切换，请重新打开推理强度');
-      if (this.isConversationRunning(key) && Object.hasOwn(input, 'effort')) throw new Error('请等当前回复结束后调整推理强度');
+        throw new Error(tr('对话或模型已切换，请重新打开推理强度', 'Conversation or model has changed; please reopen reasoning effort settings'));
+      if (this.isConversationRunning(key) && Object.hasOwn(input, 'effort')) throw new Error(tr('请等当前回复结束后调整推理强度', 'Please wait for the current response to finish before changing reasoning effort'));
       if (Object.hasOwn(input, 'effort') && input.effort !== null && typeof input.effort !== 'string')
-        throw new Error('推理强度无效');
+        throw new Error(tr('推理强度无效', 'Invalid reasoning effort'));
       const info = this.info;
-      if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error('当前 Hermes 未提供推理设置接口，请更新 Hermes 后重试');
+      if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error(tr('当前 Hermes 未提供推理设置接口，请更新 Hermes 后重试', 'Current Hermes installation does not provide the reasoning settings interface; please update Hermes and retry'));
       if (!info.reasoningPython) {
         const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
         let command;
         try { command = JSON.parse(launch.output); } catch { /* Older launchers do not expose their runtime. */ }
         if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0]))
-          throw new Error('当前 Hermes 启动器未提供会话设置接口，请更新后重试');
+          throw new Error(tr('当前 Hermes 启动器未提供会话设置接口，请更新后重试', 'Current Hermes launcher does not provide the session settings interface; please update and retry'));
         info.reasoningPython = command[0];
       }
       const script = fs.readFileSync(path.join(__dirname, 'hermes-reasoning.py'), 'utf8');
@@ -1114,8 +1129,8 @@ class HermesRuntime {
         const child = execFile(info.reasoningPython, ['-I','-c',script,info.installDir], {
           env:{...this.envFor(info.home), HERMES_HOME:info.home}, timeout:30000, maxBuffer:128*1024, windowsHide:true,
         }, (error, stdout) => {
-          if (error) return reject(new Error('未能连接 Hermes 会话设置，请检查连接后重试'));
-          try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Hermes 返回的推理设置无效')); }
+          if (error) return reject(new Error(tr('未能连接 Hermes 会话设置，请检查连接后重试', 'Failed to connect to Hermes session settings; please check the connection and retry')));
+          try { resolve(JSON.parse(stdout)); } catch { reject(new Error(tr('Hermes 返回的推理设置无效', 'Hermes returned invalid reasoning settings'))); }
         });
         child.stdin.on('error', () => {}); child.stdin.end(JSON.stringify(request));
       });
@@ -1124,7 +1139,7 @@ class HermesRuntime {
           result?.sessionId !== session.sessionId || result.modelId !== session.models.currentModelId ||
           typeof result.current !== 'string' || typeof result.wire !== 'string' || typeof result.generalLevels !== 'boolean' ||
           !Array.isArray(result.levels) || !result.levels.every(level => typeof level === 'string'))
-        throw new Error('Hermes 返回了其他会话或无效的推理设置，请重新打开');
+        throw new Error(tr('Hermes 返回了其他会话或无效的推理设置，请重新打开', 'Hermes returned reasoning settings for another session or in an invalid format; please reopen'));
       if (Object.hasOwn(input, 'effort')) {
         session.preferredEffort = input.effort === null ? null : result.wire;
         this.persistConversationPreferredEffort(session);
@@ -1135,19 +1150,19 @@ class HermesRuntime {
   saveImages(input) {
     const scope = conversationScope(input);
     if (scope.kind === 'project' && fs.existsSync(path.join(this.conversationWorkspace(scope), 'deleted.json')))
-      throw new Error('这条项目会话已删除，请切换会话');
+      throw new Error(tr('这条项目会话已删除，请切换会话', 'This project conversation has been deleted; please switch to another conversation'));
     return this.chatImages.save(input);
   }
   readImage(input) { return this.chatImages.read(input); }
   async contextBridge() {
     const info = this.info;
-    if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error('当前 Hermes 未提供上下文接口，请更新后重试');
+    if (!info?.installDir || !path.isAbsolute(info.installDir)) throw new Error(tr('当前 Hermes 未提供上下文接口，请更新后重试', 'Current Hermes installation does not provide the context interface; please update and retry'));
     if (!info.contextPython) {
       const launch = await this.runCommand(info.binary, ['--print-runtime-command'], info.home);
       let command;
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || typeof command[0] !== 'string' || !path.isAbsolute(command[0]))
-        throw new Error('当前 Hermes 启动器未提供上下文接口');
+        throw new Error(tr('当前 Hermes 启动器未提供上下文接口', 'Current Hermes launcher does not provide the context interface'));
       info.contextPython = command[0];
     }
     return { python: info.contextPython, installDir: info.installDir, home: info.home };
@@ -1161,13 +1176,13 @@ class HermesRuntime {
       try {
         answer = await this.contextPool.request(bridge, request, { timeoutMs: 30000 });
       } catch {
-        throw new Error('无法连接 Hermes 上下文接口');
+        throw new Error(tr('无法连接 Hermes 上下文接口', 'Failed to connect to the Hermes context interface'));
       }
       this.lastContextBridgeUse = { action: request.action, mode: answer.mode, coldStart: answer.coldStart, durationMs: roundMs(answer.durationMs) };
       const result = answer.result;
-      if (!result || typeof result !== 'object') throw new Error('Hermes 上下文响应无效');
+      if (!result || typeof result !== 'object') throw new Error(tr('Hermes 上下文响应无效', 'Invalid Hermes context response'));
       if (result.error) throw new Error(result.error);
-      if (result.sessionId !== request.sessionId) throw new Error('Hermes 返回了其他会话的上下文');
+      if (result.sessionId !== request.sessionId) throw new Error(tr('Hermes 返回了其他会话的上下文', 'Hermes returned context for a different session'));
       return result;
     }
     const script = readContextScript();
@@ -1176,13 +1191,13 @@ class HermesRuntime {
         env: { ...this.envFor(bridge.home), HERMES_HOME: bridge.home }, windowsHide: true,
         timeout: request.action === 'compress' ? 0 : 30000, maxBuffer: 256 * 1024,
       }, (error, stdout) => {
-        if (error) return reject(new Error('无法连接 Hermes 上下文接口'));
+        if (error) return reject(new Error(tr('无法连接 Hermes 上下文接口', 'Failed to connect to the Hermes context interface')));
         try {
           const result = JSON.parse(stdout);
           if (result.error) return reject(new Error(result.error));
-          if (result.sessionId !== request.sessionId) return reject(new Error('Hermes 返回了其他会话的上下文'));
+          if (result.sessionId !== request.sessionId) return reject(new Error(tr('Hermes 返回了其他会话的上下文', 'Hermes returned context for a different session')));
           resolve(result);
-        } catch { reject(new Error('Hermes 上下文响应无效')); }
+        } catch { reject(new Error(tr('Hermes 上下文响应无效', 'Invalid Hermes context response'))); }
       });
       child.stdin.on('error', () => {}); child.stdin.end(JSON.stringify(request));
     });
@@ -1228,7 +1243,7 @@ class HermesRuntime {
     const started = new Promise(resolve => { ready = resolve; });
     const timer = setTimeout(() => {
       if (!s.isPageExec || (this.activeProjectRuns.get(conversationKey(s)) === s && s.running && !s.cancelled)) {
-        this.emit({type:'context-error', ...conversationScope(s), ...this.eventIdentity(s), ...(s.running && s.runId ? { runId: s.runId } : {}), message:'上下文状态订阅超时，可稍后刷新用量'});
+        this.emit({type:'context-error', ...conversationScope(s), ...this.eventIdentity(s), ...(s.running && s.runId ? { runId: s.runId } : {}), message:tr('上下文状态订阅超时，可稍后刷新用量', 'Context status subscription timed out; you can refresh usage later')});
       }
       stop();
     }, 15000);
@@ -1255,7 +1270,7 @@ class HermesRuntime {
     child.stderr.on('data', () => {});
     child.on('error', stop); child.on('close', () => {
       if (!stopped && (!s.isPageExec || (this.activeProjectRuns.get(conversationKey(s)) === s && s.running && !s.cancelled))) {
-        this.emit({type:'context-error', ...conversationScope(s), ...this.eventIdentity(s), ...(s.running && s.runId ? { runId: s.runId } : {}), message:'上下文状态订阅已断开，可刷新用量；写入前仍会核对压缩次数'});
+        this.emit({type:'context-error', ...conversationScope(s), ...this.eventIdentity(s), ...(s.running && s.runId ? { runId: s.runId } : {}), message:tr('上下文状态订阅已断开，可刷新用量；写入前仍会核对压缩次数', 'Context status subscription disconnected; you can refresh usage manually (compression count will still be verified before writes)')});
       }
       clearTimeout(timer); ready();
     });
@@ -1288,23 +1303,23 @@ class HermesRuntime {
   context(input) {
     return this.locked(input.projectId, async () => {
       const scope = conversationScope(input);
-      if (scope.kind !== 'project') throw new Error('此入口仅用于项目 AI');
+      if (scope.kind !== 'project') throw new Error(tr('此入口仅用于项目 AI', 'This endpoint is only available for project AI'));
       const key = conversationKey(scope);
       const planning = this.sessions.get(key);
       const activeRun = this.activeProjectRuns.get(key);
       if (!planning || (planning.sessionId !== input.sessionId && activeRun?.sessionId !== input.sessionId)) {
-        throw new Error('会话已切换，请重新打开上下文');
+        throw new Error(tr('会话已切换，请重新打开上下文', 'Session has changed; please reopen context'));
       }
-      if (!['usage', 'history', 'compress'].includes(input.action)) throw new Error('未知上下文操作');
+      if (!['usage', 'history', 'compress'].includes(input.action)) throw new Error(tr('未知上下文操作', 'Unknown context action'));
       const target = activeRun?.running ? activeRun : planning;
-      if (input.action === 'compress' && this.isConversationRunning(key)) throw new Error('请等当前任务结束后整理上下文');
+      if (input.action === 'compress' && this.isConversationRunning(key)) throw new Error(tr('请等当前任务结束后整理上下文', 'Please wait for the current task to finish before compacting context'));
       const result = await this.nativeContext({ sessionId: target.sessionId, action: input.action,
         ...(input.action === 'history' ? {
           query: input.query,
           offset: input.offset,
           allowedHistorySessions: this.buildAllowedHistorySessions(scope, target, planning),
         } : {}) });
-      if (this.sessions.get(key) !== planning) throw new Error('会话已切换，结果已忽略');
+      if (this.sessions.get(key) !== planning) throw new Error(tr('会话已切换，结果已忽略', 'Session has changed; result ignored'));
       if (input.action === 'compress') {
         target.contextEpoch = (target.contextEpoch || 0) + 1;
         atomicWrite(path.join(target.dir, 'context-epoch.json'), { sessionId: target.sessionId, epoch: target.contextEpoch });
@@ -1378,14 +1393,14 @@ class HermesRuntime {
     try {
       const parsed = JSON.parse(fs.readFileSync(paths.sessionFile, 'utf8'));
       if (!parsed || typeof parsed.sessionId !== 'string' || !parsed.sessionId.trim()) {
-        throw new Error('子会话标识无效');
+        throw new Error(tr('子会话标识无效', 'Invalid sub-session ID'));
       }
       saved = parsed;
     } catch (error) {
-      if (error.code !== 'ENOENT') throw new Error('读取当前页面的 Hermes 子会话失败，原记录未覆盖');
+      if (error.code !== 'ENOENT') throw new Error(tr('读取当前页面的 Hermes 子会话失败，原记录未覆盖', 'Failed to read the Hermes sub-session for this page; original record was preserved'));
     }
     if (saved && (conversationKey(saved) !== conversationKey(scope) || saved.targetPageId !== targetPageId)) {
-      throw new Error('页面执行会话归属不一致');
+      throw new Error(tr('页面执行会话归属不一致', 'Page execution session ownership mismatch'));
     }
     const priorLineage = Array.isArray(saved?.lineage)
       ? saved.lineage.filter(id => typeof id === 'string' && id.trim())
@@ -1495,7 +1510,7 @@ class HermesRuntime {
         );
         targetSessionId = created?.sessionId;
         if (typeof targetSessionId !== 'string' || !targetSessionId.trim()) {
-          throw new Error('Hermes 未返回有效的迁移目标会话');
+          throw new Error(tr('Hermes 未返回有效的迁移目标会话', 'Hermes did not return a valid migration target session'));
         }
         pending = { ...pending, toSessionId: targetSessionId };
         if (checkpoint) {
@@ -1539,10 +1554,10 @@ class HermesRuntime {
         projectTools = this.verifyToolReceipt(execDir, activeBinding);
       }
       if (!projectTools) {
-        throw new Error('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。');
+        throw new Error(tr('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。', 'Hermes did not load the page execution tools; please refresh the AI session and retry.'));
       }
       if (!response?.models || !Array.isArray(response.models.availableModels)) {
-        throw new Error('Hermes 未提供有效会话或模型目录，请更新 Hermes');
+        throw new Error(tr('Hermes 未提供有效会话或模型目录，请更新 Hermes', 'Hermes did not return a valid session or model catalog; please update Hermes'));
       }
       const acpSessionRpcMs = roundMs(performance.now() - acpStarted);
 
@@ -1703,21 +1718,21 @@ class HermesRuntime {
       }
       const acpSessionRpcMs = roundMs(performance.now() - acpStarted);
       if (response.sessionId !== undefined && response.sessionId !== saved.sessionId) {
-        throw new Error('Hermes 恢复了其他页面子会话，已保留原记录');
+        throw new Error(tr('Hermes 恢复了其他页面子会话，已保留原记录', 'Hermes restored a different page sub-session; original record was preserved'));
       }
       if (!response.models || !Array.isArray(response.models.availableModels)) {
-        throw new Error('Hermes 未提供有效会话或模型目录，请更新 Hermes');
+        throw new Error(tr('Hermes 未提供有效会话或模型目录，请更新 Hermes', 'Hermes did not return a valid session or model catalog; please update Hermes'));
       }
       const projectTools = this.verifyToolReceipt(execDir, binding);
       if (!projectTools) {
-        throw new Error('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。');
+        throw new Error(tr('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。', 'Hermes did not load the page execution tools; please refresh the AI session and retry.'));
       }
       if (diskSkillDigest !== null && appliedSkillDigest !== diskSkillDigest && nativePrompt && !pendingRefreshEpoch) {
         const refreshStartedAt = performance.now();
         const refreshed = await this.nativeContext({ action: 'refresh_prompt', sessionId: saved.sessionId });
         promptRefreshMs = roundMs(performance.now() - refreshStartedAt);
         if (!Number.isSafeInteger(refreshed?.requestedEpoch) || refreshed.requestedEpoch <= 0) {
-          throw new Error('Hermes 未能登记页面子会话指令刷新');
+          throw new Error(tr('Hermes 未能登记页面子会话指令刷新', 'Hermes failed to register the page sub-session instruction refresh'));
         }
         pendingRefreshEpoch = refreshed.requestedEpoch;
         this.writeSkillState(execDir, {
@@ -1825,11 +1840,11 @@ class HermesRuntime {
       !created.models ||
       !Array.isArray(created.models.availableModels)
     ) {
-      throw new Error('Hermes 未提供有效会话或模型目录，请更新 Hermes');
+      throw new Error(tr('Hermes 未提供有效会话或模型目录，请更新 Hermes', 'Hermes did not return a valid session or model catalog; please update Hermes'));
     }
     const projectTools = this.verifyToolReceipt(execDir, binding);
     if (!projectTools) {
-      throw new Error('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。');
+      throw new Error(tr('Hermes 未加载当前页面执行工具，请刷新 AI 会话后重试。', 'Hermes did not load the page execution tools; please refresh the AI session and retry.'));
     }
     const state = {
       ...scope,
@@ -1963,11 +1978,11 @@ class HermesRuntime {
             snapshot.projectPlan.discussionPending ||
             !snapshot.projectPlan.pages.some(p => p.pageId === targetPageId))))
     )
-      throw new Error('项目任务阶段或已确认方案无效');
+      throw new Error(tr('项目任务阶段或已确认方案无效', 'Invalid project workflow phase or unapproved project plan'));
     const key = conversationKey(scope);
     const taskKey = taskKeyForExecution(scope, workflowPhase, targetPageId);
     if (scope.kind === 'mindmap' && (readOnly !== true || !Array.isArray(images) || images.length))
-      throw new Error('脑图生成只允许读取项目，不支持页面修改或图片附件');
+      throw new Error(tr('脑图生成只允许读取项目，不支持页面修改或图片附件', 'Mindmap generation is read-only and does not support page modifications or image attachments'));
     if (
       typeof prompt !== "string" ||
       !prompt.trim() ||
@@ -1975,7 +1990,7 @@ class HermesRuntime {
       typeof snapshot !== "object" ||
       snapshot.projectId !== projectId
     )
-      throw new Error("AI 请求缺少指令或项目快照");
+      throw new Error(tr("AI 请求缺少指令或项目快照", "AI request is missing prompt or project snapshot"));
     const version = this.cancelVersions.get(key);
     const imageContent = scope.kind === 'mindmap' ? [] : this.chatImages.content(scope, images);
     const runId = randomUUID();
@@ -1997,12 +2012,12 @@ class HermesRuntime {
     const s = await this.locked(projectId, async () => {
       await this.ensureSession(scope);
       if (imageContent.length && this.info?.capabilities?.promptCapabilities?.image !== true)
-        throw new Error('当前 Hermes 连接不支持图片输入，请更新 Hermes 后重新连接');
+        throw new Error(tr('当前 Hermes 连接不支持图片输入，请更新 Hermes 后重新连接', 'Current Hermes connection does not support image input; please update Hermes and reconnect'));
       planningSession = this.sessions.get(key);
       if (version !== this.cancelVersions.get(key))
-        throw new Error("已停止生成，未应用修改");
+        throw new Error(tr("已停止生成，未应用修改", "Generation stopped; no changes were applied"));
       if (this.allLoadedSessions().some(item => item.projectId === projectId && item.running))
-        throw new Error("该项目已有 AI 任务正在运行");
+        throw new Error(tr("该项目已有 AI 任务正在运行", "An AI task is already running for this project"));
 
       paths = scope.kind === 'project'
         ? draftRecovery.resolveExecutionPaths(planningSession.dir, workflowPhase, targetPageId)
@@ -2039,7 +2054,7 @@ class HermesRuntime {
             category: 'ai',
             code: 'AI_RUNTIME_FAILED',
             stage: 'execute',
-            message: 'AI 运行时执行失败：' + failure.reason,
+            message: tr('AI 运行时执行失败：', 'AI runtime execution failed: ') + failure.reason,
             stack: String(preError?.stack ?? '').split('\n').slice(1).join('\n'),
             context: {
               ...scope,
@@ -2083,7 +2098,7 @@ class HermesRuntime {
             JSON.stringify(savedCp.recovery.identity?.account) !== JSON.stringify(checkIdentity.account) ||
             JSON.stringify(savedCp.recovery.identity?.scope) !== JSON.stringify(checkIdentity.scope)
           ) {
-            const ownErr = new Error('不能处理其他账号或会话的恢复草稿');
+            const ownErr = new Error(tr('不能处理其他账号或会话的恢复草稿', 'Cannot process recovery drafts belonging to another account or conversation'));
             emitPreLockFailure(ownErr, savedCp.recovery?.status ?? null, savedCp.recovery?.identity?.sessionId);
             throw ownErr;
           }
@@ -2102,7 +2117,7 @@ class HermesRuntime {
             try {
               savedExec = JSON.parse(fs.readFileSync(paths.sessionFile, 'utf8'));
             } catch {
-              const corruptErr = new Error('恢复记录无法读取，已保留原文件，请检查本地工程数据');
+              const corruptErr = new Error(tr('恢复记录无法读取，已保留原文件，请检查本地工程数据', 'Recovery record cannot be read; original file was preserved. Please check local project data'));
               emitPreLockFailure(corruptErr, rawCp.recovery?.status ?? null, planningSession.sessionId);
               throw corruptErr;
             }
@@ -2112,7 +2127,7 @@ class HermesRuntime {
               typeof savedExec.sessionId !== 'string' ||
               !savedExec.sessionId.trim()
             ) {
-              const mismatchErr = Object.assign(new Error('页面执行子会话归属不一致，原候选草稿仍保留'), {
+              const mismatchErr = Object.assign(new Error(tr('页面执行子会话归属不一致，原候选草稿仍保留', 'Page execution sub-session ownership mismatch; original candidate draft was preserved')), {
                 code: 'DRAFT_RECOVERY_IDENTITY',
               });
               emitPreLockFailure(mismatchErr, rawCp.recovery?.status ?? null, planningSession.sessionId);
@@ -2128,7 +2143,7 @@ class HermesRuntime {
           try {
             if (pm) {
               if (typeof pm.fromSessionId !== 'string' || rawCp.recovery?.identity?.sessionId !== pm.fromSessionId) {
-                throw Object.assign(new Error('会话迁移预写记录不一致，未自动覆盖当前项目；原候选草稿仍保留'), {
+                throw Object.assign(new Error(tr('会话迁移预写记录不一致，未自动覆盖当前项目；原候选草稿仍保留', 'Session migration write-ahead record mismatch; current project was not overwritten and original candidate draft was preserved')), {
                   code: 'DRAFT_RECOVERY_IDENTITY',
                 });
               }
@@ -2136,7 +2151,7 @@ class HermesRuntime {
                 savedExec?.sessionId &&
                 ![pm.fromSessionId, pm.toSessionId].filter(Boolean).includes(savedExec.sessionId)
               ) {
-                throw Object.assign(new Error('会话已变化，未自动覆盖当前项目；原候选草稿仍保留'), {
+                throw Object.assign(new Error(tr('会话已变化，未自动覆盖当前项目；原候选草稿仍保留', 'Session has changed; current project was not overwritten and original candidate draft was preserved')), {
                   code: 'DRAFT_RECOVERY_IDENTITY',
                 });
               }
@@ -2193,7 +2208,7 @@ class HermesRuntime {
       }
 
       if (version !== this.cancelVersions.get(key))
-        throw new Error("已停止生成，未应用修改");
+        throw new Error(tr("已停止生成，未应用修改", "Generation stopped; no changes were applied"));
 
       execSession.running = true;
       execSession.freshlyCreated = false;
@@ -2372,12 +2387,12 @@ class HermesRuntime {
           previous.runId !== continuation.sourceRunId ||
           JSON.stringify(previous.recovery?.identity) !== JSON.stringify(identity)
         ) {
-          throw new Error('增量修复的原轮次或工程基线不匹配，原候选草稿仍保留');
+          throw new Error(tr('增量修复的原轮次或工程基线不匹配，原候选草稿仍保留', 'Source run or project baseline mismatch for incremental repair; original candidate draft was preserved'));
         }
         if (previous.dependencyFootprint?.version === 3 && previous.baseSnapshot) {
           const fpCheck = verifyDependencyFootprint(previous.baseSnapshot, previous.dependencyFootprint);
           if (!fpCheck.ok) {
-            throw Object.assign(new Error('工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留'), {
+            throw Object.assign(new Error(tr('工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留', 'Project content or requirements have changed; current project was not overwritten and original candidate draft was preserved')), {
               code: 'DRAFT_RECOVERY_BASELINE_CHANGED',
             });
           }
@@ -2494,7 +2509,7 @@ class HermesRuntime {
       snapshotBytes = Buffer.byteLength(JSON.stringify(workingSnapshot), 'utf8');
       safeRemoveFile(metricsFile);
       await withContextLockAsync(file, () => {
-        if (s.cancelled) throw new Error('已停止生成，未应用修改');
+        if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
         safeRemoveFile(draftRecovery.footprintErrorFile(file));
         atomicWrite(draftRecovery.footprintFile(file), {
           runId,
@@ -2555,7 +2570,7 @@ class HermesRuntime {
           const bridge = await this.contextBridge();
           await withContextLockAsync(file, () => {
             const active = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (s.cancelled || !active.active || active.runId !== runId) throw new Error('已停止');
+            if (s.cancelled || !active.active || active.runId !== runId) throw new Error(tr('已停止', 'Stopped'));
             atomicWrite(file, { ...active, nativeBridge: bridge });
           });
           await this.watchContext(s);
@@ -2564,7 +2579,7 @@ class HermesRuntime {
         } finally {
           contextBridgeSetupMs = roundMs(performance.now() - bridgeStartedAt);
         }
-        if (s.cancelled) throw new Error('已停止生成，未应用修改');
+        if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
       } else if (scope.kind === undefined) {
         const bridgeStartedAt = performance.now();
         try {
@@ -2579,7 +2594,7 @@ class HermesRuntime {
         } finally {
           contextBridgeSetupMs = roundMs(performance.now() - bridgeStartedAt);
         }
-        if (s.cancelled) throw new Error('已停止生成，未应用修改');
+        if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
       }
       channelFile = path.join(this.recoveryChannelDir, draftRecovery.hash(s.sessionId) + '.json');
       atomicWrite(channelFile, { active: true, runId, sessionId: s.sessionId });
@@ -2634,39 +2649,39 @@ class HermesRuntime {
       if (result.stopReason !== "end_turn" || s.cancelled)
         throw new Error(
           result.stopReason === "cancelled" || s.cancelled
-            ? "已停止生成，未应用修改"
-            : `Hermes 未正常完成：${result.stopReason}`,
+            ? tr("已停止生成，未应用修改", "Generation stopped; no changes were applied")
+            : tr(`Hermes 未正常完成：${result.stopReason}`, `Hermes did not finish normally: ${result.stopReason}`),
         );
-      if (hadUnfinishedNativeTools) throw new Error('模型轮次结束，但仍有工具执行结果未确认，未应用修改');
+      if (hadUnfinishedNativeTools) throw new Error(tr('模型轮次结束，但仍有工具执行结果未确认，未应用修改', 'Model turn ended with unconfirmed tool results; no changes were applied'));
       // Read final request policy state even when ACP failed faster than the UI poll.
       // An unrecovered overflow delegation ('delegated') must also fail closed if no post-compression call succeeded.
       if (channelFile) {
         const terminal = draftRecovery.read(channelFile + '.status');
         if (terminal?.runId === runId && ['waiting', 'retrying', 'stopped', 'delegated'].includes(terminal.status)) {
-          throw new Error('模型请求恢复已停止：' + (terminal.reason || terminal.status));
+          throw new Error(tr('模型请求恢复已停止：', 'Model request recovery stopped: ') + (terminal.reason || terminal.status));
         }
       }
-      if (JSON.stringify(this.accountProvider()) !== JSON.stringify(accountAtStart)) throw new Error('登录账号已变化，未应用修改');
+      if (JSON.stringify(this.accountProvider()) !== JSON.stringify(accountAtStart)) throw new Error(tr('登录账号已变化，未应用修改', 'Signed-in account changed; no changes were applied'));
       // Close the final synchronous MCP commit window before reading the result.
       // No tool may alter the candidate between this read and host validation.
       await draftRecovery.freezeContext(file, runId, 'available');
-      if (s.cancelled) throw new Error('已停止生成，未应用修改');
+      if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
       const context = JSON.parse(fs.readFileSync(file, "utf8"));
       if (
         !Array.isArray(context.operations) ||
         context.runId !== runId ||
         conversationKey(context) !== key
       )
-        throw new Error("项目工具返回了不匹配的执行标识");
+        throw new Error(tr("项目工具返回了不匹配的执行标识", "Project tools returned a mismatched execution run ID"));
       if (
         context.footprintCorrupted ||
         (context.requireFootprintSidecar && context.dependencyFootprint?.version !== 3)
       ) {
-        const footprintErr = new Error('依赖足迹记录缺失或保存失败，已阻止提交工程修改');
+        const footprintErr = new Error(tr('依赖足迹记录缺失或保存失败，已阻止提交工程修改', 'Dependency footprint record is missing or failed to save; project changes were blocked from committing'));
         footprintErr.footprintCorrupted = true;
         throw footprintErr;
       }
-      if (readOnly && context.operations.length) throw new Error('只读请求返回了修改操作');
+      if (readOnly && context.operations.length) throw new Error(tr('只读请求返回了修改操作', 'Read-only request returned mutation operations'));
       const expectedSkillDigest = this.fileSkillDigest(skillFile);
       if (expectedSkillDigest !== null && this.hasNativePromptControl()) {
         const verifyStartedAt = performance.now();
@@ -2695,12 +2710,12 @@ class HermesRuntime {
             pendingRefreshEpoch: 0,
           });
           if (verified?.blocked) {
-            throw new Error('Hermes 安全扫描拦截了项目指令（AGENTS.md），规则未生效');
+            throw new Error(tr('Hermes 安全扫描拦截了项目指令（AGENTS.md），规则未生效', 'Hermes security scan blocked project instructions (AGENTS.md); rules did not take effect'));
           }
           if (verified?.truncated) {
-            throw new Error('Hermes 截断了项目指令（AGENTS.md），未完整加载全部规则');
+            throw new Error(tr('Hermes 截断了项目指令（AGENTS.md），未完整加载全部规则', 'Hermes truncated project instructions (AGENTS.md); not all rules were loaded'));
           }
-          throw new Error('Hermes 会话未采用最新项目指令，请刷新或新建会话后重试');
+          throw new Error(tr('Hermes 会话未采用最新项目指令，请刷新或新建会话后重试', 'Hermes session did not apply the latest project instructions; please refresh or start a new session and retry'));
         }
         s.expectedSkillDigest = expectedSkillDigest;
         s.appliedSkillDigest = verified.appliedSkillDigest;
@@ -2712,8 +2727,8 @@ class HermesRuntime {
           pendingRefreshEpoch: 0,
         });
       }
-      if (s.cancelled) throw new Error('已停止生成，未应用修改');
-      if (JSON.stringify(this.accountProvider()) !== JSON.stringify(accountAtStart)) throw new Error('登录账号已变化，未应用修改');
+      if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
+      if (JSON.stringify(this.accountProvider()) !== JSON.stringify(accountAtStart)) throw new Error(tr('登录账号已变化，未应用修改', 'Signed-in account changed; no changes were applied'));
       preview.flushFinal?.(context);
       let metrics;
       try { metrics = buildExecuteMetrics(); } catch {}
@@ -2760,7 +2775,7 @@ class HermesRuntime {
             gatewayTurnUncertainty = 'session_replay_gap';
           } else if (signals.some(v => /Gateway disconnected;\s*turn outcome is unknown|turn outcome is unknown|outcome is unknown/i.test(v))) {
             gatewayTurnUncertainty = 'gateway_disconnected';
-          } else if (signals.some(v => /^Hermes 请求超时：session\/prompt\b/.test(v))) {
+          } else if (signals.some(v => /^Hermes 请求超时：session\/prompt\b|^Hermes request timed out:\s*session\/prompt\b/i.test(v))) {
             gatewayTurnUncertainty = 'gateway_outcome_unknown';
           } else if (
             error?.rpcCode === -32603 &&
@@ -2787,7 +2802,7 @@ class HermesRuntime {
         recoverySaved = Boolean(checkpoint);
       } catch (saveError) {
         // Do not erase the original context if checkpoint persistence fails.
-        error.message += '；恢复记录未能安全写入，原始暂存文件已保留';
+        error.message += tr('；恢复记录未能安全写入，原始暂存文件已保留', '; recovery record could not be safely written, original staged file was preserved');
       }
       if (!s.cancelled) {
         runFailure = { reason: require('./diagnostics.cjs').failureReason(error), evidence: 'runtime-error' };
@@ -2801,8 +2816,8 @@ class HermesRuntime {
           runFailure = runFailure.reason === 'unclassified' ? { ...runFailure, ...native } : { ...runFailure, logStatus: native.logStatus };
           if (runFailure.reason === 'rate-limit' && error instanceof Error) {
             error.message = runFailure.rateLimitKind === 'tokens'
-              ? '模型服务触发每分钟 Token 限流，本轮生成未完成。请稍后重试；若反复出现，请检查模型额度及会话上下文大小。'
-              : '模型服务触发请求限流，本轮生成未完成，请稍后重试。';
+              ? tr('模型服务触发每分钟 Token 限流，本轮生成未完成。请稍后重试；若反复出现，请检查模型额度及会话上下文大小。', 'Model provider hit the per-minute token rate limit and this turn did not complete. Please retry shortly; if this persists, check your model quota and session context size.')
+              : tr('模型服务触发请求限流，本轮生成未完成，请稍后重试。', 'Model provider hit a request rate limit and this turn did not complete. Please retry shortly.');
           }
         } catch { runFailure.logStatus = 'unavailable'; }
         if (['waiting', 'retrying'].includes(retryStatus?.status) && retryStatus.failure && runFailure.reason === 'unclassified') {
@@ -2813,15 +2828,15 @@ class HermesRuntime {
           const providerFailure = require('./diagnostics.cjs').cleanContext({ failure: retryStatus.failure }).failure;
           if (providerFailure?.reason) runFailure = { ...providerFailure, evidence: 'runtime-error' };
           const messages = {
-            'rate-limit-budget': '模型服务仍在限流，自动等待已到上限，本轮生成未完成。',
-            'server-error-budget': '模型服务网关或上游持续异常，自动重试已达上限，本轮生成未完成。',
-            'request-exceeds-token-limit': '本次请求已超过模型服务的 Token 容量，单纯等待无法恢复；需要调整服务容量或另行评估上下文，系统未删减上下文。',
-            'partial-response': '模型已返回部分内容，已停止自动重放，需要核对执行结果后继续。',
-            'request-outcome-unknown': '模型连接中断，服务处理结果尚未确认，已停止自动重放。',
-            'non-transient-limit': '模型服务返回无法安全重试的额度限制，请检查服务额度后再继续。',
-            'sdk-retry-budget-unknown': '当前模型 SDK 的重试次数不符合恢复策略，已停止叠加重试。',
-            'provider-rejected': '模型服务明确返回请求失败，本轮已停止；请查看诊断中的服务错误码。',
-            'native-overflow-recovery': '当前会话上下文超出模型窗口上限，自动压缩后仍无法完成请求；本轮生成已停止。',
+            'rate-limit-budget': tr('模型服务仍在限流，自动等待已到上限，本轮生成未完成。', 'Model provider is still rate-limited and the automatic wait budget is exhausted; this turn did not complete.'),
+            'server-error-budget': tr('模型服务网关或上游持续异常，自动重试已达上限，本轮生成未完成。', 'Model provider gateway or upstream service remained unavailable and automatic retries were exhausted; this turn did not complete.'),
+            'request-exceeds-token-limit': tr('本次请求已超过模型服务的 Token 容量，单纯等待无法恢复；需要调整服务容量或另行评估上下文，系统未删减上下文。', 'This request exceeds the model provider token capacity and cannot recover by waiting alone; adjust provider capacity or review context size. Context was not truncated.'),
+            'partial-response': tr('模型已返回部分内容，已停止自动重放，需要核对执行结果后继续。', 'Model already streamed a partial response; automatic replay stopped so execution state can be verified before continuing.'),
+            'request-outcome-unknown': tr('模型连接中断，服务处理结果尚未确认，已停止自动重放。', 'Model connection dropped before the provider outcome could be confirmed; automatic replay stopped.'),
+            'non-transient-limit': tr('模型服务返回无法安全重试的额度限制，请检查服务额度后再继续。', 'Model provider returned a non-transient quota limit that cannot be retried; please check your quota before continuing.'),
+            'sdk-retry-budget-unknown': tr('当前模型 SDK 的重试次数不符合恢复策略，已停止叠加重试。', 'Model SDK retry configuration does not match the recovery policy; additional retries were stopped.'),
+            'provider-rejected': tr('模型服务明确返回请求失败，本轮已停止；请查看诊断中的服务错误码。', 'Model provider explicitly rejected the request and this turn has stopped; check diagnostics for the provider error code.'),
+            'native-overflow-recovery': tr('当前会话上下文超出模型窗口上限，自动压缩后仍无法完成请求；本轮生成已停止。', 'Session context exceeded the model context window and could not complete even after automatic compaction; this turn has stopped.'),
           };
           if (messages[retryStatus.reason] && error instanceof Error) error.message = messages[retryStatus.reason];
           if (['rate-limit-budget', 'request-exceeds-token-limit'].includes(retryStatus.reason)) {
@@ -2839,13 +2854,13 @@ class HermesRuntime {
             runFailure = { ...runFailure, reason: 'network', evidence: 'runtime-error' };
           }
           if (error instanceof Error && ['unknown_execution', 'session_replay_gap', 'gateway_disconnected'].includes(gatewayTurnUncertainty)) {
-            error.message = 'Hermes 网关连接中断或重启，本轮任务终态未知，已停止自动恢复。';
+            error.message = tr('Hermes 网关连接中断或重启，本轮任务终态未知，已停止自动恢复。', 'Hermes gateway disconnected or restarted; turn outcome is unknown and automatic recovery has stopped.');
           }
         }
       }
       if (recoverySaved && error instanceof Error) error.message += uncertainRecovery
-        ? ' 候选修改已保存在本机；因中断时存在执行结果不明的操作，无法直接续写半截草稿，请点击下方或右侧的“保留旧草稿，重新生成”按钮继续。'
-        : ' 候选修改已保存在本机，可在原账号和工程中重试此页继续。';
+        ? tr(' 候选修改已保存在本机；因中断时存在执行结果不明的操作，无法直接续写半截草稿，请点击下方或右侧的“保留旧草稿，重新生成”按钮继续。', ' Candidate changes were saved locally; because interrupted operations had an uncertain outcome, the partial draft cannot be resumed directly. Click "Archive Old Draft & Regenerate" below or on the right to continue.')
+        : tr(' 候选修改已保存在本机，可在原账号和工程中重试此页继续。', ' Candidate changes were saved locally; you can retry this page under the same account and project to continue.');
       if (error && typeof error === 'object') {
         error.failureEnvelope = buildFailureEnvelope({
           error,
@@ -2876,7 +2891,7 @@ class HermesRuntime {
       let metrics;
       try { metrics = buildExecuteMetrics(); } catch {}
       if (runFailure && !s.cancelled) {
-        try { this.diagnostic?.({source:'main',category:'ai',code:'AI_RUNTIME_FAILED',stage:'execute',message:'AI 运行时执行失败：'+runFailure.reason,
+        try { this.diagnostic?.({source:'main',category:'ai',code:'AI_RUNTIME_FAILED',stage:'execute',message:tr('AI 运行时执行失败：', 'AI runtime execution failed: ')+runFailure.reason,
           stack: String(runError?.stack ?? '').split('\n').slice(1).join('\n'),
           context:{...scope,workflowPhase,targetPageId,runId,sessionId:s.sessionId,planningSessionId:planningSession?.sessionId,modelId:s.models.currentModelId,
             failure:runFailure,metrics,durationMs:metrics?.totalExecuteMs,
@@ -2891,7 +2906,7 @@ class HermesRuntime {
       }
       if (metrics) {
         if (this.diagnostic && !s.cancelled && (metrics.failedToolCallCount > 0 || metrics.failedNativeToolCallCount > 0)) {
-          try { this.diagnostic?.({source:'main',category:'tool',code:'AI_TOOL_FAILED',stage:'execute',message:'本轮存在失败的工具调用',
+          try { this.diagnostic?.({source:'main',category:'tool',code:'AI_TOOL_FAILED',stage:'execute',message:tr('本轮存在失败的工具调用', 'Failed tool calls occurred during this turn'),
             context:{...scope,workflowPhase,targetPageId,runId,sessionId:s.sessionId,modelId:s.models.currentModelId,
               toolCallCount:metrics.toolCallCount + metrics.nativeToolCallCount,failedToolCallCount:metrics.failedToolCallCount + metrics.failedNativeToolCallCount,
               checks:[...diagnosticToolFailures(metricsFile,runId),...Object.entries(metrics.nativeToolBreakdown ?? {}).filter(([,v])=>v.failedCount>0).map(([name])=>({kind:'native-tool',status:'failed',actionKind:name}))]}}); } catch {}
@@ -3004,19 +3019,19 @@ class HermesRuntime {
       checkpoint.recovery?.identity?.account?.serviceUrl !== account.serviceUrl ||
       account.status !== 'signed-in'
     ) {
-      throw new Error('登录账号已变化，未清理恢复记录');
+      throw new Error(tr('登录账号已变化，未清理恢复记录', 'Signed-in account changed; recovery record was not cleared'));
     }
     if (this.info) {
       const currentEnv = { home: this.info.home, binary: this.info.binary, version: this.info.version };
       if (JSON.stringify(checkpoint.recovery?.identity?.environment) !== JSON.stringify(currentEnv)) {
-        throw new Error('Hermes 环境已变化，未清理恢复记录');
+        throw new Error(tr('Hermes 环境已变化，未清理恢复记录', 'Hermes environment changed; recovery record was not cleared'));
       }
     }
     if (checkpoint.recovery?.status === 'committed') {
       return { completed: true };
     }
     if (checkpoint.recovery?.status !== 'available') {
-      throw new Error('恢复记录状态不是可提交候选，拒绝标记已提交');
+      throw new Error(tr('恢复记录状态不是可提交候选，拒绝标记已提交', 'Recovery record is not a committable candidate; refused to mark as committed'));
     }
     draftRecovery.durableWrite(paths.checkpointPath, {
       ...checkpoint,
@@ -3171,7 +3186,7 @@ class HermesRuntime {
   onRequest(frame) {
     const s = this.findSessionByAcpId(frame.params?.sessionId);
     const meta = frame.params?._meta && typeof frame.params._meta === 'object' ? frame.params._meta : null;
-    const rejectReq = (reason = `Alex 无法处理当前会话的请求：${frame.method}`) => {
+    const rejectReq = (reason = tr(`Alex 无法处理当前会话的请求：${frame.method}`, `Alex cannot handle request for the current session: ${frame.method}`)) => {
       if (typeof this.client?.reject === 'function') {
         this.client.reject(frame.id, reason);
       } else if (typeof this.client?.reply === 'function') {
@@ -3355,9 +3370,9 @@ class HermesRuntime {
   }
   respondPermission({ id, optionId }) {
     const p = this.permissions.get(id);
-    if (!p) throw new Error("该授权请求已结束");
+    if (!p) throw new Error(tr("该授权请求已结束", "This permission request has already ended"));
     if (optionId !== null && !p.options.some((o) => o.optionId === optionId))
-      throw new Error("无效授权选项");
+      throw new Error(tr("无效授权选项", "Invalid permission option"));
     try {
       this.client.reply(p.rpcId, {
         outcome:
@@ -3373,9 +3388,9 @@ class HermesRuntime {
   }
   respondQuestion({ id, answer, supplement }) {
     const q = this.questions.get(id);
-    if (!q) throw new Error("该问题已结束");
+    if (!q) throw new Error(tr("该问题已结束", "This question has already ended"));
     if (supplement !== undefined && (typeof supplement !== 'string' || !supplement.trim() || answer === null))
-      throw new Error('补充说明必须是非空文字，不能与跳过问题一起提交');
+      throw new Error(tr('补充说明必须是非空文字，不能与跳过问题一起提交', 'Supplement must be non-empty text and cannot be submitted when skipping the question'));
     let responseAnswer = answer;
     if (answer !== null) {
       const schema = q.answerSchema,
@@ -3386,11 +3401,11 @@ class HermesRuntime {
         values.some((v) => typeof v !== "string" || !v.trim()) ||
         (schema.type === "string" && typeof answer !== "string")
       )
-        throw new Error("请输入有效答案");
+        throw new Error(tr("请输入有效答案", "Please enter a valid answer"));
       const choices =
         schema.type === "array" ? schema.items?.enum : schema.enum;
       if (choices && values.some((v) => !choices.includes(v)))
-        throw new Error("答案不在 Hermes 提供的选项中");
+        throw new Error(tr("答案不在 Hermes 提供的选项中", "Answer is not among the options provided by Hermes"));
       // Hermes clarify explicitly supports a typed "Other" answer. Its ACP
       // adapter exposes offered choices as enum but elicited_answer accepts text
       // (or a JSON string array). Keep enum validation for selections; only the
@@ -3440,11 +3455,11 @@ class HermesRuntime {
   }
   async sync({ projectId, skillMarkdown, kind, mindmapId, threadId }) {
     await this.connect();
-    if (kind !== undefined && kind !== 'mindmap' && kind !== 'project') throw new Error('未知的项目指令类型');
-    if (kind === undefined && mindmapId !== undefined) throw new Error('页面指令不能包含脑图 ID');
+    if (kind !== undefined && kind !== 'mindmap' && kind !== 'project') throw new Error(tr('未知的项目指令类型', 'Unknown project instruction kind'));
+    if (kind === undefined && mindmapId !== undefined) throw new Error(tr('页面指令不能包含脑图 ID', 'Page instructions cannot include a mindmap ID'));
     const dir = kind === 'project' ? this.conversationWorkspace({ projectId, kind, threadId }) : kind === 'mindmap' ? this.conversationWorkspace({ projectId, kind, mindmapId }) : this.workspace(projectId);
-    if (kind === 'project' && fs.existsSync(path.join(dir, 'deleted.json'))) throw new Error('这条项目会话已删除，请切换会话');
-    if (typeof skillMarkdown !== "string") throw new Error("技能内容无效");
+    if (kind === 'project' && fs.existsSync(path.join(dir, 'deleted.json'))) throw new Error(tr('这条项目会话已删除，请切换会话', 'This project conversation has been deleted; please switch to another conversation'));
+    if (typeof skillMarkdown !== "string") throw new Error(tr("技能内容无效", "Invalid skill markdown content"));
     // Project instructions are local to this session cwd. Never overwrite global Hermes skills/config.
     const skillFile = path.join(dir, "AGENTS.md");
     writeSkillFileIfChanged(skillFile, skillMarkdown);
@@ -3465,13 +3480,13 @@ class HermesRuntime {
     const activeInstallDir = path.resolve(expand(info.installDir));
     const resolvedSlotDir = path.resolve(slotDir);
     if (resolvedSlotDir === activeInstallDir) {
-      throw new Error("暂存区目录不能与当前活动安装目录相同，已拒绝就地改写运行环境");
+      throw new Error(tr("暂存区目录不能与当前活动安装目录相同，已拒绝就地改写运行环境", "Staging directory cannot match the active installation directory; refused to overwrite live runtime in place"));
     }
     if (fs.existsSync(resolvedSlotDir)) {
       const head = await this.runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
       if (!head.ok || head.output.trim() !== targetCommit) {
         if (resolvedSlotDir === activeInstallDir) {
-          throw new Error("当前运行目录与目标暂存槽位冲突且提交不一致，已拒绝就地覆盖");
+          throw new Error(tr("当前运行目录与目标暂存槽位冲突且提交不一致，已拒绝就地覆盖", "Active installation directory conflicts with the target staging slot at a different commit; refused to overwrite in place"));
         }
         hostFs.rmSync(resolvedSlotDir, { recursive: true, force: true });
       }
@@ -3527,7 +3542,7 @@ class HermesRuntime {
           15000,
         );
         if (!verifiedHead.ok || verifiedHead.output.trim() !== targetCommit) {
-          throw new Error("暂存区 Hermes 提交校验不一致，已放弃切换");
+          throw new Error(tr("暂存区 Hermes 提交校验不一致，已放弃切换", "Staged Hermes commit verification mismatch; aborted switch"));
         }
         fs.mkdirSync(path.dirname(resolvedSlotDir), { recursive: true, mode: 0o700 });
         fs.renameSync(tempCloneDir, resolvedSlotDir);
@@ -3539,7 +3554,7 @@ class HermesRuntime {
     let currentRuntimeCmd;
     try { currentRuntimeCmd = JSON.parse(launch.output); } catch {}
     if (!launch.ok || !Array.isArray(currentRuntimeCmd) || !path.isAbsolute(currentRuntimeCmd[0])) {
-      throw new Error("Hermes 启动器未提供恢复适配接口");
+      throw new Error(tr("Hermes 启动器未提供恢复适配接口", "Hermes launcher does not expose the recovery adapter interface"));
     }
     const publishScript =
       "import pathlib, sys; root = pathlib.Path(sys.argv[1]).resolve(); sys.path.insert(0, str(root)); " +
@@ -3553,7 +3568,7 @@ class HermesRuntime {
       60000,
     );
     if (!published.ok || !fs.existsSync(slotBinary)) {
-      throw new Error("暂存区 Hermes 启动器生成失败，原环境保持不变");
+      throw new Error(tr("暂存区 Hermes 启动器生成失败，原环境保持不变", "Failed to generate staged Hermes launcher; original environment left unchanged"));
     }
     const deps = await this.runCommand(
       slotBinary,
@@ -3567,7 +3582,7 @@ class HermesRuntime {
     const resolvedSlotDir = path.resolve(slotDir);
     const head = await this.runCommand("git", ["-C", resolvedSlotDir, "rev-parse", "--verify", "HEAD"], info.home, 15000);
     if (!head.ok || head.output.trim() !== targetCommit) {
-      throw new Error("暂存区 Hermes 提交校验未通过，原环境保持不变");
+      throw new Error(tr("暂存区 Hermes 提交校验未通过，原环境保持不变", "Staged Hermes commit verification failed; original environment left unchanged"));
     }
     const native = require("./hermes-recovery-native.cjs");
     const verifyRoot = fs.mkdtempSync(path.join(this.dataDir, "stage-verify-"));
@@ -3591,7 +3606,7 @@ class HermesRuntime {
       let command;
       try { command = JSON.parse(launch.output); } catch {}
       if (!launch.ok || !Array.isArray(command) || !path.isAbsolute(command[0])) {
-        throw new Error("暂存区 Hermes 启动器未提供恢复适配接口");
+        throw new Error(tr("暂存区 Hermes 启动器未提供恢复适配接口", "Staged Hermes launcher does not expose the recovery adapter interface"));
       }
       python = command[0];
       const bootstrap = fs.readFileSync(path.join(__dirname, "hermes-recovery-gateway.py"), "utf8");
@@ -3606,7 +3621,7 @@ class HermesRuntime {
       let activation;
       try { activation = JSON.parse(activated.output.trim().split("\n").at(-1)); } catch {}
       if (!activated.ok || activation?.ready !== true) {
-        throw new Error(activation?.error || "暂存区 Hermes 限流恢复网关校验未通过");
+        throw new Error(activation?.error || tr("暂存区 Hermes 限流恢复网关校验未通过", "Staged Hermes rate-limit recovery gateway verification failed"));
       }
       probeClient = new AcpClient(python, {
         home: verifyHome,
@@ -3619,7 +3634,7 @@ class HermesRuntime {
         clientCapabilities: { elicitation: { form: {} } },
       });
       if (init.protocolVersion !== 1 || !init.agentCapabilities?.loadSession) {
-        throw new Error("暂存区 Hermes ACP 版本不兼容：缺少会话恢复支持");
+        throw new Error(tr("暂存区 Hermes ACP 版本不兼容：缺少会话恢复支持", "Incompatible staged Hermes ACP version: missing session recovery support"));
       }
     } finally {
       try { probeClient?.close(); } catch {}
@@ -3631,13 +3646,16 @@ class HermesRuntime {
   }
   async update() {
     if (this.allLoadedSessions().some((s) => s.running))
-      throw new Error("请停止 AI 任务后再升级");
+      throw new Error(tr("请停止 AI 任务后再升级", "Please stop active AI tasks before upgrading"));
     const info = await this.detect();
     if (!info.detected) throw new Error(info.error);
     const { VERIFIED_HERMES_COMMIT, VERIFIED_HERMES_VERSION } = require("./hermes-recovery-native.cjs");
     if (!this.isAppManagedInstallation(info)) {
       throw new Error(
-        `当前连接的是用户自行维护的外部 Hermes 环境（${info.home}），应用不会就地执行在线升级以免破坏受检恢复补丁；请在外部按受支持提交 ${VERIFIED_HERMES_COMMIT.slice(0, 12)}（v${VERIFIED_HERMES_VERSION}）维护环境，当前连接保持可用。`,
+        tr(
+          `当前连接的是用户自行维护的外部 Hermes 环境（${info.home}），应用不会就地执行在线升级以免破坏受检恢复补丁；请在外部按受支持提交 ${VERIFIED_HERMES_COMMIT.slice(0, 12)}（v${VERIFIED_HERMES_VERSION}）维护环境，当前连接保持可用。`,
+          `Connected to a user-maintained external Hermes environment (${info.home}). Alex will not run an in-place online upgrade to avoid breaking verified recovery patches; please maintain the external environment at supported commit ${VERIFIED_HERMES_COMMIT.slice(0, 12)} (v${VERIFIED_HERMES_VERSION}). The current connection remains available.`,
+        ),
       );
     }
     const targetCommit = VERIFIED_HERMES_COMMIT;
@@ -3678,7 +3696,7 @@ class HermesRuntime {
       }
     }
     if (this.allLoadedSessions().some((s) => s.running))
-      throw new Error("请停止 AI 任务后再完成升级切换");
+      throw new Error(tr("请停止 AI 任务后再完成升级切换", "Please stop active AI tasks before completing the upgrade switch"));
     const wasConnected = Boolean(this.client && !this.client.closed);
     if (
       readOnlyCurrentInstall &&
@@ -3725,7 +3743,10 @@ class HermesRuntime {
           restorePreviousSettings();
           const switchMsg = switchError instanceof Error ? switchError.message : String(switchError);
           const rollbackMsg = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-          const combined = new Error(`Hermes 升级切换失败（${switchMsg}），且恢复原连接失败（${rollbackMsg}）`);
+          const combined = new Error(tr(
+            `Hermes 升级切换失败（${switchMsg}），且恢复原连接失败（${rollbackMsg}）`,
+            `Hermes upgrade switch failed (${switchMsg}), and restoring the previous connection also failed (${rollbackMsg})`,
+          ));
           combined.cause = switchError;
           combined.rollbackError = rollbackError;
           throw combined;

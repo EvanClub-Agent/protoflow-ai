@@ -8,8 +8,17 @@ import { walk } from '../dsl/tree';
 import { FIELD_TYPES, OVERLAY_TYPES } from '../registry/meta';
 import { usePageStore } from '../store/usePageStore';
 import { useProtoStore } from '../../store/useProtoStore';
+import { PreviewDataContext } from './PreviewData';
+import {
+  buildForeignKeyOptionsFromRows,
+  isQualifiedSupplierStatus,
+  requiresQualifiedSupplier,
+  resolveBoundForeignKeySpec,
+} from '../ai/templates';
 import type { Row } from './mock';
 import { projectPageCatalog } from '../../services/projectAnalysis';
+import { td, tr, useLocale, type Locale } from '../../i18n';
+import { valuesWithColumnDefaults } from '../database/columnDefault';
 
 export interface Scope {
   row?: Row;
@@ -71,18 +80,60 @@ export const useRuntime = () => {
 };
 export const RuntimeProvider = RuntimeCtx.Provider;
 
-/** Resolve `{{row.x}}`, `{{params.x}}`, `{{vars.x}}` placeholders. */
-export function interpolate(text: string, scope: Scope, vars: Record<string, unknown>): string {
+function lookupPlaceholderPath(
+  path: string,
+  scope: Scope,
+  vars: Record<string, unknown>,
+  forms?: Record<string, Record<string, unknown>>,
+): unknown {
+  let cur: unknown = {
+    row: scope.row ?? scope.params?.row ?? {},
+    params: scope.params ?? {},
+    vars,
+    form: forms ?? {},
+  };
+  for (const k of path.split('.')) {
+    if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[k];
+    else return undefined;
+  }
+  return cur;
+}
+
+/** Resolve `{{row.x}}`, `{{params.x}}`, `{{vars.x}}`, `{{form.<pfId>.x}}` display text placeholders. */
+export function interpolate(
+  text: string,
+  scope: Scope,
+  vars: Record<string, unknown>,
+  forms?: Record<string, Record<string, unknown>>,
+): string {
   if (!text.includes('{{')) return text;
-  const ctx: Record<string, unknown> = { row: scope.row ?? scope.params?.row ?? {}, params: scope.params ?? {}, vars };
-  return text.replace(/\{\{\s*([\w.$]+)\s*\}\}/g, (_m, path: string) => {
-    let cur: unknown = ctx;
-    for (const k of path.split('.')) {
-      if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[k];
-      else return '';
-    }
+  return text.replace(/\{\{\s*([\w.$-]+)\s*\}\}/g, (_m, path: string) => {
+    const cur = lookupPlaceholderPath(path, scope, vars, forms);
     return cur === undefined || cur === null ? '' : String(cur);
   });
+}
+
+/**
+ * Resolve an action payload value: when the entire value is a single `{{...}}` reference,
+ * preserve its native runtime type (number, boolean, string, etc.); only coerce to string
+ * when interpolating multi-part display text.
+ */
+export function resolveActionValue(
+  raw: unknown,
+  scope: Scope,
+  vars: Record<string, unknown>,
+  forms?: Record<string, Record<string, unknown>>,
+): unknown {
+  if (typeof raw !== 'string') return raw;
+  const exact = /^\{\{\s*([\w.$-]+)\s*\}\}$/.exec(raw);
+  if (exact) {
+    const resolved = lookupPlaceholderPath(exact[1], scope, vars, forms);
+    if (resolved === undefined) {
+      throw new Error(tr(`找不到动作引用 ${exact[1]}`, `Action reference ${exact[1]} has no value`));
+    }
+    return resolved;
+  }
+  return interpolate(raw, scope, vars, forms);
 }
 
 export function findOverlay(doc: ProtoDoc | null, id: string): ProtoNode | null {
@@ -144,7 +195,20 @@ export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<st
   return out;
 }
 
+type FormIssue = { kind: 'required' | 'unqualified' | 'missingReference' | 'invalidReference'; label: string };
+
+function formIssueMessage(issue: FormIssue, locale: Locale): string {
+  const label = td(issue.label, locale);
+  switch (issue.kind) {
+    case 'required': return tr(`请填写${label}`, `${label} is required`, locale);
+    case 'unqualified': return tr(`${label}未通过准入或已失效，请重新选择`, `${label} is no longer qualified; please select again`, locale);
+    case 'missingReference': return tr(`${label}关联记录不存在，请重新选择`, `${label} references a missing record; please select again`, locale);
+    case 'invalidReference': return tr(`${label}的外键定义无法解析`, `The foreign key for ${label} cannot be resolved`, locale);
+  }
+}
+
 export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDesign: boolean, canNavigate?: (pageId: string) => boolean, publishedHeader?: (id:string) => readonly string[] | undefined): Runtime {
+  const preview = useContext(PreviewDataContext);
   const [overlays, setOverlays] = useState<OverlayEntry[]>([]);
   const [vars, setVars] = useState<Record<string, unknown>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
@@ -153,9 +217,16 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   const [pageNo, setPageNoState] = useState<Record<string, number>>({});
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [formValues, setFormValuesState] = useState<Record<string, Record<string, unknown>>>({});
-  const [formErrors, setFormErrors] = useState<Record<string, Record<string, string>>>({});
+  const locale = useLocale();
+  const [formIssues, setFormIssues] = useState<Record<string, Record<string, FormIssue>>>({});
+  const formErrors = useMemo(() => Object.fromEntries(Object.entries(formIssues).map(([id, issues]) => [
+    id, Object.fromEntries(Object.entries(issues).map(([field, issue]) => [field, formIssueMessage(issue, locale)])),
+  ])), [formIssues, locale]);
   const [pickerValues, setPickerValues] = useState<Record<string, string>>({});
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [messages, setToasts] = useState<Array<Omit<ToastItem, 'message'> & { message: string | FormIssue }>>([]);
+  const toasts = useMemo(() => messages.map(t => ({
+    ...t, message: typeof t.message === 'string' ? t.message : formIssueMessage(t.message, locale),
+  })), [messages, locale]);
   const [confirmState, setConfirmState] = useState<Runtime['confirmState']>(null);
 
   // Refs so the async executor always sees fresh state
@@ -166,6 +237,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   isDesignRef.current = isDesign;
   const stateRef = useRef({ overlays, formValues, selections });
   stateRef.current = { overlays, formValues, selections };
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
 
   const toastTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
@@ -176,7 +249,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     };
   }, []);
 
-  const toast = useCallback((message: string, type: ToastItem['type'] = 'success') => {
+  const toast = useCallback((message: string | FormIssue, type: ToastItem['type'] = 'success') => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, message, type }]);
     const timer = setTimeout(() => {
@@ -210,7 +283,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       ids.forEach((i) => delete next[i]);
       return next;
     });
-    setFormErrors((fe) => {
+    setFormIssues((fe) => {
       const next = { ...fe };
       ids.forEach((i) => delete next[i]);
       return next;
@@ -220,7 +293,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   const pushOverlay = (id: string, params: Record<string, unknown>, picker?: OverlayEntry['picker']): boolean => {
     const node = findOverlay(docRef.current, id);
     if (!node) {
-      toast(`未找到弹层「${id}」，请先在页面中添加 id 为 ${id} 的 Modal / Drawer`, 'error');
+      toast(tr(`未找到弹层「${id}」，请先在页面中添加 id 为 ${id} 的 Modal / Drawer`, `Overlay "${id}" not found. Add a Modal or Drawer with id="${id}" on this page first.`), 'error');
       return false;
     }
     clearFormsIn(node);
@@ -268,7 +341,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             toast(str(0), (str(1) as ToastItem['type']) || 'success');
             break;
           case 'confirm': {
-            const ok = await new Promise<boolean>((resolve) => setConfirmState({ message: str(0) || '确定执行该操作吗？', resolve }));
+            const ok = await new Promise<boolean>((resolve) => setConfirmState({ message: str(0) || tr('确定执行该操作吗？', 'Are you sure you want to proceed?'), resolve }));
             setConfirmState(null);
             if (!ok) return;
             break;
@@ -277,7 +350,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
           case 'resetForm': {
             const form = findById(docRef.current, str(0));
             if (!form) {
-              toast(`未找到表单「${str(0)}」`, 'error');
+              toast(tr(`未找到表单「${str(0)}」`, `Form "${str(0)}" not found`), 'error');
               return;
             }
             if (call.name === 'resetForm') {
@@ -288,37 +361,108 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             const specs = formFieldSpecs(form,scope,vars);
             const table = typeof form.props.table === 'string' ? form.props.table : '';
             const source = rowOf();
-            const editingSource = Boolean(table && source && tableOf() === table);
+            if (source && table && !tableOf()) {
+              toast(tr('当前记录缺少来源表，无法确定表单写入对象', 'Current record is missing its source table'), 'error');
+              return;
+            }
+            const row = source && tableOf() === table ? source : submittedRows.current[form.pfId];
+            const allTables = useProtoStore.getState().dbTables;
+            const boundTable = allTables.find(t => t.id === table);
             const values: Record<string, unknown> = { ...rawValues };
-            if (!editingSource) {
+            if (!row) {
               for (const f of specs) {
-                if (!Object.hasOwn(values,f.name) && f.initialValue !== undefined) values[f.name] = f.initialValue;
+                if (!Object.hasOwn(values, f.name) && f.initialValue !== undefined) values[f.name] = f.initialValue;
               }
             }
-            const errs: Record<string, string> = {};
+            let effective = values;
+            if (table && row) {
+              const stored = pages.getRows(table).find(r => r.id === row.id);
+              if (!stored) {
+                toast(tr('要修改的记录已不存在', 'The target record no longer exists'), 'error');
+                return;
+              }
+              effective = { ...stored, ...values };
+            } else if (boundTable) {
+              try { effective = valuesWithColumnDefaults(boundTable, values); }
+              catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); return; }
+            }
+            const errs: Record<string, FormIssue> = {};
             for (const f of specs) {
-              const v = values[f.name];
+              const v = effective[f.name];
               if (f.required && (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0))) {
-                errs[f.name] = `请填写${f.label}`;
+                errs[f.name] = { kind: 'required', label: f.label };
               }
             }
             if (Object.keys(errs).length) {
-              setFormErrors((fe) => ({ ...fe, [form.pfId]: errs }));
-              toast('请完善必填项', 'error');
+              setFormIssues((fe) => ({ ...fe, [form.pfId]: errs }));
+              toast(tr('请完善必填项', 'Please complete all required fields'), 'error');
               return;
             }
-            setFormErrors((fe) => ({ ...fe, [form.pfId]: {} }));
-            if (table) {
-              if (source && !tableOf()) { toast('当前记录缺少来源表，无法确定表单写入对象', 'error'); return; }
-              const row = source && tableOf() === table ? source : submittedRows.current[form.pfId];
-              if (row) {
-                if (!pages.getRows(table).some(r => r.id === row.id)) { toast('要修改的记录已不存在', 'error'); return; }
-                pages.updateRow(table, row.id, values);
-                submittedRows.current[form.pfId] = { ...row, ...values };
-              } else {
-                try { submittedRows.current[form.pfId] = pages.insertRow(table, values); }
-                catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); return; }
+            if (boundTable) {
+              const invalidKeys: string[] = [];
+              for (const col of boundTable.columns) {
+                if ((!col.references && !col.isForeignKey) || !Object.hasOwn(effective, col.name)) continue;
+                const v = effective[col.name];
+                if (v == null && col.nullable) continue;
+                const fkSpec = resolveBoundForeignKeySpec(boundTable, col, allTables);
+                if (!fkSpec) {
+                  errs[col.name] = { kind: 'invalidReference', label: specs.find(s => s.name === col.name)?.label ?? col.name };
+                  invalidKeys.push(col.name);
+                  continue;
+                }
+                const targetRows = previewRef.current
+                  ? previewRef.current.rows[fkSpec.refTable.id] ?? []
+                  : pages.getRows(fkSpec.refTable.id);
+                const validOpts = buildForeignKeyOptionsFromRows(
+                  targetRows,
+                  fkSpec.valueCol,
+                  fkSpec.labelCol,
+                  { qualifiedOnly: fkSpec.qualifiedOnly },
+                );
+                if (!validOpts.some((opt) => opt.value === v)) {
+                  const specLabel = specs.find((s) => s.name === col.name)?.label ?? col.name;
+                  errs[col.name] = { kind: fkSpec.qualifiedOnly ? 'unqualified' : 'missingReference', label: specLabel };
+                  invalidKeys.push(col.name);
+                }
               }
+              if (invalidKeys.length > 0) {
+                const stalePickerIds = new Set<string>();
+                walk(form, (n) => {
+                  if (n.type === 'PickerInput' && typeof n.props.name === 'string' && invalidKeys.includes(n.props.name)) {
+                    stalePickerIds.add(n.pfId);
+                  }
+                });
+                if (stalePickerIds.size > 0) {
+                  setPickerValues((pv) =>
+                    Object.fromEntries(Object.entries(pv).filter(([id]) => !stalePickerIds.has(id))),
+                  );
+                }
+                updateFormValues((fv) => {
+                  const cur = { ...(fv[form.pfId] ?? {}) };
+                  for (const k of invalidKeys) delete cur[k];
+                  return { ...fv, [form.pfId]: cur };
+                });
+                setFormIssues((fe) => ({ ...fe, [form.pfId]: errs }));
+                toast(errs[invalidKeys[0]], 'error');
+                return;
+              }
+            }
+            setFormIssues((fe) => ({ ...fe, [form.pfId]: {} }));
+            if (table) {
+              try {
+                if (row) {
+                  pages.updateRow(table, row.id, values);
+                  submittedRows.current[form.pfId] = { ...effective, id: row.id };
+                } else {
+                  submittedRows.current[form.pfId] = pages.insertRow(table, effective);
+                }
+              } catch (error) {
+                toast(error instanceof Error ? error.message : String(error), 'error');
+                return;
+              }
+            }
+            if (!row && Object.keys(values).length > Object.keys(rawValues).length) {
+              updateFormValues((fv) => ({ ...fv, [form.pfId]: values }));
             }
             break;
           }
@@ -334,9 +478,18 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
           case 'updateRow': {
             const row = rowOf();
             const table = tableOf();
-            const values = a[0] && typeof a[0] === 'object' && !Array.isArray(a[0]) ? (a[0] as Record<string, unknown>) : {};
+            const rawValues = a[0] && typeof a[0] === 'object' && !Array.isArray(a[0]) ? (a[0] as Record<string, unknown>) : {};
             if (row && table) {
-              pages.updateRow(table, row.id, values);
+              let values: Record<string, unknown>;
+              try {
+                values = Object.fromEntries(Object.entries(rawValues).map(([key, val]) => [
+                  key, resolveActionValue(val, scope, vars, stateRef.current.formValues),
+                ]));
+                pages.updateRow(table, row.id, values);
+              } catch (error) {
+                toast(error instanceof Error ? error.message : String(error), 'error');
+                return;
+              }
               setOverlays((o) =>
                 o.map((e) => {
                   const r = e.params.row as Row | undefined;
@@ -355,12 +508,12 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               if (source?.type !== 'Table' || target?.type !== 'Table' || form?.type !== 'Form' ||
                   form.props.table !== 't_wms_acceptance_order' || !header ||
                   typeof source.props.table !== 'string' || typeof target.props.table !== 'string') {
-                throw new Error('请先保存验收单表头，并配置采购来源表与验收明细表');
+                throw new Error(tr('请先保存验收单表头，并配置采购来源表与验收明细表', 'Please save the receipt header first and configure the PO source table and detail table'));
               }
               const count = pages.importPurchaseOrderLines(source.props.table, target.props.table, stateRef.current.selections[str(0)] ?? [], header.id);
-              if (!count) { toast('所选采购明细已转入当前验收单', 'info'); return; }
+              if (!count) { toast(tr('所选采购明细已转入当前验收单', 'Selected PO lines are already imported into this receipt'), 'info'); return; }
               setSelections(s => ({ ...s, [str(0)]: [] }));
-              toast(`已转入 ${count} 条采购明细`);
+              toast(tr(`已转入 ${count} 条采购明细`, `Imported ${count} PO line(s)`));
             } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); return; }
             break;
           }
@@ -369,34 +522,34 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             const top = stateRef.current.overlays[stateRef.current.overlays.length - 1];
             const ids = stateRef.current.selections[str(0)] ?? [];
             if (!top?.picker) {
-              toast('该弹框没有选择器回填目标；采购转入请使用采购明细转入动作', 'error');
+              toast(tr('该弹框没有选择器回填目标；采购转入请使用采购明细转入动作', 'This modal has no picker target; use importPurchaseOrderLines for PO imports'), 'error');
               return;
             }
             if (!tableNode || typeof tableNode.props.table !== 'string') {
-              toast('returnSelection 需要指向一个绑定了物理表的表格', 'error');
+              toast(tr('returnSelection 需要指向一个绑定了物理表的表格', 'returnSelection must reference a Table bound to a database table'), 'error');
               return;
             }
             if (ids.length === 0) {
-              toast('请先勾选数据', 'warning');
+              toast(tr('请先勾选数据', 'Please select at least one row first'), 'warning');
               return;
             }
             const rows = pages.getRows(tableNode.props.table).filter((r) => ids.includes(r.id));
             const labelField = str(1);
             const valueField = a[2];
-            if (rows.length !== ids.length || !rows.length) { toast('所选来源记录已变化，请重新选择', 'error'); return; }
+            if (rows.length !== ids.length || !rows.length) { toast(tr('所选来源记录已变化，请重新选择', 'Selected source records changed; please select again'), 'error'); return; }
             // Two-argument selections keep the historical text contract. An explicit
             // third argument binds one scalar key, with its original type.
             let label: string;
             let value: unknown;
             if (valueField === undefined) {
-              label = rows.map(r => String(r[labelField] ?? r.id)).join('、');
+              label = rows.map(r => String(r[labelField] ?? r.id)).join(tr('、', ', '));
               value = label;
             } else {
               const row = rows[0];
               if (rows.length !== 1 || typeof valueField !== 'string' || !valueField ||
                   !Object.hasOwn(row, valueField) || !['string','number'].includes(typeof row[valueField]) ||
                   row[valueField] === '' || !Object.hasOwn(row, labelField) || row[labelField] == null) {
-                toast('请单选一条具有指定显示字段和值字段的来源记录', 'error'); return;
+                toast(tr('请单选一条具有指定显示字段和值字段的来源记录', 'Please select a single source record with valid display and value fields'), 'error'); return;
               }
               const form = top.picker.formId && findById(docRef.current, top.picker.formId);
               const tables = useProtoStore.getState().dbTables;
@@ -405,7 +558,11 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               if (owner && column && (column.isForeignKey || column.references)) {
                 const edge = diagramRelations(tables).relations.find(r => r.toTableId === owner.id && r.toColumnId === column.id);
                 if (!edge || edge.fromTableId !== tableNode.props.table || edge.fromColumnName !== valueField) {
-                  toast('选单的来源表或存储字段与目标外键不一致', 'error'); return;
+                  toast(tr('选单的来源表或存储字段与目标外键不一致', 'Picker source table or value field does not match the target foreign key'), 'error'); return;
+                }
+                const refTable = tables.find(t => t.id === edge.fromTableId);
+                if (requiresQualifiedSupplier(column, owner, refTable) && !isQualifiedSupplierStatus(row.status)) {
+                  toast(tr('请选择已准入的合格供应商', 'Please select a qualified supplier'), 'error'); return;
                 }
               }
               label = String(row[labelField]); value = row[valueField];
@@ -433,13 +590,13 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               }
             }
             if (!isAvailable(target)) {
-              toast(`跳转目标不可用：${String(a[0])}`, 'error');
+              toast(tr(`跳转目标不可用：${String(a[0])}`, `Navigation target unavailable: ${String(a[0])}`), 'error');
               return;
             }
             if (a[1] !== undefined) {
               const row = rowOf(), tableId = tableOf();
               if (a[1] !== 'row' || !row || !tableId || !pages.getRows(tableId).some(r => r.id === row.id)) {
-                toast('缺少可追溯的来源行，无法带入目标页面', 'error'); return;
+                toast(tr('缺少可追溯的来源行，无法带入目标页面', 'Missing traceable source row to pass into target page'), 'error'); return;
               }
               st.setActivePage(target,{tableId,rowId:row.id});
             } else st.setActivePage(target);
@@ -456,7 +613,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             setHidden((h) => ({ ...h, [str(0)]: true }));
             break;
           default:
-            toast(`未知动作：${call.name}`, 'error');
+            toast(tr(`未知动作：${call.name}`, `Unknown action: ${call.name}`), 'error');
             return;
         }
       }
@@ -475,7 +632,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     setPageNoState({});
     setSelections({});
     setFormValuesState({});
-    setFormErrors({});
+    setFormIssues({});
     setPickerValues({});
   }, []);
 

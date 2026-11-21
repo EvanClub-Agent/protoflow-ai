@@ -1,4 +1,5 @@
 import { ACTION_MAP } from '../proto/runtime/actions';
+import { tr } from '../i18n/runtime';
 import { parsePageSource } from '../proto/dsl/parser';
 import { printPageSource } from '../proto/dsl/printer';
 import { walk } from '../proto/dsl/tree';
@@ -32,19 +33,19 @@ export function menuMergeIssue(
 ): string | null {
   const revision = s.projectPlan?.revision, merge = revision?.merge;
   if (!s.projectPlan?.approved || !merge || revision?.pageId !== pageId || !changed.has(pageId)) {
-    return '合并需要已确认的方案和本轮目标页面修改';
+    return tr('合并需要已确认的方案和本轮目标页面修改', 'Menu merge requires an approved plan and target page edits in this turn');
   }
   const oldId = merge.sourcePageId;
   const target = s.designerPages.find(page => page.pageId === pageId) ?? s.projectPlan.pages.find(page => page.pageId === pageId);
   const exists = s.designerPages.some(page => page.pageId === oldId);
   if (!target || (merge.plannedOnly ? exists || Object.hasOwn(s.pageSources, oldId) : !exists) || sitemapCatalog(s.sitemapBase).builtinPages.has(oldId)) {
-    return '原菜单或目标菜单已变化，请重新确认合并方案';
+    return tr('原菜单或目标菜单已变化，请重新确认合并方案', 'Source or target menu changed; please reconfirm the merge plan');
   }
   const originalTarget = parsePageSource(before.pageSources[pageId]).doc;
   const revisedTarget = parsePageSource(s.pageSources[pageId]).doc;
-  if (JSON.stringify(originalTarget?.root) === JSON.stringify(revisedTarget?.root)) return '目标页面内容没有变化，合并未应用';
+  if (JSON.stringify(originalTarget?.root) === JSON.stringify(revisedTarget?.root)) return tr('目标页面内容没有变化，合并未应用', 'Target page content did not change; merge not applied');
   if (s.stickyNotes.some(note => note.pageId === oldId) || s.closedLoopIssues.some(issue => issue.pageId === oldId)) {
-    return '原菜单仍有组件便签或巡检记录，请先处理这些关联后再合并';
+    return tr('原菜单仍有组件便签或巡检记录，请先处理这些关联后再合并', 'Source menu still has sticky notes or audit issues; resolve them before merging');
   }
   const openAction = merge.presentation === 'drawer' ? 'openDrawer' : 'openModal';
   const overlayTypes = ACTION_MAP[openAction].args[0].refTypes!;
@@ -53,7 +54,7 @@ export function menuMergeIssue(
   for (const [id, source] of Object.entries(s.pageSources)) {
     if (id === oldId) continue;
     const parsed = parsePageSource(source);
-    if (!parsed.doc || parsed.issues.length) return '页面 ' + id + ' 无法完整检查跳转，合并未应用';
+    if (!parsed.doc || parsed.issues.length) return tr('页面 ' + id + ' 无法完整检查跳转，合并未应用', 'Cannot verify navigation on page ' + id + '; merge not applied');
     let referencesOld = false;
     let targetNavigatesOld = false;
     walk(parsed.doc.root, node => {
@@ -68,10 +69,10 @@ export function menuMergeIssue(
         else referencesOld = true;
       });
     });
-    if (targetNavigatesOld) return '目标页面仍跳转到旧菜单，请用弹层打开动作替换该入口';
-    if (referencesOld && parsed.normalized) return '页面 ' + id + ' 的组件标识需要修复后才能迁移跳转';
+    if (targetNavigatesOld) return tr('目标页面仍跳转到旧菜单，请用弹层打开动作替换该入口', 'Target page still navigates to the legacy menu; replace that entry with an overlay open action');
+    if (referencesOld && parsed.normalized) return tr('页面 ' + id + ' 的组件标识需要修复后才能迁移跳转', 'Component IDs on page ' + id + ' must be fixed before migrating navigation');
   }
-  if (!overlayNodes.size || ![...openingControls].some(id => !overlayNodes.has(id))) return '未找到方案指定的弹层内容和打开入口，原菜单已保留';
+  if (!overlayNodes.size || ![...openingControls].some(id => !overlayNodes.has(id))) return tr('未找到方案指定的弹层内容和打开入口，原菜单已保留', 'Designated overlay content or open trigger not found; legacy menu retained');
   for (const table of s.dbTables) {
     const old = table.sharedByMenus.find(binding => binding.pageId === oldId);
     const previous = before.dbTables.find(item => item.id === table.id)?.sharedByMenus.find(binding => binding.pageId === oldId);
@@ -79,7 +80,7 @@ export function menuMergeIssue(
     if (!sourceBinding) continue;
     const existing = table.sharedByMenus.find(binding => binding.pageId === pageId);
     if (existing && (existing.accessMode !== sourceBinding.accessMode || existing.fieldMappingNote !== sourceBinding.fieldMappingNote)) {
-      return '数据表 ' + table.tableName + ' 在两个页面的绑定含义不同，请先明确合并后的访问模式和字段说明';
+      return tr('数据表 ' + table.tableName + ' 在两个页面的绑定含义不同，请先明确合并后的访问模式和字段说明', 'Table ' + table.tableName + ' has conflicting bindings across the two pages; clarify merged accessMode and fieldMappingNote first');
     }
   }
   return null;

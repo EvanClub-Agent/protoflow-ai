@@ -7,15 +7,23 @@ import { useAccountStore } from '../store/useAccountStore';
 import { PublishingAccountPanel } from './PublishingAccountPanel';
 import { shareableNotes } from '../services/publishedNotes';
 import { chooseLegacyPublishing, signedOutPublishing, listPublications, publishingSettings, revokePublication, savePublication, type Publication, type PublishSettings } from '../services/publishingClient';
+import { useI18n } from '../i18n';
 
 function localDate(value: string | null) {
   if (value === null) return '';
   const date = new Date(value);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
-function stateLabel(record: Publication) { return record.revokedAt ? '已撤回' : record.expiresAt && Date.parse(record.expiresAt) <= Date.now() ? '已过期' : '可访问'; }
+function recordState(record: Publication): 'revoked' | 'expired' | 'active' {
+  return record.revokedAt ? 'revoked' : record.expiresAt && Date.parse(record.expiresAt) <= Date.now() ? 'expired' : 'active';
+}
 
 export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void; onOffline: () => void }) {
+  const { tr, td } = useI18n();
+  const stateLabel = (record: Publication) => {
+    const st = recordState(record);
+    return st === 'revoked' ? tr('已撤回', 'Revoked') : st === 'expired' ? tr('已过期', 'Expired') : tr('可访问', 'Active');
+  };
   const project = useProtoStore(s => s.currentProjectMeta);
   const activePageId = useProtoStore(s => s.activePageId);
   const pageSources = usePageStore(s => s.pageSources), designerPages = usePageStore(s => s.designerPages);
@@ -40,12 +48,12 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
   const [revokeConfirm, setRevokeConfirm] = useState(false);
   const selected = selectedId === null ? undefined : records.find(r => r.id === selectedId);
   const updating = Boolean(selected && !selected.revokedAt);
-  const publishBlockReason = busy ? (busy === 'load' ? '正在读取发布状态…' : '请等待当前操作完成')
-    : inventory.error ? '页面目录读取失败，请先修复后再发布'
-    : pages.length === 0 ? '请先创建或生成画布页面'
-    : !settings.configured ? settings.legacy ? '请先选择是否关联本机已有分享' : '请先登录账号'
-    : selected?.revokedAt ? '此链接已撤回，请新建分享链接'
-    : !entryAvailable ? '原入口页面已不可用，请重新选择'
+  const publishBlockReason = busy ? (busy === 'load' ? tr('正在读取发布状态…', 'Loading publish status…') : tr('请等待当前操作完成', 'Please wait for the current action to finish'))
+    : inventory.error ? tr('页面目录读取失败，请先修复后再发布', 'Failed to read sitemap — fix before publishing')
+    : pages.length === 0 ? tr('请先创建或生成画布页面', 'Create or generate at least one canvas page first')
+    : !settings.configured ? settings.legacy ? tr('请先选择是否关联本机已有分享', 'Choose whether to link existing local shares first') : tr('请先登录账号', 'Please sign in first')
+    : selected?.revokedAt ? tr('此链接已撤回，请新建分享链接', 'This link was revoked — create a new share link')
+    : !entryAvailable ? tr('原入口页面已不可用，请重新选择', 'Original entry page is unavailable — please reselect')
     : null;
   const openDesign = (view: 'single_page' | 'project_ai') => {
     onClose();
@@ -62,11 +70,11 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
       setBusy('load');
       try {
         const config = await publishingSettings();
-        if (!alive.current) return; setSettings(config); if (config.notice) setMessage(config.notice);
+        if (!alive.current) return; setSettings(config); if (config.notice) setMessage(td(config.notice));
         if (config.configured) { const items = await listPublications(project.projectId); if (alive.current) setRecords(items); }
       } catch (e) {
       if (alive.current) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(td(e instanceof Error ? e.message : String(e)));
         if ((e as { status?: number }).status === 401) { setSettings(signedOutPublishing()); setRecords([]); setSelectedId(null); setPassword(''); }
       }
     }
@@ -79,11 +87,11 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
     if (busy) return;
     setBusy(name); setError(''); setMessage('');
     try {
-      if (useProtoStore.getState().currentProjectMeta.projectId !== project.projectId) throw new Error('项目已变化，请重新打开发布窗口');
+      if (useProtoStore.getState().currentProjectMeta.projectId !== project.projectId) throw new Error(tr('项目已变化，请重新打开发布窗口', 'Project changed — please reopen the publish dialog'));
       await work();
     } catch (e) {
       if (alive.current) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(td(e instanceof Error ? e.message : String(e)));
         if ((e as { status?: number }).status === 401) { setSettings(signedOutPublishing()); setRecords([]); setSelectedId(null); setPassword(''); }
       }
     }
@@ -95,17 +103,17 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
   };
   const save = () => run('publish', async () => {
     if (publishBlockReason) throw new Error(publishBlockReason);
-    if (entry === null || !entryAvailable) throw new Error('请先选择可发布的入口页面');
-    if (selectedId !== null && !selected) throw new Error('发布记录已变化，请刷新后重新选择');
-    if (selected?.revokedAt) throw new Error('该链接已撤回，请创建新的分享链接');
+    if (entry === null || !entryAvailable) throw new Error(tr('请先选择可发布的入口页面', 'Please select a publishable entry page'));
+    if (selectedId !== null && !selected) throw new Error(tr('发布记录已变化，请刷新后重新选择', 'Share record changed — please refresh and reselect'));
+    if (selected?.revokedAt) throw new Error(tr('该链接已撤回，请创建新的分享链接', 'This link was revoked — please create a new share link'));
     const snapshot = createPublishedSnapshot(entry);
-    if (snapshot.projectId !== project.projectId) throw new Error('项目已变化，请重新打开发布窗口');
-    if (protectedLink && !password && !selected?.passwordProtected) throw new Error('请设置访问密码');
+    if (snapshot.projectId !== project.projectId) throw new Error(tr('项目已变化，请重新打开发布窗口', 'Project changed — please reopen the publish dialog'));
+    if (protectedLink && !password && !selected?.passwordProtected) throw new Error(tr('请设置访问密码', 'Please set an access password'));
     const expiresAt = expires ? new Date(expires).toISOString() : null;
     const record = await savePublication({ snapshot, access: { passwordAction: protectedLink ? password ? 'set' : 'keep' : 'remove', password: protectedLink ? password : '', expiresAt } }, selected);
     if (!alive.current) return;
     setRecords(list => [record, ...list.filter(item => item.id !== record.id)]); setSelectedId(record.id); setPassword('');
-    setMessage(updating ? `已更新到版本 ${record.version}，分享链接保持不变。` : '发布成功，复制链接即可邀请他人查看。');
+    setMessage(updating ? tr(`已更新到版本 ${record.version}，分享链接保持不变。`, `Updated to version ${record.version}. Share URL remains unchanged.`) : tr('发布成功，复制链接即可邀请他人查看。', 'Published! Copy the link to invite others to view.'));
   });
   const button =
     'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
@@ -131,25 +139,25 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
               <Globe size={16} />
             </span>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 id="publish-title" className="text-sm font-semibold text-slate-900">
-                  发布与分享
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 id="publish-title" className="text-sm font-semibold text-slate-900 shrink-0">
+                  {tr('发布与分享', 'Publish & Share')}
                 </h2>
                 <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-[11px] font-medium text-slate-600 truncate max-w-[220px]">
                   {project.projectName}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                {inventory.error ? '页面状态待检查，修复后即可发布' : `生成可在浏览器直接交互预览的专属链接（含 ${pages.length} 个画布页面、便签与演示数据）`}
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate tabular-nums">
+                {inventory.error ? tr('页面状态待检查，修复后即可发布', 'Check page status before publishing') : tr(`生成可在浏览器直接交互预览的专属链接（含 ${pages.length} 个画布页面、便签与演示数据）`, `Generate an interactive browser preview link (${pages.length} canvas page(s), spec pins & demo data)`)}
               </p>
             </div>
           </div>
           <button
             type="button"
-            aria-label="关闭发布窗口"
+            aria-label={tr('关闭发布窗口', 'Close publish dialog')}
             disabled={Boolean(busy)}
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 cursor-pointer transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 cursor-pointer transition shrink-0"
           >
             <X size={16} />
           </button>
@@ -160,17 +168,17 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
           <main className="min-w-0 flex-1 p-5 space-y-4">
             {inventory.error ? (
               <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-                <p className="font-semibold">无法读取项目页面</p>
-                <p className="mt-2 break-words text-xs leading-5">{inventory.error}</p>
-                <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('single_page')} className="mt-3 text-xs font-medium underline disabled:opacity-40">前往页面设计检查</button>
+                <p className="font-semibold">{tr('无法读取项目页面', 'Unable to Read Project Pages')}</p>
+                <p className="mt-2 break-words text-xs leading-5">{td(inventory.error)}</p>
+                <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('single_page')} className="mt-3 text-xs font-medium underline disabled:opacity-40">{tr('前往页面设计检查', 'Inspect in Page Designer')}</button>
               </div>
             ) : pages.length === 0 ? (
               <div role="status" className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">还没有可发布的画布页面</p>
-                <p className="mt-2 text-xs leading-5">发布需要至少一个画布页面。创建项目、填写需求或确认方案后，还需要创建或生成页面内容。</p>
+                <p className="font-semibold text-slate-900">{tr('还没有可发布的画布页面', 'No Publishable Canvas Pages Yet')}</p>
+                <p className="mt-2 text-xs leading-5">{tr('发布需要至少一个画布页面。创建项目、填写需求或确认方案后，还需要创建或生成页面内容。', 'Publishing requires at least one canvas page. Create or generate page content first.')}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('project_ai')} className={`${button} bg-blue-600 text-white`}>打开项目 AI</button>
-                  <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('single_page')} className={`${button} border border-slate-200 bg-white text-slate-700`}>前往页面设计</button>
+                  <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('project_ai')} className={`${button} bg-blue-600 text-white`}>{tr('打开项目 AI', 'Open Project AI')}</button>
+                  <button type="button" disabled={Boolean(busy)} onClick={() => openDesign('single_page')} className={`${button} border border-slate-200 bg-white text-slate-700`}>{tr('前往页面设计', 'Go to Page Designer')}</button>
                 </div>
               </div>
             ) : null}
@@ -181,7 +189,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                 const config = await publishingSettings();
                 if (!alive.current) return;
                 choose(); setRecords([]); setSettings(config);
-                if (config.notice) setMessage(config.notice);
+                if (config.notice) setMessage(td(config.notice));
                 if (config.configured) { const items = await listPublications(project.projectId); if (alive.current) setRecords(items); }
               })}
               onLogout={() => void run('logout', async () => {
@@ -189,7 +197,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                 const acct = useAccountStore.getState();
                 const config = { ...signedOutPublishing(), url: acct.serverUrl || signedOutPublishing().url, ...(acct.error ? { notice: acct.error } : {}) };
                 if (!alive.current) return;
-                choose(); setRecords([]); setSettings(config); setMessage(config.notice ?? '已退出登录');
+                choose(); setRecords([]); setSettings(config); setMessage(config.notice ? td(config.notice) : tr('已退出登录', 'Signed out'));
               })}
               onLegacyChoice={action => void run('link', async () => {
                 const config = await chooseLegacyPublishing(action);
@@ -204,27 +212,27 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
 
             {/* Share Link Settings */}
             {pages.length > 0 && <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                  <Link2 size={14} className="text-blue-600" />
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 tabular-nums">
+                  <Link2 size={14} className="text-blue-600 shrink-0" />
                   <span>
-                    {selected ? `更新分享配置 · 版本 V${selected.version}` : '新建分享链接配置'}
+                    {selected ? tr(`更新分享配置 · 版本 V${selected.version}`, `Update Share · Version V${selected.version}`) : tr('新建分享链接配置', 'New Share Link Settings')}
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400">浏览者操作不会回写原设计</span>
+                <span className="text-[11px] text-slate-400">{tr('浏览者操作不会回写原设计', 'Viewer actions do not modify your project')}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block text-xs text-slate-600">
-                  <span className="font-medium text-slate-700">默认打开页面</span>
+                  <span className="font-medium text-slate-700">{tr('默认打开页面', 'Default Entry Page')}</span>
                   <select
-                    aria-label="分享入口页面"
+                    aria-label={tr('分享入口页面', 'Share entry page')}
                     disabled={Boolean(busy)}
                     value={entry === null ? '' : entry}
                     onChange={(e) => setEntry(e.target.value)}
                     className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-600"
                   >
-                    {!entryAvailable && <option value={entry === null ? '' : entry} disabled>原入口页面已不可用，请重新选择</option>}
+                    {!entryAvailable && <option value={entry === null ? '' : entry} disabled>{tr('原入口页面已不可用，请重新选择', 'Original entry page unavailable — please reselect')}</option>}
                     {pages.map((p) => (
                       <option key={p.pageId} value={p.pageId}>
                         {p.title}
@@ -235,10 +243,10 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
 
                 <label className="block text-xs text-slate-600">
                   <span className="font-medium text-slate-700">
-                    过期时间 <span className="text-slate-400 font-normal">（留空长期有效）</span>
+                    {tr('过期时间 ', 'Expiration ')}<span className="text-slate-400 font-normal">{tr('（留空长期有效）', '(leave blank for no expiry)')}</span>
                   </span>
                   <input
-                    aria-label="分享过期时间"
+                    aria-label={tr('分享过期时间', 'Share expiration time')}
                     type="datetime-local"
                     disabled={Boolean(busy)}
                     value={expires}
@@ -253,7 +261,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                 <label className="flex items-center justify-between gap-2 text-xs font-medium text-slate-700 cursor-pointer">
                   <span className="flex items-center gap-1.5">
                     <LockKeyhole size={14} className="text-slate-500" />
-                    <span>开启访问密码保护</span>
+                    <span>{tr('开启访问密码保护', 'Enable Password Protection')}</span>
                   </span>
                   <input
                     type="checkbox"
@@ -268,7 +276,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                 </label>
                 {protectedLink && (
                   <input
-                    aria-label="分享访问密码"
+                    aria-label={tr('分享访问密码', 'Share access password')}
                     type="password"
                     autoComplete="new-password"
                     maxLength={128}
@@ -277,8 +285,8 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={
                       selected?.passwordProtected
-                        ? '留空保留原密码，输入以更换密码'
-                        : '至少 6 个字符，单独发送给浏览者'
+                        ? tr('留空保留原密码，输入以更换密码', 'Leave blank to keep current password, or enter a new one')
+                        : tr('至少 6 个字符，单独发送给浏览者', 'At least 6 characters — share separately with viewers')
                     }
                     className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-600"
                   />
@@ -290,10 +298,10 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
             {selected && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-blue-800">专属分享链接</span>
+                  <span className="font-semibold text-blue-800">{tr('专属分享链接', 'Share Link')}</span>
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                      stateLabel(selected) === '可访问'
+                      recordState(selected) === 'active'
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         : 'bg-slate-100 text-slate-600 border border-slate-200'
                     }`}
@@ -307,20 +315,20 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       type="button"
-                      disabled={Boolean(busy) || stateLabel(selected) !== '可访问'}
+                      disabled={Boolean(busy) || recordState(selected) !== 'active'}
                       onClick={() =>
                         void run('copy', async () => {
                           await navigator.clipboard.writeText(selected.shareUrl);
-                          if (alive.current) setMessage('链接已复制。');
+                          if (alive.current) setMessage(tr('链接已复制。', 'Link copied.'));
                         })
                       }
                       className={`${button} bg-white hover:bg-slate-50 border border-slate-200 text-slate-700`}
                     >
                       <Copy size={12} />
-                      复制链接
+                      {tr('复制链接', 'Copy Link')}
                     </button>
                     <a
                       href={selected.shareUrl}
@@ -329,9 +337,9 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                       className={`${button} bg-white hover:bg-slate-50 border border-slate-200 text-slate-700`}
                     >
                       <ExternalLink size={12} />
-                      打开预览
+                      {tr('打开预览', 'Open Preview')}
                     </a>
-                    {stateLabel(selected) === '可访问' && (
+                    {recordState(selected) === 'active' && (
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -345,7 +353,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                         className={`${button} bg-white hover:bg-blue-50 border border-blue-200 text-blue-700`}
                       >
                         <Blocks size={12} />
-                        MCP 接入
+                        {tr('MCP 接入', 'MCP')}
                       </button>
                     )}
                   </div>
@@ -356,13 +364,13 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                       onClick={() => setRevokeConfirm(true)}
                       className={`${button} text-rose-600 hover:bg-rose-50`}
                     >
-                      撤回分享
+                      {tr('撤回分享', 'Revoke Share')}
                     </button>
                   )}
                 </div>
                 {revokeConfirm && (
                   <div className="border-t border-blue-200/80 pt-2.5 flex items-center justify-between gap-2 flex-wrap">
-                    <p className="text-xs text-slate-700">撤回后此链接将无法继续打开，确定撤回？</p>
+                    <p className="text-xs text-slate-700">{tr('撤回后此链接将无法继续打开，确定撤回？', 'Revoking permanently disables this link. Revoke now?')}</p>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -370,7 +378,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                         onClick={() => setRevokeConfirm(false)}
                         className={`${button} bg-white border border-slate-200 text-slate-600`}
                       >
-                        暂不撤回
+                        {tr('暂不撤回', 'Keep Active')}
                       </button>
                       <button
                         type="button"
@@ -383,13 +391,13 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                                 list.map((r) => (r.id === record.id ? record : r))
                               );
                               setRevokeConfirm(false);
-                              setMessage('已撤回分享，原链接已失效。');
+                              setMessage(tr('已撤回分享，原链接已失效。', 'Share revoked — the link is now inactive.'));
                             }
                           })
                         }
                         className={`${button} bg-rose-600 hover:bg-rose-700 text-white`}
                       >
-                        确认撤回
+                        {tr('确认撤回', 'Confirm Revoke')}
                       </button>
                     </div>
                   </div>
@@ -411,18 +419,18 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                 role="alert"
                 className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 break-words"
               >
-                {error}
+                {td(error)}
               </p>
             )}
           </main>
 
           {/* Right Sidebar: Published Share Records */}
-          <aside className="sm:w-56 shrink-0 border-t sm:border-t-0 sm:border-l border-slate-200 bg-slate-50/60 p-3.5 flex flex-col">
-            <div className="flex items-center justify-between mb-2.5">
-              <h3 className="text-xs font-semibold text-slate-600">分享记录 ({records.length})</h3>
+          <aside className="sm:w-60 shrink-0 border-t sm:border-t-0 sm:border-l border-slate-200 bg-slate-50/60 p-3.5 flex flex-col min-w-0">
+            <div className="flex items-center justify-between gap-1.5 mb-2.5 min-w-0">
+              <h3 className="text-xs font-semibold text-slate-600 truncate tabular-nums">{tr(`分享记录 (${records.length})`, `Share History (${records.length})`)}</h3>
               <button
                 type="button"
-                aria-label="刷新分享记录"
+                aria-label={tr('刷新分享记录', 'Refresh share history')}
                 disabled={!settings.configured || Boolean(busy)}
                 onClick={() =>
                   void run('refresh', async () => {
@@ -430,7 +438,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                     if (alive.current) setRecords(list);
                   })
                 }
-                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 disabled:opacity-40 cursor-pointer transition"
+                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 disabled:opacity-40 cursor-pointer transition shrink-0"
               >
                 <RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />
               </button>
@@ -440,17 +448,18 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
               type="button"
               disabled={Boolean(busy)}
               onClick={() => choose()}
-              className={`w-full text-left rounded-lg px-2.5 py-2 mb-2 text-xs font-medium transition cursor-pointer ${
+              className={`w-full min-w-0 truncate text-left rounded-lg px-2.5 py-2 mb-2 text-xs font-medium transition cursor-pointer ${
                 selectedId === null
                   ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
                   : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
-              ＋ 新建分享链接
+              {tr('＋ 新建分享链接', '＋ New Share Link')}
             </button>
 
             <div className="space-y-1.5 flex-1 overflow-y-auto">
               {records.map((record) => {
+                const st = recordState(record);
                 const status = stateLabel(record);
                 return (
                   <button
@@ -458,28 +467,28 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                     type="button"
                     disabled={Boolean(busy)}
                     onClick={() => choose(record)}
-                    className={`w-full text-left rounded-lg p-2.5 border text-xs transition cursor-pointer ${
+                    className={`w-full min-w-0 text-left rounded-lg p-2.5 border text-xs transition cursor-pointer ${
                       selectedId === record.id
                         ? 'border-blue-400 bg-blue-50/80 shadow-2xs'
                         : 'border-slate-200 bg-white hover:border-blue-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center justify-between gap-1.5 min-w-0">
                       <span className="font-semibold text-slate-800 truncate">{record.title}</span>
-                      <span className="shrink-0 px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-mono text-[10px]">
+                      <span className="shrink-0 px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-mono tabular-nums text-[10px]">
                         V{record.version}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px] text-slate-400">
+                    <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px] text-slate-400 tabular-nums">
                       <span className="truncate">
                         {new Date(record.updatedAt).toLocaleDateString()}
                       </span>
                       <span
-                        className={
-                          status === '可访问'
+                        className={`shrink-0 ${
+                          st === 'active'
                             ? 'text-emerald-600 font-medium'
                             : 'text-slate-400'
-                        }
+                        }`}
                       >
                         {status}
                       </span>
@@ -490,8 +499,8 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
               {records.length === 0 && (
                 <p className="text-[11px] text-slate-400 leading-relaxed p-2 text-center">
                   {settings.configured
-                    ? '暂无分享记录，发布后将在此处显示。'
-                    : '登录账号后可查看自己的分享记录。'}
+                    ? tr('暂无分享记录，发布后将在此处显示。', 'No share history yet. Published links will appear here.')
+                    : tr('登录账号后可查看自己的分享记录。', 'Sign in to view and manage your share history.')}
                 </p>
               )}
             </div>
@@ -507,7 +516,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
             onClick={onOffline}
             className={`${button} text-slate-600 hover:text-slate-900 hover:bg-slate-200/60`}
           >
-            导出离线模板演示
+            {tr('导出离线模板演示', 'Export Offline HTML Demo')}
           </button>
           <div className="flex items-center gap-2">
             <button
@@ -516,7 +525,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
               onClick={onClose}
               className={`${button} bg-white hover:bg-slate-50 border border-slate-200 text-slate-700`}
             >
-              关闭
+              {tr('关闭', 'Close')}
             </button>
             <button
               type="button"
@@ -531,7 +540,7 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
               ) : (
                 <Globe size={14} />
               )}
-              {busy === 'publish' ? '正在发布…' : updating ? '更新到此链接' : '发布并生成链接'}
+              {busy === 'publish' ? tr('正在发布…', 'Publishing…') : updating ? tr('更新到此链接', 'Update This Link') : tr('发布并生成链接', 'Publish & Create Link')}
             </button>
           </div>
         </footer>
@@ -542,12 +551,13 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
 
 /** Lists the notes marked "外发到演示端"; everything else stays internal. */
 function SharedNotesSummary() {
+  const { tr } = useI18n();
   useProtoStore(s => s.projectNotes);
   const notes = shareableNotes();
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-[11px] text-slate-600 space-y-1.5" aria-label="将外发的项目笔记">
-      <div className="font-semibold text-slate-800">
-        项目笔记：{notes.length ? `将外发 ${notes.length} 篇（只读，显示在演示端「需求说明」中）` : '不外发任何笔记'}
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-[11px] text-slate-600 space-y-1.5" aria-label={tr('将外发的项目笔记', 'Shared project notes')}>
+      <div className="font-semibold text-slate-800 tabular-nums">
+        {tr('项目笔记：', 'Project Notes: ')}{notes.length ? tr(`将外发 ${notes.length} 篇（只读，显示在演示端「需求说明」中）`, `Sharing ${notes.length} note(s) (read-only in viewer "Spec Docs")`) : tr('不外发任何笔记', 'No notes shared')}
       </div>
       {notes.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
@@ -556,7 +566,7 @@ function SharedNotesSummary() {
           ))}
         </ul>
       ) : null}
-      <p className="text-slate-400">只有在笔记属性中开启「外发到演示端」的笔记才会发布；对接人、标签等内部信息不会外发。</p>
+      <p className="text-slate-400">{tr('只有在笔记属性中开启「外发到演示端」的笔记才会发布；对接人、标签等内部信息不会外发。', 'Only notes marked "Share to Viewer" in note properties are published; internal contacts and tags stay private.')}</p>
     </div>
   );
 }

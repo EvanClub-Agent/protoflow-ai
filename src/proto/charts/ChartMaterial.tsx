@@ -7,8 +7,10 @@ import { usePageStore } from '../store/usePageStore';
 import { PreviewDataContext, useMaterialTables } from '../runtime/PreviewData';
 import { chartConfigErrors, prepareChartData, resolveChartEvent, type ChartType } from './model';
 import { buildChartOption, chartClickPoint } from './options';
+import { useI18n } from '../../i18n';
 
 export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td } = useI18n();
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const savedRows = usePageStore(s => s.tableRows);
@@ -89,7 +91,8 @@ export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope })
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, [prepared, isDark]);
 
-  const message = prepared.error ?? error;
+  const rawMessage = prepared.error ?? error;
+  const message = rawMessage ? td(rawMessage) : null;
   const wrapperCls = mobileTheme
     ? `relative min-w-0 w-full rounded-[22px] p-4 ${mobileTheme.cardBg} ${root.className ?? ''}`
     : `relative min-w-0 w-full rounded-xl border border-slate-200 bg-white p-4 ${root.className ?? ''}`;
@@ -105,11 +108,11 @@ export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope })
   return <section {...root} className={wrapperCls} data-chart-type={node.type} data-chart-status={message ? 'error' : renderable ? ready ? 'ready' : 'loading' : 'empty'}>
     <div className="mb-3 flex items-center justify-between gap-2">
       <h3 className={titleCls}>{p.title}</h3>
-      <span className={badgeCls}>{p.source === 'sample' ? '示例数据' : p.source === 'inline' ? '自定义数据' : '工程预览数据'}</span>
+      <span className={badgeCls}>{p.source === 'sample' ? tr('示例数据', 'Sample Data') : p.source === 'inline' ? tr('自定义数据', 'Inline Data') : tr('工程预览数据', 'Project Data')}</span>
     </div>
-    {renderable && <div ref={host} role="img" aria-label={typeof p.title === 'string' ? p.title : '数据图表'} style={{ width: '100%', height: typeof p.height === 'number' ? p.height : 320, pointerEvents: rt.isDesign ? 'none' : 'auto' }} />}
-    {message ? <div role="alert" className={alertCls}><p className="font-medium">图表需要调整</p><p className="mt-1 break-words">{message}</p>{!prepared.error && <button type="button" className="mt-2 underline cursor-pointer" onClick={() => setAttempt(n => n + 1)}>重新加载图表</button>}</div>
-      : !renderable ? <div className={emptyCls} style={{ height: typeof p.height === 'number' ? p.height : 320 }}>暂无可展示的数据</div>
-      : !ready && <div className={loadingCls}>正在准备图表…</div>}
+    {renderable && <div ref={host} role="img" aria-label={typeof p.title === 'string' ? p.title : tr('数据图表', 'Chart')} style={{ width: '100%', height: typeof p.height === 'number' ? p.height : 320, pointerEvents: rt.isDesign ? 'none' : 'auto' }} />}
+    {message ? <div role="alert" className={alertCls}><p className="font-medium">{tr('图表需要调整', 'Chart Needs Adjustment')}</p><p className="mt-1 break-words">{message}</p>{!prepared.error && <button type="button" className="mt-2 underline cursor-pointer" onClick={() => setAttempt(n => n + 1)}>{tr('重新加载图表', 'Reload Chart')}</button>}</div>
+      : !renderable ? <div className={emptyCls} style={{ height: typeof p.height === 'number' ? p.height : 320 }}>{tr('暂无可展示的数据', 'No data to display')}</div>
+      : !ready && <div className={loadingCls}>{tr('正在准备图表…', 'Preparing chart…')}</div>}
   </section>;
 };

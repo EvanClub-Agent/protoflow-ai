@@ -191,6 +191,7 @@ type mcpFkIssue struct {
 type mcpRequestContext struct {
 	pub               Publication
 	shareURL          string
+	en                bool
 	loaded            bool
 	loadErr           error
 	snap              mcpSnapshot
@@ -236,7 +237,11 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 	}
 	rc.loaded = true
 	if err := json.Unmarshal(rc.pub.Snapshot, &rc.snap); err != nil {
-		rc.loadErr = errors.New("无法解析已发布的工程快照")
+		if rc.en {
+			rc.loadErr = errors.New("Failed to parse published project snapshot")
+		} else {
+			rc.loadErr = errors.New("无法解析已发布的工程快照")
+		}
 		return rc.loadErr
 	}
 	rc.catalog = buildPageCatalog(&rc.snap)
@@ -282,6 +287,10 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 			key := m.PageID + "\x00" + t.ID
 			if !seenPageTable[key] {
 				seenPageTable[key] = true
+				bindingPrefix := "菜单关联："
+				if rc.en {
+					bindingPrefix = "Menu binding: "
+				}
 				rc.allUsages = append(rc.allUsages, gin.H{
 					"pageId":        m.PageID,
 					"tableId":       t.ID,
@@ -289,13 +298,13 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 					"cnName":        t.CNName,
 					"componentPfId": nil,
 					"componentType": nil,
-					"bindingSource": "菜单关联：" + m.AccessMode,
+					"bindingSource": bindingPrefix + m.AccessMode,
 				})
 			}
 		}
 	}
 
-	rc.allFKs, rc.fkIssues = extractForeignKeys(rc.snap.Tables, tableByName, tableNameCount)
+	rc.allFKs, rc.fkIssues = extractForeignKeys(rc.snap.Tables, tableByName, tableNameCount, rc.en)
 	rc.axureSourceByCopy = make(map[string]string)
 	rc.axureCopyBySource = make(map[string]string)
 	deprecatedByID := make(map[string]bool, len(rc.catalog))
@@ -344,14 +353,14 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 				c.AbortWithStatusJSON(http.StatusNotFound, jsonRpcResponse{
 					JSONRPC: "2.0",
 					ID:      json.RawMessage("null"),
-					Error:   &jsonRpcError{Code: -32004, Message: "分享不存在或无权访问"},
+					Error:   &jsonRpcError{Code: -32004, Message: msg(c, "分享不存在或无权访问", "Share not found or access denied")},
 				})
 				return
 			}
 			c.AbortWithStatusJSON(http.StatusInternalServerError, jsonRpcResponse{
 				JSONRPC: "2.0",
 				ID:      json.RawMessage("null"),
-				Error:   &jsonRpcError{Code: -32603, Message: "发布服务暂时不可用"},
+				Error:   &jsonRpcError{Code: -32603, Message: msg(c, "发布服务暂时不可用", "Publishing service is temporarily unavailable")},
 			})
 			return
 		}
@@ -360,7 +369,7 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 			c.AbortWithStatusJSON(http.StatusGone, jsonRpcResponse{
 				JSONRPC: "2.0",
 				ID:      json.RawMessage("null"),
-				Error:   &jsonRpcError{Code: -32010, Message: "此分享已撤回或过期，请联系发布者"},
+				Error:   &jsonRpcError{Code: -32010, Message: msg(c, "此分享已撤回或过期，请联系发布者", "This share link has been revoked or has expired. Please contact the publisher")},
 			})
 			return
 		}
@@ -371,7 +380,7 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 				c.AbortWithStatusJSON(http.StatusUnauthorized, jsonRpcResponse{
 					JSONRPC: "2.0",
 					ID:      json.RawMessage("null"),
-					Error:   &jsonRpcError{Code: -32001, Message: "此在线分享受访问密码保护，请在 MCP headers 中传入 X-Protoflow-Password"},
+					Error:   &jsonRpcError{Code: -32001, Message: msg(c, "此在线分享受访问密码保护，请在 MCP headers 中传入 X-Protoflow-Password", "This online share is password-protected. Pass X-Protoflow-Password in MCP headers")},
 				})
 				return
 			}
@@ -385,14 +394,14 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 				c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, jsonRpcResponse{
 					JSONRPC: "2.0",
 					ID:      json.RawMessage("null"),
-					Error:   &jsonRpcError{Code: -32600, Message: "MCP 请求体超过 64 KiB 限制"},
+					Error:   &jsonRpcError{Code: -32600, Message: msg(c, "MCP 请求体超过 64 KiB 限制", "MCP request body exceeds the 64 KiB limit")},
 				})
 				return
 			}
 			c.AbortWithStatusJSON(http.StatusBadRequest, jsonRpcResponse{
 				JSONRPC: "2.0",
 				ID:      json.RawMessage("null"),
-				Error:   &jsonRpcError{Code: -32700, Message: "无法读取请求体"},
+				Error:   &jsonRpcError{Code: -32700, Message: msg(c, "无法读取请求体", "Failed to read request body")},
 			})
 			return
 		}
@@ -402,7 +411,7 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 			c.AbortWithStatusJSON(http.StatusBadRequest, jsonRpcResponse{
 				JSONRPC: "2.0",
 				ID:      json.RawMessage("null"),
-				Error:   &jsonRpcError{Code: -32700, Message: "空的 JSON-RPC 请求"},
+				Error:   &jsonRpcError{Code: -32700, Message: msg(c, "空的 JSON-RPC 请求", "Empty JSON-RPC request")},
 			})
 			return
 		}
@@ -416,7 +425,8 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 			shareURL = scheme + "://" + c.Request.Host + "/p/" + p.ID
 		}
 
-		reqCtx := &mcpRequestContext{pub: p, shareURL: shareURL}
+		isEn := isEnRequest(c)
+		reqCtx := &mcpRequestContext{pub: p, shareURL: shareURL, en: isEn}
 
 		if trimmed[0] == '[' {
 			batch, batchErr := decodeBoundedBatch(trimmed, maxMcpBatchSize)
@@ -424,7 +434,10 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 				c.AbortWithStatusJSON(http.StatusOK, jsonRpcResponse{
 					JSONRPC: "2.0",
 					ID:      json.RawMessage("null"),
-					Error:   &jsonRpcError{Code: -32600, Message: fmt.Sprintf("批量请求数量不能超过 %d 条", maxMcpBatchSize)},
+					Error: &jsonRpcError{Code: -32600, Message: msg(c,
+						fmt.Sprintf("批量请求数量不能超过 %d 条", maxMcpBatchSize),
+						fmt.Sprintf("Batch request cannot exceed %d items", maxMcpBatchSize),
+					)},
 				})
 				return
 			}
@@ -445,7 +458,7 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 			for i, rawItem := range batch {
 				expects, respID := classifyBatchItem(rawItem)
 				if expects {
-					ef, _ := json.Marshal(budgetLimitResponse(respID))
+					ef, _ := json.Marshal(budgetLimitResponse(respID, isEn))
 					slots[i] = batchSlot{expects: true, errFrame: ef}
 				}
 			}
@@ -522,7 +535,7 @@ func registerMcpRoutes(api *gin.RouterGroup, rateLimit gin.HandlerFunc, store St
 		}
 		frameBytes, err := json.Marshal(resp)
 		if err != nil || len(frameBytes) > maxMcpResponseBytes {
-			c.JSON(http.StatusOK, budgetLimitResponse(resp.ID))
+			c.JSON(http.StatusOK, budgetLimitResponse(resp.ID, isEn))
 			return
 		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", frameBytes)
@@ -596,14 +609,22 @@ func sanitizeRpcID(raw json.RawMessage) (json.RawMessage, bool) {
 	return json.RawMessage("null"), false
 }
 
-func budgetLimitResponse(id json.RawMessage) jsonRpcResponse {
+func optEn(isEn ...bool) bool {
+	return len(isEn) > 0 && isEn[0]
+}
+
+func budgetLimitResponse(id json.RawMessage, isEn ...bool) jsonRpcResponse {
 	safeID, _ := sanitizeRpcID(id)
+	message := "MCP 响应体积超过单次 4 MiB 上限，请指定具体的 pageId 或 tableNames 按需分批读取"
+	if optEn(isEn...) {
+		message = "MCP response exceeds the 4 MiB single-request limit. Specify pageId or tableNames to read incrementally"
+	}
 	return jsonRpcResponse{
 		JSONRPC: "2.0",
 		ID:      safeID,
 		Error: &jsonRpcError{
 			Code:    -32005,
-			Message: "MCP 响应体积超过单次 4 MiB 上限，请指定具体的 pageId 或 tableNames 按需分批读取",
+			Message: message,
 		},
 	}
 }
@@ -800,7 +821,7 @@ func dispatchSingleMcp(raw json.RawMessage, reqCtx *mcpRequestContext) *jsonRpcR
 				Error:   &jsonRpcError{Code: -32602, Message: "Missing prompt name"},
 			}
 		}
-		res, err := buildRemoteMcpPrompt(reqCtx.pub.Title, params.Name, params.Arguments)
+		res, err := buildRemoteMcpPrompt(reqCtx.pub.Title, params.Name, params.Arguments, reqCtx.en)
 		if err != nil {
 			return &jsonRpcResponse{
 				JSONRPC: "2.0",
@@ -1126,7 +1147,8 @@ func tableSingleColumnUniqueSet(tbl mcpTable) map[string]bool {
 	return uniques
 }
 
-func extractForeignKeys(tables []mcpTable, tableByName map[string]mcpTable, tableNameCount map[string]int) ([]mcpForeignKey, []mcpFkIssue) {
+func extractForeignKeys(tables []mcpTable, tableByName map[string]mcpTable, tableNameCount map[string]int, isEnOpt ...bool) ([]mcpForeignKey, []mcpFkIssue) {
+	isEn := optEn(isEnOpt...)
 	fks := make([]mcpForeignKey, 0)
 	issues := make([]mcpFkIssue, 0)
 	singleUniquesByTableID := map[string]map[string]bool{}
@@ -1147,11 +1169,19 @@ func extractForeignKeys(tables []mcpTable, tableByName map[string]mcpTable, tabl
 			if m == nil || !exists || !tableHasColumnName(parentTbl, m[2]) {
 				refLabel := refTrimmed
 				if refLabel == "" {
-					refLabel = "未填写"
+					if isEn {
+						refLabel = "unspecified"
+					} else {
+						refLabel = "未填写"
+					}
+				}
+				msgText := fmt.Sprintf("%s.%s：外键引用 %s 无法解析", t.TableName, c.Name, refLabel)
+				if isEn {
+					msgText = fmt.Sprintf("%s.%s: foreign key reference %s could not be resolved", t.TableName, c.Name, refLabel)
 				}
 				issues = append(issues, mcpFkIssue{
 					TableID: t.ID,
-					Message: fmt.Sprintf("%s.%s：外键引用 %s 无法解析", t.TableName, c.Name, refLabel),
+					Message: msgText,
 				})
 				continue
 			}
@@ -1160,9 +1190,13 @@ func extractForeignKeys(tables []mcpTable, tableByName map[string]mcpTable, tabl
 				parentUniques = tableSingleColumnUniqueSet(parentTbl)
 			}
 			if !parentUniques[m[2]] {
+				msgText := fmt.Sprintf("%s.%s：外键引用 %s 的目标列缺少单列主键或 UNIQUE 约束，已跳过外键 DDL", t.TableName, c.Name, refTrimmed)
+				if isEn {
+					msgText = fmt.Sprintf("%s.%s: target column of foreign key reference %s lacks a single-column PRIMARY KEY or UNIQUE constraint; skipped foreign key DDL", t.TableName, c.Name, refTrimmed)
+				}
 				issues = append(issues, mcpFkIssue{
 					TableID: t.ID,
-					Message: fmt.Sprintf("%s.%s：外键引用 %s 的目标列缺少单列主键或 UNIQUE 约束，已跳过外键 DDL", t.TableName, c.Name, refTrimmed),
+					Message: msgText,
 				})
 				continue
 			}
@@ -1329,7 +1363,8 @@ func formatMcpDefaultSql(c mcpColumn, mappedType, dialect string) string {
 	return dv
 }
 
-func generateMcpDdl(tables []mcpTable, fks []mcpForeignKey, fkIssues []mcpFkIssue, dialect string) string {
+func generateMcpDdl(tables []mcpTable, fks []mcpForeignKey, fkIssues []mcpFkIssue, dialect string, isEnOpt ...bool) string {
+	isEn := optEn(isEnOpt...)
 	var blocks []string
 	for _, t := range tables {
 		colByID := map[string]string{}
@@ -1380,7 +1415,11 @@ func generateMcpDdl(tables []mcpTable, fks []mcpForeignKey, fkIssues []mcpFkIssu
 				cols = append(cols, fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", quoteIdent(uc.Name, dialect), strings.Join(uCols, ", ")))
 			}
 		}
-		stmt := fmt.Sprintf("-- 表: %s (%s)\nCREATE TABLE IF NOT EXISTS %s (\n%s\n);", t.TableName, t.CNName, quoteIdent(t.TableName, dialect), strings.Join(cols, ",\n"))
+		tableLabel := "表"
+		if isEn {
+			tableLabel = "Table"
+		}
+		stmt := fmt.Sprintf("-- %s: %s (%s)\nCREATE TABLE IF NOT EXISTS %s (\n%s\n);", tableLabel, t.TableName, t.CNName, quoteIdent(t.TableName, dialect), strings.Join(cols, ",\n"))
 		if dialect == "postgres" {
 			var comments []string
 			if strings.TrimSpace(t.CNName) != "" {
@@ -1408,8 +1447,12 @@ func generateMcpDdl(tables []mcpTable, fks []mcpForeignKey, fkIssues []mcpFkIssu
 			fk.OnDelete,
 		))
 	}
+	issuePrefix := "-- 待修复的外键引用："
+	if isEn {
+		issuePrefix = "-- Unresolved foreign key reference: "
+	}
 	for _, issue := range fkIssues {
-		blocks = append(blocks, "-- 待修复的外键引用："+strings.ReplaceAll(issue.Message, "\n", " "))
+		blocks = append(blocks, issuePrefix+strings.ReplaceAll(issue.Message, "\n", " "))
 	}
 	return strings.Join(blocks, "\n\n")
 }
@@ -1646,7 +1689,8 @@ func buildRemoteOutline(n mcpNode, depth int) gin.H {
 
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 
-func stripHtmlToMarkdown(title, icon, updatedAt, rawHTML string) string {
+func stripHtmlToMarkdown(title, icon, updatedAt, rawHTML string, isEnOpt ...bool) string {
+	isEn := optEn(isEnOpt...)
 	clean := rawHTML
 	clean = strings.ReplaceAll(clean, "</p>", "\n\n")
 	clean = strings.ReplaceAll(clean, "<br>", "\n")
@@ -1660,12 +1704,19 @@ func stripHtmlToMarkdown(title, icon, updatedAt, rawHTML string) string {
 	clean = htmlTagRe.ReplaceAllString(clean, "")
 	clean = html.UnescapeString(clean)
 	header := "# " + strings.TrimSpace(icon+" "+title)
+	if isEn {
+		return header + "\n> Updated: " + updatedAt + "\n\n" + strings.TrimSpace(clean)
+	}
 	return header + "\n> 更新时间：" + updatedAt + "\n\n" + strings.TrimSpace(clean)
 }
 
-func legacyUniqueWarning(formatVersion int) string {
+func legacyUniqueWarning(formatVersion int, isEnOpt ...bool) string {
+	isEn := optEn(isEnOpt...)
 	if formatVersion >= 5 {
 		return ""
+	}
+	if isEn {
+		return fmt.Sprintf("This online share uses legacy publication format (V%d) without column-level isUnique or table-level uniqueConstraints metadata; republish in V5+ format or verify the source project before running DDL.", formatVersion)
 	}
 	return fmt.Sprintf("当前在线分享为旧版发布格式（V%d），未保存字段级 isUnique 与表级 uniqueConstraints 唯一约束元数据；请重新发布为 V5+ 格式或核对原工程后再执行建表。", formatVersion)
 }
@@ -1817,6 +1868,9 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			}
 		}
 		if len(filterSet) > 0 && len(selected) == 0 {
+			if rc.en {
+				return nil, fmt.Errorf("Requested database tables not found")
+			}
 			return nil, fmt.Errorf("未找到请求的数据表")
 		}
 
@@ -1910,11 +1964,15 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			}
 		}
 
-		rawDdl := generateMcpDdl(ddlTables, scopedFKs, scopedIssues, dialect)
-		warnMsg := legacyUniqueWarning(snap.FormatVersion)
+		rawDdl := generateMcpDdl(ddlTables, scopedFKs, scopedIssues, dialect, rc.en)
+		warnMsg := legacyUniqueWarning(snap.FormatVersion, rc.en)
 		ddl := rawDdl
 		if warnMsg != "" {
-			ddl = "-- [警告] " + warnMsg + "\n\n" + rawDdl
+			warnTag := "-- [警告] "
+			if rc.en {
+				warnTag = "-- [WARNING] "
+			}
+			ddl = warnTag + warnMsg + "\n\n" + rawDdl
 		}
 
 		warnings := make([]string, 0)
@@ -1945,6 +2003,9 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		pageID, _ := args["pageId"].(string)
 		pageID = strings.TrimSpace(pageID)
 		if pageID == "" {
+			if rc.en {
+				return nil, errors.New("Missing required parameter pageId")
+			}
 			return nil, errors.New("缺少必填参数 pageId")
 		}
 		includeSource := true
@@ -1961,6 +2022,9 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		}
 		pg, hasPage := pageByID[pageID]
 		if catEntry == nil && !hasPage {
+			if rc.en {
+				return nil, fmt.Errorf("Page %q not found", pageID)
+			}
 			return nil, fmt.Errorf("找不到页面 %q", pageID)
 		}
 
@@ -2087,7 +2151,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 				"meetingDate": n.MeetingDate,
 				"updatedAt":   n.UpdatedAt,
 				"pageIds":     n.PageIDs,
-				"markdown":    stripHtmlToMarkdown(n.Title, n.Icon, n.UpdatedAt, n.HTML),
+				"markdown":    stripHtmlToMarkdown(n.Title, n.Icon, n.UpdatedAt, n.HTML, rc.en),
 			})
 		}
 		return gin.H{
@@ -2101,6 +2165,9 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		q, _ := args["query"].(string)
 		q = strings.TrimSpace(q)
 		if q == "" {
+			if rc.en {
+				return nil, errors.New("Missing required search query")
+			}
 			return nil, errors.New("缺少搜索关键词 query")
 		}
 		limit := 25
@@ -2129,7 +2196,11 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		}
 		for _, s := range snap.StickyNotes {
 			if strings.Contains(strings.ToLower(s.TargetWidgetName+" "+s.Text), ql) {
-				push(gin.H{"category": "sticky_note", "id": s.ID, "title": fmt.Sprintf("便签 #%d · %s", s.Index, s.TargetWidgetName), "location": "page:" + s.PageID + "#" + s.TargetWidgetID, "snippet": s.Text})
+				stickyTitle := fmt.Sprintf("便签 #%d · %s", s.Index, s.TargetWidgetName)
+				if rc.en {
+					stickyTitle = fmt.Sprintf("Sticky #%d · %s", s.Index, s.TargetWidgetName)
+				}
+				push(gin.H{"category": "sticky_note", "id": s.ID, "title": stickyTitle, "location": "page:" + s.PageID + "#" + s.TargetWidgetID, "snippet": s.Text})
 			}
 		}
 		for _, p := range snap.Pages {
@@ -2139,7 +2210,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			}
 		}
 		for _, n := range snap.Notes {
-			md := stripHtmlToMarkdown(n.Title, n.Icon, n.UpdatedAt, n.HTML)
+			md := stripHtmlToMarkdown(n.Title, n.Icon, n.UpdatedAt, n.HTML, rc.en)
 			if strings.Contains(strings.ToLower(md), ql) {
 				push(gin.H{"category": "note", "id": n.NoteID, "title": n.Title, "location": "notes/" + n.NoteID, "snippet": n.Title})
 			}
@@ -2254,7 +2325,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		}
 
 		openWarnings := make([]string, 0)
-		if warn := legacyUniqueWarning(snap.FormatVersion); warn != "" {
+		if warn := legacyUniqueWarning(snap.FormatVersion, rc.en); warn != "" {
 			openWarnings = append(openWarnings, warn)
 		}
 		for _, issue := range rc.fkIssues {
@@ -2280,20 +2351,48 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		}, nil
 
 	default:
+		if rc.en {
+			return nil, fmt.Errorf("Unknown MCP tool: %s", name)
+		}
 		return nil, fmt.Errorf("未知的 MCP 工具：%s", name)
 	}
 }
 
-func buildRemoteMcpPrompt(projectTitle, name string, args map[string]string) (any, error) {
+func buildRemoteMcpPrompt(projectTitle, name string, args map[string]string, isEnOpt ...bool) (any, error) {
+	isEn := optEn(isEnOpt...)
 	switch name {
 	case "implement-module":
 		mod := strings.TrimSpace(args["moduleKeyword"])
 		if mod == "" {
-			mod = "全部核心模块"
+			if isEn {
+				mod = "all core modules"
+			} else {
+				mod = "全部核心模块"
+			}
 		}
 		stack := strings.TrimSpace(args["techStack"])
 		if stack == "" {
-			stack = "当前仓库默认技术栈"
+			if isEn {
+				stack = "the repository's default stack"
+			} else {
+				stack = "当前仓库默认技术栈"
+			}
+		}
+		if isEn {
+			text := strings.Join([]string{
+				fmt.Sprintf("Implement production-ready full-stack code from the Alex (ProtoFlow AI) online prototype %q (scope: %s; stack: %s).", projectTitle, mod, stack),
+				"",
+				"1. Call `protoflow_get_project_overview` first to understand the route tree and module boundaries;",
+				"2. Call `protoflow_get_database_schema` for physical tables, primary/foreign keys, and seed rows, then align database migrations and API contracts;",
+				"3. Call `protoflow_get_page_spec` for each page to implement UI, interactive action chains, and sticky-note business rules;",
+				"4. Finally call `protoflow_get_implementation_checklist` to verify every requirement.",
+			}, "\n")
+			return gin.H{
+				"description": fmt.Sprintf("Implement module from %s prototype specification: %s", projectTitle, mod),
+				"messages": []gin.H{
+					{"role": "user", "content": gin.H{"type": "text", "text": text}},
+				},
+			}, nil
 		}
 		text := strings.Join([]string{
 			fmt.Sprintf("请基于 Alex (ProtoFlow AI) 在线原型「%s」实现生产级全栈代码（目标范围：%s；技术栈：%s）。", projectTitle, mod, stack),
@@ -2317,7 +2416,20 @@ func buildRemoteMcpPrompt(projectTitle, name string, args map[string]string) (an
 		}
 		orm := strings.TrimSpace(args["orm"])
 		if orm == "" {
-			orm = "项目现有 ORM / SQL Migration"
+			if isEn {
+				orm = "the project's existing ORM / SQL migrations"
+			} else {
+				orm = "项目现有 ORM / SQL Migration"
+			}
+		}
+		if isEn {
+			text := fmt.Sprintf("Call `protoflow_get_database_schema` (dialect: %q, includeSampleRows: true) to read the ER physical table schema of %q and generate models, migrations, and seed data for **%s**.", dialect, projectTitle, orm)
+			return gin.H{
+				"description": "Generate database layer from prototype ER schema",
+				"messages": []gin.H{
+					{"role": "user", "content": gin.H{"type": "text", "text": text}},
+				},
+			}, nil
 		}
 		text := fmt.Sprintf("请调用 `protoflow_get_database_schema`（dialect: %q, includeSampleRows: true）读取「%s」的 ER 物理表设计，并生成适配 **%s** 的模型、Migration 与 Seed 数据。", dialect, projectTitle, orm)
 		return gin.H{
@@ -2328,6 +2440,9 @@ func buildRemoteMcpPrompt(projectTitle, name string, args map[string]string) (an
 		}, nil
 
 	default:
+		if isEn {
+			return nil, fmt.Errorf("Unknown MCP Prompt: %s", name)
+		}
 		return nil, fmt.Errorf("未知的 MCP Prompt：%s", name)
 	}
 }
@@ -2336,35 +2451,54 @@ func readRemoteMcpResource(rc *mcpRequestContext, uri string) (any, error) {
 	snap := &rc.snap
 	pub := rc.pub
 	prefix := ""
-	if warn := legacyUniqueWarning(snap.FormatVersion); warn != "" {
-		prefix = "-- [警告] " + warn + "\n\n"
+	if warn := legacyUniqueWarning(snap.FormatVersion, rc.en); warn != "" {
+		if rc.en {
+			prefix = "-- [WARNING] " + warn + "\n\n"
+		} else {
+			prefix = "-- [警告] " + warn + "\n\n"
+		}
 	}
 	switch uri {
 	case "protoflow://database/schema.postgres.sql":
 		return gin.H{
 			"contents": []gin.H{
-				{"uri": uri, "mimeType": "application/sql", "text": prefix + generateMcpDdl(snap.Tables, rc.allFKs, rc.fkIssues, "postgres")},
+				{"uri": uri, "mimeType": "application/sql", "text": prefix + generateMcpDdl(snap.Tables, rc.allFKs, rc.fkIssues, "postgres", rc.en)},
 			},
 		}, nil
 	case "protoflow://database/schema.mysql.sql":
 		return gin.H{
 			"contents": []gin.H{
-				{"uri": uri, "mimeType": "application/sql", "text": prefix + generateMcpDdl(snap.Tables, rc.allFKs, rc.fkIssues, "mysql")},
+				{"uri": uri, "mimeType": "application/sql", "text": prefix + generateMcpDdl(snap.Tables, rc.allFKs, rc.fkIssues, "mysql", rc.en)},
 			},
 		}, nil
 	case "protoflow://spec/markdown":
 		var b strings.Builder
-		fmt.Fprintf(&b, "# %s · 在线原型工程规格 (v%d)\n\n", snap.Title, pub.Version)
-		if warn := legacyUniqueWarning(snap.FormatVersion); warn != "" {
-			fmt.Fprintf(&b, "> ⚠️ %s\n\n", warn)
-		}
-		fmt.Fprintf(&b, "## 页面目录 (%d 页)\n", len(snap.Pages))
-		for _, p := range rc.catalog {
-			fmt.Fprintf(&b, "- **%s** (`%s`)\n", p.Path, p.PageID)
-		}
-		fmt.Fprintf(&b, "\n## 物理数据表 (%d 张)\n", len(snap.Tables))
-		for _, t := range snap.Tables {
-			fmt.Fprintf(&b, "- `%s`（%s）：%d 列\n", t.TableName, t.CNName, len(t.Columns))
+		if rc.en {
+			fmt.Fprintf(&b, "# %s · Online Prototype Specification (v%d)\n\n", snap.Title, pub.Version)
+			if warn := legacyUniqueWarning(snap.FormatVersion, true); warn != "" {
+				fmt.Fprintf(&b, "> ⚠️ %s\n\n", warn)
+			}
+			fmt.Fprintf(&b, "## Page Catalog (%d pages)\n", len(snap.Pages))
+			for _, p := range rc.catalog {
+				fmt.Fprintf(&b, "- **%s** (`%s`)\n", p.Path, p.PageID)
+			}
+			fmt.Fprintf(&b, "\n## Physical Database Tables (%d tables)\n", len(snap.Tables))
+			for _, t := range snap.Tables {
+				fmt.Fprintf(&b, "- `%s` (%s): %d columns\n", t.TableName, t.CNName, len(t.Columns))
+			}
+		} else {
+			fmt.Fprintf(&b, "# %s · 在线原型工程规格 (v%d)\n\n", snap.Title, pub.Version)
+			if warn := legacyUniqueWarning(snap.FormatVersion, false); warn != "" {
+				fmt.Fprintf(&b, "> ⚠️ %s\n\n", warn)
+			}
+			fmt.Fprintf(&b, "## 页面目录 (%d 页)\n", len(snap.Pages))
+			for _, p := range rc.catalog {
+				fmt.Fprintf(&b, "- **%s** (`%s`)\n", p.Path, p.PageID)
+			}
+			fmt.Fprintf(&b, "\n## 物理数据表 (%d 张)\n", len(snap.Tables))
+			for _, t := range snap.Tables {
+				fmt.Fprintf(&b, "- `%s`（%s）：%d 列\n", t.TableName, t.CNName, len(t.Columns))
+			}
 		}
 		return gin.H{
 			"contents": []gin.H{
@@ -2372,6 +2506,9 @@ func readRemoteMcpResource(rc *mcpRequestContext, uri string) (any, error) {
 			},
 		}, nil
 	default:
+		if rc.en {
+			return nil, fmt.Errorf("Unknown MCP Resource URI: %s", uri)
+		}
 		return nil, fmt.Errorf("未知的 MCP Resource URI：%s", uri)
 	}
 }

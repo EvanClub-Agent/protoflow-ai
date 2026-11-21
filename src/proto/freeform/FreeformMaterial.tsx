@@ -9,8 +9,10 @@ import { newId } from '../../utils/identity';
 import { compileFreeform } from './compile';
 import { freeformDocument } from './document';
 import { freeformInputs, freeformSourceErrors, resolveFreeformEvent, validateFreeformEvent, type FreeformEventField } from './contract';
+import { useI18n } from '../../i18n';
 
 export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td } = useI18n();
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const savedRows = usePageStore(s => s.tableRows);
@@ -79,7 +81,8 @@ export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope
     if (frame && ready.current) iframe.current?.contentWindow?.postMessage({ channel: frame.channel, type: 'theme', payload: themeMode }, '*');
   }, [frame, themeMode]);
 
-  const displayError = inputs.error ?? error;
+  const rawError = inputs.error ?? error;
+  const displayError = rawError ? td(rawError) : null;
   const alertCls = mobileTheme && mobileTheme.isDark
     ? 'rounded-2xl border border-amber-400/25 bg-amber-500/15 p-4 text-xs text-amber-200 space-y-2'
     : 'rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 space-y-2';
@@ -88,11 +91,11 @@ export const FreeformMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope
     : 'rounded-xl bg-slate-50 p-8 text-center text-xs text-slate-500';
   return <div {...root} className="relative w-full min-w-0" data-freeform-id={node.pfId}>
     {displayError ? <div role="alert" className={alertCls}>
-      <p className="font-semibold">这个自由组件需要调整</p><p className="break-words">{displayError}</p>
-      <button type="button" className="underline cursor-pointer" onClick={() => setAttempt(n => n + 1)}>重新预览</button>
+      <p className="font-semibold">{tr('这个自由组件需要调整', 'Freeform Widget Needs Adjustment')}</p><p className="break-words">{displayError}</p>
+      <button type="button" className="underline cursor-pointer" onClick={() => setAttempt(n => n + 1)}>{tr('重新预览', 'Retry Preview')}</button>
     </div> : frame ? <>
-      <iframe ref={iframe} title={typeof p.title === 'string' ? p.title : '自由组件'} sandbox="allow-scripts" srcDoc={frame.html} referrerPolicy="no-referrer" className="block w-full border-0" style={{ height: Math.max(typeof p.height === 'number' ? p.height : 260, height), pointerEvents: rt.isDesign ? 'none' : 'auto' }} />
-      {rt.isDesign && <div className="absolute inset-0" title="选中后描述想法；切换到预览模式体验交互" />}
-    </> : <div className={loadingCls}>正在准备自由组件…</div>}
+      <iframe ref={iframe} title={typeof p.title === 'string' ? p.title : tr('自由组件', 'Freeform Widget')} sandbox="allow-scripts" srcDoc={frame.html} referrerPolicy="no-referrer" className="block w-full border-0" style={{ height: Math.max(typeof p.height === 'number' ? p.height : 260, height), pointerEvents: rt.isDesign ? 'none' : 'auto' }} />
+      {rt.isDesign && <div className="absolute inset-0" title={tr('选中后描述想法；切换到预览模式体验交互', 'Select to describe your idea; switch to Preview mode to interact')} />}
+    </> : <div className={loadingCls}>{tr('正在准备自由组件…', 'Preparing freeform widget…')}</div>}
   </div>;
 };

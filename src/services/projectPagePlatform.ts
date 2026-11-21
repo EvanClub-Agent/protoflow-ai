@@ -1,4 +1,5 @@
 import { parsePageSource } from '../proto/dsl/parser';
+import { tr } from '../i18n/runtime';
 import type { PagePlatform, ProjectMode } from '../proto/mobile/types';
 import type { ProjectPlan } from './projectPlan';
 
@@ -31,17 +32,17 @@ function existingPlatform(state: PlatformContext, pageId: string): PagePlatform 
 
 export function plannedPagePlatform(state: PlatformContext, pageId: string, declared: PagePlatform | undefined, mode: ProjectMode | undefined): PagePlatform {
   const existing = existingPlatform(state, pageId);
-  if (existing && declared && existing !== declared) throw new Error(`页面 ${pageId} 的方案平台与现有页面不一致`);
+  if (existing && declared && existing !== declared) throw new Error(tr(`页面 ${pageId} 的方案平台与现有页面不一致`, `Planned platform for page ${pageId} mismatches the existing page`));
   if (declared) return declared;
   if (existing) return existing;
-  if (mode === 'hybrid') throw new Error(`混合工程必须为新页面 ${pageId} 指定 platform（mobile 或 desktop）`);
+  if (mode === 'hybrid') throw new Error(tr(`混合工程必须为新页面 ${pageId} 指定 platform（mobile 或 desktop）`, `Hybrid projects must specify platform ('mobile' or 'desktop') for new page ${pageId}`));
   // Archives predating project modes used desktop pages.
   return mode ?? 'desktop';
 }
 
 /** Both the native staging tool and the final host transaction verify the same page root. */
 export function checkAiPagePlatform(state: PlatformContext, pageId: string, rootType: string, mode?: ProjectMode, requestedPlatform?: PagePlatform): PagePlatform {
-  if (rootType !== 'Page' && rootType !== 'MobilePage') throw new Error('页面根组件必须是 Page 或 MobilePage');
+  if (rootType !== 'Page' && rootType !== 'MobilePage') throw new Error(tr('页面根组件必须是 Page 或 MobilePage', 'Page root component must be Page or MobilePage'));
   const actual = rootType === 'MobilePage' ? 'mobile' : 'desktop';
   const planned = state.projectPlan?.pages.find(page => page.pageId === pageId);
   const existing = existingPlatform(state, pageId);
@@ -49,7 +50,7 @@ export function checkAiPagePlatform(state: PlatformContext, pageId: string, root
     ? plannedPagePlatform(state, pageId, planned.platform, mode)
     : existing ?? requestedPlatform ?? (mode === 'hybrid' ? undefined : mode);
   for (const platform of [expected, requestedPlatform]) {
-    if (platform && actual !== platform) throw new Error(`页面 ${pageId} 需要 ${pageRootType(platform)} 根组件，收到 ${rootType}`);
+    if (platform && actual !== platform) throw new Error(tr(`页面 ${pageId} 需要 ${pageRootType(platform)} 根组件，收到 ${rootType}`, `Page ${pageId} requires ${pageRootType(platform)} root component, got ${rootType}`));
   }
   return actual;
 }

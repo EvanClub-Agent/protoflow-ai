@@ -6,16 +6,29 @@ import { conversationKey, type HermesProjectConversation } from './hermesConvers
 import { projectContext } from './hermesProject';
 import { pendingProjectAiTasks } from './hermesTaskLock';
 import { markdownToNoteHtml, noteHtmlToMarkdown, noteHtmlToPlainText } from '../proto/notes';
+import { isEnLocale, td, tr } from '../i18n/runtime';
 
 export type NoteAssistantAction = 'write' | 'polish' | 'organize' | 'actions';
 export type NoteAssistantTab = NoteAssistantAction | 'mentions';
 export type NoteAssistantSelection = { from: number; to: number; text: string; html: string };
 
 export const NOTE_POLISH_STYLES = {
-  natural: { label: '自然流畅', prompt: '让表达自然、流畅，修正错别字和语病，去除重复与口语赘词。' },
-  concise: { label: '简洁清晰', prompt: '压缩冗余表达，突出重点，同时保留所有业务规则、限制条件和关键信息。' },
-  formal: { label: '正式专业', prompt: '使用正式、专业、客观的书面表达，适合项目文档与对外沟通。' },
-  structured: { label: '条理分明', prompt: '通过小标题、段落和列表梳理逻辑，使内容层次清晰、便于阅读。' },
+  natural: {
+    get label() { return tr('自然流畅', 'Natural & Fluent'); },
+    get prompt() { return tr('让表达自然、流畅，修正错别字和语病，去除重复与口语赘词。', 'Make the writing natural and fluent, fix typos and awkward phrasing, and remove filler words.'); },
+  },
+  concise: {
+    get label() { return tr('简洁清晰', 'Concise & Clear'); },
+    get prompt() { return tr('压缩冗余表达，突出重点，同时保留所有业务规则、限制条件和关键信息。', 'Tighten wordy sentences and highlight key points while preserving all business rules, constraints, and facts.'); },
+  },
+  formal: {
+    get label() { return tr('正式专业', 'Formal & Professional'); },
+    get prompt() { return tr('使用正式、专业、客观的书面表达，适合项目文档与对外沟通。', 'Use formal, objective, professional language suitable for PRD specs and stakeholder communication.'); },
+  },
+  structured: {
+    get label() { return tr('条理分明', 'Structured & Scannable'); },
+    get prompt() { return tr('通过小标题、段落和列表梳理逻辑，使内容层次清晰、便于阅读。', 'Organize logic with clear headings, paragraphs, and bullet lists for easy scanning.'); },
+  },
 } as const;
 export type NotePolishStyle = keyof typeof NOTE_POLISH_STYLES;
 
@@ -81,10 +94,28 @@ const ACTION_PROMPTS: Record<NoteAssistantAction, string> = {
 只输出标题与上述提取结果，不要输出任何额外解释或前后缀。`,
 };
 
+function buildNoteAssistantInstructions() {
+  if (isEnLocale()) {
+    return `${INSTRUCTIONS.replace('用中文输出，并且最终只返回一个 ```markdown 代码块，代码块外不要写任何内容。', 'Unless the user explicitly requests Chinese, output in English (use "TBD" for unconfirmed facts) and return ONLY one ```markdown code block with nothing outside it.')}`;
+  }
+  return INSTRUCTIONS;
+}
+
+function buildActionPrompt(action: NoteAssistantAction): string {
+  if (!isEnLocale()) return ACTION_PROMPTS[action];
+  if (action === 'organize') {
+    return `${ACTION_PROMPTS.organize}\n\nActive UI Locale is English: unless the user explicitly asks for Chinese, write the structured minutes in English using headings: "## Background & Participants", "## Confirmed Decisions", "## Requirements" (table: | Module / Page | Requirement | Priority | Status |), "## Open Questions", and "## Action Items" ("- [ ] Owner | Due Date | Task").`;
+  }
+  if (action === 'actions') {
+    return `${ACTION_PROMPTS.actions}\n\nActive UI Locale is English: unless the user explicitly asks for Chinese, use "## Action Items" as the sole heading, format tasks as "- [ ] Owner | Due Date | Action" (use "TBD" when missing), or output "No explicit action items found." when none exist.`;
+  }
+  return `${ACTION_PROMPTS[action]}\n\nActive UI Locale is English: unless the user explicitly asks for Chinese, write the output in idiomatic English.`;
+}
+
 export function extractMarkdownBlock(text: string): string {
   const blocks = [...text.matchAll(/```(?:markdown|md)?[ \t]*\r?\n([\s\S]*?)```/gi)];
   const source = blocks.length === 1 ? blocks[0][1].trim() : blocks.length === 0 ? text.trim() : '';
-  if (!source) throw new Error('AI 没有返回唯一的整理结果，笔记未修改。请重试。');
+  if (!source) throw new Error(tr('AI 没有返回唯一的整理结果，笔记未修改。请重试。', 'AI did not return a single clean Markdown block; note was not modified. Please retry.'));
   return source;
 }
 
@@ -126,12 +157,12 @@ export async function runNoteAssistant(
   options: NoteAssistantOptions = {}
 ): Promise<NoteAssistantRun> {
   const state = useProtoStore.getState();
-  if (state.isProjectClosed || state.currentProjectMeta.projectId !== projectId) throw new Error('当前项目已变化');
+  if (state.isProjectClosed || state.currentProjectMeta.projectId !== projectId) throw new Error(tr('当前项目已变化', 'Current project changed'));
   const note = state.projectNotes.nodes.find((n) => n.id === noteId);
-  if (!note || note.kind !== 'note') throw new Error('笔记不存在');
-  if (useHermesStore.getState().status !== 'running') throw new Error('请先连接 Hermes 引擎，再使用 AI 笔记助手');
+  if (!note || note.kind !== 'note') throw new Error(tr('笔记不存在', 'Note does not exist'));
+  if (useHermesStore.getState().status !== 'running') throw new Error(tr('请先连接 Hermes 引擎，再使用 AI 笔记助手', 'Please connect the Hermes engine before using the AI Note Assistant'));
   if (pendingProjectAiTasks.has(projectId) || useHermesStore.getState().runningProjects[projectId]) {
-    throw new Error('当前项目已有 AI 任务，请等待完成或停止后再试');
+    throw new Error(tr('当前项目已有 AI 任务，请等待完成或停止后再试', 'An AI task is already running in this project. Please wait or stop it first.'));
   }
   const instructions = options.instructions?.trim();
   const refineInstruction = options.refineInstruction?.trim();
@@ -139,12 +170,12 @@ export async function runNoteAssistant(
   const isRefining = Boolean(refineInstruction && previousMarkdown);
   const selection = options.selection ? { ...options.selection } : null;
   if (selection && (!selection.text.trim() || !selection.html.trim() || !Number.isInteger(selection.from) || !Number.isInteger(selection.to) || selection.from < 0 || selection.to <= selection.from)) {
-    throw new Error('选中内容无效，请重新选择后再试');
+    throw new Error(tr('选中内容无效，请重新选择后再试', 'Invalid text selection. Please select again and retry.'));
   }
-  if (action === 'write' && !instructions && !isRefining) throw new Error('请先填写写作要求');
+  if (action === 'write' && !instructions && !isRefining) throw new Error(tr('请先填写写作要求', 'Please enter writing instructions first'));
   // Check the actual body: exported Markdown also contains the title and metadata.
   const hasContent = Boolean(selection ? selection.text.trim() : noteHtmlToPlainText(note.content).trim());
-  if (action !== 'write' && !hasContent && !isRefining) throw new Error('笔记内容为空，请先输入正文，或使用 AI 代写');
+  if (action !== 'write' && !hasContent && !isRefining) throw new Error(tr('笔记内容为空，请先输入正文，或使用 AI 代写', 'Note body is empty. Add content first or use AI Write.'));
   const source = selection ? selection.html : hasContent ? noteHtmlToMarkdown(note) : '';
   const baseWritingRequest = action === 'polish'
     ? `${NOTE_POLISH_STYLES[options.polishStyle ?? 'natural'].prompt}${instructions ? `\n补充要求：${instructions}` : ''}`
@@ -163,16 +194,16 @@ export async function runNoteAssistant(
     useNoteAssistantStore.setState((s) => ({ runs: { ...s.runs, [runKey]: run } }));
   const cancelVersion = useHermesStore.getState().cancelGeneration[key];
   const checkCancelled = () => {
-    if (useHermesStore.getState().cancelGeneration[key] !== cancelVersion) throw new Error('已停止，笔记未修改');
+    if (useHermesStore.getState().cancelGeneration[key] !== cancelVersion) throw new Error(tr('已停止，笔记未修改', 'Stopped; note was not modified'));
     const current = useProtoStore.getState();
-    if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId) throw new Error('当前项目已变化，笔记未修改');
-    if (!current.projectNotes.nodes.some((n) => n.id === noteId && n.kind === 'note')) throw new Error('笔记已删除，结果未写入');
+    if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId) throw new Error(tr('当前项目已变化，笔记未修改', 'Current project changed; note was not modified'));
+    if (!current.projectNotes.nodes.some((n) => n.id === noteId && n.kind === 'note')) throw new Error(tr('笔记已删除，结果未写入', 'Note was deleted; result was not applied'));
   };
   pendingProjectAiTasks.add(projectId);
   update({
     ...context,
     status: 'running',
-    message: '正在连接 Hermes…',
+    message: tr('正在连接 Hermes…', 'Connecting to Hermes…'),
     ...(previousHistory.length ? { history: previousHistory } : {}),
   });
   useHermesStore.setState((s) => ({
@@ -184,16 +215,19 @@ export async function runNoteAssistant(
   try {
     const session = await useHermesStore.getState().ensureSession(scope);
     checkCancelled();
-    const synced = await getHermesApi().sync({ ...scope, skillMarkdown: INSTRUCTIONS });
-    if (!synced.synced) throw new Error('笔记助手指令同步失败');
+    const synced = await getHermesApi().sync({ ...scope, skillMarkdown: buildNoteAssistantInstructions() });
+    if (!synced.synced) throw new Error(tr('笔记助手指令同步失败', 'Failed to sync Note Assistant instructions'));
     checkCancelled();
     const messages: Record<NoteAssistantAction, string> = {
-      write: 'AI 正在起草内容…', polish: 'AI 正在润色内容…', organize: 'AI 正在整理纪要…', actions: 'AI 正在提取待办…',
+      write: tr('AI 正在起草内容…', 'AI is drafting content…'),
+      polish: tr('AI 正在润色内容…', 'AI is polishing content…'),
+      organize: tr('AI 正在整理纪要…', 'AI is structuring notes…'),
+      actions: tr('AI 正在提取待办…', 'AI is extracting action items…'),
     };
     update({
       ...context,
       status: 'running',
-      message: isRefining ? 'AI 正在按追问要求微调…' : messages[action],
+      message: isRefining ? tr('AI 正在按追问要求微调…', 'AI is refining draft…') : messages[action],
       ...(previousHistory.length ? { history: previousHistory } : {}),
     });
     const sourceLabel = selection
@@ -207,20 +241,20 @@ export async function runNoteAssistant(
       readOnly: true,
       workflowPhase: 'conversation',
       snapshot: projectContext(),
-      prompt: `${ACTION_PROMPTS[action]}${writingRequest ? `\n\n本轮写作要求：\n${writingRequest}` : ''}\n\n${sourceSection}`,
+      prompt: `${buildActionPrompt(action)}${writingRequest ? `\n\n本轮写作要求：\n${writingRequest}` : ''}\n\n${sourceSection}`,
     });
     checkCancelled();
-    if (response.sessionId !== session.sessionId) throw new Error('Hermes 返回了其他会话的结果，笔记未修改');
+    if (response.sessionId !== session.sessionId) throw new Error(tr('Hermes 返回了其他会话的结果，笔记未修改', 'Hermes returned a response from another session; note was not modified'));
     if (synced.skillDigest && response.skillDigest && response.skillDigest !== synced.skillDigest) {
-      throw new Error('笔记助手会话尚未加载最新指令，请刷新后重试');
+      throw new Error(tr('笔记助手会话尚未加载最新指令，请刷新后重试', 'Note Assistant session has not loaded the latest instructions. Please retry.'));
     }
-    if (response.operations.length) throw new Error('笔记助手返回了项目修改操作，已全部拒绝');
+    if (response.operations.length) throw new Error(tr('笔记助手返回了项目修改操作，已全部拒绝', 'Note Assistant returned write operations; all changes were rejected'));
     const markdown = extractMarkdownBlock(response.text);
     const html = assistantMarkdownToHtml(markdown);
     const turnNumber = previousHistory.length + 1;
     const nextRevision: NoteAssistantRevision = {
       id: `rev-${turnNumber}-${Date.now()}`,
-      label: turnNumber === 1 ? '初稿' : `第 ${turnNumber} 版`,
+      label: turnNumber === 1 ? tr('初稿', 'Draft 1') : tr(`第 ${turnNumber} 版`, `Revision ${turnNumber}`),
       instruction: isRefining ? refineInstruction : instructions,
       markdown,
       html,
@@ -228,7 +262,9 @@ export async function runNoteAssistant(
     const done: NoteAssistantRun = {
       ...context,
       status: 'done',
-      message: isRefining ? `已完成第 ${turnNumber} 版微调，请预览后写入笔记` : '生成完成，请预览后写入笔记',
+      message: isRefining
+        ? tr(`已完成第 ${turnNumber} 版微调，请预览后写入笔记`, `Revision ${turnNumber} ready — preview before applying to note`)
+        : tr('生成完成，请预览后写入笔记', 'Draft ready — preview before applying to note'),
       markdown,
       html,
       history: [...previousHistory, nextRevision],
@@ -239,7 +275,7 @@ export async function runNoteAssistant(
     const failed: NoteAssistantRun = {
       ...context,
       status: 'error',
-      message: error instanceof Error ? error.message : String(error),
+      message: td(error instanceof Error ? error.message : String(error)),
       ...(previousHistory.length ? { history: previousHistory } : {}),
     };
     update(failed);

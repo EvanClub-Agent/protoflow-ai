@@ -1,4 +1,5 @@
 import type { DBTableSchema } from '../../store/useProtoStore';
+import { tr } from '../../i18n/runtime';
 
 export type RequirementAudit = ReturnType<typeof reviewRequirementRecords>;
 export interface RequirementSource { id: string; label: string; text: string; kind?: 'image' }
@@ -24,23 +25,23 @@ function validExample(example: RuleExample) {
   return ids.length === new Set(ids).size;
 }
 export function validateRequirementRecords(value: unknown): asserts value is RequirementRecord[] {
-  if (!Array.isArray(value)) throw new Error('需求核对记录必须为数组');
+  if (!Array.isArray(value)) throw new Error(tr('需求核对记录必须为数组', 'Requirement records must be an array'));
   const ids = new Set<string>();
   for (const r of value) {
     if (!r || ![r.id, r.label, r.text].every(nonblank) || ids.has(r.id) || !Array.isArray(r.findings))
-      throw new Error('需求核对记录来源无效或重复');
+      throw new Error(tr('需求核对记录来源无效或重复', 'Invalid or duplicate requirement record source'));
     ids.add(r.id);
     if (r.kind !== undefined && (r.kind !== 'image' || r.findings.length))
-      throw new Error('图片来源需要文字转录后才能逐字核对');
+      throw new Error(tr('图片来源需要文字转录后才能逐字核对', 'Image requirement sources require text transcription before verbatim review'));
     for (const f of r.findings) {
       if (!f || !nonblank(f.quote) || !r.text.includes(f.quote) || r.text.indexOf(f.quote) !== r.text.lastIndexOf(f.quote))
-        throw new Error('请逐字引用该来源中的唯一原文片段，重复短句请包含上下文');
+        throw new Error(tr('请逐字引用该来源中的唯一原文片段，重复短句请包含上下文', 'Quote a unique verbatim passage from the source; include surrounding context if a short phrase repeats'));
       if (!['declared','pending','clarify','gap','outside','excluded'].includes(f.state) || !nonblank(f.note))
-        throw new Error('需求核对缺少有效结论或依据');
-      if ([f.tableId, f.basis].some(v => v !== undefined && !nonblank(v))) throw new Error('需求依据标识无效');
+        throw new Error(tr('需求核对缺少有效结论或依据', 'Requirement finding is missing a valid state or note'));
+      if ([f.tableId, f.basis].some(v => v !== undefined && !nonblank(v))) throw new Error(tr('需求依据标识无效', 'Invalid tableId or basis on requirement finding'));
       if (['declared','pending'].includes(f.state) && !(nonblank(f.tableId) && nonblank(f.basis)))
-        throw new Error('请引用候选表的准确 tableId 和 basis');
-      if ([f.allow, f.reject].some(e => e !== undefined && !validExample(e))) throw new Error('正反例缺少描述或字段 ID 重复');
+        throw new Error(tr('请引用候选表的准确 tableId 和 basis', 'Reference an exact tableId and basis on the candidate table'));
+      if ([f.allow, f.reject].some(e => e !== undefined && !validExample(e))) throw new Error(tr('正反例缺少描述或字段 ID 重复', 'Allow/reject example is missing a description or has duplicate column IDs'));
     }
   }
 }
@@ -53,7 +54,7 @@ export function collectRequirementRecords(sources: RequirementSource[], submissi
   }));
   for (const submission of submissions) {
     const record = records.get(submission.sourceId) ?? previous.find(r=>r.id===submission.sourceId);
-    if (!record) throw new Error('需求核对引用了本轮未提供的来源');
+    if (!record) throw new Error(tr('需求核对引用了本轮未提供的来源', 'Requirement submission references a source not provided in this turn'));
     records.set(record.id, { ...record, findings: submission.findings });
   }
   const result = [...records.values()];
@@ -108,11 +109,14 @@ export function reviewRequirementRecords(records: RequirementRecord[], tables: D
   for (const record of records) {
     if (record.kind === 'image') {
       uncovered++;
-      lines.push(`${record.label}「${record.text}」 · 图片内需求待转录或人工核对`);
+      lines.push(tr(
+        `${record.label}「${record.text}」 · 图片内需求待转录或人工核对`,
+        `${record.label} "${record.text}" · Image requirements pending transcription or manual verification`,
+      ));
       continue;
     }
     const ranges: [number,number][] = [];
-    const emit = (quote:string, detail:string) => lines.push(`${record.label}「${quote}」 · ${detail}`);
+    const emit = (quote:string, detail:string) => lines.push(tr(`${record.label}「${quote}」 · ${detail}`, `${record.label} "${quote}" · ${detail}`));
     for (const finding of record.findings) {
       const start = record.text.indexOf(finding.quote);
       ranges.push([start, start + finding.quote.length]);
@@ -120,33 +124,43 @@ export function reviewRequirementRecords(records: RequirementRecord[], tables: D
       const basis = table && finding.basis && requirementEvidence(table).get(finding.basis);
       const isPending = finding.basis?.startsWith('pending:') === true;
       const backed = basis && ((finding.state==='pending' && isPending) || (finding.state==='declared' && !isPending));
-      const state = {declared:'结构依据', pending:'待实现', clarify:'待澄清', gap:'未覆盖', outside:'非数据库要求', excluded:'本轮明确排除'}[finding.state];
+      const state = {
+        declared: tr('结构依据', 'Schema-backed'),
+        pending: tr('待实现', 'Pending rule'),
+        clarify: tr('待澄清', 'Needs clarification'),
+        gap: tr('未覆盖', 'Uncovered'),
+        outside: tr('非数据库要求', 'Non-DB UI/flow'),
+        excluded: tr('本轮明确排除', 'Explicitly excluded'),
+      }[finding.state];
       const needsBasis = finding.state==='declared' || finding.state==='pending';
-      let detail = needsBasis && !backed ? '未覆盖（找不到对应的结构或待实现记录）' : state;
+      let detail = needsBasis && !backed ? tr('未覆盖（找不到对应的结构或待实现记录）', 'Uncovered (matching schema constraint or pending rule not found)') : state;
       if (finding.state==='gap' || (needsBasis && !backed)) uncovered++;
       if (backed) detail += ` · ${table!.tableName} · ${basis}`;
-      detail += ` · Hermes 说明：${finding.note}`;
+      detail += tr(` · Hermes 说明：${finding.note}`, ` · Hermes note: ${finding.note}`);
       if (finding.state !== 'outside' && finding.state !== 'excluded') {
         for (const side of ['allow','reject'] as const) {
-          const label = side==='allow' ? '应允许' : '应拒绝';
+          const label = side==='allow' ? tr('应允许', 'Should allow') : tr('应拒绝', 'Should reject');
           const example = finding[side];
-          if (!example) { detail += `\n${label} · 案例待补`; continue; }
+          if (!example) { detail += `\n${label} · ${tr('案例待补', 'Example missing')}`; continue; }
           const keys = table && compareKeys(table, example);
-          let verdict = '待验证';
+          let verdict = tr('待验证', 'Pending verification');
           if (keys) {
             const collisions = keys.filter(k=>k.matches === true);
             const named = keys.find(k=>k.token === finding.basis);
             const allDifferent = keys.every(k=>k.matches === false);
-            if (collisions.length) verdict = '被 '+collisions.map(k=>k.name).join('、')+' 拒绝';
-            else if (allDifferent) verdict = '可通过已声明的唯一键';
+            if (collisions.length) verdict = tr('被 '+collisions.map(k=>k.name).join('、')+' 拒绝', 'Rejected by '+collisions.map(k=>k.name).join(', '));
+            else if (allDifferent) verdict = tr('可通过已声明的唯一键', 'Passes declared unique keys');
             if (side==='reject' && finding.state==='declared' && named && collisions.length &&
                 (named.matches!==true || collisions.length>1))
-              verdict += '，不能单独验证所引业务键';
+              verdict += tr('，不能单独验证所引业务键', '; cannot isolate the referenced business key');
             if ((side==='allow' && collisions.length) ||
                 (side==='reject' && finding.state==='declared' && named && allDifferent))
-              conflicts.push(`${record.label}「${finding.quote}」：${label}「${example.description}」，实际${verdict}`);
+              conflicts.push(tr(
+                `${record.label}「${finding.quote}」：${label}「${example.description}」，实际${verdict}`,
+                `${record.label} "${finding.quote}": ${label} "${example.description}", actual: ${verdict}`,
+              ));
           }
-          detail += `\n${label} · ${example.description}（${verdict}）`;
+          detail += tr(`\n${label} · ${example.description}（${verdict}）`, `\n${label} · ${example.description} (${verdict})`);
         }
       }
       emit(finding.quote, detail);
@@ -156,7 +170,7 @@ export function reviewRequirementRecords(records: RequirementRecord[], tables: D
       const quote = record.text.slice(cursor,end).trim();
       if (/[\p{L}\p{N}\p{S}]/u.test(quote)) {
         uncovered++;
-        emit(quote,'未核对原文 · 尚无结构依据、待实现说明或澄清结论');
+        emit(quote, tr('未核对原文 · 尚无结构依据、待实现说明或澄清结论', 'Unreviewed passage · No schema basis, pending rule, or clarification yet'));
       }
     };
     for (const [start,end] of ranges.sort((a,b)=>a[0]-b[0])) {

@@ -1,11 +1,12 @@
 import { createProjectPayload } from './projectStorage';
+import { tr } from '../i18n/runtime';
 import { validateProjectPayload } from './projectValidation';
 import { newId } from '../utils/identity';
 import type { AxureImport } from '../proto/axure/import';
 
 export function createAxureProject(sourceName: string, parentDir: string, imported: AxureImport) {
   const name = sourceName.replace(/\.rp$/i, '');
-  if (!name.trim() || !parentDir.trim()) throw new Error('缺少工程名称或保存目录');
+  if (!name.trim() || !parentDir.trim()) throw new Error(tr('缺少工程名称或保存目录', 'Missing project name or save directory'));
   const projectId = newId('proj');
   const now = new Date().toISOString();
   // Use the new project ID for the on-disk directory. Repeated imports of the
@@ -18,7 +19,7 @@ export function createAxureProject(sourceName: string, parentDir: string, import
     pageCount: 0, tableCount: 0, stickyCount: 0,
   });
   const { designerFolders, designerPages, pageSources } = imported;
-  if (designerPages.length === 0) throw new Error('没有可导入的页面');
+  if (designerPages.length === 0) throw new Error(tr('没有可导入的页面', 'No importable pages found'));
   Object.assign(payload.stateSnapshot, { designerFolders, designerPages, pageSources, activePageId: designerPages[0].pageId });
   payload.meta.pageCount = designerPages.length;
   validateProjectPayload(payload);

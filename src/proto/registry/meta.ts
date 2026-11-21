@@ -383,7 +383,7 @@ export const COMPONENTS: ComponentMeta[] = [
       { name: 'resetText', label: '重置按钮文字', kind: 'string', default: '重置' },
     ],
     events: [{ name: 'onSearch', label: '点击查询' }],
-    snippet: "<QueryForm fields={[{ name: 'keyword', label: '关键字' }, { name: 'status', label: '状态', type: 'select', options: '全部,启用,停用' }]} />",
+    snippet: "<QueryForm fields={[{ name: 'keyword', label: '关键字' }, { name: 'status', label: '状态', type: 'select', options: [{ label: '全部', value: '' }, { label: '启用', value: '启用' }, { label: '停用', value: '停用' }] }]} />",
   },
   {
     name: 'SearchInput',

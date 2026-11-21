@@ -1,6 +1,7 @@
 /**
  * Mobile & Multi-Platform Architecture Types for Alex (ProtoFlow AI).
  */
+import { tr, type Locale } from '../../i18n/runtime';
 
 export type PagePlatform = 'desktop' | 'mobile';
 export type ProjectMode = 'desktop' | 'mobile' | 'hybrid';
@@ -55,6 +56,11 @@ export const MOBILE_DEVICE_LIST: MobileDeviceSpec[] = [
   MOBILE_DEVICE_SPECS['iphone-pro'],
   MOBILE_DEVICE_SPECS['iphone-promax'],
 ];
+
+export function localizeMobileDeviceLabel(spec: MobileDeviceSpec, explicitLocale?: Locale): string {
+  if (spec.id === 'iphone') return tr('iPhone 标准屏', 'iPhone Standard', explicitLocale);
+  return spec.label;
+}
 
 export function isPageRootType(type: string | undefined | null): boolean {
   return type === 'Page' || type === 'MobilePage';

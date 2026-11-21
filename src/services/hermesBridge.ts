@@ -28,6 +28,7 @@ import {
 } from "./hermesProject";
 import { parsePageSource } from "../proto/dsl/parser";
 import {
+  currentProjectDataContext,
   generateFromTemplate,
   MOBILE_PAGE_TEMPLATES,
   PAGE_TEMPLATES,
@@ -36,6 +37,8 @@ import {
 import type { RequestedPage } from "./projectPagePlatform";
 import type { PagePlatform, ProjectMode } from "../proto/mobile/types";
 import type { ProtoDoc } from "../proto/types";
+import { parseCreatePageIntent } from "../proto/ai/intent";
+import { isEnLocale, td, tr } from "../i18n/runtime";
 
 function resolveTargetPlatform(
   state: {
@@ -132,6 +135,9 @@ export function buildStructuredPagePrompt(params: {
     ].join("\n"),
     noteBriefing ? `参考资料：\n${noteBriefing}` : "参考资料：本轮未勾选随附笔记；如涉及需求来源或历史沟通，可按需通过 protoflow_get_project_notes 读取完整正文（留意 total、nextOffset 与 truncated 续读）。",
     `本轮目标（用户请求：${prompt}）`,
+    isEnLocale()
+      ? "Language Preference (Active UI Locale: English): Unless the user's prompt explicitly requests Chinese, respond in English, write all clarify question cards and plan summaries in English, and generate default UI copy (titles, buttons, labels, placeholders, toast messages) in idiomatic English."
+      : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -150,7 +156,7 @@ export interface ChatTurn {
 }
 export function reportAiError(error: unknown) {
   useHermesStore.setState({
-    error: error instanceof Error ? error.message : String(error),
+    error: td(error instanceof Error ? error.message : String(error)),
   });
 }
 export async function runProjectAi(
@@ -172,9 +178,9 @@ export async function runProjectAi(
     pageId = options.pageId ?? store.activePageId;
   const scope = { projectId, pageId }, key = conversationKey(scope);
   let diagnosticContext: DiagnosticContext = {...scope};
-  if (store.isProjectClosed) throw new Error("请先打开项目");
+  if (store.isProjectClosed) throw new Error(tr("请先打开项目", "Please open a project first"));
   if (pendingProjects.has(projectId))
-    throw new Error("当前项目已有 AI 任务，请等待或停止生成");
+    throw new Error(tr("当前项目已有 AI 任务，请等待或停止生成", "An AI task is already running in this project. Please wait or stop it first."));
   const chat = useAiChatStore.getState();
   // Only surface a page task in the canvas that owns it.
   if (options.revealChat !== false && store.viewMode === 'single_page' && store.activePageId === pageId)
@@ -186,7 +192,10 @@ export async function runProjectAi(
     projectId,
     role: "user",
     text: contextNotes.length
-      ? `${prompt}\n\n📎 已附带关联笔记：${contextNotes.map((n) => `《${n.title}》`).join('')}`
+      ? tr(
+          `${prompt}\n\n📎 已附带关联笔记：${contextNotes.map((n) => `《${n.title}》`).join('')}`,
+          `${prompt}\n\n📎 Attached notes: ${contextNotes.map((n) => `"${n.title}"`).join(', ')}`
+        )
       : prompt,
     ...(options.images?.length ? { images: options.images } : {}),
     pageId,
@@ -195,7 +204,7 @@ export async function runProjectAi(
   const replyId = chat.addMessage({
     projectId,
     role: "assistant",
-    text: "正在连接 Hermes 会话…",
+    text: tr("正在连接 Hermes 会话…", "Connecting to Hermes session…"),
     pageId,
     status: "pending",
   });
@@ -215,7 +224,7 @@ export async function runProjectAi(
     if (
       useHermesStore.getState().cancelGeneration[key] !== cancelGeneration
     )
-      throw new Error("已停止生成，未应用修改");
+      throw new Error(tr("已停止生成，未应用修改", "Stopped generation; no changes were applied"));
   };
   pendingProjects.add(projectId);
   let endBackground: ((outcome: AiTaskOutcome) => Promise<void>) | undefined;
@@ -261,7 +270,7 @@ export async function runProjectAi(
       projectId,
       skillMarkdown: instructions,
     });
-    if (!synced.synced) throw new Error("项目指令同步失败");
+    if (!synced.synced) throw new Error(tr("项目指令同步失败", "Failed to sync project instructions"));
     checkCancelled();
     if (!options.readOnly && options.audit?.kind !== 'scan') {
       useAiPreviewStore.getState().begin(scope, session.sessionId, base.stateSnapshot.tableRows);
@@ -330,15 +339,15 @@ export async function runProjectAi(
     textTimer = undefined;
     checkCancelled();
     if (synced.skillDigest && res.skillDigest && res.skillDigest !== synced.skillDigest) {
-      throw new Error("当前会话尚未加载最新项目指令，请刷新会话后重试");
+      throw new Error(tr("当前会话尚未加载最新项目指令，请刷新会话后重试", "Session has not loaded the latest project instructions. Please refresh the session and try again."));
     }
     const hasChanges = res.operations.length > 0 || !!res.requirementFindings?.length;
     if (options.readOnly && hasChanges)
-      throw new Error("只读请求返回了修改操作");
+      throw new Error(tr("只读请求返回了修改操作", "Read-only request returned write operations"));
     if (options.audit && !res.operations.some(op => op.tool === 'protoflow_run_closed_loop_audit'))
-      throw new Error('Hermes 未返回巡检结果，问题状态未更新');
-    if (res.sessionId !== session.sessionId) throw new Error('Hermes 返回了其他菜单的对话结果，未应用修改');
-    if (options.requestedPage && !hasChanges) throw new Error(res.text.trim() || 'AI 未提交新页面');
+      throw new Error(tr('Hermes 未返回巡检结果，问题状态未更新', 'Hermes did not return an audit result; issue status was not updated'));
+    if (res.sessionId !== session.sessionId) throw new Error(tr('Hermes 返回了其他菜单的对话结果，未应用修改', 'Hermes returned a response from a different menu session; changes were rejected'));
+    if (options.requestedPage && !hasChanges) throw new Error(res.text.trim() || tr('AI 未提交新页面', 'AI did not submit a new page'));
     const applied = hasChanges
       ? applyProjectChanges(
           base,
@@ -360,10 +369,10 @@ export async function runProjectAi(
     let summary =
       res.text.trim() ||
       (res.operations.length
-        ? `已应用 ${res.operations.length} 项经过校验的修改`
-        : hasChanges ? "已保存需求核对记录" : "Hermes 未返回回复或修改");
+        ? tr(`已应用 ${res.operations.length} 项经过校验的修改`, `Applied ${res.operations.length} validated change(s)`)
+        : hasChanges ? tr("已保存需求核对记录", "Saved requirement review records") : tr("Hermes 未返回回复或修改", "Hermes returned no reply or changes"));
     if (!res.text.trim() && !hasChanges) throw new Error(summary);
-    if (applied.databaseRisks.length) summary += '\n\n数据模型待复核\n' + applied.databaseRisks.join('\n');
+    if (applied.databaseRisks.length) summary += tr('\n\n数据模型待复核\n', '\n\nDatabase Model Review Notes\n') + applied.databaseRisks.join('\n');
     const badge = `Hermes · ${res.modelId}`;
     chat.updateMessage(replyId, {
       status: "done",
@@ -396,10 +405,10 @@ export async function runProjectAi(
   } catch (error) {
     backgroundOutcome = isDiagnosticCancellation(error) ? 'cancelled' : 'failed';
     clearTimeout(textTimer);
-    const text = error instanceof Error ? error.message : String(error);
-    void captureRuntimeError(error,{category:'ai',code:'AI_PAGE_TASK_FAILED',stage:'page-task',message:'页面 AI 任务未完成',context:diagnosticContext})
+    const text = td(error instanceof Error ? error.message : String(error));
+    void captureRuntimeError(error,{category:'ai',code:'AI_PAGE_TASK_FAILED',stage:'page-task',message:tr('页面 AI 任务未完成', 'Page AI task did not complete'),context:diagnosticContext})
       .then(id=>{if(id)chat.updateMessage(replyId,{diagnosticId:id});});
-    chat.updateMessage(replyId, { status: "error", text: `执行失败：${text}` });
+    chat.updateMessage(replyId, { status: "error", text: tr(`执行失败：${text}`, `Execution failed: ${text}`) });
     reportAiError(error);
     throw error;
   } finally {
@@ -448,13 +457,18 @@ export async function runAiCreatePageFromPrompt(
   prompt: string,
   _history?: ChatTurn[],
 ) {
-  if (!/(创建|新建|新增|生成).*(页面|页|菜单|模块)/.test(prompt)) return null;
+  if (
+    !/(创建|新建|新增|生成).*(页面|页|菜单|模块)/.test(prompt) &&
+    !parseCreatePageIntent(prompt, useProtoStore.getState().dbTables)
+  ) {
+    return null;
+  }
   const res = await runProjectAi(prompt);
   if (!res.createdPageId)
     return {
       ...res,
       pageId: useProtoStore.getState().activePageId,
-      title: "Hermes 回复",
+      title: tr("Hermes 回复", "Hermes Reply"),
     };
   return {
     ...res,
@@ -481,11 +495,12 @@ export function createPageFromTemplate(params: {
       ? Boolean(tplSpec?.needsTable && params.dbTables.length > 0)
       : params.template !== 'blank';
   if (requiresTable && !table)
-    throw new Error("请选择有效的数据表");
+    throw new Error(tr("请选择有效的数据表", "Please select a valid database table"));
   return generateFromTemplate(params.template, table, params.dbTables, {
     pageId: params.pageId,
     title: params.title,
     platform: params.platform,
+    data: currentProjectDataContext(params.dbTables),
   });
 }
 export const runStickyCompileWithHermes = (p: {

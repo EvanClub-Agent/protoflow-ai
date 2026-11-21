@@ -3,6 +3,13 @@ const path = require("node:path");
 const readline = require("node:readline");
 const { randomUUID } = require("node:crypto");
 const { performance } = require("node:perf_hooks");
+let tr;
+try {
+  ({ tr } = require("./i18n.cjs"));
+} catch {
+  tr = (zh, en, explicitLocale) =>
+    /^en/i.test(String(explicitLocale || process.env.PROTOFLOW_LOCALE || "")) ? en : zh;
+}
 const { ContextBridgePool, BridgeTransportError, bridgeKey, oneShotContextSync } = require('./hermes-context-bridge.cjs');
 const {
   projectExecutionBrief,
@@ -358,8 +365,8 @@ function projectMenuFeedback(context) {
   const pendingMenuBindings = snapshot.dbTables.filter(table => written.has(table.id)).flatMap(table =>
     table.sharedByMenus.filter(binding => !known.has(binding.pageId)).map(({pageId}) => ({tableId:table.id, pageId})));
   if (!pendingMenuBindings.length) return {};
-  if (context.workflowPhase === 'generating') throw new Error('数据表关联了不存在的菜单：' + JSON.stringify(pendingMenuBindings) + '。请读取 get_project 的 pageCatalog，用实际菜单的 pageId 修正表关联后重试。');
-  return {pendingMenuBindings, requiredNextStep:'这些关联尚无对应菜单。本轮结束前请用准确的 pageId 修正关联，或按用户需求声明相应的菜单（完整方案或页面修改）。不要把目录或弹层当作菜单，也不要删除关联来绕过检查。'};
+  if (context.workflowPhase === 'generating') throw new Error(tr('数据表关联了不存在的菜单：' + JSON.stringify(pendingMenuBindings) + '。请读取 get_project 的 pageCatalog，用实际菜单的 pageId 修正表关联后重试。', 'Database table references non-existent menus: ' + JSON.stringify(pendingMenuBindings) + '. Read get_project.pageCatalog, fix sharedByMenus with valid menu pageIds, and retry.'));
+  return {pendingMenuBindings, requiredNextStep:tr('这些关联尚无对应菜单。本轮结束前请用准确的 pageId 修正关联，或按用户需求声明相应的菜单（完整方案或页面修改）。不要把目录或弹层当作菜单，也不要删除关联来绕过检查。', 'These bindings do not match any menu yet. Before ending this turn, update them with exact pageIds or declare the corresponding menus (in the project plan or page revision). Do not treat folders or overlays as menus, and do not delete bindings to bypass checks.')};
 }
 function stageTable(snapshot, table, baseSnapshot) {
   validateTable(table);
@@ -368,7 +375,7 @@ function stageTable(snapshot, table, baseSnapshot) {
   const after = before.some(t => t.id === table.id)
     ? before.map(t => t.id === table.id ? table : t) : [...before, table];
   const review = reviewDatabaseChanges(before, after);
-  if (review.tableErrors.length) throw new Error(review.tableErrors.join('；'));
+  if (review.tableErrors.length) throw new Error(review.tableErrors.join(tr('；', '; ')));
   // A related table may be staged later in this turn. Give Hermes the exact
   // outstanding references now; the host checks the final graph atomically.
   snapshot.dbTables = after;
@@ -390,7 +397,7 @@ class NativeContextNeeded extends Error {
  * another turn (cancelled, finished or replaced). It must never act on it. */
 class StaleRunError extends Error {
   constructor() {
-    super('该工具调用所属的 Alex 轮次已结束或已切换，未执行任何操作；请在当前轮次重新调用');
+    super(tr('该工具调用所属的 Alex 轮次已结束或已切换，未执行任何操作；请在当前轮次重新调用', 'The Alex turn owning this tool call has ended or changed; no action was executed. Retry in the active turn'));
     this.name = 'StaleRunError';
   }
 }
@@ -477,7 +484,7 @@ function callToolCore(contextFile, name, args, options = {}) {
       } catch {}
     };
     if (context.footprintCorrupted || hasFootprintErrorMarker()) {
-      throw new Error('依赖足迹记录已损坏或保存失败，已阻止继续执行');
+      throw new Error(tr('依赖足迹记录已损坏或保存失败，已阻止继续执行', 'Dependency footprint record is corrupted or failed to save; execution blocked'));
     }
     const sidecarRequired = Boolean(context.requireFootprintSidecar);
     let sidecarFootprint = null;
@@ -486,17 +493,17 @@ function callToolCore(contextFile, name, args, options = {}) {
       const rawSidecar = fs.readFileSync(footprintPath, 'utf8');
       const parsedSidecar = JSON.parse(rawSidecar);
       if (!parsedSidecar || typeof parsedSidecar !== 'object' || parsedSidecar.corrupted === true) {
-        throw new Error('依赖足迹文件已损坏');
+        throw new Error(tr('依赖足迹文件已损坏', 'Dependency footprint file is corrupted'));
       }
       if (parsedSidecar.runId !== context.runId) {
         if (sidecarRequired) {
-          throw new Error('依赖足迹运行标识不匹配');
+          throw new Error(tr('依赖足迹运行标识不匹配', 'Dependency footprint run ID mismatch'));
         }
         sidecarFootprint = null;
         sidecarExisted = false;
       } else {
         if (parsedSidecar.dependencyFootprint?.version !== 3) {
-          throw new Error('依赖足迹版本无效');
+          throw new Error(tr('依赖足迹版本无效', 'Invalid dependency footprint version'));
         }
         sidecarFootprint = parsedSidecar.dependencyFootprint;
         sidecarExisted = true;
@@ -506,7 +513,7 @@ function callToolCore(contextFile, name, args, options = {}) {
         sidecarFootprint = null;
       } else {
         markFootprintCorrupted(sidecarReadErr);
-        throw new Error('依赖足迹记录读取失败，已阻止继续执行');
+        throw new Error(tr('依赖足迹记录读取失败，已阻止继续执行', 'Failed to read dependency footprint record; execution blocked'));
       }
     }
     const sourceFootprint = sidecarExisted
@@ -527,7 +534,7 @@ function callToolCore(contextFile, name, args, options = {}) {
         footprintPersisted = true;
       } catch (writeErr) {
         markFootprintCorrupted(writeErr);
-        throw new Error('依赖足迹记录保存失败，已阻止返回工具结果或提交修改');
+        throw new Error(tr('依赖足迹记录保存失败，已阻止返回工具结果或提交修改', 'Failed to save dependency footprint record; blocked tool response and commit'));
       }
     };
     const saveContext = () => {
@@ -541,12 +548,12 @@ function callToolCore(contextFile, name, args, options = {}) {
   const currentEpoch = () => {
     if (!fs.existsSync(epochFile)) return 0;
     const marker = JSON.parse(fs.readFileSync(epochFile, 'utf8'));
-    if (marker.sessionId !== context.sessionId || !Number.isSafeInteger(marker.epoch)) throw new Error('上下文会话标识不一致');
+    if (marker.sessionId !== context.sessionId || !Number.isSafeInteger(marker.epoch)) throw new Error(tr('上下文会话标识不一致', 'Context session ID mismatch'));
     return marker.epoch;
   };
   const nativeContext = (action, data = {}) => {
     const bridge = context.nativeBridge;
-    if (!bridge || !context.sessionId) throw new Error('当前 Hermes 尚未接入上下文接口，请更新桌面端并重新连接');
+    if (!bridge || !context.sessionId) throw new Error(tr('当前 Hermes 尚未接入上下文接口，请更新桌面端并重新连接', 'Current Hermes session is not connected to the context interface; please update the desktop app and reconnect'));
     const payload = { action, sessionId: context.sessionId, ...data };
     let response;
     if (typeof options.resolveNative === 'function') {
@@ -557,7 +564,7 @@ function callToolCore(contextFile, name, args, options = {}) {
       try {
         response = oneShotContextSync(bridge, payload);
       } catch (error) {
-        if (error instanceof BridgeTransportError) throw new Error('Hermes 上下文接口不可用');
+        if (error instanceof BridgeTransportError) throw new Error(tr('Hermes 上下文接口不可用', 'Hermes context interface is unavailable'));
         throw error;
       } finally {
         nativeStats.count += 1;
@@ -567,18 +574,18 @@ function callToolCore(contextFile, name, args, options = {}) {
       }
     }
     if (response.error) throw new Error(response.error);
-    if (response.sessionId !== context.sessionId) throw new Error('上下文接口返回了其他会话');
+    if (response.sessionId !== context.sessionId) throw new Error(tr('上下文接口返回了其他会话', 'Context interface returned a different session'));
     return response;
   };
   const nativeCompressionCount = () => {
     const count = nativeContext('usage').usage?.compressions;
-    if (!Number.isSafeInteger(count) || count < 0) throw new Error('Hermes 未提供有效的压缩计数，无法核对项目资料');
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error(tr('Hermes 未提供有效的压缩计数，无法核对项目资料', 'Hermes did not return a valid compression count; unable to verify project context'));
     return count;
   };
   const requireFreshBrief = () => {
     if (!context.requireProjectBrief) return; // Explicit compatibility with pre-context-management hosts.
     if (context.briefReadEpoch !== currentEpoch() || (context.nativeBridge && context.briefReadCompressions !== nativeCompressionCount()))
-      throw new Error('请先调用 protoflow_get_project_brief 重新核对已保存的约定、字段约束和进度；上下文可能刚完成压缩。');
+      throw new Error(tr('请先调用 protoflow_get_project_brief 重新核对已保存的约定、字段约束和进度；上下文可能刚完成压缩。', 'Call protoflow_get_project_brief first to re-verify saved agreements, field constraints, and progress; context may have just been compacted.'));
   };
   let toolResult;
   try {
@@ -638,7 +645,7 @@ function callToolCore(contextFile, name, args, options = {}) {
   }
   if (name === 'protoflow_search_history') {
     if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 200 ||
-        (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0))) throw new Error('历史检索参数无效');
+        (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0))) throw new Error(tr('历史检索参数无效', 'Invalid history search parameters'));
     return nativeContext('history', {
       query: args.query,
       offset: args.offset,
@@ -653,7 +660,7 @@ function callToolCore(contextFile, name, args, options = {}) {
     if (submittingFindings) {
       requireFreshBrief();
       if (context.readOnly) throw new Error('This request is read-only');
-      if (typeof args.sourceId !== 'string' || !Array.isArray(args.findings)) throw new Error('须同时提供 sourceId 和完整 findings');
+      if (typeof args.sourceId !== 'string' || !Array.isArray(args.findings)) throw new Error(tr('须同时提供 sourceId 和完整 findings', 'Both sourceId and complete findings are required'));
       submissions = [...submissions.filter(s => s.sourceId !== args.sourceId), {sourceId:args.sourceId, findings:args.findings}];
     }
     recordReviewDbRequirementsFootprint(footprint, baseSnapshot, args.sourceId, submittingFindings);
@@ -669,14 +676,14 @@ function callToolCore(contextFile, name, args, options = {}) {
   }
   if (name === 'protoflow_get_implementation_guide') return getImplementationGuide(args.scenarioIds);
   if (name === 'protoflow_inspect_axure_project') {
-    if (context.kind !== 'project' || context.workflowPhase !== 'conversation') throw new Error('请在项目 AI 对话中读取 RP 迁移范围');
-    if (args.pageId !== undefined && args.folderId !== undefined) throw new Error('请选择一个页面、一个目录或全工程');
+    if (context.kind !== 'project' || context.workflowPhase !== 'conversation') throw new Error(tr('请在项目 AI 对话中读取 RP 迁移范围', 'Inspect RP migration scope in project AI conversation mode'));
+    if (args.pageId !== undefined && args.folderId !== undefined) throw new Error(tr('请选择一个页面、一个目录或全工程', 'Select either one page, one folder, or the entire project'));
     const scope = args.pageId !== undefined ? {kind:'page',pageId:args.pageId}
       : args.folderId !== undefined ? {kind:'folder',folderId:args.folderId} : snapshot.axureMigrationScope ?? {kind:'project'};
     if (snapshot.axureMigrationScope && (args.pageId !== undefined || args.folderId !== undefined)) {
       const catalog = axureCatalog(snapshot);
       const selected = new Set(axureScopePages(catalog,snapshot.axureMigrationScope).map(page=>page.pageId));
-      if (axureScopePages(catalog,scope).some(page=>!selected.has(page.pageId))) throw new Error('盘点范围超出本次选择');
+      if (axureScopePages(catalog,scope).some(page=>!selected.has(page.pageId))) throw new Error(tr('盘点范围超出本次选择', 'Inspection scope exceeds the current selection'));
     }
     const result = inspectAxureProject(snapshot,scope,args.offset,args.limit);
     recordGetProjectFootprint(footprint,baseSnapshot);
@@ -690,7 +697,7 @@ function callToolCore(contextFile, name, args, options = {}) {
     recordInspectPageFootprint(footprint, baseSnapshot, snapshot, args.pageId, context.kind === 'project');
     if (typeof args.pageId !== 'string' || !Object.hasOwn(snapshot.pageSources, args.pageId)) throw new Error('Unknown pageId');
     if (args.view === 'axure') return inspectAxurePage(args.pageId, snapshot.pageSources[args.pageId], args.selectedPfId, args.offset, args.limit);
-    if (args.view !== undefined || args.offset !== undefined || args.limit !== undefined) throw new Error('RP 分页参数需要 view=axure');
+    if (args.view !== undefined || args.offset !== undefined || args.limit !== undefined) throw new Error(tr('RP 分页参数需要 view=axure', 'RP pagination parameters require view=axure'));
     if (!snapshot.tableRows || typeof snapshot.tableRows !== 'object' || Array.isArray(snapshot.tableRows)) throw new Error('This snapshot does not provide saved table data; reopen the project and retry');
     const readiness = context.kind === 'project'
       ? evaluatePageDraftReadiness(snapshot, args.pageId, context.initialValidationBase ?? snapshot)
@@ -868,66 +875,66 @@ function callToolCore(contextFile, name, args, options = {}) {
     const rpWrite = name === 'protoflow_bind_axure_table' || name === 'protoflow_optimize_axure_block' || name === 'protoflow_reshape_axure_page';
     const rpEditCopy = name === 'protoflow_edit_page_block' && typeof args.pageId === 'string' && allowedCopyIds.has(args.pageId) && Object.hasOwn(snapshot.pageSources,args.pageId);
     if (!rpWrite && !rpEditCopy && !['protoflow_upsert_db_table','protoflow_upsert_db_column','protoflow_ask_questions'].includes(name))
-      throw new Error('RP 迁移任务只允许暂存优化版物料和表结构');
+      throw new Error(tr('RP 迁移任务只允许暂存优化版物料和表结构', 'RP migration tasks may only stage optimized materials and table schemas'));
     if (rpWrite && !allowedSourceIds.has(args.pageId))
-      throw new Error('来源页面超出本次 RP 迁移范围');
+      throw new Error(tr('来源页面超出本次 RP 迁移范围', 'Source page is outside the current RP migration scope'));
   }
   if (name === 'protoflow_ask_questions') {
-    if (context.kind !== 'project' || !['conversation','planning'].includes(context.workflowPhase) || context.operations.length) throw new Error('请在暂存修改前提问，等待用户回答后再构建修改');
+    if (context.kind !== 'project' || !['conversation','planning'].includes(context.workflowPhase) || context.operations.length) throw new Error(tr('请在暂存修改前提问，等待用户回答后再构建修改', 'Ask questions before staging modifications, then wait for user answers before making changes'));
     validateProjectQuestions(args.questions);
     context.operations.push({tool:name,args}); saveContext();
     return { awaitingUser: true, message: 'Questions queued for display. End this turn now. Wait for answers in the next turn.' };
   }
   requireFreshBrief();
-  if (context.operations.some(op => op.tool === 'protoflow_ask_questions')) throw new Error('请先结束本轮并等待用户回答');
+  if (context.operations.some(op => op.tool === 'protoflow_ask_questions')) throw new Error(tr('请先结束本轮并等待用户回答', 'End this turn first and wait for user answers'));
   if (name === 'protoflow_remove_project_agreement') {
     recordOtherMutationFootprint(footprint, baseSnapshot, name, args);
-    if (context.kind !== 'project' || context.workflowPhase !== 'conversation' || typeof args.id !== 'string' || !snapshot.projectAgreements?.some(a => a.id === args.id)) throw new Error('项目约定不存在或本轮不可移除');
+    if (context.kind !== 'project' || context.workflowPhase !== 'conversation' || typeof args.id !== 'string' || !snapshot.projectAgreements?.some(a => a.id === args.id)) throw new Error(tr('项目约定不存在或本轮不可移除', 'Project agreement does not exist or cannot be removed in this turn'));
     snapshot.projectAgreements = snapshot.projectAgreements.filter(a => a.id !== args.id);
     context.operations.push({tool:name,args}); saveContext();
     return {staged:true};
   }
   if (name === 'protoflow_upsert_project_agreement') {
     recordOtherMutationFootprint(footprint, baseSnapshot, name, args);
-    if (context.kind !== 'project' || context.workflowPhase !== 'conversation') throw new Error('项目约定只能在项目对话中提交确认');
+    if (context.kind !== 'project' || context.workflowPhase !== 'conversation') throw new Error(tr('项目约定只能在项目对话中提交确认', 'Project agreements can only be proposed in project conversation mode'));
     applyProjectAgreement(snapshot, args.agreement);
     context.operations.push({tool: name, args}); saveContext();
     return { staged: true, message: 'Awaiting user confirmation; not saved as a confirmed agreement.' };
   }
-  if (context.operations.some(op => op.tool === 'protoflow_ask_questions')) throw new Error('请先结束本轮并等待用户回答');
-  if (['protoflow_set_project_plan','protoflow_revise_project_page'].includes(name) && (context.kind !== 'project' || !['conversation','planning'].includes(context.workflowPhase))) throw new Error('方案只能在项目对话中更新');
+  if (context.operations.some(op => op.tool === 'protoflow_ask_questions')) throw new Error(tr('请先结束本轮并等待用户回答', 'End this turn first and wait for user answers'));
+  if (['protoflow_set_project_plan','protoflow_revise_project_page'].includes(name) && (context.kind !== 'project' || !['conversation','planning'].includes(context.workflowPhase))) throw new Error(tr('方案只能在项目对话中更新', 'Project plans can only be updated in project conversation mode'));
   if (name === 'protoflow_set_project_plan' && context.requirePageEvidence &&
       (!Array.isArray(args.plan?.pages) || args.plan.pages.some(p => !Array.isArray(p?.dependencies) || !Array.isArray(p?.acceptanceCases) || !p.acceptanceCases.length)))
-    throw new Error('每页必须声明 dependencies（独立页面填 []）并提供可复核的 acceptanceCases');
+    throw new Error(tr('每页必须声明 dependencies（独立页面填 []）并提供可复核的 acceptanceCases', 'Every page must declare dependencies (use [] for independent pages) and provide verifiable acceptanceCases'));
   if (name === 'protoflow_set_project_plan' && context.requirePageEvidence) {
     recordOtherMutationFootprint(footprint, baseSnapshot, name, args);
     const citations = args.plan.pages.flatMap(page => page.acceptanceCases.map(c => c?.source).filter(Boolean));
     for (const ref of citations) {
       const map = snapshot.mindmaps?.nodes.find(node => node.id === ref.mindmapId && node.kind === 'mindmap');
       if (!map || typeof ref.quote !== 'string' || !ref.quote.trim() || !map.source.includes(ref.quote)) {
-        throw new Error(`方案中的验收场景无法定位到脑图原文：${String(ref.mindmapId)}，请核对文档 ID 和逐字引文`);
+        throw new Error(tr(`方案中的验收场景无法定位到脑图原文：${String(ref.mindmapId)}，请核对文档 ID 和逐字引文`, `Acceptance case in plan could not locate verbatim quote in mindmap ${String(ref.mindmapId)}; verify the mindmap ID and exact quote`));
       }
     }
     if (snapshot.selectedMindmapIds?.length && !citations.some(ref => snapshot.selectedMindmapIds.includes(ref.mindmapId)))
-      throw new Error('本轮选用了脑图，请在方案验收场景中引用所选脑图的 ID 和原文');
+      throw new Error(tr('本轮选用了脑图，请在方案验收场景中引用所选脑图的 ID 和原文', 'Mindmaps are selected for this turn; cite the selected mindmap IDs and verbatim quotes in acceptanceCases'));
   }
-  if (name === 'protoflow_move_sitemap_item' && (context.kind !== 'project' || context.workflowPhase !== 'conversation')) throw new Error('请在项目对话中调整菜单位置');
+  if (name === 'protoflow_move_sitemap_item' && (context.kind !== 'project' || context.workflowPhase !== 'conversation')) throw new Error(tr('请在项目对话中调整菜单位置', 'Move menu items in project conversation mode'));
   if (!context.initialStickyOwners || typeof context.initialStickyOwners !== 'object') {
     context.initialStickyOwners = Object.fromEntries((snapshot.stickyNotes ?? []).map(s => [s.id, s.pageId]));
   }
   if (context.kind === 'project') {
-    if (context.workflowPhase === 'planning' && !['protoflow_set_project_plan','protoflow_revise_project_page'].includes(name)) throw new Error('方案尚未确认；本轮只能讨论需求并保存方案');
+    if (context.workflowPhase === 'planning' && !['protoflow_set_project_plan','protoflow_revise_project_page'].includes(name)) throw new Error(tr('方案尚未确认；本轮只能讨论需求并保存方案', 'Project plan is not confirmed yet; this turn may only discuss requirements and save the plan'));
     if (context.workflowPhase === 'generating') {
-      if (!snapshot.projectPlan?.approved || snapshot.projectPlan.discussionPending) throw new Error('方案尚未确认或正在讨论调整');
-      if (['protoflow_apply_tsx_patch','protoflow_edit_page_block'].includes(name) && args.pageId !== context.targetPageId) throw new Error('本轮只生成指定页面，其他页面由后续任务处理');
+      if (!snapshot.projectPlan?.approved || snapshot.projectPlan.discussionPending) throw new Error(tr('方案尚未确认或正在讨论调整', 'Project plan is not confirmed or is under revision'));
+      if (['protoflow_apply_tsx_patch','protoflow_edit_page_block'].includes(name) && args.pageId !== context.targetPageId) throw new Error(tr('本轮只生成指定页面，其他页面由后续任务处理', 'This turn only generates the target page; other pages are handled in subsequent tasks'));
       if (name === 'protoflow_upsert_sticky_contract') {
         const prevPageId = Object.hasOwn(context.initialStickyOwners, args.sticky?.id)
           ? context.initialStickyOwners[args.sticky.id]
           : (snapshot.stickyNotes ?? []).find(s => s.id === args.sticky?.id)?.pageId;
         if (args.sticky?.pageId !== context.targetPageId || (prevPageId !== undefined && prevPageId !== context.targetPageId))
-          throw new Error('本轮只能添加或更新目标页面的需求便签，不能覆盖其他页面的已有便签');
+          throw new Error(tr('本轮只能添加或更新目标页面的需求便签，不能覆盖其他页面的已有便签', 'This turn may only add or update sticky notes on the target page and cannot overwrite sticky notes on other pages'));
       }
-      if (name === 'protoflow_upsert_folder' || name === 'protoflow_run_closed_loop_audit') throw new Error('本轮不能改变目录或执行全项目巡检');
+      if (name === 'protoflow_upsert_folder' || name === 'protoflow_run_closed_loop_audit') throw new Error(tr('本轮不能改变目录或执行全项目巡检', 'Cannot modify folders or run project-wide audits during single-page generation'));
     }
   }
   if (['protoflow_set_project_plan','protoflow_revise_project_page','protoflow_upsert_folder','protoflow_move_sitemap_item'].includes(name)) {
@@ -966,18 +973,18 @@ function callToolCore(contextFile, name, args, options = {}) {
     const targetId = args?.pageId;
     if (snapshot.requestedPage) {
       if (targetId !== snapshot.requestedPage.pageId)
-        throw new Error(`新建页面请求只允许写入目标新页面 ${snapshot.requestedPage.pageId}，禁止修改或覆盖其他页面 ${String(targetId ?? '')}`);
+        throw new Error(tr(`新建页面请求只允许写入目标新页面 ${snapshot.requestedPage.pageId}，禁止修改或覆盖其他页面 ${String(targetId ?? '')}`, `New-page request may only write to target page ${snapshot.requestedPage.pageId}; modifying or overwriting page ${String(targetId ?? '')} is forbidden`));
       if (context.initialPageIds.includes(snapshot.requestedPage.pageId))
-        throw new Error(`目标页面 ${snapshot.requestedPage.pageId} 已存在，新建页面请求不能覆盖已有页面`);
+        throw new Error(tr(`目标页面 ${snapshot.requestedPage.pageId} 已存在，新建页面请求不能覆盖已有页面`, `Target page ${snapshot.requestedPage.pageId} already exists; new-page request cannot overwrite an existing page`));
     } else if (context.kind === undefined && typeof context.pageId === 'string' && context.pageId) {
       if (context.selectedPfId && targetId !== context.pageId)
-        throw new Error('局部修改不能写入其他页面');
+        throw new Error(tr('局部修改不能写入其他页面', 'Scoped component edits cannot write to other pages'));
       if (typeof targetId === 'string' && targetId !== context.pageId && context.initialPageIds.includes(targetId))
-        throw new Error(`单页会话（${context.pageId}）不能修改或覆盖其他已有页面 ${targetId}`);
+        throw new Error(tr(`单页会话（${context.pageId}）不能修改或覆盖其他已有页面 ${targetId}`, `Single-page session (${context.pageId}) cannot modify or overwrite existing page ${targetId}`));
       if (typeof targetId === 'string') {
         const allTouched = new Set([...context.explicitChangedPages, ...context.explicitStickyPages, targetId]);
         if ([...allTouched].some(id => !context.initialPageIds.includes(id)) && allTouched.size > 1)
-          throw new Error('新建页面时禁止同时修改或覆盖原有页面');
+          throw new Error(tr('新建页面时禁止同时修改或覆盖原有页面', 'Creating a new page cannot simultaneously modify or overwrite existing pages'));
       }
     }
   }
@@ -989,19 +996,19 @@ function callToolCore(contextFile, name, args, options = {}) {
       : (snapshot.stickyNotes ?? []).find(s => s.id === stickyId)?.pageId;
     if (snapshot.requestedPage) {
       if (stickyPageId !== snapshot.requestedPage.pageId)
-        throw new Error(`新建页面请求只允许添加目标新页面 ${snapshot.requestedPage.pageId} 的需求便签，禁止写入页面 ${String(stickyPageId ?? '')}`);
+        throw new Error(tr(`新建页面请求只允许添加目标新页面 ${snapshot.requestedPage.pageId} 的需求便签，禁止写入页面 ${String(stickyPageId ?? '')}`, `New-page request may only add sticky notes to target page ${snapshot.requestedPage.pageId}; writing to page ${String(stickyPageId ?? '')} is forbidden`));
       if (context.initialPageIds.includes(snapshot.requestedPage.pageId))
-        throw new Error(`目标页面 ${snapshot.requestedPage.pageId} 已存在，新建页面请求不能覆盖已有页面`);
+        throw new Error(tr(`目标页面 ${snapshot.requestedPage.pageId} 已存在，新建页面请求不能覆盖已有页面`, `Target page ${snapshot.requestedPage.pageId} already exists; new-page request cannot overwrite an existing page`));
       if (existingOwner !== undefined && existingOwner !== snapshot.requestedPage.pageId)
-        throw new Error(`便签 ${stickyId} 原属于页面 ${existingOwner}，新建页面不能复用或覆盖已有便签`);
+        throw new Error(tr(`便签 ${stickyId} 原属于页面 ${existingOwner}，新建页面不能复用或覆盖已有便签`, `Sticky note ${stickyId} belongs to page ${existingOwner}; new-page requests cannot reuse or overwrite existing sticky notes`));
     } else if (context.kind === undefined && typeof context.pageId === 'string' && context.pageId) {
       if (existingOwner !== undefined && existingOwner !== stickyPageId)
-        throw new Error(`便签 ${stickyId} 原属于页面 ${existingOwner}，不能跨页面挪用或覆盖`);
+        throw new Error(tr(`便签 ${stickyId} 原属于页面 ${existingOwner}，不能跨页面挪用或覆盖`, `Sticky note ${stickyId} belongs to page ${existingOwner} and cannot be moved or overwritten across pages`));
       if (existingOwner !== undefined && existingOwner !== context.pageId)
-        throw new Error(`单页会话（${context.pageId}）不能修改或覆盖其他页面 ${existingOwner} 的已有便签 ${stickyId}`);
+        throw new Error(tr(`单页会话（${context.pageId}）不能修改或覆盖其他页面 ${existingOwner} 的已有便签 ${stickyId}`, `Single-page session (${context.pageId}) cannot modify or overwrite sticky note ${stickyId} belonging to page ${existingOwner}`));
       if (typeof stickyPageId === 'string') {
         if (stickyPageId !== context.pageId && context.initialPageIds.includes(stickyPageId))
-          throw new Error(`单页会话（${context.pageId}）不能修改其他已有页面 ${stickyPageId} 的需求便签`);
+          throw new Error(tr(`单页会话（${context.pageId}）不能修改其他已有页面 ${stickyPageId} 的需求便签`, `Single-page session (${context.pageId}) cannot modify sticky notes on existing page ${stickyPageId}`));
         const allTouched = new Set([
           ...context.explicitChangedPages,
           ...context.explicitStickyPages,
@@ -1009,30 +1016,30 @@ function callToolCore(contextFile, name, args, options = {}) {
           ...(typeof existingOwner === 'string' && existingOwner ? [existingOwner] : []),
         ]);
         if ([...allTouched].some(id => !context.initialPageIds.includes(id)) && allTouched.size > 1)
-          throw new Error('新建页面时禁止同时修改或覆盖原有页面');
+          throw new Error(tr('新建页面时禁止同时修改或覆盖原有页面', 'Creating a new page cannot simultaneously modify or overwrite existing pages'));
       }
     }
   }
   let optimizedPageId;
   if (name === 'protoflow_optimize_axure_block' || name === 'protoflow_bind_axure_table' || name === 'protoflow_reshape_axure_page') {
-    if (context.kind !== 'project' || context.workflowPhase !== 'conversation' || snapshot.requestedPage) throw new Error('RP 物料优化需要在项目 AI 对话中由用户发起');
+    if (context.kind !== 'project' || context.workflowPhase !== 'conversation' || snapshot.requestedPage) throw new Error(tr('RP 物料优化需要在项目 AI 对话中由用户发起', 'RP material optimization must be initiated by the user in project AI conversation mode'));
     recordInspectPageFootprint(footprint, baseSnapshot, snapshot, args.pageId, true);
     if (name === 'protoflow_bind_axure_table') {
-      if (context.schemaCatalogReadRunId !== context.runId) throw new Error('绑定 RP 表格前请先用 protoflow_get_project 核对本轮表目录');
+      if (context.schemaCatalogReadRunId !== context.runId) throw new Error(tr('绑定 RP 表格前请先用 protoflow_get_project 核对本轮表目录', 'Call protoflow_get_project to verify the current schema catalog before binding an RP table'));
       recordGetDbTableFootprint(footprint,baseSnapshot,args.tableId,false);
       const bound = bindAxureTable(snapshot,args.pageId,args.targetPfId,args.tableId,args.mappings);
       if (bound.unchanged) return {staged:false,unchanged:true,optimizedPageId:bound.pageId};
       args = bound;
     } else if (name === 'protoflow_reshape_axure_page') {
       if (typeof args.pageId !== 'string' || typeof args.source !== 'string' || !args.pageId.trim() || !args.source.trim())
-        throw new Error('RP 整页重塑缺少来源页面 pageId 或页面源码 source');
+        throw new Error(tr('RP 整页重塑缺少来源页面 pageId 或页面源码 source', 'RP page reshape requires non-empty source pageId and page source'));
       const reshapedDoc = parsePageSource(args.source).doc;
       const bindsAnyTable = Boolean(reshapedDoc && JSON.stringify(reshapedDoc.root).includes('"table"'));
       if (bindsAnyTable && context.schemaCatalogReadRunId !== context.runId)
-        throw new Error('重塑 RP 页面并绑定数据表前，请先调用 protoflow_get_project 核对本轮表目录');
+        throw new Error(tr('重塑 RP 页面并绑定数据表前，请先调用 protoflow_get_project 核对本轮表目录', 'Call protoflow_get_project to verify the current schema catalog before reshaping an RP page with table bindings'));
       args = reshapeAxurePage(snapshot, args.pageId, args.source, args.coverage);
     } else {
-      if (['pageId','targetPfId','tsx'].some(k => typeof args[k] !== 'string' || !args[k].trim())) throw new Error('RP 优化缺少来源页面、目标 pfId 或物料源码');
+      if (['pageId','targetPfId','tsx'].some(k => typeof args[k] !== 'string' || !args[k].trim())) throw new Error(tr('RP 优化缺少来源页面、目标 pfId 或物料源码', 'RP block optimization requires non-empty pageId, targetPfId, and tsx'));
       args = optimizeAxureBlock(snapshot, args.pageId, args.targetPfId, args.tsx, Boolean(snapshot.axureMigrationScope));
     }
     optimizedPageId = args.pageId;
@@ -1040,9 +1047,9 @@ function callToolCore(contextFile, name, args, options = {}) {
   }
   let wasEditBlock = false;
   if (name === 'protoflow_edit_page_block') {
-    if (['pageId', 'targetPfId', 'mode', 'tsx'].some(key => typeof args[key] !== 'string')) throw new Error('区块参数必须是字符串');
+    if (['pageId', 'targetPfId', 'mode', 'tsx'].some(key => typeof args[key] !== 'string')) throw new Error(tr('区块参数必须是字符串', 'Page block arguments must be strings'));
     recordPageMutationFootprint(footprint, baseSnapshot, args.pageId, undefined, true, context.kind === 'project');
-    if (!Object.hasOwn(snapshot.pageSources, args.pageId)) throw new Error('页面不存在，请先创建 Page 框架');
+    if (!Object.hasOwn(snapshot.pageSources, args.pageId)) throw new Error(tr('页面不存在，请先创建 Page 框架', 'Page does not exist; create a Page shell first'));
     let source = editPageBlock(snapshot.pageSources[args.pageId], args.targetPfId, args.mode, args.tsx);
     const preservedMeta = {};
     if (/^rp-optimized-[0-9a-f]{32}$/.test(args.pageId)) {
@@ -1068,11 +1075,11 @@ function callToolCore(contextFile, name, args, options = {}) {
     args = { pageId: args.pageId, ...preservedMeta, source };
   }
   if (['protoflow_upsert_db_table', 'protoflow_upsert_db_column'].includes(name) && context.schemaCatalogReadRunId !== context.runId)
-    throw new Error('修改数据库前必须先用 protoflow_get_project 读取本轮完整表目录，核对全项目已有实体和关联。');
+    throw new Error(tr('修改数据库前必须先用 protoflow_get_project 读取本轮完整表目录，核对全项目已有实体和关联。', 'Call protoflow_get_project to read the full table catalog and check existing project entities and relations before modifying database schemas.'));
   let designFeedback;
   let pageReadinessFeedback;
   if (name === 'protoflow_add_preview_scenario') {
-    if (context.kind !== 'project' || !['conversation','generating'].includes(context.workflowPhase)) throw new Error('演示场景仅支持项目对话或已确认的项目生成');
+    if (context.kind !== 'project' || !['conversation','generating'].includes(context.workflowPhase)) throw new Error(tr('演示场景仅支持项目对话或已确认的项目生成', 'Preview scenarios are only supported in project conversation mode or confirmed project generation'));
     recordPreviewScenarioFootprint(footprint, baseSnapshot, snapshot, args.datasets);
     snapshot.tableRows = { ...snapshot.tableRows, ...preparePreviewScenario(snapshot.dbTables, snapshot.tableRows, args.datasets) };
   } else if (name === "protoflow_apply_tsx_patch") {
@@ -1080,7 +1087,7 @@ function callToolCore(contextFile, name, args, options = {}) {
       throw new Error("pageId/source must be strings");
     recordPageMutationFootprint(footprint, baseSnapshot, args.pageId, args.source, wasEditBlock || Boolean(optimizedPageId), context.kind === 'project');
     const errors = pageContractErrors(args.source, snapshot.dbTables, { tableRows: snapshot.tableRows });
-    if (errors.length) throw new Error(`物料或数据契约校验失败（${errors.length} 项）：\n${errors.join('\n')}\n请按 protoflow_get_contracts 返回的 valueSchema、events、父子关系和当前表结构修正。图表还会核验全部已保存记录：新增表/字段只改变结构，不会补齐记录或计算指标。请用 protoflow_get_table_rows 分页读取实际数据；派生指标只有在来源、时期和计算口径明确时才能计算为 inline 数据，并说明是当前快照计算结果。缺少基期或分母为零不能伪造为 0；不要删除用户要求的功能或改用示例数据来规避校验，无法实现时明确说明缺少的数据。`);
+    if (errors.length) throw new Error(tr(`物料或数据契约校验失败（${errors.length} 项）：\n${errors.join('\n')}\n请按 protoflow_get_contracts 返回的 valueSchema、events、父子关系和当前表结构修正。图表还会核验全部已保存记录：新增表/字段只改变结构，不会补齐记录或计算指标。请用 protoflow_get_table_rows 分页读取实际数据；派生指标只有在来源、时期和计算口径明确时才能计算为 inline 数据，并说明是当前快照计算结果。缺少基期或分母为零不能伪造为 0；不要删除用户要求的功能或改用示例数据来规避校验，无法实现时明确说明缺少的数据。`, `Material or data contract validation failed (${errors.length} issue(s)):\n${errors.join('\n')}\nFix according to valueSchema, events, parent-child rules in protoflow_get_contracts and the current table schemas. Charts also validate all saved rows: adding tables/columns only changes schema and never populates rows or computes metrics. Read actual rows via protoflow_get_table_rows; derived metrics may only be inlined when source, period, and formula are explicit and noted as snapshot-derived. Do not fabricate 0 when baseline is missing or denominator is zero; do not delete user-requested features or use sample data to bypass validation—state missing data explicitly if unimplementable.`));
     const isNew = !Object.hasOwn(snapshot.pageSources, args.pageId);
     const platform = checkAiPagePlatform(snapshot, args.pageId, parsePageSource(args.source).doc.root.type, snapshot.projectMode, snapshot.requestedPage?.pageId === args.pageId ? snapshot.requestedPage.platform : undefined);
     if (isNew) {
@@ -1118,8 +1125,8 @@ function callToolCore(contextFile, name, args, options = {}) {
           acceptanceReady: readiness.acceptanceReady,
           pendingAcceptanceIssues: readiness.pendingAcceptanceIssues,
           acceptanceHint: readiness.pendingAcceptanceIssues.length
-            ? '当前修改已暂存，但整页尚有未完成的验收或关联项；请继续用 protoflow_edit_page_block 或相关工具补齐后再结束本轮。'
-            : '当前页面已满足全部静态契约与方案验收项，可直接结束本轮等待宿主原子提交。',
+            ? tr('当前修改已暂存，但整页尚有未完成的验收或关联项；请继续用 protoflow_edit_page_block 或相关工具补齐后再结束本轮。', 'Current changes are staged, but the page still has pending acceptance or dependency items; continue using protoflow_edit_page_block or related tools before ending this turn.')
+            : tr('当前页面已满足全部静态契约与方案验收项，可直接结束本轮等待宿主原子提交。', 'This page now satisfies all static contracts and planned acceptance checks; you may end this turn and await atomic host commit.'),
         };
       }
     }
@@ -1144,7 +1151,7 @@ function callToolCore(contextFile, name, args, options = {}) {
   } else if (name === "protoflow_upsert_sticky_contract") {
     recordStickyMutationFootprint(footprint, baseSnapshot, args.sticky?.id);
     if (!args.sticky?.id) throw new Error("Sticky id required");
-    validateStickyNoteIndex(args.sticky.index, `便签 ${args.sticky.id}`);
+    validateStickyNoteIndex(args.sticky.index, tr(`便签 ${args.sticky.id}`, `Sticky note ${args.sticky.id}`));
     const i = snapshot.stickyNotes.findIndex((s) => s.id === args.sticky.id);
     if (i < 0) snapshot.stickyNotes.push(args.sticky);
     else snapshot.stickyNotes[i] = args.sticky;
@@ -1158,11 +1165,11 @@ function callToolCore(contextFile, name, args, options = {}) {
       const root = Object.hasOwn(snapshot.pageSources ?? {}, issue.pageId)
         ? parsePageSource(snapshot.pageSources[issue.pageId]).doc?.root
         : undefined;
-      if (!root) throw new Error(`巡检问题 ${issue.id} 引用的页面 pageId="${issue.pageId}" 不存在`);
+      if (!root) throw new Error(tr(`巡检问题 ${issue.id} 引用的页面 pageId="${issue.pageId}" 不存在`, `Audit issue ${issue.id} references non-existent pageId="${issue.pageId}"`));
       if (!findNode(root, issue.targetWidgetId))
-        throw new Error(`巡检问题 ${issue.id} 引用的组件 targetWidgetId="${issue.targetWidgetId}" 在页面 ${issue.pageId} 中不存在`);
+        throw new Error(tr(`巡检问题 ${issue.id} 引用的组件 targetWidgetId="${issue.targetWidgetId}" 在页面 ${issue.pageId} 中不存在`, `Audit issue ${issue.id} references non-existent targetWidgetId="${issue.targetWidgetId}" on page ${issue.pageId}`));
       if (issue.targetTableId !== '' && !(snapshot.dbTables ?? []).some(t => t.id === issue.targetTableId))
-        throw new Error(`巡检问题 ${issue.id} 引用的数据表 targetTableId="${issue.targetTableId}" 不存在；请使用精确 dbTables.id，无关联表时填 ""`);
+        throw new Error(tr(`巡检问题 ${issue.id} 引用的数据表 targetTableId="${issue.targetTableId}" 不存在；请使用精确 dbTables.id，无关联表时填 ""`, `Audit issue ${issue.id} references non-existent targetTableId="${issue.targetTableId}"; use exact dbTables.id or "" when no table is involved`));
     }
     snapshot.closedLoopIssues = args.issues;
   }
@@ -1276,7 +1283,7 @@ async function callToolAsync(contextFile, name, args, { pool = nativeBridgePool,
     const key = JSON.stringify([bridgeKey(bridge), payload]);
     if (!answers.has(key)) throw new NativeContextNeeded(key, bridge, payload);
     const answer = answers.get(key);
-    if (answer.transportError) throw new Error('Hermes 上下文接口不可用');
+    if (answer.transportError) throw new Error(tr('Hermes 上下文接口不可用', 'Hermes context interface is unavailable'));
     return answer.result;
   };
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -1300,7 +1307,7 @@ async function callToolAsync(contextFile, name, args, { pool = nativeBridgePool,
       }
     }
   }
-  throw new Error('Hermes 上下文查询次数超出单次工具调用上限');
+  throw new Error(tr('Hermes 上下文查询次数超出单次工具调用上限', 'Hermes context queries exceeded the per-tool-call limit'));
 }
 function mcpToolResult(value) {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
@@ -1308,7 +1315,7 @@ function mcpToolResult(value) {
 function mcpToolError(error) {
   return {
     isError: true,
-    content: [{ type: "text", text: `${error.message}\n本次调用未暂存修改。请读取 protoflow_get_contracts 中的契约，修正参数后重新调用。` }],
+    content: [{ type: "text", text: tr(`${error.message}\n本次调用未暂存修改。请读取 protoflow_get_contracts 中的契约，修正参数后重新调用。`, `${error.message}\nNo changes were staged by this call. Read the contracts in protoflow_get_contracts, fix the arguments, and retry.`) }],
   };
 }
 /** Handles one MCP frame. Tool calls are awaited here and the caller chains
@@ -1386,7 +1393,7 @@ function replayCandidateOperations(latestBaseSnapshot, operations, { workflowPha
   };
   for (const op of operations) {
     if (!op || typeof op !== 'object' || typeof op.tool !== 'string' || !op.args || typeof op.args !== 'object') {
-      throw new Error('候选恢复操作格式无效');
+      throw new Error(tr('候选恢复操作格式无效', 'Invalid candidate recovery operation format'));
     }
     const name = op.tool;
     const args = structuredClone(op.args);
@@ -1394,14 +1401,14 @@ function replayCandidateOperations(latestBaseSnapshot, operations, { workflowPha
       next.tableRows = { ...next.tableRows, ...preparePreviewScenario(next.dbTables, next.tableRows, args.datasets) };
     } else if (name === 'protoflow_apply_tsx_patch') {
       if (typeof args.pageId !== 'string' || typeof args.source !== 'string') {
-        throw new Error('候选页面操作缺少 pageId 或 source');
+        throw new Error(tr('候选页面操作缺少 pageId 或 source', 'Candidate page operation is missing pageId or source'));
       }
       if (workflowPhase === 'generating' && targetPageId !== undefined && args.pageId !== targetPageId) {
-        throw new Error('候选操作超出当前页面生成范围');
+        throw new Error(tr('候选操作超出当前页面生成范围', 'Candidate operation is outside the current page generation scope'));
       }
       const errors = pageContractErrors(args.source, next.dbTables, { tableRows: next.tableRows });
       if (errors.length) {
-        throw new Error(`候选页面契约校验失败：${errors.slice(0, 4).join('；')}`);
+        throw new Error(tr(`候选页面契约校验失败：${errors.slice(0, 4).join('；')}`, `Candidate page contract validation failed: ${errors.slice(0, 4).join('; ')}`));
       }
       const isNew = !Object.hasOwn(next.pageSources, args.pageId);
       const platform = checkAiPagePlatform(
@@ -1412,7 +1419,7 @@ function replayCandidateOperations(latestBaseSnapshot, operations, { workflowPha
         next.requestedPage?.pageId === args.pageId ? next.requestedPage.platform : undefined,
       );
       if (isNew) {
-        if (!args.title || !args.folderId) throw new Error('候选新页面缺少标题或目录');
+        if (!args.title || !args.folderId) throw new Error(tr('候选新页面缺少标题或目录', 'Candidate new page is missing title or folderId'));
         next.designerPages.push({
           pageId: args.pageId,
           title: args.title,
@@ -1425,28 +1432,28 @@ function replayCandidateOperations(latestBaseSnapshot, operations, { workflowPha
       stageTable(next, args.table, latestBaseSnapshot);
     } else if (name === 'protoflow_upsert_db_column') {
       const table = next.dbTables.find(t => t.id === args.tableId);
-      if (!table || !args.column?.id) throw new Error('候选字段修改引用的数据表或字段无效');
+      if (!table || !args.column?.id) throw new Error(tr('候选字段修改引用的数据表或字段无效', 'Candidate column operation references an invalid table or column'));
       const columns = [...table.columns];
       const idx = columns.findIndex(c => c.id === args.column.id);
       if (idx < 0) columns.push(args.column);
       else columns[idx] = args.column;
       stageTable(next, { ...table, columns }, latestBaseSnapshot);
     } else if (name === 'protoflow_upsert_sticky_contract') {
-      if (!args.sticky?.id) throw new Error('候选便签缺少 ID');
+      if (!args.sticky?.id) throw new Error(tr('候选便签缺少 ID', 'Candidate sticky note is missing ID'));
       if (workflowPhase === 'generating' && targetPageId !== undefined) {
         const prevOwner = Object.hasOwn(initialStickyOwners, args.sticky.id)
           ? initialStickyOwners[args.sticky.id]
           : (next.stickyNotes ?? []).find(s => s.id === args.sticky.id)?.pageId;
         if (args.sticky.pageId !== targetPageId || (prevOwner !== undefined && prevOwner !== targetPageId)) {
-          throw new Error('候选便签超出当前页面生成范围');
+          throw new Error(tr('候选便签超出当前页面生成范围', 'Candidate sticky note is outside the current page generation scope'));
         }
       }
-      validateStickyNoteIndex(args.sticky.index, `便签 ${args.sticky.id}`);
+      validateStickyNoteIndex(args.sticky.index, tr(`便签 ${args.sticky.id}`, `Sticky note ${args.sticky.id}`));
       const idx = next.stickyNotes.findIndex(s => s.id === args.sticky.id);
       if (idx < 0) next.stickyNotes.push(args.sticky);
       else next.stickyNotes[idx] = args.sticky;
     } else {
-      throw new Error(`不支持重放的候选工具操作：${name}`);
+      throw new Error(tr(`不支持重放的候选工具操作：${name}`, `Unsupported candidate tool operation for replay: ${name}`));
     }
     replayContext.operations.push({ tool: name, args });
     if (name === 'protoflow_upsert_db_table') {
@@ -1459,7 +1466,7 @@ function replayCandidateOperations(latestBaseSnapshot, operations, { workflowPha
 function readContextFootprint(contextFile) {
   const ctx = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
   if (!ctx || typeof ctx !== 'object') {
-    throw new Error('依赖足迹上下文文件无效');
+    throw new Error(tr('依赖足迹上下文文件无效', 'Invalid dependency footprint context file'));
   }
   const footprintErrorPath = contextFile + '.footprint.error';
   let errorMarkerTriggered = false;
@@ -1471,7 +1478,7 @@ function readContextFootprint(contextFile) {
     if (err?.code !== 'ENOENT') errorMarkerTriggered = true;
   }
   if (ctx.footprintCorrupted || errorMarkerTriggered) {
-    throw new Error('依赖足迹记录已损坏或保存失败，无法校验工程依赖');
+    throw new Error(tr('依赖足迹记录已损坏或保存失败，无法校验工程依赖', 'Dependency footprint record is corrupted or failed to save; unable to verify project dependencies'));
   }
   const sidecarPath = contextFile + '.footprint.json';
   const sidecarRequired = Boolean(ctx.requireFootprintSidecar);
@@ -1483,13 +1490,13 @@ function readContextFootprint(contextFile) {
       if (ctx.dependencyFootprint?.version === 3) return ctx.dependencyFootprint;
       return null;
     }
-    throw new Error('依赖足迹记录缺失或读取失败，无法校验工程依赖');
+    throw new Error(tr('依赖足迹记录缺失或读取失败，无法校验工程依赖', 'Dependency footprint record is missing or unreadable; unable to verify project dependencies'));
   }
   let sidecar;
   try {
     sidecar = JSON.parse(rawSidecar);
   } catch {
-    throw new Error('依赖足迹记录已损坏，无法校验工程依赖');
+    throw new Error(tr('依赖足迹记录已损坏，无法校验工程依赖', 'Dependency footprint record is corrupted; unable to verify project dependencies'));
   }
   if (
     !sidecar ||
@@ -1498,7 +1505,7 @@ function readContextFootprint(contextFile) {
     (ctx.runId && sidecar.runId !== ctx.runId) ||
     sidecar.dependencyFootprint?.version !== 3
   ) {
-    throw new Error('依赖足迹记录不完整或运行标识不匹配，无法校验工程依赖');
+    throw new Error(tr('依赖足迹记录不完整或运行标识不匹配，无法校验工程依赖', 'Dependency footprint record is incomplete or has a mismatched run ID; unable to verify project dependencies'));
   }
   return sidecar.dependencyFootprint;
 }

@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { tr } = require('./i18n.cjs');
 
 /** Confirm once, then flush. Only an acknowledgement for that flush may quit. */
 function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15000, getCloseBlockReason = () => null }) {
@@ -19,8 +20,11 @@ function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15
     else {
       pending = null;
       if (isAlive()) void dialog.showMessageBox(window, {
-        type: 'error', title: '项目尚未保存', message: '无法完成保存，已保留当前窗口',
-        detail: `${error}\n请重试保存，或导出 .pflow 备份。`, buttons: ['返回项目'],
+        type: 'error',
+        title: tr('项目尚未保存', 'Project Not Saved'),
+        message: tr('无法完成保存，已保留当前窗口', 'Unable to finish saving. Window kept open.'),
+        detail: `${error}\n${tr('请重试保存，或导出 .pflow 备份。', 'Please retry saving or export a .pflow backup.')}`,
+        buttons: [tr('返回项目', 'Back to Project')],
       });
     }
   };
@@ -40,7 +44,7 @@ function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15
     if (!ready) { finish(); return; }
     pending.phase = 'saving';
     pending.flushId = randomUUID();
-    pending.timer = setTimeout(() => fail('等待项目保存超时，请检查保存状态后重试'), timeoutMs);
+    pending.timer = setTimeout(() => fail(tr('等待项目保存超时，请检查保存状态后重试', 'Timed out waiting for project save. Please check save status and retry.')), timeoutMs);
     status('saving');
     webContents.send('pflow:save-before-close', pending.flushId);
   };
@@ -52,7 +56,12 @@ function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15
     if (pending) return;
     const blockReason = getCloseBlockReason();
     if (blockReason) {
-      void dialog.showMessageBox(window, { type: 'info', title: '正在更新', message: blockReason, buttons: ['等待完成'] });
+      void dialog.showMessageBox(window, {
+        type: 'info',
+        title: tr('正在更新', 'Updating'),
+        message: blockReason,
+        buttons: [tr('等待完成', 'Wait')],
+      });
       return;
     }
     const requestId = randomUUID();
@@ -61,8 +70,12 @@ function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15
     else {
       // Startup / an older renderer may not have the custom dialog yet.
       void dialog.showMessageBox(window, {
-        type: 'question', title: '退出 Alex', message: '确定退出 Alex？',
-        detail: '退出前会保存当前项目。', buttons: ['继续使用', '退出程序'], defaultId: 0, cancelId: 0,
+        type: 'question',
+        title: tr('退出 Alex', 'Quit Alex'),
+        message: tr('确定退出 Alex？', 'Are you sure you want to quit Alex?'),
+        detail: tr('退出前会保存当前项目。', 'Your current project will be saved before quitting.'),
+        buttons: [tr('继续使用', 'Keep Working'), tr('退出程序', 'Quit Alex')],
+        defaultId: 0, cancelId: 0,
       }).then(result => { if (isAlive()) decide(requestId, result.response === 1); }, () => decide(requestId, false));
     }
   };
@@ -79,20 +92,20 @@ function installProjectCloseGuard({ app, window, ipcMain, dialog, timeoutMs = 15
   const onDecision = (event, result) => { if (authorized(event)) decide(result?.requestId, result?.confirmed); };
   const onSaved = (event, result) => {
     if (!authorized(event) || pending?.phase !== 'saving' || result?.requestId !== pending.flushId) return;
-    if (result.ok !== true) { fail(typeof result.error === 'string' ? result.error : '保存失败'); return; }
+    if (result.ok !== true) { fail(typeof result.error === 'string' ? result.error : tr('保存失败', 'Save failed')); return; }
     finish();
   };
   const unloadPrevented = () => {
     if (!allowed) return;
     allowed = false;
     pending = { ...closingPrompt, phase: 'confirming', flushId: null, timer: null };
-    fail('项目又有新的修改，请再次确认保存并退出');
+    fail(tr('项目又有新的修改，请再次确认保存并退出', 'New changes were made. Please confirm saving and quitting again.'));
   };
   const rendererGone = () => {
     confirmationReady = false;
     if (pending) {
       pending.ui = 'native';
-      fail('界面意外退出，已保留程序。请恢复界面并保存项目后重试');
+      fail(tr('界面意外退出，已保留程序。请恢复界面并保存项目后重试', 'Renderer exited unexpectedly. App kept open; please restore the window and save before retrying.'));
     }
   };
   webContents.on('will-prevent-unload', unloadPrevented);

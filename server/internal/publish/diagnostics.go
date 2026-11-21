@@ -311,14 +311,14 @@ func registerDiagnosticRoutes(api *gin.RouterGroup, limited func(*gin.Context), 
 			return
 		}
 		if !diagnosticUUID.MatchString(input.ID) || !diagnosticToken.MatchString(input.Token) {
-			fail(c, 400, "安装诊断凭证无效")
+			fail(c, 400, msg(c, "安装诊断凭证无效", "Invalid diagnostic installation credentials"))
 			return
 		}
 		if err := ds.RegisterDiagnosticInstallation(c.Request.Context(), input.ID, TokenHash(input.Token)); err != nil {
 			if errors.Is(err, ErrConflict) {
-				fail(c, 409, "安装诊断凭证冲突")
+				fail(c, 409, msg(c, "安装诊断凭证冲突", "Diagnostic installation credential conflict"))
 			} else {
-				fail(c, 500, "登记诊断安装失败")
+				fail(c, 500, msg(c, "登记诊断安装失败", "Failed to register diagnostic installation"))
 			}
 			return
 		}
@@ -328,7 +328,7 @@ func registerDiagnosticRoutes(api *gin.RouterGroup, limited func(*gin.Context), 
 		token, ok := diagnosticBearer(c)
 		installation := c.GetHeader("X-Diagnostic-Installation")
 		if !ok || !diagnosticToken.MatchString(token) || !diagnosticUUID.MatchString(installation) {
-			fail(c, 401, "缺少安装诊断凭证")
+			fail(c, 401, msg(c, "缺少安装诊断凭证", "Missing diagnostic installation credentials"))
 			return
 		}
 		var d RuntimeDiagnostic
@@ -342,11 +342,11 @@ func registerDiagnosticRoutes(api *gin.RouterGroup, limited func(*gin.Context), 
 		if err := ds.SaveDiagnostic(c.Request.Context(), installation, TokenHash(token), d); err != nil {
 			switch {
 			case errors.Is(err, ErrNotFound):
-				fail(c, 401, "安装诊断凭证无效")
+				fail(c, 401, msg(c, "安装诊断凭证无效", "Invalid diagnostic installation credentials"))
 			case errors.Is(err, ErrConflict):
-				fail(c, 409, "诊断编号已被其他记录使用")
+				fail(c, 409, msg(c, "诊断编号已被其他记录使用", "Diagnostic ID is already used by another report"))
 			default:
-				fail(c, 500, "保存诊断失败")
+				fail(c, 500, msg(c, "保存诊断失败", "Failed to store diagnostic report"))
 			}
 			return
 		}
@@ -354,17 +354,17 @@ func registerDiagnosticRoutes(api *gin.RouterGroup, limited func(*gin.Context), 
 	})
 	api.GET("/admin/diagnostics", limited, func(c *gin.Context) {
 		if !isAllowedAdminRequest(c, options) {
-			fail(c, 403, "请使用获准的管理网络访问诊断记录")
+			fail(c, 403, msg(c, "请使用获准的管理网络访问诊断记录", "Please access diagnostic reports from a permitted admin network"))
 			return
 		}
 		token, ok := diagnosticBearer(c)
 		if !ok {
-			fail(c, 401, "请先登录平台管理员账号")
+			fail(c, 401, msg(c, "请先登录平台管理员账号", "Please sign in as a platform administrator first"))
 			return
 		}
 		admin, err := store.PlatformAdminByToken(c.Request.Context(), TokenHash(token))
 		if err != nil || admin.ID == "" {
-			fail(c, 403, "仅平台管理员可查询诊断记录")
+			fail(c, 403, msg(c, "仅平台管理员可查询诊断记录", "Only platform administrators can query diagnostic reports"))
 			return
 		}
 		offset := 0
@@ -372,12 +372,12 @@ func registerDiagnosticRoutes(api *gin.RouterGroup, limited func(*gin.Context), 
 			offset, err = strconv.Atoi(v)
 		}
 		if err != nil || offset < 0 || offset > 100000 || (c.Query("id") != "" && !diagnosticUUID.MatchString(c.Query("id"))) || len(c.Query("category")) > 40 || len(c.Query("version")) > 120 || (c.Query("account") != "" && !diagnosticIdentityText(c.Query("account"))) || (c.Query("device") != "" && !diagnosticIdentityText(c.Query("device"))) || (c.Query("runId") != "" && !diagnosticIdentityText(c.Query("runId"))) {
-			fail(c, 400, "诊断查询条件无效")
+			fail(c, 400, msg(c, "诊断查询条件无效", "Invalid diagnostic query parameters"))
 			return
 		}
 		items, err := ds.ListDiagnostics(c.Request.Context(), DiagnosticQuery{ID: c.Query("id"), Category: c.Query("category"), Version: c.Query("version"), Account: c.Query("account"), Device: c.Query("device"), RunID: c.Query("runId"), Offset: offset})
 		if err != nil {
-			fail(c, 500, "读取诊断失败")
+			fail(c, 500, msg(c, "读取诊断失败", "Failed to query diagnostic reports"))
 			return
 		}
 		c.JSON(200, gin.H{"items": items})

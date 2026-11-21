@@ -3,6 +3,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const { origin } = require('./publishing.cjs');
+const { isMainEn, tr } = require('./i18n.cjs');
 
 const CATEGORIES = ['ai', 'tool', 'renderer', 'storage', 'network', 'main'];
 const IDS = ['projectId','threadId','pageId','mindmapId','targetPageId','pfId','sessionId','runId','modelId','workflowPhase','operation'];
@@ -62,7 +63,7 @@ function cleanDevice(value) {
   return device;
 }
 function isCancellation(error) {
-  return error?.name === 'AbortError' || /^(已停止|已取消|项目已切换，任务已停止|model_switch_cancelled|The operation was aborted)/.test(String(error?.message ?? error));
+  return error?.name === 'AbortError' || /^(已停止|已取消|项目已切换，任务已停止|Stopped|Generation stopped|Cancelled|Canceled|Project switched, task stopped|model_switch_cancelled|The operation was aborted)/.test(String(error?.message ?? error));
 }
 function failureReason(error) {
   const text=String(error?.message ?? error);
@@ -94,15 +95,15 @@ class DiagnosticCollector {
     const identityFile = path.join(this.dir, 'installation.json');
     if (fs.existsSync(identityFile)) {
       this.identity = JSON.parse(fs.readFileSync(identityFile,'utf8'));
-      if (!UUID.test(this.identity.id) || !/^[0-9a-f]{64}$/.test(this.identity.token)) throw new Error('诊断安装凭证损坏');
+      if (!UUID.test(this.identity.id) || !/^[0-9a-f]{64}$/.test(this.identity.token)) throw new Error(tr('诊断安装凭证损坏', 'Diagnostic installation credentials are corrupted'));
     } else { this.identity = { id: randomUUID(), token: randomBytes(32).toString('hex') }; atomicJSON(identityFile, this.identity); }
     this.enabled = enabled;
     const settings = path.join(this.dir,'settings.json');
-    if (fs.existsSync(settings)) { try { const value=JSON.parse(fs.readFileSync(settings,'utf8')); if(typeof value.enabled==='boolean') this.enabled=value.enabled; } catch { this.healthError='诊断设置读取失败'; } }
+    if (fs.existsSync(settings)) { try { const value=JSON.parse(fs.readFileSync(settings,'utf8')); if(typeof value.enabled==='boolean') this.enabled=value.enabled; } catch { this.healthError=tr('诊断设置读取失败', 'Failed to read diagnostic settings'); } }
     for (const name of fs.readdirSync(this.dir)) {
       if (!name.endsWith('.json') || !UUID.test(name.slice(0,-5))) continue;
       try { const entry=JSON.parse(fs.readFileSync(path.join(this.dir,name),'utf8')); if(entry.report?.id===name.slice(0,-5) && Number.isFinite(Date.parse(entry.report.occurredAt))) this.records.set(entry.report.id,entry); }
-      catch { this.healthError='部分本地诊断记录无法读取'; }
+      catch { this.healthError=tr('部分本地诊断记录无法读取', 'Some local diagnostic records could not be read'); }
     }
     this.prune();
   }
@@ -128,7 +129,7 @@ class DiagnosticCollector {
       // Measure UTF-8 bytes, not characters (Chinese check results can be 3 bytes each).
       while(Buffer.byteLength(JSON.stringify(report))>60*1024 && report.context.checks?.length) report.context.checks.pop();
       while(Buffer.byteLength(JSON.stringify(report))>60*1024 && report.context.boundTableIds?.length) report.context.boundTableIds.pop();
-      if(Buffer.byteLength(JSON.stringify(report))>60*1024) {this.healthError='诊断记录超过体积限制';return null;}
+      if(Buffer.byteLength(JSON.stringify(report))>60*1024) {this.healthError=tr('诊断记录超过体积限制', 'Diagnostic record exceeds size limit');return null;}
       const fingerprint=createHash('sha256').update(JSON.stringify([report.code,report.stage,report.message,report.context,report.account,report.device])).digest('hex');
       const same=[...this.records.values()].find(e=>e.fingerprint===fingerprint && this.now()-Date.parse(e.report.occurredAt)<30000);
       if(same)return same.report.id;
@@ -136,7 +137,7 @@ class DiagnosticCollector {
       this.persist(entry);this.records.set(report.id,entry);this.prune();
       if(!this.closed) void this.flush();
       return report.id;
-    } catch { this.healthError='无法写入本地诊断，请检查磁盘空间与目录权限';return null; }
+    } catch { this.healthError=tr('无法写入本地诊断，请检查磁盘空间与目录权限', 'Unable to write local diagnostics; check disk space and folder permissions');return null; }
   }
   activeServerUrl() {
     if (this.serverUrl) return this.serverUrl;
@@ -146,17 +147,17 @@ class DiagnosticCollector {
     } catch { return ''; }
   }
   snapshot() { return {enabled:this.enabled,serverUrl:this.activeServerUrl(),healthError:this.healthError,dropped:this.dropped,items:[...this.records.values()].sort((a,b)=>b.report.occurredAt.localeCompare(a.report.occurredAt)).map(({report,state,lastStatus})=>({report,state,lastStatus}))}; }
-  configure({enabled}) { if(typeof enabled!=='boolean')throw new Error('诊断设置无效');atomicJSON(path.join(this.dir,'settings.json'),{enabled});this.enabled=enabled;if(enabled)void this.flush();return this.snapshot(); }
+  configure({enabled}) { if(typeof enabled!=='boolean')throw new Error(tr('诊断设置无效', 'Invalid diagnostic setting'));atomicJSON(path.join(this.dir,'settings.json'),{enabled});this.enabled=enabled;if(enabled)void this.flush();return this.snapshot(); }
   async request(route, body, authenticated = false) {
     const targetUrl = this.activeServerUrl();
-    if (!targetUrl) throw new Error('尚未配置诊断服务地址');
-    const res=await this.fetch(targetUrl+'/api/v1/diagnostics/'+route,{method:'POST',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',...(authenticated?{Authorization:'Bearer '+this.identity.token,'X-Diagnostic-Installation':this.identity.id}:{})},body:JSON.stringify(body)});
+    if (!targetUrl) throw new Error(tr('尚未配置诊断服务地址', 'Diagnostic server URL is not configured'));
+    const res=await this.fetch(targetUrl+'/api/v1/diagnostics/'+route,{method:'POST',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',...(isMainEn()?{'Accept-Language':'en-US'}:{}),...(authenticated?{Authorization:'Bearer '+this.identity.token,'X-Diagnostic-Installation':this.identity.id}:{})},body:JSON.stringify(body)});
     const data=res.ok?await res.json():null;return {status:res.status,data};
   }
   flush() {
     if(this.inFlight)return this.inFlight;
     if(!this.enabled||!this.activeServerUrl()||this.closed)return Promise.resolve();
-    this.inFlight=this.upload().catch(()=>{this.healthError='诊断上传暂不可用，将自动重试';}).finally(()=>{this.inFlight=null;});return this.inFlight;
+    this.inFlight=this.upload().catch(()=>{this.healthError=tr('诊断上传暂不可用，将自动重试', 'Diagnostic upload is temporarily unavailable; will retry automatically');}).finally(()=>{this.inFlight=null;});return this.inFlight;
   }
   async upload() {
     this.prune();

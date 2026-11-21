@@ -61,6 +61,8 @@ import './ai-prompt-quality.test';
 import './project-ai-speed.test';
 import './project-ai-live.test';
 import './acceptance-return.test';
+import './i18n.test';
+import './i18n-field-contracts.test';
 import { createWebExport, type WebExportOptions } from '../src/services/webExport';
 import { parsePageSource } from '../src/proto/dsl/parser';
 import { walk } from '../src/proto/dsl/tree';

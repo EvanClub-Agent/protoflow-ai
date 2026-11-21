@@ -1,4 +1,5 @@
 import { reviewPageDependencies } from './projectDependencies';
+import { tr } from '../i18n/runtime';
 import { reviewRequirementRecords } from '../proto/database/requirementReview';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import type { PflowBinaryPayload, ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
@@ -40,9 +41,9 @@ export function analyzeProject(s: ProjectStateSnapshot) {
   const issues: string[] = [];
   for (const [pageId, source] of Object.entries(s.pageSources)) {
     const page = pages.find(p=>p.pageId===pageId);
-    if (!page) { issues.push(`源码 ${pageId} 不在当前页面目录中`); continue; }
+    if (!page) { issues.push(tr(`源码 ${pageId} 不在当前页面目录中`, `Source ${pageId} is not in the current sitemap`)); continue; }
     const parsed = parsePageSource(source);
-    if (!parsed.doc || parsed.issues.some(i=>i.level==='error')) { issues.push(`${page.title}：页面源码解析失败，无法分析`); continue; }
+    if (!parsed.doc || parsed.issues.some(i=>i.level==='error')) { issues.push(tr(`${page.title}：页面源码解析失败，无法分析`, `${page.title}: failed to parse page source`)); continue; }
     const nodes: ProtoNode[] = [];
     walk(parsed.doc.root,n=>nodes.push(n));
     nodes.forEach(node=>components.push({pageId,pfId:node.pfId,type:node.type}));
@@ -56,7 +57,7 @@ export function analyzeProject(s: ProjectStateSnapshot) {
       const tableId = node.props.table;
       if (typeof tableId==='string' && tableId) {
         if (s.dbTables.some(t=>t.id===tableId)) usages.push({pageId,tableId,pfId:node.pfId,description:`${node.type}.table`});
-        else issues.push(`${page.title} / ${node.pfId} 引用了不存在的数据表 ${tableId}`);
+        else issues.push(tr(`${page.title} / ${node.pfId} 引用了不存在的数据表 ${tableId}`, `${page.title} / ${node.pfId} references non-existent table ${tableId}`));
       }
       Object.entries(node.props).forEach(([event,value])=>collect(value,node,event));
     }
@@ -65,7 +66,7 @@ export function analyzeProject(s: ProjectStateSnapshot) {
       if (action.call.name==='navigate') {
         const to = action.call.args[0];
         if (typeof to==='string' && pages.some(p=>p.pageId===to && p.hasSource && !p.deprecated)) navigation.push({from:pageId,to,pfId:action.pfId,event:action.event});
-        else issues.push(`${page.title} / ${action.pfId} 的跳转目标 ${String(to)} 不可用`);
+        else issues.push(tr(`${page.title} / ${action.pfId} 的跳转目标 ${String(to)} 不可用`, `${page.title} / ${action.pfId} navigation target ${String(to)} is unavailable`));
       }
       if (action.call.name==='importPurchaseOrderLines') {
         // Runtime node references explicitly accept either pfId or the component's id prop.
@@ -76,20 +77,20 @@ export function analyzeProject(s: ProjectStateSnapshot) {
         const from=resolveTable(action.call.args[0]), to=resolveTable(action.call.args[1]);
         if (typeof from==='string' && typeof to==='string' && [from,to].every(id=>s.dbTables.some(t=>t.id===id))) {
           const error = purchaseTransferContractError(s.dbTables, from, to);
-          if (error) issues.push(`${page.title} / ${action.pfId}：${error}`);
+          if (error) issues.push(tr(`${page.title} / ${action.pfId}：${error}`, `${page.title} / ${action.pfId}: ${error}`));
           else transfers.push({pageId,pfId:action.pfId,fromTableId:from,toTableId:to});
         }
-        else issues.push(`${page.title} / ${action.pfId} 的数据转入动作缺少有效的来源或目标表`);
+        else issues.push(tr(`${page.title} / ${action.pfId} 的数据转入动作缺少有效的来源或目标表`, `${page.title} / ${action.pfId} data transfer action is missing a valid source or target table`));
       }
     }
   }
   for (const table of s.dbTables) for (const binding of table.sharedByMenus) {
-    if (!pages.some(p=>p.pageId===binding.pageId)) { issues.push(`${table.tableName} 的菜单关联 ${binding.pageId} 不存在`); continue; }
-    if (!usages.some(u=>u.pageId===binding.pageId && u.tableId===table.id)) usages.push({pageId:binding.pageId,tableId:table.id,pfId:null,description:`菜单关联：${binding.accessMode}`});
+    if (!pages.some(p=>p.pageId===binding.pageId)) { issues.push(tr(`${table.tableName} 的菜单关联 ${binding.pageId} 不存在`, `Menu binding ${binding.pageId} on ${table.tableName} does not exist`)); continue; }
+    if (!usages.some(u=>u.pageId===binding.pageId && u.tableId===table.id)) usages.push({pageId:binding.pageId,tableId:table.id,pfId:null,description:tr(`菜单关联：${binding.accessMode}`, `Menu binding: ${binding.accessMode}`)});
   }
   for (const note of s.stickyNotes) {
-    if (!pages.some(p=>p.pageId===note.pageId)) issues.push(`便签 ${note.id} 引用了目录中不存在的页面 ${note.pageId}`);
-    else if (!components.some(c=>c.pageId===note.pageId && c.pfId===note.targetWidgetId)) issues.push(`便签 ${note.id} 的目标组件 ${note.targetWidgetId} 不存在于页面 ${note.pageId}`);
+    if (!pages.some(p=>p.pageId===note.pageId)) issues.push(tr(`便签 ${note.id} 引用了目录中不存在的页面 ${note.pageId}`, `Sticky note ${note.id} references page ${note.pageId} missing from sitemap`));
+    else if (!components.some(c=>c.pageId===note.pageId && c.pfId===note.targetWidgetId)) issues.push(tr(`便签 ${note.id} 的目标组件 ${note.targetWidgetId} 不存在于页面 ${note.pageId}`, `Target component ${note.targetWidgetId} of sticky note ${note.id} does not exist on page ${note.pageId}`));
   }
   const foreignKeys = diagramRelations(s.dbTables);
   issues.push(...foreignKeys.issues);
@@ -98,38 +99,64 @@ export function analyzeProject(s: ProjectStateSnapshot) {
 
 export function projectSpecification(payload: PflowBinaryPayload): string {
   const s=payload.stateSnapshot, analysis=analyzeProject(s);
-  const lines=[`# ${payload.meta.projectName} · 工程规格`, '', '> 根据当前保存的页面源码、表结构、动作配置及需求便签整理。配置不代表动作已经执行；需求便签不代表功能已经实现。', '', '## 页面与配置'];
-  lines.splice(2,0,`工程快照：${payload.meta.updatedAt} · ${Object.keys(s.pageSources).length} 个画布 · ${s.dbTables.length} 张数据表。后续保存工程后，请重新导出源码目录。`, '');
+  const lines=[
+    tr(`# ${payload.meta.projectName} · 工程规格`, `# ${payload.meta.projectName} · Project Specification`),
+    '',
+    tr('> 根据当前保存的页面源码、表结构、动作配置及需求便签整理。配置不代表动作已经执行；需求便签不代表功能已经实现。', '> Compiled from saved page sources, table schemas, action bindings, and requirement sticky notes. Configured actions and sticky notes describe intent rather than live backend execution.'),
+    '',
+    tr('## 页面与配置', '## Pages & Configuration'),
+  ];
+  lines.splice(2,0,tr(
+    `工程快照：${payload.meta.updatedAt} · ${Object.keys(s.pageSources).length} 个画布 · ${s.dbTables.length} 张数据表。后续保存工程后，请重新导出源码目录。`,
+    `Project snapshot: ${payload.meta.updatedAt} · ${Object.keys(s.pageSources).length} canvas(es) · ${s.dbTables.length} table(s). Re-export unpacked files after saving further changes.`,
+  ), '');
   const evidence = reviewPageDependencies(s);
   for (const page of analysis.pages) {
-    lines.push('', `### ${page.path}`, `- 页面 ID：${page.pageId}`, `- 源码：${page.hasSource?'已保存':'尚未提供'}`);
-    for (const link of evidence.links.filter(l => l.pageId === page.pageId)) lines.push(`- 上游 ${link.sourcePageId} · ${link.requirement} · ${link.status}`);
-    for (const c of evidence.cases.filter(c => c.pageId === page.pageId)) lines.push(`- 验收：${c.scenario} → ${c.expected}（${c.status}）`);
-    for (const chart of evidence.sampleCharts.filter(c => c.pageId === page.pageId)) lines.push(`- 图表 ${chart.pfId} 使用内置示例数据。`);
+    lines.push(
+      '',
+      `### ${page.path}`,
+      tr(`- 页面 ID：${page.pageId}`, `- Page ID: ${page.pageId}`),
+      tr(`- 源码：${page.hasSource?'已保存':'尚未提供'}`, `- Source: ${page.hasSource?'Saved':'Not provided yet'}`),
+    );
+    for (const link of evidence.links.filter(l => l.pageId === page.pageId)) lines.push(tr(`- 上游 ${link.sourcePageId} · ${link.requirement} · ${link.status}`, `- Upstream ${link.sourcePageId} · ${link.requirement} · ${link.status}`));
+    for (const c of evidence.cases.filter(c => c.pageId === page.pageId)) lines.push(tr(`- 验收：${c.scenario} → ${c.expected}（${c.status}）`, `- Acceptance: ${c.scenario} → ${c.expected} (${c.status})`));
+    for (const chart of evidence.sampleCharts.filter(c => c.pageId === page.pageId)) lines.push(tr(`- 图表 ${chart.pfId} 使用内置示例数据。`, `- Chart ${chart.pfId} uses built-in sample data.`));
     for (const usage of analysis.usages.filter(u=>u.pageId===page.pageId)) {
       const table=s.dbTables.find(t=>t.id===usage.tableId)!;
-      lines.push(`- 数据关联：${table.tableName}（${table.cnName}）；依据：${usage.description}${usage.pfId?` / ${usage.pfId}`:''}`);
+      lines.push(tr(`- 数据关联：${table.tableName}（${table.cnName}）；依据：${usage.description}${usage.pfId?` / ${usage.pfId}`:''}`, `- Table binding: ${table.tableName} (${table.cnName}); source: ${usage.description}${usage.pfId?` / ${usage.pfId}`:''}`));
     }
-    for (const action of analysis.actions.filter(a=>a.pageId===page.pageId)) lines.push(`- 已配置动作：${action.pfId} / ${action.event} → ${action.call.name}(${action.call.args.map(a=>JSON.stringify(a)).join(', ')})`);
-    for (const note of s.stickyNotes.filter(n=>n.pageId===page.pageId)) lines.push(`- 需求记录 #${note.index}（${note.active?'启用':'停用'}；组件 ${note.targetWidgetId}）：${note.text}`);
+    for (const action of analysis.actions.filter(a=>a.pageId===page.pageId)) lines.push(tr(`- 已配置动作：${action.pfId} / ${action.event} → ${action.call.name}(${action.call.args.map(a=>JSON.stringify(a)).join(', ')})`, `- Action: ${action.pfId} / ${action.event} → ${action.call.name}(${action.call.args.map(a=>JSON.stringify(a)).join(', ')})`));
+    for (const note of s.stickyNotes.filter(n=>n.pageId===page.pageId)) lines.push(tr(`- 需求记录 #${note.index}（${note.active?'启用':'停用'}；组件 ${note.targetWidgetId}）：${note.text}`, `- Sticky note #${note.index} (${note.active?'Active':'Inactive'}; widget ${note.targetWidgetId}): ${note.text}`));
   }
-  lines.push('', '## 数据表');
+  lines.push('', tr('## 数据表', '## Database Tables'));
   for (const table of s.dbTables) {
-    lines.push('', `### ${table.tableName}（${table.cnName}）`, `- 内部表 ID：${table.id}`, `- 业务域：${table.domain}`);
-    if (table.modeling) lines.push(`- 业务实体：${table.modeling.entity}`, `- 行粒度：${table.modeling.grain}`, `- 建表依据：${table.modeling.reason}`);
-    for (const key of resolveUniqueConstraints(table)) lines.push(`- 唯一约束 ${key.name}（${key.columns.map(c => c.name).join('、')}）`);
-    table.columns.forEach(c=>lines.push(`- ${c.name}：${c.dataType}；${c.nullable?'允许空值':'非空'}${c.isPrimaryKey?'；主键':''}${c.isUnique?'；单列唯一':''}${c.references?`；引用 ${c.references}`:''}；${c.comment}`));
+    lines.push(
+      '',
+      tr(`### ${table.tableName}（${table.cnName}）`, `### ${table.tableName} (${table.cnName})`),
+      tr(`- 内部表 ID：${table.id}`, `- Internal Table ID: ${table.id}`),
+      tr(`- 业务域：${table.domain}`, `- Domain: ${table.domain}`),
+    );
+    if (table.modeling) lines.push(
+      tr(`- 业务实体：${table.modeling.entity}`, `- Entity: ${table.modeling.entity}`),
+      tr(`- 行粒度：${table.modeling.grain}`, `- Row Grain: ${table.modeling.grain}`),
+      tr(`- 建表依据：${table.modeling.reason}`, `- Rationale: ${table.modeling.reason}`),
+    );
+    for (const key of resolveUniqueConstraints(table)) lines.push(tr(`- 唯一约束 ${key.name}（${key.columns.map(c => c.name).join('、')}）`, `- Unique constraint ${key.name} (${key.columns.map(c => c.name).join(', ')})`));
+    table.columns.forEach(c=>lines.push(tr(
+      `- ${c.name}：${c.dataType}；${c.nullable?'允许空值':'非空'}${c.isPrimaryKey?'；主键':''}${c.isUnique?'；单列唯一':''}${c.references?`；引用 ${c.references}`:''}；${c.comment}`,
+      `- ${c.name}: ${c.dataType}; ${c.nullable?'NULL':'NOT NULL'}${c.isPrimaryKey?'; PK':''}${c.isUnique?'; UNIQUE':''}${c.references?`; FK -> ${c.references}`:''}; ${c.comment}`,
+    )));
   }
   const trace = reviewRequirementRecords(s.databaseRequirements ?? [], s.dbTables);
-  if (trace.lines.length) lines.push('', '## 需求原文与数据库约束核对', ...trace.lines.map(line => '- '+line), ...trace.conflicts.map(line => '- 案例冲突 · '+line));
+  if (trace.lines.length) lines.push('', tr('## 需求原文与数据库约束核对', '## Requirement & Schema Constraint Verification'), ...trace.lines.map(line => '- '+line), ...trace.conflicts.map(line => tr('- 案例冲突 · ', '- Conflict · ')+line));
   const design = reviewDatabaseDesign(s.dbTables);
   if (design.tableErrors.length || design.relationErrors.length || design.risks.length) {
-    lines.push('', '## 数据库设计审查',
-      ...[...design.tableErrors, ...design.relationErrors].map(issue => `- 结构问题：${issue}`),
-      ...design.risks.map(risk => `- 待复核：${risk}`));
+    lines.push('', tr('## 数据库设计审查', '## Database Design Review'),
+      ...[...design.tableErrors, ...design.relationErrors].map(issue => tr(`- 结构问题：${issue}`, `- Schema error: ${issue}`)),
+      ...design.risks.map(risk => tr(`- 待复核：${risk}`, `- Review needed: ${risk}`)));
   }
   const orphanNotes=s.stickyNotes.filter(n=>!analysis.pages.some(p=>p.pageId===n.pageId));
-  if (analysis.issues.length || orphanNotes.length) lines.push('', '## 待修复的引用', ...analysis.issues.map(i=>`- ${i}`), ...orphanNotes.map(n=>`- 便签 ${n.id} 引用了目录中不存在的页面 ${n.pageId}：${n.text}`));
-  if (!analysis.pages.length) lines.push('', '当前工程没有页面。');
+  if (analysis.issues.length || orphanNotes.length) lines.push('', tr('## 待修复的引用', '## Broken References'), ...analysis.issues.map(i=>`- ${i}`), ...orphanNotes.map(n=>tr(`- 便签 ${n.id} 引用了目录中不存在的页面 ${n.pageId}：${n.text}`, `- Sticky note ${n.id} references missing page ${n.pageId}: ${n.text}`)));
+  if (!analysis.pages.length) lines.push('', tr('当前工程没有页面。', 'No pages in the current project.'));
   return lines.join('\n');
 }

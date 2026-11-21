@@ -9,6 +9,7 @@ import type { DesignerPage } from '../proto/store/usePageStore';
 import type { DesignerFolder, SitemapOverrides } from '../proto/sitemap';
 import type { Row } from '../proto/runtime/mock';
 import type { ProjectMode } from '../proto/mobile/types';
+import { tr } from '../i18n/runtime';
 
 /**
  * Alex Binary Archive Codec (.pflow)
@@ -125,9 +126,9 @@ export function decodePflowBinary(buffer: ArrayBuffer | Uint8Array): unknown {
   if (isMagicMatch) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const version = view.getUint32(6, false);
-    if (version !== 1 && version !== 2) throw new Error(`不支持的工程格式版本：${version}`);
+    if (version !== 1 && version !== 2) throw new Error(tr(`不支持的工程格式版本：${version}`, `Unsupported project format version: ${version}`));
     const payloadLength = view.getUint32(14, false);
-    if (bytes.length !== HEADER_SIZE + payloadLength) throw new Error('工程文件长度校验失败');
+    if (bytes.length !== HEADER_SIZE + payloadLength) throw new Error(tr('工程文件长度校验失败', 'Project file byte length check failed'));
     const encodedPayload = bytes.subarray(HEADER_SIZE, HEADER_SIZE + payloadLength);
 
     const decodedBytes = new Uint8Array(encodedPayload.length);
@@ -135,7 +136,7 @@ export function decodePflowBinary(buffer: ArrayBuffer | Uint8Array): unknown {
       decodedBytes[i] = encodedPayload[i] ^ ((XOR_KEY + (i & 0x1f)) & 0xff);
     }
 
-    if (fnv1a32(decodedBytes) !== view.getUint32(10, false)) throw new Error('工程文件校验和不匹配');
+    if (fnv1a32(decodedBytes) !== view.getUint32(10, false)) throw new Error(tr('工程文件校验和不匹配', 'Project file checksum mismatch'));
     const decoder = new TextDecoder('utf-8');
     const jsonStr = decoder.decode(decodedBytes);
     return JSON.parse(jsonStr);
@@ -152,7 +153,7 @@ export function decodePflowBinary(buffer: ArrayBuffer | Uint8Array): unknown {
   // Explicit migration of the original JSON bundle, which did not store editor state.
   if (!parsed.projectMeta || typeof parsed.projectMeta.name !== 'string' ||
       !Array.isArray(parsed.databaseErSchemas) || !Array.isArray(parsed.componentAnchoredStickyNotes) ||
-      !parsed.embeddedReactiveSqliteDump) throw new Error('不是有效的 Alex 工程文件');
+      !parsed.embeddedReactiveSqliteDump) throw new Error(tr('不是有效的 Alex 工程文件', 'Not a valid Alex project file'));
   return {
     meta: {
       projectId: `proj-${crypto.randomUUID()}`,
@@ -221,7 +222,7 @@ export function generateUnpackedGitFiles(
   files.push({
     relativePath: '.gitignore',
     folder: 'root',
-    description: 'Git 忽略规则 (排除临时缓存，保留所有页面/便签/表结构源码)',
+    description: tr('Git 忽略规则 (排除临时缓存，保留所有页面/便签/表结构源码)', 'Git ignore rules (excludes temp cache while keeping all page, sticky note, and schema sources)'),
     content: `# Alex Unpacked Git Workspace
 .DS_Store
 *.tmp.pflow
@@ -232,7 +233,7 @@ export function generateUnpackedGitFiles(
   files.push({
     relativePath: 'protoflow.project.json',
     folder: 'root',
-    description: '工程全局清单与模块目录索引',
+    description: tr('工程全局清单与模块目录索引', 'Project manifest and module directory index'),
     content: JSON.stringify(
       {
         schemaVersion: '2026.1-git-tree',
@@ -250,8 +251,8 @@ export function generateUnpackedGitFiles(
     ),
   });
 
-  files.push({ relativePath: 'pages/sitemap-base.json', folder: 'pages', description: '本工程的菜单模板', content: JSON.stringify(payload.stateSnapshot.sitemapBase, null, 2) });
-  files.push({ relativePath: 'mindmaps/index.json', folder: 'root', description: '脑图目录与页面关联', content: JSON.stringify(payload.stateSnapshot.mindmaps, null, 2) });
+  files.push({ relativePath: 'pages/sitemap-base.json', folder: 'pages', description: tr('本工程的菜单模板', 'Base menu sitemap template'), content: JSON.stringify(payload.stateSnapshot.sitemapBase, null, 2) });
+  files.push({ relativePath: 'mindmaps/index.json', folder: 'root', description: tr('脑图目录与页面关联', 'Mindmap index and page links'), content: JSON.stringify(payload.stateSnapshot.mindmaps, null, 2) });
   for (const node of payload.stateSnapshot.mindmaps.nodes) if (node.kind === 'mindmap') {
     // Encode the actual ID as a single path segment; user titles never become file paths.
     files.push({ relativePath: `mindmaps/${encodeURIComponent(node.id)}.mmd`, folder: 'root', description: node.title, content: node.source });
@@ -269,29 +270,29 @@ export function generateUnpackedGitFiles(
       links: notes.links,
       ...(notes.assets ? { assets: Object.fromEntries(Object.entries(notes.assets).map(([id, asset]) => [id, { mime: asset.mime, ...(asset.name ? { name: asset.name } : {}), file: `assets/${id}.${noteAssetExtension(asset)}` }])) } : {}),
     };
-    files.push({ relativePath: 'notes/index.json', folder: 'root', description: '项目笔记目录、属性与页面关联', content: JSON.stringify(index, null, 2) });
+    files.push({ relativePath: 'notes/index.json', folder: 'root', description: tr('项目笔记目录、属性与页面关联', 'Project notes index, metadata, and page links'), content: JSON.stringify(index, null, 2) });
     for (const node of notes.nodes) if (node.kind === 'note') {
-      files.push({ relativePath: `notes/${encodeURIComponent(node.id)}.md`, folder: 'root', description: `项目笔记：${node.title}`, content: noteHtmlToMarkdown(node, { images: 'link', assets: notes.assets, assetPath: (id, asset) => `assets/${id}.${noteAssetExtension(asset)}` }) });
+      files.push({ relativePath: `notes/${encodeURIComponent(node.id)}.md`, folder: 'root', description: tr(`项目笔记：${node.title}`, `Project note: ${node.title}`), content: noteHtmlToMarkdown(node, { images: 'link', assets: notes.assets, assetPath: (id, asset) => `assets/${id}.${noteAssetExtension(asset)}` }) });
     }
     for (const [id, asset] of Object.entries(notes.assets ?? {})) {
-      files.push({ relativePath: `notes/assets/${id}.${noteAssetExtension(asset)}`, folder: 'root', description: `笔记图片：${asset.name ?? id}`, content: asset.data, encoding: 'base64' });
+      files.push({ relativePath: `notes/assets/${id}.${noteAssetExtension(asset)}`, folder: 'root', description: tr(`笔记图片：${asset.name ?? id}`, `Note image: ${asset.name ?? id}`), content: asset.data, encoding: 'base64' });
     }
   }
   files.push({
-    relativePath: 'pages/index.json', folder: 'pages', description: '自定义页面目录',
+    relativePath: 'pages/index.json', folder: 'pages', description: tr('自定义页面目录', 'Custom page directory'),
     content: JSON.stringify(payload.stateSnapshot.designerPages, null, 2),
   });
   files.push({
-    relativePath: 'pages/folders.json', folder: 'pages', description: '自定义菜单目录及层级',
+    relativePath: 'pages/folders.json', folder: 'pages', description: tr('自定义菜单目录及层级', 'Custom menu folders and hierarchy'),
     content: JSON.stringify(payload.stateSnapshot.designerFolders, null, 2),
   });
   files.push({
-    relativePath: 'pages/sitemap-overrides.json', folder: 'pages', description: '模板菜单的自定义层级位置',
+    relativePath: 'pages/sitemap-overrides.json', folder: 'pages', description: tr('模板菜单的自定义层级位置', 'Custom hierarchy overrides for template menus'),
     content: JSON.stringify(payload.stateSnapshot.sitemapOverrides, null, 2),
   });
   for (const [pageId, content] of Object.entries(payload.stateSnapshot.pageSources)) {
-    if (!/^[A-Za-z0-9_-]+$/.test(pageId)) throw new Error(`页面 ID 不能作为文件名：${pageId}`);
-    files.push({ relativePath: `pages/${pageId}.page.tsx`, folder: 'pages', description: `页面 ${pageId} 源码`, content });
+    if (!/^[A-Za-z0-9_-]+$/.test(pageId)) throw new Error(tr(`页面 ID 不能作为文件名：${pageId}`, `Page ID cannot be used as filename: ${pageId}`));
+    files.push({ relativePath: `pages/${pageId}.page.tsx`, folder: 'pages', description: tr(`页面 ${pageId} 源码`, `Page ${pageId} source`), content });
   }
 
   const allTables = payload.stateSnapshot.dbTables;
@@ -300,20 +301,28 @@ export function generateUnpackedGitFiles(
   for (const page of pages) {
     const notes = allStickies.filter(note => note.pageId === page.pageId);
     if (!notes.length) continue;
-    if (!/^[A-Za-z0-9_-]+$/.test(page.pageId)) throw new Error(`页面 ID 不能作为文件名：${page.pageId}`);
-    files.push({ relativePath: `sticky-notes/${page.pageId}.pins.json`, folder:'sticky-notes', description:`${page.title} 的需求记录`, content:JSON.stringify(notes,null,2) });
-    files.push({ relativePath: `sticky-notes/${page.pageId}.pins.md`, folder:'sticky-notes', description:`${page.title} 的需求说明`, content:`# ${page.path} · 需求记录\n\n> 启用表示保留该需求，不代表业务规则已经实现或执行。\n\n${notes.map(note=>`### #${note.index} · ${note.targetWidgetName}\n- 页面：${note.pageId}\n- 组件：${note.targetWidgetId}\n- 记录状态：${note.active?'启用':'停用'}\n- 需求：${note.text}${note.compiledRule?`\n- 已保存的规则描述（未验证实现）：${note.compiledRule}`:''}\n`).join('\n')}` });
+    if (!/^[A-Za-z0-9_-]+$/.test(page.pageId)) throw new Error(tr(`页面 ID 不能作为文件名：${page.pageId}`, `Page ID cannot be used as filename: ${page.pageId}`));
+    files.push({ relativePath: `sticky-notes/${page.pageId}.pins.json`, folder:'sticky-notes', description:tr(`${page.title} 的需求记录`, `Sticky notes for ${page.title}`), content:JSON.stringify(notes,null,2) });
+    files.push({
+      relativePath: `sticky-notes/${page.pageId}.pins.md`,
+      folder:'sticky-notes',
+      description:tr(`${page.title} 的需求说明`, `Spec notes for ${page.title}`),
+      content: tr(
+        `# ${page.path} · 需求记录\n\n> 启用表示保留该需求，不代表业务规则已经实现或执行。\n\n${notes.map(note=>`### #${note.index} · ${note.targetWidgetName}\n- 页面：${note.pageId}\n- 组件：${note.targetWidgetId}\n- 记录状态：${note.active?'启用':'停用'}\n- 需求：${note.text}${note.compiledRule?`\n- 已保存的规则描述（未验证实现）：${note.compiledRule}`:''}\n`).join('\n')}`,
+        `# ${page.path} · Requirement Notes\n\n> Active means the requirement note is retained; it does not mean the business rule is implemented.\n\n${notes.map(note=>`### #${note.index} · ${note.targetWidgetName}\n- Page: ${note.pageId}\n- Widget: ${note.targetWidgetId}\n- Status: ${note.active?'Active':'Inactive'}\n- Note: ${note.text}${note.compiledRule?`\n- Saved rule summary (unverified): ${note.compiledRule}`:''}\n`).join('\n')}`
+      ),
+    });
   }
   const unresolvedNotes = allStickies.filter(note => !pages.some(page=>page.pageId===note.pageId));
-  if (unresolvedNotes.length) files.push({relativePath:'sticky-notes/unresolved.json',folder:'sticky-notes',description:'引用了目录外页面的历史便签，待修复',content:JSON.stringify(unresolvedNotes,null,2)});
-  files.push({relativePath:'SPEC.md',folder:'root',description:'根据当前工程生成的规格与配置清单',content:projectSpecification(payload)});
+  if (unresolvedNotes.length) files.push({relativePath:'sticky-notes/unresolved.json',folder:'sticky-notes',description:tr('引用了目录外页面的历史便签，待修复','Legacy sticky notes referencing unlisted pages (pending fix)'),content:JSON.stringify(unresolvedNotes,null,2)});
+  files.push({relativePath:'SPEC.md',folder:'root',description:tr('根据当前工程生成的规格与配置清单','Generated project specification and configuration inventory'),content:projectSpecification(payload)});
 
   // 4. Database Tables folder: one .table.json per physical table!
   allTables.forEach((tbl) => {
     files.push({
       relativePath: `database/tables/${tbl.tableName}.table.json`,
       folder: 'database/tables',
-      description: `物理表【${tbl.cnName}】结构与多菜单共表映射 (支持数据库表级 Git Diff)`,
+      description: tr(`物理表【${tbl.cnName}】结构与多菜单共表映射 (支持数据库表级 Git Diff)`, `Physical table [${tbl.cnName}] schema & shared menu mapping (table-level Git diff)`),
       content: JSON.stringify(
         {
           id: tbl.id,
@@ -354,8 +363,11 @@ export function generateUnpackedGitFiles(
     if (pk.length) columns.push(`  PRIMARY KEY (${pk.map(c => quote(c.name)).join(', ')})`);
     columns.push(...uniqueConstraintSql(tbl, 'mysql'));
     const pending = tbl.modeling?.pendingRules?.length;
-    const boundary = pending ? `-- 有 ${pending} 项业务规则未由本 DDL 实现，详见 SPEC.md 的数据库设计审查。\n` : '';
-    return `${boundary}-- 表: ${tbl.tableName} (${commentLine(tbl.cnName)})\n-- 共表菜单: ${commentLine(tbl.sharedByMenus.map(m => m.menuTitle).join(' | '))}\nCREATE TABLE IF NOT EXISTS ${quote(tbl.tableName)} (\n${columns.join(',\n')}\n);`;
+    const boundary = pending ? tr(`-- 有 ${pending} 项业务规则未由本 DDL 实现，详见 SPEC.md 的数据库设计审查。\n`, `-- ${pending} business rule(s) are not enforced by this DDL; see Database Design Review in SPEC.md.\n`) : '';
+    return tr(
+      `${boundary}-- 表: ${tbl.tableName} (${commentLine(tbl.cnName)})\n-- 共表菜单: ${commentLine(tbl.sharedByMenus.map(m => m.menuTitle).join(' | '))}\nCREATE TABLE IF NOT EXISTS ${quote(tbl.tableName)} (\n${columns.join(',\n')}\n);`,
+      `${boundary}-- Table: ${tbl.tableName} (${commentLine(tbl.cnName)})\n-- Shared menus: ${commentLine(tbl.sharedByMenus.map(m => m.menuTitle).join(' | '))}\nCREATE TABLE IF NOT EXISTS ${quote(tbl.tableName)} (\n${columns.join(',\n')}\n);`
+    );
   });
   // Add relationships after all tables exist, including self/cyclic references.
   const graph = diagramRelations(allTables);
@@ -363,12 +375,12 @@ export function generateUnpackedGitFiles(
   for (const fk of graph.relations) {
     ddlBlocks.push(`ALTER TABLE ${tableNames.get(fk.toTableId)} ADD CONSTRAINT ${quote(fk.name)} FOREIGN KEY (${quote(fk.toColumnName)}) REFERENCES ${tableNames.get(fk.fromTableId)} (${quote(fk.fromColumnName)})${fk.onDelete ? ' ON DELETE ' + fk.onDelete : ''};`);
   }
-  for (const issue of graph.issues) ddlBlocks.push(`-- 待修复的外键：${commentLine(issue)}`);
+  for (const issue of graph.issues) ddlBlocks.push(tr(`-- 待修复的外键：${commentLine(issue)}`, `-- Pending FK fix: ${commentLine(issue)}`));
 
   files.push({
     relativePath: 'database/schema.sql',
     folder: 'database',
-    description: '当前 MySQL 表结构草稿，执行前需审核；不是数据库迁移记录',
+    description: tr('当前 MySQL 表结构草稿，执行前需审核；不是数据库迁移记录', 'MySQL schema draft (review before executing; not a migration history)'),
     content: ddlBlocks.join('\n\n'),
   });
 
@@ -376,7 +388,7 @@ export function generateUnpackedGitFiles(
   files.push({
     relativePath: 'ai-audit/closed-loop-decisions.json',
     folder: 'ai-audit',
-    description: '模块与项目需求闭环 AI 检测及问答修复记录',
+    description: tr('模块与项目需求闭环 AI 检测及问答修复记录', 'AI closed-loop audit and Q&A resolution log'),
     content: JSON.stringify(payload.stateSnapshot.closedLoopIssues, null, 2),
   });
 
@@ -384,8 +396,9 @@ export function generateUnpackedGitFiles(
   files.unshift({
     relativePath: 'README.md',
     folder: 'root',
-    description: '当前工程源码目录总览与需求记录',
-    content: `# ${payload.meta.projectName} (Alex 工程源码目录)
+    description: tr('当前工程源码目录总览与需求记录', 'Project source tree overview and requirement notes'),
+    content: tr(
+      `# ${payload.meta.projectName} (Alex 工程源码目录)
 
 > 本目录由 **Alex** 导出。使用 Alex 打开随附的 \`bundle/${payload.meta.fileName}\` 工程文件。源码可自行纳入 Git 版本管理；导出不会创建 Git 提交。
 
@@ -408,6 +421,30 @@ ${allStickies
   .map((s) => `- **📌 #${s.index} [${s.targetWidgetName}]**：${s.text}`)
   .join('\n')}
 `,
+      `# ${payload.meta.projectName} (Alex Unpacked Source Tree)
+
+> Exported by **Alex**. Open the bundled \`bundle/${payload.meta.fileName}\` project archive in Alex. Source files can be tracked in Git; exporting does not create a Git commit.
+
+## 1. Database Tables & Shared Menu Matrix (${allTables.length} Physical Tables)
+
+| Physical Table | Display Name | Domain | Shared Menus |
+| :--- | :--- | :--- | :--- |
+${allTables
+  .map(
+    (t) =>
+      `| \`${t.tableName}\` | ${t.cnName} | ${t.domain} | ${t.sharedByMenus
+        .map((m) => m.menuTitle)
+        .join(', ')} |`
+  )
+  .join('\n')}
+
+## 2. Component Sticky Notes (${allStickies.length})
+
+${allStickies
+  .map((s) => `- **📌 #${s.index} [${s.targetWidgetName}]**: ${s.text}`)
+  .join('\n')}
+`
+    ),
   });
 
   return files;

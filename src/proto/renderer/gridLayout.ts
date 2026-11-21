@@ -1,4 +1,5 @@
 import { isNode, type ProtoNode } from '../types';
+import { tr } from '../../i18n/runtime';
 
 export const FLOW_GRID_CONTAINERS = new Set(['Page', 'Card', 'Tab', 'Modal', 'Drawer', 'Col', 'Form', 'CollapsePanel']);
 const WIDTH_SPANS: Record<string, number> = { '1/4': 3, '1/3': 4, '1/2': 6, '2/3': 8, '3/4': 9, full: 12 };
@@ -19,7 +20,7 @@ export function flowGridSpan(node: ProtoNode, parent: ProtoNode | null, inline =
 export const columnSpan = (node: ProtoNode): number => Math.max(1, Math.min(24, Number(node.props.span ?? 12)));
 
 export function columnWidthLabel(span: number): string {
-  if (span === 24) return '整行';
+  if (span === 24) return tr('整行', 'Full Row');
   let a = span, b = 24;
   while (b) [a, b] = [b, a % b];
   return `${span / a}/${24 / a}`;

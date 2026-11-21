@@ -1,4 +1,5 @@
 import { getHermesApi, type HermesImageAttachment, type HermesImageInput } from './hermesClient';
+import { tr } from '../i18n/runtime';
 import type { HermesChatConversation } from './hermesConversation';
 
 export const MAX_CHAT_IMAGES = 4;
@@ -14,21 +15,21 @@ export function validImageReference(image: unknown, scope: HermesChatConversatio
     ['image/png', 'image/jpeg', 'image/webp'].includes(v.mimeType) && Number.isInteger(v.size) && v.size > 0 && v.size <= MAX_CHAT_IMAGE_BYTES;
 }
 export async function readChatImageFiles(files: File[], existingCount: number): Promise<ChatImageDraft[]> {
-  if (files.length + existingCount > MAX_CHAT_IMAGES) throw new Error('每条消息最多添加 4 张图片');
+  if (files.length + existingCount > MAX_CHAT_IMAGES) throw new Error(tr('每条消息最多添加 4 张图片', 'Attach up to 4 images per message'));
   // Validate the entire batch before reading any file; never silently drop one.
   for (const file of files) {
-    if (!CHAT_IMAGE_ACCEPT.split(',').includes(file.type)) throw new Error('请选择 PNG、JPG 或 WebP 图片');
-    if (!file.size || file.size > MAX_CHAT_IMAGE_BYTES) throw new Error('图片不能为空，单张图片不能超过 5 MB');
-    if (!file.name.trim() || file.name.length > 255) throw new Error('图片文件名过长或为空，请重命名后重试');
+    if (!CHAT_IMAGE_ACCEPT.split(',').includes(file.type)) throw new Error(tr('请选择 PNG、JPG 或 WebP 图片', 'Select PNG, JPG, or WebP images'));
+    if (!file.size || file.size > MAX_CHAT_IMAGE_BYTES) throw new Error(tr('图片不能为空，单张图片不能超过 5 MB', 'Image cannot be empty and each image must not exceed 5 MB'));
+    if (!file.name.trim() || file.name.length > 255) throw new Error(tr('图片文件名过长或为空，请重命名后重试', 'Image file name is empty or too long; rename and retry'));
   }
   return Promise.all(files.map(file => new Promise<ChatImageDraft>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`无法读取图片：${file.name}`));
+    reader.onerror = () => reject(new Error(tr(`无法读取图片：${file.name}`, `Failed to read image: ${file.name}`)));
     reader.onload = () => {
       const preview = String(reader.result), image = new Image();
-      image.onerror = () => reject(new Error(`图片内容无法识别：${file.name}`));
+      image.onerror = () => reject(new Error(tr(`图片内容无法识别：${file.name}`, `Unrecognized image content: ${file.name}`)));
       image.onload = () => {
-        if (image.naturalWidth * image.naturalHeight > 40_000_000) { reject(new Error('图片分辨率过大，请缩小到 4000 万像素以内')); return; }
+        if (image.naturalWidth * image.naturalHeight > 40_000_000) { reject(new Error(tr('图片分辨率过大，请缩小到 4000 万像素以内', 'Image resolution is too large; resize to under 40 megapixels'))); return; }
         resolve({ name: file.name, mimeType: file.type as HermesImageInput['mimeType'], data: preview.slice(preview.indexOf(',') + 1), preview, size: file.size });
       };
       image.src = preview;
@@ -38,10 +39,10 @@ export async function readChatImageFiles(files: File[], existingCount: number): 
 }
 export async function saveChatImages(scope: HermesChatConversation, images: ChatImageDraft[]) {
   const api = getHermesApi();
-  if (typeof api.saveImages !== 'function') throw new Error('图片功能已更新，请重启桌面应用后再发送');
+  if (typeof api.saveImages !== 'function') throw new Error(tr('图片功能已更新，请重启桌面应用后再发送', 'Image feature updated; restart the desktop app before sending'));
   const references = await api.saveImages({ ...scope, images: images.map(({ name, mimeType, data }) => ({ name, mimeType, data })) });
   if (!Array.isArray(references) || references.length !== images.length || references.some((image, index) =>
     !validImageReference(image, scope) || image.name !== images[index].name || image.mimeType !== images[index].mimeType || image.size !== images[index].size))
-    throw new Error('图片保存结果与当前会话不匹配，未发送');
+    throw new Error(tr('图片保存结果与当前会话不匹配，未发送', 'Saved image result does not match the current session; not sent'));
   return references;
 }

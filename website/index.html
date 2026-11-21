@@ -21,22 +21,33 @@
     <script src="main.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#main">跳到正文</a>
+    <a class="skip-link" href="#main" data-i18n="skip">跳到正文</a>
 
     <header class="site-header">
-      <nav class="nav container" aria-label="主导航">
-        <a class="brand" href="#top" aria-label="Alex 首页">
+      <nav class="nav container" aria-label="主导航" data-i18n-aria="nav.aria">
+        <a class="brand" href="#top" aria-label="Alex 首页" data-i18n-aria="nav.brandAria">
           <img src="assets/logo.svg" alt="" width="28" height="28" />
           <span>Alex</span>
         </a>
         <ul class="nav-links">
-          <li><a href="#features">功能</a></li>
-          <li><a href="#workflow">工作流</a></li>
-          <li><a href="#ai">模型</a></li>
-          <li><a href="#download">下载</a></li>
-          <li><a href="#faq">常见问题</a></li>
+          <li><a href="#features" data-i18n="nav.features">功能</a></li>
+          <li><a href="#workflow" data-i18n="nav.workflow">工作流</a></li>
+          <li><a href="#ai" data-i18n="nav.models">模型</a></li>
+          <li><a href="#download" data-i18n="nav.download">下载</a></li>
+          <li><a href="#faq" data-i18n="nav.faq">常见问题</a></li>
         </ul>
-        <a class="btn btn-dark btn-sm" href="#download">下载</a>
+        <div class="nav-actions">
+          <button
+            class="btn btn-quiet btn-sm lang-toggle"
+            type="button"
+            data-lang-toggle
+            lang="en"
+            aria-label="EN — Switch to English"
+          >
+            EN
+          </button>
+          <a class="btn btn-dark btn-sm" href="#download" data-i18n="nav.download">下载</a>
+        </div>
       </nav>
     </header>
 
@@ -45,45 +56,45 @@
       <section class="hero" id="top">
         <div class="container hero-inner">
           <p class="hero-meta">
-            <span>桌面版 <span data-version>版本加载中</span></span>
+            <span><span data-i18n="hero.desktop">桌面版</span> <span data-version>版本加载中</span></span>
             <span class="sep" aria-hidden="true"></span>
             <span>macOS · Windows · Linux</span>
           </p>
-          <h1>把需求，<br />做成能跑起来的原型</h1>
-          <p class="lead">
+          <h1 data-i18n-html="hero.title">把需求，<br />做成能跑起来的原型</h1>
+          <p class="lead" data-i18n="hero.lead">
             描述你的业务，Alex 帮你规划目录、页面与数据表。在画布里精修 PC 后台与移动端页面，绑定数据表，让表单、列表与审批真正流转起来，再把链接发给团队评审。
           </p>
           <div class="hero-actions">
             <a class="btn btn-dark btn-lg" href="#download" data-primary-download>
-              <span data-primary-label>免费下载</span>
+              <span data-primary-label data-i18n="hero.primaryCta">免费下载</span>
               <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 2.5v8m0 0L4.5 7M8 10.5 11.5 7M3 13.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
-            <a class="btn btn-quiet btn-lg" href="#features">看看能做什么</a>
+            <a class="btn btn-quiet btn-lg" href="#features" data-i18n="hero.secondaryCta">看看能做什么</a>
           </div>
         </div>
 
         <!-- App mockup (pure HTML/CSS, illustrative) -->
         <div class="container">
-          <figure class="mockup reveal" aria-label="Alex 应用界面示意">
+          <figure class="mockup reveal" aria-label="Alex 应用界面示意" data-i18n-aria="mockup.aria">
             <div class="mockup-bar">
               <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="mockup-tabs" aria-hidden="true">
-                <span class="active">原型画布</span><span>数据库表</span><span>跨模块流转</span><span>项目脑图</span>
+                <span class="active" data-i18n="mk.tab1">原型画布</span><span data-i18n="mk.tab2">数据库表</span><span data-i18n="mk.tab3">跨模块流转</span><span data-i18n="mk.tab4">项目脑图</span>
               </span>
-              <span class="mockup-title">采购管理系统</span>
+              <span class="mockup-title" data-i18n="mk.title">采购管理系统</span>
             </div>
             <div class="mockup-body">
               <aside class="mk-tree" aria-hidden="true">
-                <div class="mk-label">页面</div>
-                <div class="mk-node folder">供应商管理</div>
-                <div class="mk-node sub">供应商列表</div>
-                <div class="mk-node folder">采购管理</div>
-                <div class="mk-node sub active">采购订单</div>
-                <div class="mk-node sub">采购审批</div>
-                <div class="mk-node folder">仓储</div>
-                <div class="mk-node sub">验收入库</div>
-                <div class="mk-node sub">扫码入库 <em>移动</em></div>
-                <div class="mk-label">数据表</div>
+                <div class="mk-label" data-i18n="mk.pagesLabel">页面</div>
+                <div class="mk-node folder" data-i18n="mk.folder1">供应商管理</div>
+                <div class="mk-node sub" data-i18n="mk.page1">供应商列表</div>
+                <div class="mk-node folder" data-i18n="mk.folder2">采购管理</div>
+                <div class="mk-node sub active" data-i18n="mk.page2">采购订单</div>
+                <div class="mk-node sub" data-i18n="mk.page3">采购审批</div>
+                <div class="mk-node folder" data-i18n="mk.folder3">仓储</div>
+                <div class="mk-node sub" data-i18n="mk.page4">验收入库</div>
+                <div class="mk-node sub" data-i18n-html="mk.page5">扫码入库 <em>移动</em></div>
+                <div class="mk-label" data-i18n="mk.tablesLabel">数据表</div>
                 <div class="mk-node table">supplier</div>
                 <div class="mk-node table">purchase_order</div>
                 <div class="mk-node table">stock_in</div>
@@ -91,20 +102,20 @@
               <div class="mk-canvas" aria-hidden="true">
                 <div class="mk-page">
                   <div class="mk-page-head">
-                    <strong>采购订单</strong>
-                    <span class="mk-btn">新建订单</span>
+                    <strong data-i18n="mk.pageHead">采购订单</strong>
+                    <span class="mk-btn" data-i18n="mk.newOrder">新建订单</span>
                   </div>
                   <div class="mk-query">
-                    <span class="mk-input">订单编号</span>
-                    <span class="mk-input">供应商</span>
-                    <span class="mk-input">状态</span>
-                    <span class="mk-btn ghost">查询</span>
+                    <span class="mk-input" data-i18n="mk.qOrderNo">订单编号</span>
+                    <span class="mk-input" data-i18n="mk.qSupplier">供应商</span>
+                    <span class="mk-input" data-i18n="mk.qStatus">状态</span>
+                    <span class="mk-btn ghost" data-i18n="mk.qSearch">查询</span>
                   </div>
                   <div class="mk-table">
-                    <div class="mk-row head"><span>订单编号</span><span>供应商</span><span>金额</span><span>状态</span></div>
-                    <div class="mk-row"><span>PO-20261108</span><span>极光数码</span><span>¥ 48,200</span><span class="tag ok">已审批</span></div>
-                    <div class="mk-row hl"><span>PO-20261109</span><span>中联电子</span><span>¥ 12,860</span><span class="tag wait">待审批</span></div>
-                    <div class="mk-row"><span>PO-20261110</span><span>远航包装</span><span>¥ 6,540</span><span class="tag">草稿</span></div>
+                    <div class="mk-row head"><span data-i18n="mk.thOrderNo">订单编号</span><span data-i18n="mk.thSupplier">供应商</span><span data-i18n="mk.thAmount">金额</span><span data-i18n="mk.thStatus">状态</span></div>
+                    <div class="mk-row"><span>PO-20261108</span><span data-i18n="mk.r1Vendor">极光数码</span><span data-i18n="mk.r1Amt">¥ 48,200</span><span class="tag ok" data-i18n="mk.statusApproved">已审批</span></div>
+                    <div class="mk-row hl"><span>PO-20261109</span><span data-i18n="mk.r2Vendor">中联电子</span><span data-i18n="mk.r2Amt">¥ 12,860</span><span class="tag wait" data-i18n="mk.statusPending">待审批</span></div>
+                    <div class="mk-row"><span>PO-20261110</span><span data-i18n="mk.r3Vendor">远航包装</span><span data-i18n="mk.r3Amt">¥ 6,540</span><span class="tag" data-i18n="mk.statusDraft">草稿</span></div>
                   </div>
                   <div class="mk-chart">
                     <span style="--h: 40%"></span><span style="--h: 62%"></span><span style="--h: 48%"></span>
@@ -113,16 +124,16 @@
                 </div>
               </div>
               <aside class="mk-ai" aria-hidden="true">
-                <div class="mk-label">项目 AI</div>
-                <div class="bubble user">做一个采购管理系统，包含供应商、采购审批和扫码入库的移动端页面</div>
+                <div class="mk-label" data-i18n="mk.aiLabel">项目 AI</div>
+                <div class="bubble user" data-i18n="mk.aiUser">做一个采购管理系统，包含供应商、采购审批和扫码入库的移动端页面</div>
                 <div class="bubble bot">
-                  <p>规划了 <b>3 个模块、6 个页面、4 张共享数据表</b>：</p>
+                  <p data-i18n-html="mk.aiBotLead">规划了 <b>3 个模块、6 个页面、4 张共享数据表</b>：</p>
                   <ul>
-                    <li>供应商列表（PC）</li>
-                    <li>采购订单与审批流</li>
-                    <li>扫码入库（移动端）</li>
+                    <li data-i18n="mk.aiBotItem1">供应商列表（PC）</li>
+                    <li data-i18n="mk.aiBotItem2">采购订单与审批流</li>
+                    <li data-i18n="mk.aiBotItem3">扫码入库（移动端）</li>
                   </ul>
-                  <span class="mk-btn sm">确认并生成</span>
+                  <span class="mk-btn sm" data-i18n="mk.aiConfirm">确认并生成</span>
                 </div>
               </aside>
             </div>
@@ -131,62 +142,62 @@
       </section>
 
       <!-- ========== Facts ========== -->
-      <section class="facts container" aria-label="产品亮点">
-        <div class="fact"><strong>PC 与移动端</strong><span>同一个工程里设计</span></div>
-        <div class="fact"><strong>共享数据表</strong><span>页面之间数据互通</span></div>
-        <div class="fact"><strong>15+ 模型服务</strong><span>云端或本地 Ollama</span></div>
-        <div class="fact"><strong>数据在本机</strong><span>只有发布的内容会上传</span></div>
+      <section class="facts container" aria-label="产品亮点" data-i18n-aria="facts.aria">
+        <div class="fact"><strong data-i18n="fact.1.title">PC 与移动端</strong><span data-i18n="fact.1.desc">同一个工程里设计</span></div>
+        <div class="fact"><strong data-i18n="fact.2.title">共享数据表</strong><span data-i18n="fact.2.desc">页面之间数据互通</span></div>
+        <div class="fact"><strong data-i18n="fact.3.title">15+ 模型服务</strong><span data-i18n="fact.3.desc">云端或本地 Ollama</span></div>
+        <div class="fact"><strong data-i18n="fact.4.title">数据在本机</strong><span data-i18n="fact.4.desc">只有发布的内容会上传</span></div>
       </section>
 
       <!-- ========== Features ========== -->
       <section class="section" id="features">
         <div class="container">
           <header class="section-head">
-            <p class="kicker">功能</p>
-            <h2>从一段需求描述，到一套可以评审的系统原型</h2>
-            <p>需求梳理、页面设计、数据建模、流程串联、发布评审，在一个工程里完成。</p>
+            <p class="kicker" data-i18n="features.kicker">功能</p>
+            <h2 data-i18n="features.title">从一段需求描述，到一套可以评审的系统原型</h2>
+            <p data-i18n="features.desc">需求梳理、页面设计、数据建模、流程串联、发布评审，在一个工程里完成。</p>
           </header>
 
           <div class="feature-list">
             <article class="feature reveal">
               <span class="f-no">01</span>
-              <h3>项目 AI 规划</h3>
-              <p>用平常的话描述业务，AI 会先追问关键细节，再给出模块目录、页面清单和数据表方案，你确认后才批量生成。</p>
+              <h3 data-i18n="f1.title">项目 AI 规划</h3>
+              <p data-i18n="f1.desc">用平常的话描述业务，AI 会先追问关键细节，再给出模块目录、页面清单和数据表方案，你确认后才批量生成。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">02</span>
-              <h3>原型画布与物料库</h3>
-              <p>宽屏栅格、多列查询、业务表格、ECharts 图表、业务复合块和页面模板，拖拽就能搭出专业的中后台页面。</p>
+              <h3 data-i18n="f2.title">原型画布与物料库</h3>
+              <p data-i18n="f2.desc">宽屏栅格、多列查询、业务表格、ECharts 图表、业务复合块和页面模板，拖拽就能搭出专业的中后台页面。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">03</span>
-              <h3>数据库表与共表联动</h3>
-              <p>设计物理表与关联关系，页面直接绑定数据表。新增、编辑、审批产生的数据会在各个页面之间同步。</p>
+              <h3 data-i18n="f3.title">数据库表与共表联动</h3>
+              <p data-i18n="f3.desc">设计物理表与关联关系，页面直接绑定数据表。新增、编辑、审批产生的数据会在各个页面之间同步。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">04</span>
-              <h3>PC 与移动端协同</h3>
-              <p>同一工程同时设计管理后台和 App / 小程序页面，提供 iPhone 视口与触控物料，两端共用一套数据。</p>
+              <h3 data-i18n="f4.title">PC 与移动端协同</h3>
+              <p data-i18n="f4.desc">同一工程同时设计管理后台和 App / 小程序页面，提供 iPhone 视口与触控物料，两端共用一套数据。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">05</span>
-              <h3>跨模块流转与影响分析</h3>
-              <p>梳理业务在模块之间的流转路径；改动一张表或一个字段，马上能看到会影响哪些页面和流程。</p>
+              <h3 data-i18n="f5.title">跨模块流转与影响分析</h3>
+              <p data-i18n="f5.desc">梳理业务在模块之间的流转路径；改动一张表或一个字段，马上能看到会影响哪些页面和流程。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">06</span>
-              <h3>需求审计与验收</h3>
-              <p>把需求便签贴在组件上，审计检查是否落地，验收时逐项确认，原型和需求不再各说各话。</p>
+              <h3 data-i18n="f6.title">需求审计与验收</h3>
+              <p data-i18n="f6.desc">把需求便签贴在组件上，审计检查是否落地，验收时逐项确认，原型和需求不再各说各话。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">07</span>
-              <h3>项目笔记与脑图</h3>
-              <p>分屏笔记、Mermaid 图表模板和思维导图，会议纪要、业务梳理与原型放在同一个工程里。</p>
+              <h3 data-i18n="f7.title">项目笔记与脑图</h3>
+              <p data-i18n="f7.desc">分屏笔记、Mermaid 图表模板和思维导图，会议纪要、业务梳理与原型放在同一个工程里。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">08</span>
-              <h3>发布在线演示</h3>
-              <p>发布到团队的演示服务器，生成链接即可在浏览器里体验完整交互；也可以导出工程文件备份。</p>
+              <h3 data-i18n="f8.title">发布在线演示</h3>
+              <p data-i18n="f8.desc">发布到团队的演示服务器，生成链接即可在浏览器里体验完整交互；也可以导出工程文件备份。</p>
             </article>
           </div>
         </div>
@@ -197,60 +208,60 @@
         <div class="container dives">
           <div class="dive reveal">
             <div class="dive-text">
-              <p class="kicker">可运行原型</p>
-              <h2>不只是画出来，<br />而是能用起来</h2>
-              <p>传统原型只能展示静态画面。在 Alex 里，页面绑定的是真实的数据表结构：</p>
+              <p class="kicker" data-i18n="d1.kicker">可运行原型</p>
+              <h2 data-i18n-html="d1.title">不只是画出来，<br />而是能用起来</h2>
+              <p data-i18n="d1.desc">传统原型只能展示静态画面。在 Alex 里，页面绑定的是真实的数据表结构：</p>
               <ul class="checks">
-                <li>在“新建订单”里提交的数据，立即出现在订单列表中</li>
-                <li>审批通过后，状态同步到移动端的待办页面</li>
-                <li>主子表查询、审批流状态机直接可用</li>
-                <li>评审时演示完整的业务闭环，减少来回解释</li>
+                <li data-i18n="d1.c1">在“新建订单”里提交的数据，立即出现在订单列表中</li>
+                <li data-i18n="d1.c2">审批通过后，状态同步到移动端的待办页面</li>
+                <li data-i18n="d1.c3">主子表查询、审批流状态机直接可用</li>
+                <li data-i18n="d1.c4">评审时演示完整的业务闭环，减少来回解释</li>
               </ul>
             </div>
             <div class="dive-visual flow-visual" aria-hidden="true">
-              <div class="flow-node"><span>新建订单</span><small>PC · 表单</small></div>
+              <div class="flow-node"><span data-i18n="d1.fn1Title">新建订单</span><small data-i18n="d1.fn1Sub">PC · 表单</small></div>
               <div class="flow-line"></div>
-              <div class="flow-node db"><span>purchase_order</span><small>共享数据表</small></div>
+              <div class="flow-node db"><span>purchase_order</span><small data-i18n="d1.fn2Sub">共享数据表</small></div>
               <div class="flow-line"></div>
-              <div class="flow-node"><span>审批待办</span><small>移动端 · 列表</small></div>
+              <div class="flow-node"><span data-i18n="d1.fn3Title">审批待办</span><small data-i18n="d1.fn3Sub">移动端 · 列表</small></div>
             </div>
           </div>
 
           <div class="dive reverse reveal">
             <div class="dive-text">
-              <p class="kicker">AI 协作</p>
-              <h2>先问清楚，<br />再动手</h2>
-              <p>内置 Hermes 引擎，了解整个工程的页面、组件、数据表和需求便签：</p>
+              <p class="kicker" data-i18n="d2.kicker">AI 协作</p>
+              <h2 data-i18n-html="d2.title">先问清楚，<br />再动手</h2>
+              <p data-i18n="d2.desc">内置 Hermes 引擎，了解整个工程的页面、组件、数据表和需求便签：</p>
               <ul class="checks">
-                <li>需求不清楚时会提问，而不是自己猜</li>
-                <li>先给规划方案，确认后再生成</li>
-                <li>可以只改某个页面的局部，不破坏已有设计</li>
-                <li>支持多种模型与推理强度，按需切换</li>
+                <li data-i18n="d2.c1">需求不清楚时会提问，而不是自己猜</li>
+                <li data-i18n="d2.c2">先给规划方案，确认后再生成</li>
+                <li data-i18n="d2.c3">可以只改某个页面的局部，不破坏已有设计</li>
+                <li data-i18n="d2.c4">支持多种模型与推理强度，按需切换</li>
               </ul>
             </div>
             <div class="dive-visual chat-visual" aria-hidden="true">
-              <div class="bubble bot">“采购审批”中，金额超过多少需要二级审批？</div>
-              <div class="bubble user">超过 5 万需要财务总监审批</div>
-              <div class="bubble bot">已在审批流中增加“财务总监审批”节点，并在 purchase_order 中新增字段 <code>approve_level</code>。</div>
+              <div class="bubble bot" data-i18n="d2.b1">“采购审批”中，金额超过多少需要二级审批？</div>
+              <div class="bubble user" data-i18n="d2.b2">超过 5 万需要财务总监审批</div>
+              <div class="bubble bot" data-i18n-html="d2.b3">已在审批流中增加“财务总监审批”节点，并在 purchase_order 中新增字段 <code>approve_level</code>。</div>
             </div>
           </div>
 
           <div class="dive reveal">
             <div class="dive-text">
-              <p class="kicker">发布与更新</p>
-              <h2>团队评审，<br />发一个链接就够了</h2>
-              <p>原型发布到局域网或团队服务器，同事不用安装客户端，打开浏览器就能体验：</p>
+              <p class="kicker" data-i18n="d3.kicker">发布与更新</p>
+              <h2 data-i18n-html="d3.title">团队评审，<br />发一个链接就够了</h2>
+              <p data-i18n="d3.desc">原型发布到局域网或团队服务器，同事不用安装客户端，打开浏览器就能体验：</p>
               <ul class="checks">
-                <li>页面、笔记与站点地图一并发布</li>
-                <li>可设置链接有效期与私有访问</li>
-                <li>客户端内置一键更新，更新包经过签名校验</li>
+                <li data-i18n="d3.c1">页面、笔记与站点地图一并发布</li>
+                <li data-i18n="d3.c2">可设置链接有效期与私有访问</li>
+                <li data-i18n="d3.c3">客户端内置一键更新，更新包经过签名校验</li>
               </ul>
             </div>
             <div class="dive-visual share-visual" aria-hidden="true">
               <div class="share-card">
-                <div class="share-head"><i class="ok-dot"></i>发布成功</div>
+                <div class="share-head"><i class="ok-dot"></i><span data-i18n="d3.published">发布成功</span></div>
                 <div class="share-link">https://demo.your-team.com/p/7Kx2…</div>
-                <div class="share-meta"><span>6 个页面</span><span>有效期 7 天</span><span>私有访问</span></div>
+                <div class="share-meta"><span data-i18n="d3.m1">6 个页面</span><span data-i18n="d3.m2">有效期 7 天</span><span data-i18n="d3.m3">私有访问</span></div>
               </div>
             </div>
           </div>
@@ -261,15 +272,15 @@
       <section class="section" id="workflow">
         <div class="container">
           <header class="section-head">
-            <p class="kicker">工作流</p>
-            <h2>五步完成一次需求评审</h2>
+            <p class="kicker" data-i18n="wf.kicker">工作流</p>
+            <h2 data-i18n="wf.title">五步完成一次需求评审</h2>
           </header>
           <ol class="steps">
-            <li class="step reveal"><span class="step-no">1</span><h3>描述需求</h3><p>选择模板或空白工程，告诉 AI 你要做什么。</p></li>
-            <li class="step reveal"><span class="step-no">2</span><h3>确认方案</h3><p>AI 追问细节，给出目录、页面与数据表规划。</p></li>
-            <li class="step reveal"><span class="step-no">3</span><h3>画布精修</h3><p>用物料库与业务复合块调整布局、文案和交互。</p></li>
-            <li class="step reveal"><span class="step-no">4</span><h3>数据跑通</h3><p>绑定共享数据表，检查跨模块流转与变更影响。</p></li>
-            <li class="step reveal"><span class="step-no">5</span><h3>发布评审</h3><p>发布在线演示，团队在浏览器里体验并验收。</p></li>
+            <li class="step reveal"><span class="step-no">1</span><h3 data-i18n="wf.s1Title">描述需求</h3><p data-i18n="wf.s1Desc">选择模板或空白工程，告诉 AI 你要做什么。</p></li>
+            <li class="step reveal"><span class="step-no">2</span><h3 data-i18n="wf.s2Title">确认方案</h3><p data-i18n="wf.s2Desc">AI 追问细节，给出目录、页面与数据表规划。</p></li>
+            <li class="step reveal"><span class="step-no">3</span><h3 data-i18n="wf.s3Title">画布精修</h3><p data-i18n="wf.s3Desc">用物料库与业务复合块调整布局、文案和交互。</p></li>
+            <li class="step reveal"><span class="step-no">4</span><h3 data-i18n="wf.s4Title">数据跑通</h3><p data-i18n="wf.s4Desc">绑定共享数据表，检查跨模块流转与变更影响。</p></li>
+            <li class="step reveal"><span class="step-no">5</span><h3 data-i18n="wf.s5Title">发布评审</h3><p data-i18n="wf.s5Desc">发布在线演示，团队在浏览器里体验并验收。</p></li>
           </ol>
         </div>
       </section>
@@ -278,27 +289,27 @@
       <section class="section tinted" id="ai">
         <div class="container">
           <header class="section-head">
-            <p class="kicker">模型</p>
-            <h2>用你习惯的大模型</h2>
-            <p>在 AI 管理中心配置账号与模型，可以接入主流云端模型，也可以通过 Ollama 使用本地模型。不用 AI 时，画布和数据表同样可以独立使用。</p>
+            <p class="kicker" data-i18n="ai.kicker">模型</p>
+            <h2 data-i18n="ai.title">用你习惯的大模型</h2>
+            <p data-i18n="ai.desc">在 AI 管理中心配置账号与模型，可以接入主流云端模型，也可以通过 Ollama 使用本地模型。不用 AI 时，画布和数据表同样可以独立使用。</p>
           </header>
-          <ul class="providers" aria-label="支持的模型服务">
+          <ul class="providers" aria-label="支持的模型服务" data-i18n-aria="ai.listAria">
             <li><img src="assets/providers/claude-color.svg" alt="" width="22" height="22" loading="lazy" />Claude</li>
             <li><img src="assets/providers/gemini-color.svg" alt="" width="22" height="22" loading="lazy" />Gemini</li>
             <li><span class="mono-icon" style="--src: url(assets/providers/openai.svg)"></span>OpenAI</li>
             <li><img src="assets/providers/deepseek-color.svg" alt="" width="22" height="22" loading="lazy" />DeepSeek</li>
-            <li><img src="assets/providers/qwen-color.svg" alt="" width="22" height="22" loading="lazy" />通义千问</li>
+            <li><img src="assets/providers/qwen-color.svg" alt="" width="22" height="22" loading="lazy" /><span data-i18n="ai.qwen">通义千问</span></li>
             <li><img src="assets/providers/kimi-color.svg" alt="" width="22" height="22" loading="lazy" />Kimi</li>
-            <li><span class="mono-icon" style="--src: url(assets/providers/zai.svg)"></span>智谱 Z.ai</li>
+            <li><span class="mono-icon" style="--src: url(assets/providers/zai.svg)"></span><span data-i18n="ai.zai">智谱 Z.ai</span></li>
             <li><img src="assets/providers/minimax-color.svg" alt="" width="22" height="22" loading="lazy" />MiniMax</li>
             <li><img src="assets/providers/mistral-color.svg" alt="" width="22" height="22" loading="lazy" />Mistral</li>
             <li><span class="mono-icon" style="--src: url(assets/providers/grok.svg)"></span>Grok</li>
             <li><span class="mono-icon" style="--src: url(assets/providers/openrouter.svg)"></span>OpenRouter</li>
             <li><span class="mono-icon" style="--src: url(assets/providers/githubcopilot.svg)"></span>GitHub Copilot</li>
             <li><span class="mono-icon" style="--src: url(assets/providers/nousresearch.svg)"></span>Nous Research</li>
-            <li><span class="mono-icon" style="--src: url(assets/providers/ollama.svg)"></span>Ollama（本地）</li>
+            <li><span class="mono-icon" style="--src: url(assets/providers/ollama.svg)"></span><span data-i18n="ai.ollama">Ollama（本地）</span></li>
           </ul>
-          <p class="fine">品牌图标来自 LobeHub Icons（MIT），各商标归其所有者所有。</p>
+          <p class="fine" data-i18n="ai.fine">品牌图标来自 LobeHub Icons（MIT），各商标归其所有者所有。</p>
         </div>
       </section>
 
@@ -306,59 +317,59 @@
       <section class="section download" id="download">
         <div class="container">
           <header class="section-head">
-            <p class="kicker">下载</p>
-            <h2>下载 Alex</h2>
+            <p class="kicker" data-i18n="dl.kicker">下载</p>
+            <h2 data-i18n="dl.title">下载 Alex</h2>
             <p>
-              最新发布 <strong data-version>版本加载中</strong>
+              <span data-i18n="dl.latestPrefix">最新发布</span> <strong data-version>版本加载中</strong>
               <span class="release-date" data-release-date></span>
               <span class="source-note" data-source-note role="status"></span>
             </p>
             <div data-release-actions></div>
-            <noscript><p>请启用 JavaScript，以读取最新版本及各平台下载地址。</p></noscript>
+            <noscript><p>请启用 JavaScript，以读取最新版本及各平台下载地址。 / Please enable JavaScript to load the latest release and platform downloads.</p></noscript>
           </header>
 
           <div class="recommend reveal" data-recommend hidden>
             <div>
-              <p class="recommend-kicker">适合你这台设备</p>
+              <p class="recommend-kicker" data-i18n="dl.recKicker">适合你这台设备</p>
               <h3 data-recommend-title>macOS · Apple Silicon</h3>
               <p class="recommend-meta" data-recommend-meta></p>
             </div>
-            <a class="btn btn-dark btn-lg" data-recommend-link href="#download">下载</a>
+            <a class="btn btn-dark btn-lg" data-recommend-link href="#download" data-i18n="nav.download">下载</a>
           </div>
 
           <div class="platforms">
             <article class="platform reveal" data-os="macos">
               <div class="p-head">
                 <svg class="p-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.37 12.6c-.02-2.2 1.8-3.26 1.88-3.31-1.03-1.5-2.62-1.7-3.18-1.73-1.35-.14-2.64.8-3.33.8-.69 0-1.74-.78-2.86-.76-1.47.02-2.83.86-3.59 2.17-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.24 2.73 2.2 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.08 2.65-2.14.84-1.22 1.18-2.41 1.2-2.47-.03-.01-2.28-.88-2.3-3.5ZM14.2 6.13c.6-.74 1.01-1.75.9-2.77-.87.04-1.94.59-2.56 1.32-.56.64-1.05 1.68-.92 2.67.98.08 1.97-.49 2.58-1.22Z"/></svg>
-                <div><h3>macOS</h3><p>macOS 13 及以上</p></div>
-                <span class="p-current">你的系统</span>
+                <div><h3>macOS</h3><p data-i18n="dl.macReq">macOS 13 及以上</p></div>
+                <span class="p-current" data-i18n="dl.yourOs">你的系统</span>
               </div>
               <ul class="assets" data-assets></ul>
-              <p class="p-tip">打开 .dmg 后将 Alex 拖入“应用程序”。首次打开若提示无法验证开发者，请在“系统设置 → 隐私与安全性”中点击“仍要打开”。</p>
+              <p class="p-tip" data-i18n="dl.macTip">打开 .dmg 后将 Alex 拖入“应用程序”。首次打开若提示无法验证开发者，请在“系统设置 → 隐私与安全性”中点击“仍要打开”。</p>
             </article>
 
             <article class="platform reveal" data-os="windows">
               <div class="p-head">
                 <svg class="p-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3V5.1Zm0 13.8 7.4 1.1v-7H3v5.9ZM11.3 3.9 21 2.5v8.6h-9.7V3.9Zm0 16.2 9.7 1.4v-8.5h-9.7v7.1Z"/></svg>
                 <div><h3>Windows</h3><p>Windows 10 / 11 · x64</p></div>
-                <span class="p-current">你的系统</span>
+                <span class="p-current" data-i18n="dl.yourOs">你的系统</span>
               </div>
               <ul class="assets" data-assets></ul>
-              <p class="p-tip">运行安装程序，可自定义安装目录并创建桌面快捷方式。若出现 SmartScreen 提示，点击“更多信息 → 仍要运行”。</p>
+              <p class="p-tip" data-i18n="dl.winTip">运行安装程序，可自定义安装目录并创建桌面快捷方式。若出现 SmartScreen 提示，点击“更多信息 → 仍要运行”。</p>
             </article>
 
             <article class="platform reveal" data-os="linux">
               <div class="p-head">
                 <svg class="p-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2c-2 0-3.3 1.7-3.3 4.2 0 1.4.3 2.3-.5 3.6-.9 1.5-2.7 3.6-2.7 6.2 0 .9.2 1.7.5 2.3-.9.4-1.8.9-1.8 1.6 0 1 1.6 1 3 1.3 1.3.3 2 .8 3 .8.8 0 1.4-.4 1.8-.8h.1c.4.4 1 .8 1.8.8 1 0 1.7-.5 3-.8 1.4-.3 3-.3 3-1.3 0-.7-.9-1.2-1.8-1.6.3-.6.5-1.4.5-2.3 0-2.6-1.8-4.7-2.7-6.2-.8-1.3-.5-2.2-.5-3.6C15.3 3.7 14 2 12 2Zm-1.4 4c.4 0 .7.5.7 1.1 0 .6-.3 1.1-.7 1.1s-.7-.5-.7-1.1c0-.6.3-1.1.7-1.1Zm2.8 0c.4 0 .7.5.7 1.1 0 .6-.3 1.1-.7 1.1s-.7-.5-.7-1.1c0-.6.3-1.1.7-1.1ZM12 9.3c.9 0 2 .6 2 1 0 .5-1.1 1.1-2 1.1s-2-.6-2-1.1c0-.4 1.1-1 2-1Z"/></svg>
                 <div><h3>Linux</h3><p>Debian / Ubuntu · x64</p></div>
-                <span class="p-current">你的系统</span>
+                <span class="p-current" data-i18n="dl.yourOs">你的系统</span>
               </div>
               <ul class="assets" data-assets></ul>
-              <p class="p-tip">推荐 .deb：<code>sudo apt install ./Alex-*-linux-amd64.deb</code>，之后可在应用内一键更新。</p>
+              <p class="p-tip" data-i18n-html="dl.linuxTip">推荐 .deb：<code>sudo apt install ./Alex-*-linux-amd64.deb</code>，之后可在应用内一键更新。</p>
             </article>
           </div>
 
-          <p class="fine center">
+          <p class="fine center" data-i18n="dl.fine">
             安装包均提供 SHA-256 校验值。安装后可在“版本更新”中检查并一键升级，更新包经数字签名校验。
           </p>
         </div>
@@ -368,34 +379,34 @@
       <section class="section tinted" id="faq">
         <div class="container faq-layout">
           <header class="section-head">
-            <p class="kicker">常见问题</p>
-            <h2 id="faq-heading">你可能想知道</h2>
-            <p>没找到答案？发邮件到 <a class="text-link" href="mailto:ai.agent.club@gmail.com">ai.agent.club@gmail.com</a>。</p>
+            <p class="kicker" data-i18n="faq.kicker">常见问题</p>
+            <h2 id="faq-heading" data-i18n="faq.title">你可能想知道</h2>
+            <p data-i18n-html="faq.contact">没找到答案？发邮件到 <a class="text-link" href="mailto:ai.agent.club@gmail.com">ai.agent.club@gmail.com</a>。</p>
           </header>
           <div class="faq" role="group" aria-labelledby="faq-heading">
             <details open>
-              <summary>Alex 适合哪些人使用？</summary>
-              <p>产品经理、业务分析师、解决方案顾问和前端开发者。尤其适合需要快速输出中后台管理系统、移动端审批或扫码等业务原型，并且希望评审时能演示完整业务闭环的团队。</p>
+              <summary data-i18n="faq.q1">Alex 适合哪些人使用？</summary>
+              <p data-i18n="faq.a1">产品经理、业务分析师、解决方案顾问和前端开发者。尤其适合需要快速输出中后台管理系统、移动端审批或扫码等业务原型，并且希望评审时能演示完整业务闭环的团队。</p>
             </details>
             <details>
-              <summary>我的工程数据保存在哪里？</summary>
-              <p>工程以本地文件形式保存在你的电脑上，可以导出备份。只有当你主动“发布在线演示”时，发布内容才会上传到你配置的演示服务器。</p>
+              <summary data-i18n="faq.q2">我的工程数据保存在哪里？</summary>
+              <p data-i18n="faq.a2">工程以本地文件形式保存在你的电脑上，可以导出备份。只有当你主动“发布在线演示”时，发布内容才会上传到你配置的演示服务器。</p>
             </details>
             <details>
-              <summary>使用项目 AI 需要准备什么？</summary>
-              <p>在应用内的“AI 管理中心”登录或配置你自己的模型账号（如 Claude、Gemini、OpenAI、DeepSeek、通义千问等），也可以通过 Ollama 连接本地模型。不使用 AI 时，画布、数据表等功能同样可以独立使用。</p>
+              <summary data-i18n="faq.q3">使用项目 AI 需要准备什么？</summary>
+              <p data-i18n="faq.a3">在应用内的“AI 管理中心”登录或配置你自己的模型账号（如 Claude、Gemini、OpenAI、DeepSeek、通义千问等），也可以通过 Ollama 连接本地模型。不使用 AI 时，画布、数据表等功能同样可以独立使用。</p>
             </details>
             <details>
-              <summary>如何升级到新版本？</summary>
-              <p>打开应用中的“版本更新”，点击“检查更新 → 立即更新”。应用会自动选择适合你系统的安装包，校验数字签名与文件摘要，保存工程后完成安装并重启。</p>
+              <summary data-i18n="faq.q4">如何升级到新版本？</summary>
+              <p data-i18n="faq.a4">打开应用中的“版本更新”，点击“检查更新 → 立即更新”。应用会自动选择适合你系统的安装包，校验数字签名与文件摘要，保存工程后完成安装并重启。</p>
             </details>
             <details>
-              <summary>macOS 提示“无法验证开发者”怎么办？</summary>
-              <p>前往“系统设置 → 隐私与安全性”，在页面底部找到 Alex 并点击“仍要打开”；或在“应用程序”中右键 Alex 选择“打开”。只需操作一次。</p>
+              <summary data-i18n="faq.q5">macOS 提示“无法验证开发者”怎么办？</summary>
+              <p data-i18n="faq.a5">前往“系统设置 → 隐私与安全性”，在页面底部找到 Alex 并点击“仍要打开”；或在“应用程序”中右键 Alex 选择“打开”。只需操作一次。</p>
             </details>
             <details>
-              <summary>苹果芯片和 Intel 芯片的 Mac 应该下载哪个？</summary>
-              <p>点击屏幕左上角的苹果菜单 →“关于本机”，芯片显示 Apple M 系列选择 Apple Silicon（arm64），显示 Intel 选择 Intel（x64）。本页面也会尽量自动为你推荐。</p>
+              <summary data-i18n="faq.q6">苹果芯片和 Intel 芯片的 Mac 应该下载哪个？</summary>
+              <p data-i18n="faq.a6">点击屏幕左上角的苹果菜单 →“关于本机”，芯片显示 Apple M 系列选择 Apple Silicon（arm64），显示 Intel 选择 Intel（x64）。本页面也会尽量自动为你推荐。</p>
             </details>
           </div>
         </div>
@@ -404,10 +415,10 @@
       <!-- ========== CTA ========== -->
       <section class="cta">
         <div class="container cta-inner reveal">
-          <h2>今天就让你的原型<br />跑起来</h2>
+          <h2 data-i18n-html="cta.title">今天就让你的原型<br />跑起来</h2>
           <div class="cta-side">
-            <p>免费下载 Alex，几分钟内搭出第一套可以运行的业务原型。</p>
-            <a class="btn btn-light btn-lg" href="#download">免费下载</a>
+            <p data-i18n="cta.desc">免费下载 Alex，几分钟内搭出第一套可以运行的业务原型。</p>
+            <a class="btn btn-light btn-lg" href="#download" data-i18n="cta.btn">免费下载</a>
           </div>
         </div>
       </section>
@@ -420,10 +431,10 @@
           <span>Alex</span>
         </div>
         <p>© <span data-year>2026</span> EvanJiao</p>
-        <nav class="footer-links" aria-label="页脚">
-          <a href="#features">功能</a>
-          <a href="#download">下载</a>
-          <a href="mailto:ai.agent.club@gmail.com">联系我们</a>
+        <nav class="footer-links" aria-label="页脚" data-i18n-aria="footer.aria">
+          <a href="#features" data-i18n="nav.features">功能</a>
+          <a href="#download" data-i18n="nav.download">下载</a>
+          <a href="mailto:ai.agent.club@gmail.com" data-i18n="footer.contact">联系我们</a>
           <a data-repo-link href="https://github.com/EvanClub-Agent/protoflow-ai" rel="noopener">GitHub</a>
         </nav>
       </div>

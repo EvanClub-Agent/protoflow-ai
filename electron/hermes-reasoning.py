@@ -1,6 +1,7 @@
 """Narrow bridge to the selected Hermes installation's session settings API."""
 import asyncio
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -41,14 +42,18 @@ def _is_acp_info(home, sid, info):
     return False
 
 
+def _tr(zh, en):
+    return en if os.environ.get('PROTOFLOW_LOCALE', '').lower().startswith('en') else zh
+
+
 def check_route(home, sid, info, request):
     if not _is_acp_info(home, sid, info) or not info.get('provider') or not info.get('model'):
-        raise SettingError('Hermes 未返回此对话的模型配置')
+        raise SettingError(_tr('Hermes 未返回此对话的模型配置', 'Hermes did not return model settings for this session'))
     if encode_model_choice(info['provider'], info['model']) != request['modelId']:
         # Named endpoints can have a different ACP picker ID from their runtime provider.
         from acp_adapter.gateway_session_meta import model_state
         if model_state(info).current_model_id != request['modelId']:
-            raise SettingError('模型已切换，请重新打开推理强度')
+            raise SettingError(_tr('模型已切换，请重新打开推理强度', 'Model changed; please reopen reasoning effort settings'))
 
 
 def settings(home, sid, info, request):
@@ -115,9 +120,9 @@ async def main(request):
         effort = request['effort']  # null explicitly restores the profile default
         if effort is not None:
             if not isinstance(effort, str):
-                raise SettingError('推理强度无效')
+                raise SettingError(_tr('推理强度无效', 'Invalid reasoning effort'))
             if not state['levels'] or effort not in state['levels']:
-                raise SettingError('当前模型不支持这个推理强度')
+                raise SettingError(_tr('当前模型不支持这个推理强度', 'Current model does not support this reasoning effort'))
         from uuid import uuid4
         snapshot = await client.rpc('session.resume', session_id=sid)
         # Recheck after obtaining the generation/revision fences. A concurrent
@@ -128,10 +133,10 @@ async def main(request):
                                expected_revision=snapshot['revision'],
                                expected_generation=snapshot['execution_generation'])
         if ack.get('session_id') != sid or ack.get('operation') != 'reasoning' or 'effort' not in ack or ack['effort'] != effort:
-            raise SettingError('Hermes 尚未确认设置，请重新读取当前强度')
+            raise SettingError(_tr('Hermes 尚未确认设置，请重新读取当前强度', 'Hermes has not confirmed the setting; please reload current effort'))
         result = settings(home, sid, await client.rpc('session.info', session_id=sid), request)
         if effort is not None and result['current'] != effort:
-            raise SettingError('Hermes 回读的强度与所选档位不一致，请刷新')
+            raise SettingError(_tr('Hermes 回读的强度与所选档位不一致，请刷新', 'Readback reasoning effort did not match selection; please refresh'))
         return result
 
 
@@ -142,4 +147,7 @@ if __name__ == '__main__':
         print(json.dumps({'error': str(exc)}))
     except Exception as exc:
         # Never forward gateway diagnostics, policy snapshots or provider secrets.
-        print(json.dumps({'error': 'Hermes 无法读取或修改此会话的推理设置（' + type(exc).__name__ + '）'}))
+        print(json.dumps({'error': _tr(
+            'Hermes 无法读取或修改此会话的推理设置（' + type(exc).__name__ + '）',
+            'Hermes could not read or update reasoning settings for this session (' + type(exc).__name__ + ')',
+        )}))

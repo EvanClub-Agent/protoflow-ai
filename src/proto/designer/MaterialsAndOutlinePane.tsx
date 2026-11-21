@@ -72,7 +72,6 @@ import {
 import { isAxureMaterial } from '../axure/metadata';
 import {
   COMPONENTS,
-  CATEGORY_LABELS,
   COMPONENT_MAP,
   MOBILE_COMPONENT_NAMES,
   OVERLAY_TYPES,
@@ -82,6 +81,13 @@ import {
   type ComponentCategory,
   type ComponentMeta,
 } from '../registry/meta';
+import {
+  localizeCategoryLabel,
+  localizeCategoryShortLabel,
+  localizeComponentMeta,
+  localizeCompositeBlock,
+  localizeCompositeCategoryLabel,
+} from '../registry/localizeMeta';
 import { MOBILE_PAGE_TEMPLATES, PAGE_TEMPLATES, type PageTemplateKind } from '../ai/templates';
 import type { ProtoNode } from '../types';
 import { isNode } from '../types';
@@ -92,6 +98,7 @@ import {
   type CompositeCategory,
   type CustomCompositeBlock,
 } from '../store/usePageStore';
+import { useI18n } from '../../i18n';
 
 export type LeftPaneTab = 'materials' | 'composites' | 'outline' | 'ai';
 
@@ -124,6 +131,53 @@ const CATEGORIES: ComponentCategory[] = [
   'action',
   'overlay',
 ];
+
+const TEMPLATE_EN_FALLBACKS: Record<string, { title: string; description: string }> = {
+  list: {
+    title: 'Standard CRUD List Page',
+    description: 'Query filters + status tabs + data table + pagination + create/edit modals + detail drawer',
+  },
+  master_detail: {
+    title: 'Master-Detail Document Page',
+    description: 'Document header form + line-item table + modal picker write-back + nested overlays',
+  },
+  form: {
+    title: 'Multi-Column Form Page',
+    description: 'Multi-column input form + Submit / Reset actions',
+  },
+  detail: {
+    title: 'Record Detail Page',
+    description: 'KPI cards + descriptions list + approval timeline',
+  },
+  blank: {
+    title: 'Blank Page',
+    description: 'Start from scratch by dragging materials onto the canvas',
+  },
+  mobile_blank: {
+    title: 'Blank Mobile Page',
+    description: 'Minimal glass top bar + clean mobile canvas to build from scratch',
+  },
+  mobile_explore: {
+    title: 'Consumer Explore / Storefront',
+    description: 'Iridescent greeting + search pill + Bento grid + waterfall feed + spec sheet + floating tab bar',
+  },
+  mobile_workspace: {
+    title: 'Enterprise Mobile Approval Hub',
+    description: 'KPI trend card + status pill tabs + document card stream + detail & create bottom sheets',
+  },
+  mobile_ai: {
+    title: 'Gemini AI Assistant Page',
+    description: 'Model switcher top bar + AI chat stream + prompt Bento tiles + multimodal composer bar',
+  },
+  mobile_form: {
+    title: 'Mobile Touch Form Page',
+    description: '48px soft-filled inputs + bottom-sheet picker + pill chips + docked submit bar',
+  },
+  mobile_profile: {
+    title: 'Modern Profile & Account Center',
+    description: 'Brand visual banner + Bento quick tiles + rounded grouped settings list + floating tab bar',
+  },
+};
 
 /** Dedicated Lucide icon map for every component in COMPONENTS */
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -185,7 +239,6 @@ const ICON_MAP: Record<string, LucideIcon> = {
 };
 
 interface CategoryVisualTheme {
-  shortLabel: string;
   catIcon: LucideIcon;
   regionClass: string;
   headerBgClass: string;
@@ -197,7 +250,6 @@ interface CategoryVisualTheme {
 
 const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
   layout: {
-    shortLabel: '布局',
     catIcon: Columns3,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -207,7 +259,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-blue-50 text-blue-700 border-blue-200/80',
   },
   navigation: {
-    shortLabel: '导航',
     catIcon: Heading,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -217,7 +268,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-sky-50 text-sky-700 border-sky-200/80',
   },
   query: {
-    shortLabel: '查询',
     catIcon: SlidersHorizontal,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -227,7 +277,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-violet-50 text-violet-700 border-violet-200/80',
   },
   data: {
-    shortLabel: '数据',
     catIcon: Table2,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -237,7 +286,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
   },
   charts: {
-    shortLabel: '图表',
     catIcon: ChartNoAxesColumn,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -247,7 +295,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-cyan-50 text-cyan-800 border-cyan-200/80',
   },
   form: {
-    shortLabel: '表单',
     catIcon: ClipboardList,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -257,7 +304,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80',
   },
   action: {
-    shortLabel: '操作',
     catIcon: MousePointerClick,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -267,7 +313,6 @@ const CATEGORY_THEMES: Record<ComponentCategory, CategoryVisualTheme> = {
     countBadgeClass: 'bg-rose-50 text-rose-700 border-rose-200/80',
   },
   overlay: {
-    shortLabel: '弹层',
     catIcon: AppWindow,
     regionClass: 'bg-slate-50/70 border-slate-200/90',
     headerBgClass: 'bg-white border-b border-slate-200/80',
@@ -296,6 +341,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
   onDeleteNode,
   onApplyTemplate,
 }) => {
+  const { locale, isEn, tr } = useI18n();
   const [tab, setTabState] = useState<LeftPaneTab>('materials');
   const [query, setQuery] = useState('');
   const [activeCatFilter, setActiveCatFilter] = useState<ComponentCategory | 'all'>('all');
@@ -335,21 +381,35 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
           (isMobilePage
             ? MOBILE_COMPONENT_NAMES.has(c.name) || UNIVERSAL_COMPONENT_NAMES.has(c.name)
             : !MOBILE_COMPONENT_NAMES.has(c.name)),
-      ),
-    [isMobilePage, hasAxureCanvas],
+      ).map((c) => localizeComponentMeta(c, locale)),
+    [isMobilePage, hasAxureCanvas, locale],
   );
   const platformComposites = React.useMemo(
     () =>
-      compositeBlocks.filter((b) =>
-        isMobilePage ? b.platform === 'mobile' : !b.platform || b.platform === 'desktop',
-      ),
-    [compositeBlocks, isMobilePage],
+      compositeBlocks
+        .filter((b) =>
+          isMobilePage ? b.platform === 'mobile' : !b.platform || b.platform === 'desktop',
+        )
+        .map((b) => localizeCompositeBlock(b, locale)),
+    [compositeBlocks, isMobilePage, locale],
   );
   const visibleCategories = React.useMemo(
     () => CATEGORIES.filter((cat) => platformComponents.some((c) => c.category === cat)),
     [platformComponents],
   );
   const activeTemplates = isMobilePage ? MOBILE_PAGE_TEMPLATES : PAGE_TEMPLATES;
+
+  const matchesQuery = (c: ComponentMeta, rawQuery: string) => {
+    const q = rawQuery.trim().toLowerCase();
+    if (!q) return true;
+    const orig = COMPONENT_MAP[c.name];
+    return (
+      c.title.toLowerCase().includes(q) ||
+      c.name.toLowerCase().includes(q) ||
+      c.description.toLowerCase().includes(q) ||
+      Boolean(orig && (orig.title.toLowerCase().includes(q) || orig.description.toLowerCase().includes(q)))
+    );
+  };
 
   const toggleCat = (cat: string) =>
     setCollapsedCats((s) => ({ ...s, [cat]: !s[cat] }));
@@ -459,7 +519,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                   onPromptSaveComposite(node.pfId);
                 }}
                 className="p-0.5 text-slate-400 hover:text-violet-600 cursor-pointer"
-                title="将该组件/容器沉淀为业务复合组件"
+                title={tr('将该组件/容器沉淀为业务复合组件', 'Save component/container as reusable block')}
               >
                 <BookmarkPlus className="w-3 h-3" />
               </button>
@@ -470,7 +530,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                   onDeleteNode(node.pfId);
                 }}
                 className="p-0.5 text-slate-400 hover:text-red-600 cursor-pointer"
-                title="删除该组件"
+                title={tr('删除该组件', 'Delete component')}
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -489,20 +549,24 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
     );
   };
 
+  const localizedHovered = hoveredMaterial
+    ? localizeComponentMeta(COMPONENT_MAP[hoveredMaterial.name] ?? hoveredMaterial, locale)
+    : null;
+
   return (
     <aside className="relative w-[280px] shrink-0 border-r border-slate-200 bg-white flex flex-col h-full select-none">
       {/* Floating MVP Component Spec Preview Popover (Anchored to Right of Sidebar) */}
-      {tab === 'materials' && hoveredMaterial && (
+      {tab === 'materials' && localizedHovered && (
         <div
           role="tooltip"
           className="pointer-events-none absolute left-full top-3 ml-2.5 w-[276px] z-50 rounded-2xl border border-slate-200/95 bg-white/98 backdrop-blur-md p-3.5 shadow-xl shadow-slate-900/10 space-y-2.5"
         >
           {(() => {
-            const hTheme = CATEGORY_THEMES[hoveredMaterial.category];
-            const HIcon = ICON_MAP[hoveredMaterial.icon] || Square;
+            const hTheme = CATEGORY_THEMES[localizedHovered.category];
+            const HIcon = ICON_MAP[localizedHovered.icon] || Square;
             const bindsTable =
-              FIELD_TYPES.has(hoveredMaterial.name) ||
-              hoveredMaterial.props.some((p) => p.kind === 'table');
+              FIELD_TYPES.has(localizedHovered.name) ||
+              localizedHovered.props.some((p) => p.kind === 'table');
             return (
               <>
                 <div className="flex items-start justify-between gap-2">
@@ -513,79 +577,96 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                       <HIcon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 leading-tight">
-                        {hoveredMaterial.title}
+                      <div className="text-xs font-bold text-slate-900 leading-tight break-words">
+                        {localizedHovered.title}
                       </div>
                       <div className="text-[11px] font-mono text-blue-600 mt-0.5">
-                        {hoveredMaterial.name === 'Freeform' ? 'AI 定制' : hoveredMaterial.category === 'charts' ? '可配置数据图表' : `<${hoveredMaterial.name}>`}
+                        {localizedHovered.name === 'Freeform'
+                          ? tr('AI 定制', 'AI Custom')
+                          : localizedHovered.category === 'charts'
+                          ? tr('可配置数据图表', 'Data Chart')
+                          : `<${localizedHovered.name}>`}
                       </div>
                     </div>
                   </div>
                   <span
                     className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${hTheme.countBadgeClass}`}
                   >
-                    {CATEGORY_LABELS[hoveredMaterial.category]}
+                    {localizeCategoryLabel(localizedHovered.category, locale)}
                   </span>
                 </div>
 
                 {/* Capability Badges */}
                 <div className="flex items-center gap-1 flex-wrap">
-                  {hoveredMaterial.container && (
+                  {localizedHovered.container && (
                     <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200/70 text-[10px] font-medium">
-                      可嵌套子组件
+                      {tr('可嵌套子组件', 'Accepts Children')}
                     </span>
                   )}
-                  {OVERLAY_TYPES.has(hoveredMaterial.name) && (
+                  {OVERLAY_TYPES.has(localizedHovered.name) && (
                     <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200/70 text-[10px] font-medium">
-                      独立子画布
+                      {tr('独立子画布', 'Sub-Canvas')}
                     </span>
                   )}
                   {bindsTable && (
                     <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-medium">
-                      支持数据表/字段绑定
+                      {tr('支持数据表/字段绑定', 'Table / Field Binding')}
                     </span>
                   )}
-                  {hoveredMaterial.parents?.length ? (
+                  {localizedHovered.parents?.length ? (
                     <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200/70 text-[10px] font-medium">
-                      需置于 &lt;{hoveredMaterial.parents.join(' / ')}&gt; 内
+                      {tr(
+                        `需置于 <${localizedHovered.parents.join(' / ')}> 内`,
+                        `Inside <${localizedHovered.parents.join(' / ')}>`,
+                      )}
                     </span>
                   ) : null}
                 </div>
 
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  {hoveredMaterial.description}
+                  {localizedHovered.description}
                 </p>
 
-                {hoveredMaterial.name !== 'Freeform' && hoveredMaterial.props.length > 0 && (
+                {localizedHovered.name !== 'Freeform' && localizedHovered.props.length > 0 && (
                   <div className="space-y-1">
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                      核心可配属性 ({hoveredMaterial.props.length})
+                      {tr(`核心可配属性 (${localizedHovered.props.length})`, `Configurable Props (${localizedHovered.props.length})`)}
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {hoveredMaterial.props.slice(0, 6).map((prop) => (
+                      {localizedHovered.props.slice(0, 6).map((prop) => (
                         <span
                           key={prop.name}
                           className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium"
                         >
-                          {prop.label.replace(/\(.*\)/, '')}
+                          {prop.label.replace(/\(.*\)/, '').trim()}
                         </span>
                       ))}
-                      {hoveredMaterial.props.length > 6 && (
+                      {localizedHovered.props.length > 6 && (
                         <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 text-[10px]">
-                          +{hoveredMaterial.props.length - 6} 项
+                          {tr(`+${localizedHovered.props.length - 6} 项`, `+${localizedHovered.props.length - 6} more`)}
                         </span>
                       )}
                     </div>
                   </div>
                 )}
 
-                {hoveredMaterial.name === 'Freeform' ? <p className="rounded-lg bg-indigo-50 p-2 text-[11px] text-indigo-700">拖入画布后，描述想要的效果，交给 AI 完成。</p> : hoveredMaterial.category === 'charts' ? <p className="rounded-lg bg-cyan-50 p-2 text-[11px] text-cyan-800">拖入即可预览，在右侧选择数据、指标和配色，也可以让 AI 帮你配置。</p> : <div className="rounded-lg bg-slate-900 px-2.5 py-2 text-[10px] font-mono text-slate-100 overflow-hidden break-all leading-relaxed">
-                  {hoveredMaterial.snippet}
-                </div>}
+                {localizedHovered.name === 'Freeform' ? (
+                  <p className="rounded-lg bg-indigo-50 p-2 text-[11px] text-indigo-700">
+                    {tr('拖入画布后，描述想要的效果，交给 AI 完成。', 'Drag onto canvas, describe what you want, and let AI build it.')}
+                  </p>
+                ) : localizedHovered.category === 'charts' ? (
+                  <p className="rounded-lg bg-cyan-50 p-2 text-[11px] text-cyan-800">
+                    {tr('拖入即可预览，在右侧选择数据、指标和配色，也可以让 AI 帮你配置。', 'Drag to preview, then configure data, metrics, and palette in the right inspector.')}
+                  </p>
+                ) : (
+                  <div className="rounded-lg bg-slate-900 px-2.5 py-2 text-[10px] font-mono text-slate-100 overflow-hidden break-all leading-relaxed">
+                    {localizedHovered.snippet}
+                  </div>
+                )}
 
                 <div className="pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                  <span>点击直接插入画布</span>
-                  <span>按住可拖拽至目标容器</span>
+                  <span>{tr('点击直接插入画布', 'Click to insert')}</span>
+                  <span>{tr('按住可拖拽至目标容器', 'Drag into container')}</span>
                 </div>
               </>
             );
@@ -600,7 +681,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             {tab === 'materials' && (
               <>
                 <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">物料组件库</span>
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('物料组件库', 'Components')}</span>
                 <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono">
                   {platformComponents.length}
                 </span>
@@ -609,7 +690,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             {tab === 'composites' && (
               <>
                 <Boxes className="w-3.5 h-3.5 text-violet-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">业务复合块</span>
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('业务复合块', 'Saved Blocks')}</span>
                 <span className="px-1.5 py-0.2 rounded-full bg-violet-100 text-violet-700 text-[10px] font-mono">
                   {platformComposites.length}
                 </span>
@@ -618,13 +699,13 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             {tab === 'outline' && (
               <>
                 <GitBranch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">页面大纲树</span>
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('页面大纲树', 'Outline Tree')}</span>
               </>
             )}
             {tab === 'ai' && (
               <>
                 <LayoutTemplate className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">页面模板</span>
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('页面模板', 'Page Templates')}</span>
               </>
             )}
           </div>
@@ -639,8 +720,8 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                   for (const c of CATEGORIES) next[c] = !allCollapsed;
                   setCollapsedCats(next);
                 }}
-                title="展开 / 折叠全部分类"
-                aria-label="展开或折叠全部分类"
+                title={tr('展开 / 折叠全部分类', 'Expand / collapse all categories')}
+                aria-label={tr('展开或折叠全部分类', 'Expand or collapse all categories')}
                 className="w-6 h-6 rounded-md border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition"
               >
                 <ChevronsUpDown className="w-3 h-3" />
@@ -649,8 +730,8 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                 <button
                   type="button"
                   onClick={() => setMaterialViewMode('grid')}
-                  title="双列紧凑视图（完整展示组件名与标签）"
-                  aria-label="双列紧凑视图"
+                  title={tr('双列紧凑视图（完整展示组件名与标签）', '2-column compact grid')}
+                  aria-label={tr('双列紧凑视图', '2-column compact grid')}
                   className={`w-5 h-5 rounded flex items-center justify-center cursor-pointer transition ${
                     materialViewMode === 'grid'
                       ? 'bg-white text-blue-600 shadow-2xs'
@@ -662,8 +743,8 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                 <button
                   type="button"
                   onClick={() => setMaterialViewMode('list')}
-                  title="单列详情视图（含组件说明与标签）"
-                  aria-label="单列详情视图"
+                  title={tr('单列详情视图（含组件说明与标签）', '1-column detailed list')}
+                  aria-label={tr('单列详情视图', '1-column detailed list')}
                   className={`w-5 h-5 rounded flex items-center justify-center cursor-pointer transition ${
                     materialViewMode === 'list'
                       ? 'bg-white text-blue-600 shadow-2xs'
@@ -685,14 +766,14 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索组件名 / JSX标签 / 用途..."
+                placeholder={tr('搜索组件名 / JSX标签 / 用途...', 'Search components / JSX tags...')}
                 className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 transition"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery('')}
-                  aria-label="清空搜索"
+                  aria-label={tr('清空搜索', 'Clear search')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
@@ -711,7 +792,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                     : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
                 }`}
               >
-                全部
+                {tr('全部', 'All')}
               </button>
               {visibleCategories.map((cat) => {
                 const theme = CATEGORY_THEMES[cat];
@@ -730,7 +811,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                     }`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${theme.dotClass}`} />
-                    <span>{theme.shortLabel}</span>
+                    <span>{localizeCategoryShortLabel(cat, locale)}</span>
                   </button>
                 );
               })}
@@ -752,15 +833,21 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
               className="w-full py-1.5 px-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition shadow-2xs"
               title={
                 selectedNodeObj && selectedNodeObj.pfId !== root.pfId
-                  ? `将当前选中的 <${selectedNodeObj.type}> 沉淀为团队业务复合组件`
-                  : '请先在画布上选中任意非 Page 根节点的组件或容器（如 Card、QueryForm、Table）'
+                  ? tr(
+                      `将当前选中的 <${selectedNodeObj.type}> 沉淀为团队业务复合组件`,
+                      `Save selected <${selectedNodeObj.type}> as a reusable block`,
+                    )
+                  : tr(
+                      '请先在画布上选中任意非 Page 根节点的组件或容器（如 Card、QueryForm、Table）',
+                      'Select any non-root component or container on the canvas first',
+                    )
               }
             >
               <BookmarkPlus className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">
                 {selectedNodeObj && selectedNodeObj.pfId !== root.pfId
-                  ? `沉淀当前选中 <${selectedNodeObj.type}>`
-                  : '先选中画布组件即可沉淀'}
+                  ? tr(`沉淀当前选中 <${selectedNodeObj.type}>`, `Save Selected <${selectedNodeObj.type}>`)
+                  : tr('先选中画布组件即可沉淀', 'Select a component to save')}
               </span>
             </button>
 
@@ -775,7 +862,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                     : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
                 }`}
               >
-                全部({platformComposites.length})
+                {tr(`全部(${platformComposites.length})`, `All (${platformComposites.length})`)}
               </button>
               {(Object.keys(COMPOSITE_CATEGORY_LABELS) as CompositeCategory[]).map((cat) => {
                 const count = platformComposites.filter((b) => b.category === cat).length;
@@ -792,7 +879,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                         : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
                     }`}
                   >
-                    {COMPOSITE_CATEGORY_LABELS[cat]}({count})
+                    {localizeCompositeCategoryLabel(cat, locale)}({count})
                   </button>
                 );
               })}
@@ -814,24 +901,26 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                 <button
                   type="button"
                   onClick={() => toggleCat('__composites__')}
-                  className="flex items-center gap-1.5 cursor-pointer"
+                  className="flex items-center gap-1.5 cursor-pointer min-w-0"
                 >
                   {collapsedCats['__composites__'] ? (
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   )}
-                  <span className="w-4 h-4 rounded bg-violet-50 border border-violet-200/80 flex items-center justify-center text-violet-600">
+                  <span className="w-4 h-4 rounded bg-violet-50 border border-violet-200/80 flex items-center justify-center text-violet-600 shrink-0">
                     <Boxes className="w-2.5 h-2.5" />
                   </span>
-                  <span>{isMobilePage ? '移动端复合模板块' : '团队沉淀业务块'}</span>
+                  <span className="truncate">
+                    {isMobilePage ? tr('移动端复合模板块', 'Mobile Saved Blocks') : tr('团队沉淀业务块', 'Reusable Blocks')}
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setTab('composites')}
-                  className="text-[10px] font-semibold text-violet-600 hover:text-violet-800 cursor-pointer"
+                  className="text-[10px] font-semibold text-violet-600 hover:text-violet-800 cursor-pointer shrink-0"
                 >
-                  全部({platformComposites.length}) →
+                  {tr(`全部(${platformComposites.length}) →`, `All (${platformComposites.length}) →`)}
                 </button>
               </div>
               {!collapsedCats['__composites__'] && (
@@ -847,7 +936,10 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                       onClick={() => onInsertCompositeBlock(blk)}
                       onMouseEnter={() => setHoveredMaterial(null)}
                       className="group px-2.5 py-2 rounded-lg border border-slate-200/90 bg-white hover:border-violet-400 hover:shadow-xs transition cursor-grab active:cursor-grabbing flex items-start justify-between gap-2"
-                      title={`${blk.title}：${blk.description}\n（按住直接拖拽到画布，或点击插入）`}
+                      title={tr(
+                        `${blk.title}：${blk.description}\n（按住直接拖拽到画布，或点击插入）`,
+                        `${blk.title}: ${blk.description}\n(Drag onto canvas or click to insert)`,
+                      )}
                     >
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="text-xs font-semibold text-slate-800 group-hover:text-violet-700 leading-snug break-words">
@@ -855,10 +947,10 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-violet-50 text-violet-700 border border-violet-200/80 shrink-0">
-                            {COMPOSITE_CATEGORY_LABELS[blk.category]}
+                            {localizeCompositeCategoryLabel(blk.category, locale)}
                           </span>
                           <span className="text-[10px] text-slate-400 font-mono">
-                            &lt;{blk.rootType}&gt; · {blk.childCount} 控件
+                            &lt;{blk.rootType}&gt; · {tr(`${blk.childCount} 控件`, `${blk.childCount} nodes`)}
                           </span>
                         </div>
                       </div>
@@ -876,12 +968,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             (cat) => activeCatFilter === 'all' || activeCatFilter === cat
           ).map((cat) => {
             const items = platformComponents.filter(
-              (c) =>
-                c.category === cat &&
-                (!query.trim() ||
-                  c.title.toLowerCase().includes(query.toLowerCase()) ||
-                  c.name.toLowerCase().includes(query.toLowerCase()) ||
-                  c.description.toLowerCase().includes(query.toLowerCase()))
+              (c) => c.category === cat && matchesQuery(c, query)
             );
             if (items.length === 0) return null;
 
@@ -902,27 +989,27 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                     collapsed ? 'bg-white' : theme.headerBgClass
                   } ${theme.headerTextClass}`}
                 >
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex items-center gap-1.5 min-w-0">
                     {collapsed ? (
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     ) : (
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     )}
                     <span
-                      className={`w-4 h-4 rounded border flex items-center justify-center ${theme.iconBoxClass}`}
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${theme.iconBoxClass}`}
                     >
                       <CatIcon className="w-2.5 h-2.5" />
                     </span>
-                    <span>{CATEGORY_LABELS[cat]}</span>
+                    <span className="truncate">{localizeCategoryLabel(cat, locale)}</span>
                   </span>
                   <span
-                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full border ${theme.countBadgeClass}`}
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full border shrink-0 ${theme.countBadgeClass}`}
                   >
                     {items.length}
                   </span>
                 </button>
 
-                {/* Material Cards: 2-Column Non-Truncating Grid OR 1-Column Detailed List */}
+                {/* Material Cards: 2-Column Grid with Truncation Protection OR 1-Column Detailed List */}
                 {!collapsed && (
                   <div
                     className={
@@ -947,7 +1034,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                             }}
                             onClick={() => onInsertComponent(meta)}
                             onMouseEnter={() => setHoveredMaterial(meta)}
-                            className="group px-2.5 py-2 rounded-lg border border-slate-200/90 bg-white hover:border-blue-500 hover:shadow-xs transition cursor-grab active:cursor-grabbing flex items-start gap-2.5 relative"
+                            className="group px-2.5 py-2 rounded-lg border border-slate-200/90 bg-white hover:border-blue-500 hover:shadow-xs transition cursor-grab active:cursor-grabbing flex items-start gap-2.5 relative min-w-0"
                           >
                             <div
                               className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition group-hover:scale-105 ${theme.iconBoxClass}`}
@@ -956,21 +1043,25 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-1.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-xs font-bold text-slate-800 group-hover:text-blue-700">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="text-xs font-bold text-slate-800 group-hover:text-blue-700 truncate">
                                     {meta.title}
                                   </span>
                                   <span className="text-[10px] font-mono text-slate-400 group-hover:text-blue-600">
-                                    {meta.name === 'Freeform' ? 'AI 定制' : meta.category === 'charts' ? '数据图表' : `<${meta.name}>`}
+                                    {meta.name === 'Freeform'
+                                      ? tr('AI 定制', 'AI Custom')
+                                      : meta.category === 'charts'
+                                      ? tr('数据图表', 'Chart')
+                                      : `<${meta.name}>`}
                                   </span>
                                   {isOverlayComp && (
                                     <span className="text-[9px] px-1 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                                      子画布
+                                      {tr('子画布', 'Overlay')}
                                     </span>
                                   )}
                                   {!isOverlayComp && meta.container && (
                                     <span className="text-[9px] px-1 rounded bg-slate-100 text-slate-600">
-                                      容器
+                                      {tr('容器', 'Box')}
                                     </span>
                                   )}
                                 </div>
@@ -997,37 +1088,44 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                           }}
                           onClick={() => onInsertComponent(meta)}
                           onMouseEnter={() => setHoveredMaterial(meta)}
-                          className="group px-2 py-1.5 rounded-lg border border-slate-200/90 bg-white hover:border-blue-500 hover:bg-blue-50/20 hover:shadow-xs transition cursor-grab active:cursor-grabbing flex flex-col justify-between gap-1 relative"
+                          className="group min-w-0 px-2 py-1.5 rounded-lg border border-slate-200/90 bg-white hover:border-blue-500 hover:bg-blue-50/20 hover:shadow-xs transition cursor-grab active:cursor-grabbing flex flex-col justify-between gap-1 relative"
                         >
                           {/* Hover Quick-Insert Floating Badge (Takes 0 layout width!) */}
                           <span className="opacity-0 group-hover:opacity-100 pointer-events-none absolute top-1.5 right-1.5 w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center shadow-2xs transition">
                             <Plus className="w-2.5 h-2.5" />
                           </span>
 
-                          {/* Top Row: Compact Icon + Full Untruncated Chinese Title */}
+                          {/* Top Row: Compact Icon + Title (truncated cleanly in 2-col grid; full title shown in hover card) */}
                           <div className="flex items-center gap-1.5 min-w-0">
                             <div
                               className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition group-hover:scale-105 ${theme.iconBoxClass}`}
                             >
                               <ItemIcon className="w-3 h-3" />
                             </div>
-                            <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-700 leading-tight break-words">
+                            <span
+                              className="text-xs font-semibold text-slate-800 group-hover:text-blue-700 leading-tight truncate min-w-0"
+                              title={meta.title}
+                            >
                               {meta.title}
                             </span>
                           </div>
 
-                          {/* Bottom Row: Spans Full Card Width so <ComponentName> never truncates */}
-                          <div className="flex items-center justify-between gap-1 pl-0.5">
-                            <span className="text-[10px] font-mono text-slate-400 group-hover:text-blue-600/80 leading-none">
-                              {meta.name === 'Freeform' ? 'AI 定制' : meta.category === 'charts' ? '数据图表' : `<${meta.name}>`}
+                          {/* Bottom Row: Component Tag + Compact Capability Badge */}
+                          <div className="flex items-center justify-between gap-1 pl-0.5 min-w-0">
+                            <span className="text-[10px] font-mono text-slate-400 group-hover:text-blue-600/80 leading-none truncate min-w-0">
+                              {meta.name === 'Freeform'
+                                ? tr('AI 定制', 'AI Custom')
+                                : meta.category === 'charts'
+                                ? tr('数据图表', 'Chart')
+                                : `<${meta.name}>`}
                             </span>
                             {isOverlayComp ? (
                               <span className="text-[9px] px-1 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200/80 leading-none shrink-0">
-                                子画布
+                                {tr('子画布', 'Sub')}
                               </span>
                             ) : meta.container ? (
                               <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-500 leading-none shrink-0">
-                                容器
+                                {tr('容器', 'Box')}
                               </span>
                             ) : null}
                           </div>
@@ -1044,14 +1142,12 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             !platformComponents.some(
               (c) =>
                 (activeCatFilter === 'all' || c.category === activeCatFilter) &&
-                (c.title.toLowerCase().includes(query.toLowerCase()) ||
-                  c.name.toLowerCase().includes(query.toLowerCase()) ||
-                  c.description.toLowerCase().includes(query.toLowerCase()))
+                matchesQuery(c, query)
             ) && (
               <div className="py-10 px-4 text-center space-y-2">
                 <Inbox className="w-7 h-7 text-slate-300 mx-auto" />
                 <p className="text-xs font-medium text-slate-500">
-                  未找到与「{query}」匹配的物料组件
+                  {tr(`未找到与「${query}」匹配的物料组件`, `No components matching "${query}"`)}
                 </p>
                 <button
                   type="button"
@@ -1061,7 +1157,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                   }}
                   className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-medium text-blue-600 cursor-pointer transition"
                 >
-                  重置筛选条件
+                  {tr('重置筛选条件', 'Reset Filters')}
                 </button>
               </div>
             )}
@@ -1073,7 +1169,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
         <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
           <div className="px-2.5 py-1.5 rounded-lg bg-violet-50/70 border border-violet-200 text-[11px] text-violet-900 flex items-center gap-1.5">
             <Boxes className="w-3.5 h-3.5 text-violet-600 shrink-0" />
-            <span>选中画布容器可一键沉淀至此，跨页拖拽复用</span>
+            <span>{tr('选中画布容器可一键沉淀至此，跨页拖拽复用', 'Save any canvas section here to reuse across pages')}</span>
           </div>
 
           {platformComposites
@@ -1094,15 +1190,15 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-800 border border-violet-200">
-                          {COMPOSITE_CATEGORY_LABELS[blk.category]}
+                          {localizeCompositeCategoryLabel(blk.category, locale)}
                         </span>
                         {!blk.isBuiltin ? (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                            ★ 团队自定义
+                            {tr('★ 团队自定义', '★ Custom')}
                           </span>
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                            官方预置
+                            {tr('官方预置', 'Built-in')}
                           </span>
                         )}
                       </div>
@@ -1119,7 +1215,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                           onDeleteCompositeBlock(blk.id);
                         }}
                         className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer shrink-0"
-                        title="从复合组件库移除"
+                        title={tr('从复合组件库移除', 'Remove saved block')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1131,11 +1227,11 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                   </div>
 
                   <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
-                    <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                    <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 whitespace-nowrap min-w-0 truncate">
                       <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
                         &lt;{blk.rootType}&gt;
                       </span>
-                      <span>· {blk.childCount} 控件</span>
+                      <span>· {tr(`${blk.childCount} 控件`, `${blk.childCount} nodes`)}</span>
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
@@ -1148,7 +1244,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                         className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[10px] text-slate-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
                       >
                         <Code2 className="w-3 h-3 shrink-0" />
-                        <span>{isShowingCode ? '收起' : 'TSX'}</span>
+                        <span>{isShowingCode ? tr('收起', 'Hide') : 'TSX'}</span>
                       </button>
                       <button
                         type="button"
@@ -1159,7 +1255,7 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
                         className="px-2 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-semibold flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
                       >
                         <Plus className="w-3 h-3 shrink-0" />
-                        <span>插入画布</span>
+                        <span>{tr('插入画布', 'Insert')}</span>
                       </button>
                     </div>
                   </div>
@@ -1189,12 +1285,12 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
           <div className="space-y-2">
             <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
               <Layers className="w-3.5 h-3.5 text-blue-600" />
-              <span>从物理表一键套用页面模板</span>
+              <span>{tr('从物理表一键套用页面模板', 'Apply Page Template from Table')}</span>
             </div>
 
             <div className="space-y-1">
               <label className="text-[10px] text-slate-500 flex items-center gap-1">
-                <Database className="w-3 h-3" /> 选择驱动主表：
+                <Database className="w-3 h-3" /> {tr('选择驱动主表：', 'Source table:')}
               </label>
               <select
                 value={selectedTplTable}
@@ -1210,26 +1306,38 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
             </div>
 
             <div className="space-y-1.5">
-              {activeTemplates.map((tpl) => (
-                <button
-                  key={tpl.kind}
-                  type="button"
-                  onClick={() => onApplyTemplate(tpl.kind, selectedTplTable)}
-                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-white hover:border-blue-500 hover:bg-blue-50/40 transition cursor-pointer space-y-0.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 text-xs">
-                      {tpl.title}
-                    </span>
-                    <span className="text-[10px] text-blue-600 font-medium">
-                      应用模板 →
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 leading-relaxed">
-                    {tpl.description}
-                  </div>
-                </button>
-              ))}
+              {activeTemplates.map((tpl) => {
+                const tplWithEn = tpl as { titleEn?: string; descriptionEn?: string };
+                const fallbackKey = isMobilePage && tpl.kind === 'blank' ? 'mobile_blank' : tpl.kind;
+                const fallbackEn = TEMPLATE_EN_FALLBACKS[fallbackKey];
+                const tplTitle = isEn
+                  ? tplWithEn.titleEn ?? fallbackEn?.title ?? tpl.title
+                  : tpl.title;
+                const tplDesc = isEn
+                  ? tplWithEn.descriptionEn ?? fallbackEn?.description ?? tpl.description
+                  : tpl.description;
+
+                return (
+                  <button
+                    key={tpl.kind}
+                    type="button"
+                    onClick={() => onApplyTemplate(tpl.kind, selectedTplTable)}
+                    className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-white hover:border-blue-500 hover:bg-blue-50/40 transition cursor-pointer space-y-0.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900 text-xs truncate">
+                        {tplTitle}
+                      </span>
+                      <span className="text-[10px] text-blue-600 font-medium shrink-0">
+                        {tr('应用模板 →', 'Apply →')}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 leading-relaxed">
+                      {tplDesc}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

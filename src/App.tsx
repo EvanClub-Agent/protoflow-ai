@@ -1,5 +1,6 @@
 import { ProjectAiView } from './components/ProjectAiView';
 import React, { useState } from 'react';
+import { useI18n } from './i18n';
 import {
   Sparkles,
   Layers,
@@ -38,6 +39,7 @@ import { useUpdateStore } from './store/useUpdateStore';
 import { usePageStore } from './proto/store/usePageStore';
 
 export function App() {
+  const { tr } = useI18n();
   const axure = useAxureImport();
   const {
     activePageId,
@@ -150,21 +152,21 @@ export function App() {
         {/* VS Code-style Far-Left Activity Bar (Icon Rail) */}
         {!isWebPlayerMode && (
           <nav
-            aria-label="左侧工作区导航栏"
+            aria-label={tr('左侧工作区导航栏', 'Workspace Navigation Bar')}
             className="w-11 shrink-0 bg-slate-100/90 border-r border-slate-200 flex flex-col items-center justify-between py-2 select-none z-40"
           >
             <div className="flex flex-col items-center gap-1 w-full">
               {(
                 [
-                  { id: 'pages', label: '页面目录', icon: Layers },
-                  { id: 'notes', label: '项目笔记', icon: BookOpenText },
-                  { id: 'tables', label: '数据库表', icon: Database },
-                  { id: 'mindmap', label: '项目脑图', icon: Network },
-                  { id: 'project_ai', label: '项目 AI', icon: Sparkles },
-                  { id: 'materials', label: '物料组件库', icon: Package, dividerBefore: true },
-                  { id: 'composites', label: '业务复合块', icon: Boxes },
-                  { id: 'outline', label: '页面大纲树', icon: GitBranch },
-                  { id: 'ai', label: '页面模板', icon: LayoutTemplate },
+                  { id: 'pages', label: tr('页面目录', 'Pages'), icon: Layers },
+                  { id: 'notes', label: tr('项目笔记', 'Project Notes'), icon: BookOpenText },
+                  { id: 'tables', label: tr('数据库表', 'Database Tables'), icon: Database },
+                  { id: 'mindmap', label: tr('项目脑图', 'Mindmaps'), icon: Network },
+                  { id: 'project_ai', label: tr('项目 AI', 'Project AI'), icon: Sparkles },
+                  { id: 'materials', label: tr('物料组件库', 'Components'), icon: Package, dividerBefore: true },
+                  { id: 'composites', label: tr('业务复合块', 'Composite Blocks'), icon: Boxes },
+                  { id: 'outline', label: tr('页面大纲树', 'Page Outline'), icon: GitBranch },
+                  { id: 'ai', label: tr('页面模板', 'Page Templates'), icon: LayoutTemplate },
                 ] as const
               ).map((item) => {
                 const Icon = item.icon;
@@ -261,7 +263,7 @@ export function App() {
               <button
                 type="button"
                 onClick={toggleLeftSidebar}
-                aria-label={leftSidebarCollapsed ? '展开左侧面板' : '收起左侧面板'}
+                aria-label={leftSidebarCollapsed ? tr('展开左侧面板', 'Expand left sidebar') : tr('收起左侧面板', 'Collapse left sidebar')}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 cursor-pointer transition"
               >
                 {leftSidebarCollapsed ? (
@@ -279,7 +281,7 @@ export function App() {
                   className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-white border-l border-b border-slate-200/90"
                 />
                 <span className="relative z-10 text-xs font-medium tracking-tight">
-                  {leftSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+                  {leftSidebarCollapsed ? tr('展开侧边栏', 'Expand Sidebar') : tr('收起侧边栏', 'Collapse Sidebar')}
                 </span>
               </div>
             </div>
@@ -314,9 +316,9 @@ export function App() {
             <CrossModuleFlowView />
           ) : activePageId === '' ? (
             <div className="flex flex-1 items-center justify-center p-8 text-center"><div>
-              <h2 className="text-lg font-semibold text-slate-700">还没有页面</h2>
-              <p className="mt-2 text-sm text-slate-500">在左侧创建目录和页面，或把需求告诉项目 AI。</p>
-              <button type="button" onClick={() => setViewMode('project_ai')} className="mt-4 text-sm font-medium text-blue-600 hover:underline">打开项目 AI</button>
+              <h2 className="text-lg font-semibold text-slate-700">{tr('还没有页面', 'No Pages Yet')}</h2>
+              <p className="mt-2 text-sm text-slate-500">{tr('在左侧创建目录和页面，或把需求告诉项目 AI。', 'Create folders and pages on the left, or describe your requirements to Project AI.')}</p>
+              <button type="button" onClick={() => setViewMode('project_ai')} className="mt-4 text-sm font-medium text-blue-600 hover:underline">{tr('打开项目 AI', 'Open Project AI')}</button>
             </div></div>
           ) : isCanvasDesignerActive ? (
             <ProtoCanvasDesigner
@@ -327,17 +329,17 @@ export function App() {
           ) : (
             <div className="space-y-3">
               {!isDocPage && (
-                <div className="max-w-6xl mx-auto px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between text-xs">
-                  <span className="text-blue-900 font-medium">
-                    当前处于经典静态演示沙盒视图，可随时切换回「代码为底·控件为表」的可视化原型画布设计器。
+                <div className="max-w-6xl mx-auto px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-blue-900 font-medium min-w-0">
+                    {tr('当前处于经典静态演示沙盒视图，可随时切换回「代码为底·控件为表」的可视化原型画布设计器。', 'Viewing classic static demo sandbox. Switch back anytime to the code-backed visual canvas designer.')}
                   </span>
                   <button
                     type="button"
                     onClick={() => setUseLegacySandbox(false)}
-                    className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>返回可视化画布设计器</span>
+                    <span>{tr('返回可视化画布设计器', 'Back to Visual Canvas')}</span>
                   </button>
                 </div>
               )}

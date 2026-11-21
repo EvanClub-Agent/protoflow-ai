@@ -15,8 +15,10 @@ import {
 import { useProtoStore, SelectableWidgetId } from '../store/useProtoStore';
 import { ComponentStickyPin } from './ComponentStickyPin';
 import { PageTableBindingBar } from './PageTableBindingBar';
+import { useI18n } from '../i18n';
 
 export const AcceptanceNewPage: React.FC = () => {
+  const { isEn, tr, td } = useI18n();
   const {
     suppliers,
     purchaseOrderItems,
@@ -79,34 +81,39 @@ export const AcceptanceNewPage: React.FC = () => {
     submitAcceptanceOrder(asDraft);
     setSubmitBanner(
       asDraft
-        ? '已暂存草稿至【到货验收单台账】！'
-        : '验收单已正式提交！已自动写入【到货验收单台账】并扣减上游【采购订单】未到货余额。'
+        ? tr('已暂存草稿至【到货验收单台账】！', 'Saved draft to [Acceptance Ledger]!')
+        : tr(
+            '验收单已正式提交！已自动写入【到货验收单台账】并扣减上游【采购订单】未到货余额。',
+            'Acceptance order submitted! Recorded in [Acceptance Ledger] and deducted open balances on upstream [Purchase Orders].'
+          )
     );
     setTimeout(() => setSubmitBanner(null), 4000);
   };
+
+  const labelWidthClass = isEn ? 'w-32 whitespace-nowrap' : 'w-24';
 
   return (
     <div className="space-y-4 pb-12">
       {/* Menu-to-Database Table Binding & In-Menu Table Creation Bar */}
       <PageTableBindingBar
         pageId="acceptance-new"
-        pageTitle="验收入库 → 新增到货验收 (Page 57)"
+        pageTitle={tr('验收入库 → 新增到货验收 (Page 57)', 'Inbound Acceptance → New Arrival Acceptance (Page 57)')}
       />
 
       {/* Submission Feedback Toast */}
       {submitBanner && (
-        <div className="p-3 rounded-xl bg-emerald-600 text-white text-xs font-medium flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2">
+        <div className="p-3 rounded-xl bg-emerald-600 text-white text-xs font-medium flex flex-wrap items-center justify-between gap-2 shadow-lg">
+          <div className="flex items-center gap-2 min-w-0">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{submitBanner}</span>
           </div>
           <button
             type="button"
             onClick={() => setActivePage('acceptance-list')}
-            className="px-2.5 py-1 rounded bg-white text-emerald-900 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-white text-emerald-900 font-bold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <span>立即查看【到货验收单台账】</span>
-            <ArrowRight className="w-3 h-3" />
+            <span>{tr('立即查看【到货验收单台账】', 'Open [Acceptance Ledger]')}</span>
+            <ArrowRight className="w-3 h-3 shrink-0" />
           </button>
         </div>
       )}
@@ -115,16 +122,18 @@ export const AcceptanceNewPage: React.FC = () => {
       <div className="pf-paper bg-white text-slate-800 rounded-lg border border-slate-300 shadow-xl overflow-visible">
         {/* Top Window Title Bar */}
         <div className="bg-slate-100 border-b border-slate-300 px-4 py-2 flex flex-wrap items-center justify-between gap-2 rounded-t-lg">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-            <span className="font-bold text-sm text-slate-800">新增到货验收单</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="font-bold text-sm text-slate-800">{tr('新增到货验收单', 'New Arrival Acceptance Order')}</span>
             <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold border border-amber-300">
-              📌 支持在任意组件/按钮上直接贴黄色便签
+              {tr('📌 支持在任意组件/按钮上直接贴黄色便签', '📌 Attach yellow spec notes directly to any widget or button')}
             </span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
             <span>
-              点击页面中任意黄色的 <strong>📌 组件便签</strong> 即可就地查看或新增该组件的需求说明
+              {tr('点击页面中任意黄色的 ', 'Click any yellow ')}
+              <strong>{tr('📌 组件便签', '📌 Widget Pin')}</strong>
+              {tr(' 即可就地查看或新增该组件的需求说明', ' to view or add requirement specs in place')}
             </span>
           </div>
         </div>
@@ -137,66 +146,66 @@ export const AcceptanceNewPage: React.FC = () => {
               'header-form-group'
             )}`}
           >
-            <div className="bg-slate-100/90 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between">
+            <div className="bg-slate-100/90 px-3 py-1.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700">{headerWidget.props.label}</span>
+                <span className="text-xs font-bold text-slate-700">{td(headerWidget.props.label)}</span>
                 <ComponentStickyPin
                   pageId="acceptance-new"
                   widgetId="header-form-group"
-                  badgeLabel="表头便签"
+                  badgeLabel={tr('表头便签', 'Header Pin')}
                   position="right"
                 />
               </div>
               <span className="text-[11px] text-blue-600 font-medium">
-                ⚡ 供应商下拉框已挂载组件级便签与跨模块数据流
+                {tr('⚡ 供应商下拉框已挂载组件级便签与跨模块数据流', '⚡ Supplier dropdown is wired to widget-level spec notes & cross-module data flow')}
               </span>
             </div>
 
             <div
-              className="p-4 grid grid-cols-3 gap-x-6 gap-y-3 text-xs"
+              className="p-4 grid grid-cols-1 lg:grid-cols-3 gap-x-6 gap-y-3 text-xs"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Row 1 */}
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">
-                  <span className="text-rose-500">*</span>到货验收日期
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('到货验收日期', 'Acceptance Date')}
                 </label>
                 <input
                   type="date"
                   value={draftAcceptanceHeader.acceptanceDate}
                   onChange={(e) => updateAcceptanceHeader({ acceptanceDate: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">
-                  <span className="text-rose-500">*</span>到货验收单号
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('到货验收单号', 'Acceptance No.')}
                 </label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.acceptanceNo}
                   onChange={(e) => updateAcceptanceHeader({ acceptanceNo: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50 font-mono"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50 font-mono"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">
-                  <span className="text-rose-500">*</span>到货验收人
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('到货验收人', 'Inspector')}
                 </label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.inspector}
                   onChange={(e) => updateAcceptanceHeader({ inspector: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800"
                 />
               </div>
 
               {/* Row 2 */}
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">
-                  <span className="text-rose-500">*</span>入库类型
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('入库类型', 'Inbound Type')}
                 </label>
                 <select
                   value={draftAcceptanceHeader.inboundType}
@@ -205,17 +214,17 @@ export const AcceptanceNewPage: React.FC = () => {
                       inboundType: e.target.value as '购买' | '调拨' | '盘盈',
                     })
                   }
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
                 >
-                  <option value="购买">购买</option>
-                  <option value="调拨">调拨</option>
-                  <option value="盘盈">盘盈</option>
+                  <option value="购买">{tr('购买', 'Purchase')}</option>
+                  <option value="调拨">{tr('调拨', 'Transfer')}</option>
+                  <option value="盘盈">{tr('盘盈', 'Inventory Gain')}</option>
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-blue-600 font-medium shrink-0">
-                  <span className="text-rose-500">*</span>入库来源类型
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-blue-600 font-medium shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('入库来源类型', 'Inbound Source')}
                 </label>
                 <select
                   value={draftAcceptanceHeader.sourceType}
@@ -224,32 +233,32 @@ export const AcceptanceNewPage: React.FC = () => {
                       sourceType: e.target.value as '供方发货单转入' | '采购订单转入',
                     })
                   }
-                  className="flex-1 px-2 py-1 border border-blue-400 rounded text-slate-800 bg-blue-50/40 font-medium"
+                  className="flex-1 min-w-0 px-2 py-1 border border-blue-400 rounded text-slate-800 bg-blue-50/40 font-medium"
                 >
-                  <option value="供方发货单转入">供方发货单转入</option>
-                  <option value="采购订单转入">采购订单转入</option>
+                  <option value="供方发货单转入">{tr('供方发货单转入', 'From Supplier Delivery Note')}</option>
+                  <option value="采购订单转入">{tr('采购订单转入', 'From Purchase Order')}</option>
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">送货人</label>
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('送货人', 'Courier')}</label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.deliveryPerson}
                   onChange={(e) => updateAcceptanceHeader({ deliveryPerson: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800"
                 />
               </div>
 
               {/* Row 3: Cross-module Supplier Dropdown WITH its own Component Sticky Pin! */}
               <div
                 onClick={() => selectWidget('field-supplier-select')}
-                className="flex items-center gap-2 col-span-1"
+                className="flex items-center gap-2 col-span-1 min-w-0"
               >
-                <label className="w-24 text-right text-blue-700 font-semibold shrink-0">
-                  <span className="text-rose-500">*</span>供应商
+                <label className={`${labelWidthClass} text-right text-blue-700 font-semibold shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('供应商', 'Supplier')}
                 </label>
-                <div className="flex-1 flex items-center gap-1.5 flex-wrap">
+                <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
                   <select
                     value={draftAcceptanceHeader.supplierId}
                     onChange={(e) => updateAcceptanceHeader({ supplierId: e.target.value })}
@@ -257,48 +266,48 @@ export const AcceptanceNewPage: React.FC = () => {
                   >
                     {qualifiedSuppliers.map((sup) => (
                       <option key={sup.id} value={sup.id}>
-                        {sup.name} {sup.isNew ? ' (★刚审批通过)' : ''}
+                        {sup.name} {sup.isNew ? tr(' (★刚审批通过)', ' (★Newly Approved)') : ''}
                       </option>
                     ))}
                   </select>
                   <ComponentStickyPin
                     pageId="acceptance-new"
                     widgetId="field-supplier-select"
-                    badgeLabel="#1 供方下拉便签"
+                    badgeLabel={tr('#1 供方下拉便签', '#1 Supplier Pin')}
                     position="right"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">供应商联系人</label>
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('供应商联系人', 'Supplier Contact')}</label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.supplierContact}
                   onChange={(e) => updateAcceptanceHeader({ supplierContact: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">供应商联系电话</label>
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('供应商联系电话', 'Supplier Phone')}</label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.supplierPhone}
                   onChange={(e) => updateAcceptanceHeader({ supplierPhone: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50 font-mono"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-700 bg-slate-50 font-mono"
                 />
               </div>
 
               {/* Row 4: Tax & Auto-Sum Total */}
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">
-                  <span className="text-rose-500">*</span>税率
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>
+                  <span className="text-rose-500">*</span>{tr('税率', 'Tax Rate')}
                 </label>
                 <select
                   value={draftAcceptanceHeader.taxRate}
                   onChange={(e) => updateAcceptanceHeader({ taxRate: Number(e.target.value) })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white font-mono"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white font-mono"
                 >
                   <option value={9}>9%</option>
                   <option value={13}>13%</option>
@@ -307,47 +316,47 @@ export const AcceptanceNewPage: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">发票类型</label>
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('发票类型', 'Invoice Type')}</label>
                 <select
                   value={draftAcceptanceHeader.invoiceType}
                   onChange={(e) =>
                     updateAcceptanceHeader({ invoiceType: e.target.value as '专票' | '普票' })
                   }
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800 bg-white"
                 >
-                  <option value="专票">专票</option>
-                  <option value="普票">普票</option>
+                  <option value="专票">{tr('专票', 'Special VAT Invoice')}</option>
+                  <option value="普票">{tr('普票', 'General VAT Invoice')}</option>
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right font-bold text-slate-700 shrink-0">
-                  价税合计(自动)
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right font-bold text-slate-700 shrink-0`}>
+                  {tr('价税合计(自动)', 'Total w/ Tax (Auto)')}
                 </label>
                 <input
                   type="text"
                   readOnly
                   value={`¥ ${totalTaxIncludedAmount.toFixed(2)}`}
-                  className="flex-1 px-2 py-1 border border-emerald-500 rounded text-emerald-700 bg-emerald-50 font-mono font-bold"
+                  className="flex-1 min-w-0 px-2 py-1 border border-emerald-500 rounded text-emerald-700 bg-emerald-50 font-mono font-bold tabular-nums"
                 />
               </div>
 
               {/* Row 5: Remark */}
-              <div className="col-span-2 flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">备注</label>
+              <div className="lg:col-span-2 flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('备注', 'Remarks')}</label>
                 <input
                   type="text"
                   value={draftAcceptanceHeader.remark}
                   onChange={(e) => updateAcceptanceHeader({ remark: e.target.value })}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-slate-800"
+                  className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-slate-800"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="w-24 text-right text-slate-600 shrink-0">相关附件</label>
-                <span className="px-2.5 py-1 rounded bg-blue-500 text-white text-[11px]">
-                  点击上传质检报告
+              <div className="flex items-center gap-2 min-w-0">
+                <label className={`${labelWidthClass} text-right text-slate-600 shrink-0`}>{tr('相关附件', 'Attachments')}</label>
+                <span className="px-2.5 py-1 rounded bg-blue-500 text-white text-[11px] whitespace-nowrap">
+                  {tr('点击上传质检报告', 'Upload QC Report')}
                 </span>
               </div>
             </div>
@@ -359,7 +368,7 @@ export const AcceptanceNewPage: React.FC = () => {
           {importBtnWidget.props.visible && (
             <div
               onClick={() => selectWidget('btn-import-po')}
-              className={`inline-flex items-center gap-2.5 p-1.5 rounded border transition cursor-pointer ${getWidgetHighlight(
+              className={`inline-flex flex-wrap items-center gap-2.5 p-1.5 rounded border transition cursor-pointer ${getWidgetHighlight(
                 'btn-import-po'
               )}`}
             >
@@ -370,22 +379,22 @@ export const AcceptanceNewPage: React.FC = () => {
                   selectWidget('btn-import-po');
                   setImportModalOpen(true);
                 }}
-                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-1.5 shadow-sm cursor-pointer"
+                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{importBtnWidget.props.label} (从采购订单转入)</span>
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>{td(importBtnWidget.props.label)} {tr('(从采购订单转入)', '(Import from PO)')}</span>
               </button>
 
               {/* Inline Sticky Pin attached right next to the button! */}
               <ComponentStickyPin
                 pageId="acceptance-new"
                 widgetId="btn-import-po"
-                badgeLabel="#2 按钮便签"
+                badgeLabel={tr('#2 按钮便签', '#2 Button Pin')}
                 position="right"
               />
 
               <span className="text-[11px] text-slate-500 pr-2">
-                ← 点击黄色 📌 可直接在此按钮旁读写便签说明
+                {tr('← 点击黄色 📌 可直接在此按钮旁读写便签说明', '← Click yellow 📌 to read/write spec notes right beside this button')}
               </span>
             </div>
           )}
@@ -401,16 +410,18 @@ export const AcceptanceNewPage: React.FC = () => {
           >
             <div className="bg-slate-100 px-3 py-1.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700">{gridWidget.props.label}</span>
+                <span className="text-xs font-bold text-slate-700">{td(gridWidget.props.label)}</span>
                 <ComponentStickyPin
                   pageId="acceptance-new"
                   widgetId="acceptance-detail-grid"
-                  badgeLabel="#3/#4 明细算税与防超收便签"
+                  badgeLabel={tr('#3/#4 明细算税与防超收便签', '#3/#4 Tax & Over-Receipt Pin')}
                   position="right"
                 />
               </div>
-              <span className="text-[11px] text-slate-500">
-                不含税单价精度: <strong className="text-blue-600">{precision} 位小数</strong> · 修改下方【到货数量】或【含税单价】实时触发便签公式重算
+              <span className="text-[11px] text-slate-500 tabular-nums">
+                {tr('不含税单价精度: ', 'Excl.-Tax Unit Price Precision: ')}
+                <strong className="text-blue-600">{tr(`${precision} 位小数`, `${precision} decimals`)}</strong>
+                {tr(' · 修改下方【到货数量】或【含税单价】实时触发便签公式重算', ' · Editing [Accept Qty] or [Tax-Incl. Price] below recalculates sticky formulas live')}
               </span>
             </div>
 
@@ -418,40 +429,40 @@ export const AcceptanceNewPage: React.FC = () => {
               <table className="w-full min-w-[1080px] text-xs border-collapse text-center whitespace-nowrap">
                 <thead className="bg-slate-50 text-slate-600 border-b border-slate-300">
                   <tr>
-                    <th className="border-r border-slate-200 px-2 py-2">序号</th>
-                    <th className="border-r border-slate-200 px-2 py-2">计划类别</th>
-                    <th className="border-r border-slate-200 px-2 py-2">物料编码</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('序号', '#')}</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('计划类别', 'Plan Type')}</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('物料编码', 'Material Code')}</th>
                     <th className="border-r border-slate-200 px-3 py-2 text-left min-w-[190px]">
-                      物料名称
+                      {tr('物料名称', 'Material Name')}
                     </th>
-                    <th className="border-r border-slate-200 px-2 py-2">规格型号</th>
-                    <th className="border-r border-slate-200 px-2 py-2">单位</th>
-                    <th className="border-r border-slate-200 px-2 py-2">订货数量</th>
-                    <th className="border-r border-slate-200 px-2 py-2">已到货数量</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('规格型号', 'Spec / Model')}</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('单位', 'Unit')}</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('订货数量', 'Ordered Qty')}</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('已到货数量', 'Received Qty')}</th>
                     <th className="border-r border-slate-200 px-2 py-2 bg-blue-50/70 text-blue-800">
-                      <span className="text-rose-500">*</span>本次到货数量
+                      <span className="text-rose-500">*</span>{tr('本次到货数量', 'Current Accept Qty')}
                     </th>
                     <th className="border-r border-slate-200 px-2 py-2 bg-blue-50/70 text-blue-800">
-                      含税单价(元)
+                      {tr('含税单价(元)', 'Unit Price w/ Tax')}
                     </th>
-                    <th className="border-r border-slate-200 px-2 py-2">税率</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('税率', 'Tax Rate')}</th>
                     <th className="border-r border-slate-200 px-2 py-2 bg-amber-50/80 text-amber-900">
-                      不含税单价(元)
-                    </th>
-                    <th className="border-r border-slate-200 px-2 py-2 bg-amber-50/80 text-amber-900">
-                      不含税金额(元)
+                      {tr('不含税单价(元)', 'Unit Price Excl. Tax')}
                     </th>
                     <th className="border-r border-slate-200 px-2 py-2 bg-amber-50/80 text-amber-900">
-                      税额(元)
+                      {tr('不含税金额(元)', 'Amount Excl. Tax')}
+                    </th>
+                    <th className="border-r border-slate-200 px-2 py-2 bg-amber-50/80 text-amber-900">
+                      {tr('税额(元)', 'Tax Amount')}
                     </th>
                     <th className="border-r border-slate-200 px-2 py-2 bg-emerald-50 text-emerald-900 font-bold">
-                      含税金额(元)
+                      {tr('含税金额(元)', 'Amount w/ Tax')}
                     </th>
-                    <th className="border-r border-slate-200 px-2 py-2">课题编码</th>
+                    <th className="border-r border-slate-200 px-2 py-2">{tr('课题编码', 'Project Code')}</th>
                     {gridWidget.props.showSerialColumn && (
-                      <th className="border-r border-slate-200 px-2 py-2">顺序编号</th>
+                      <th className="border-r border-slate-200 px-2 py-2">{tr('顺序编号', 'Serial No.')}</th>
                     )}
-                    <th className="px-2 py-2">操作</th>
+                    <th className="px-2 py-2">{tr('操作', 'Action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -466,7 +477,7 @@ export const AcceptanceNewPage: React.FC = () => {
 
                     return (
                       <tr key={line.id} className="hover:bg-blue-50/30">
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono">{idx + 1}</td>
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono tabular-nums">{idx + 1}</td>
                         <td className="border-r border-slate-200 px-2 py-2">{line.planCategory}</td>
                         <td className="border-r border-slate-200 px-2 py-2 font-mono text-slate-600">
                           {line.materialCode}
@@ -478,10 +489,10 @@ export const AcceptanceNewPage: React.FC = () => {
                           {line.spec}
                         </td>
                         <td className="border-r border-slate-200 px-2 py-2">{line.unit}</td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono tabular-nums">
                           {line.orderedQty}
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-slate-500">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-slate-500 tabular-nums">
                           {line.alreadyAcceptedQty}
                         </td>
                         <td className="border-r border-slate-200 px-2 py-1.5 bg-blue-50/40">
@@ -493,8 +504,8 @@ export const AcceptanceNewPage: React.FC = () => {
                             onChange={(e) =>
                               updateAcceptanceLineQty(line.id, Number(e.target.value))
                             }
-                            className="w-16 px-1.5 py-0.5 text-center border border-blue-400 rounded bg-white font-mono font-bold text-blue-700"
-                            title={`最大未到货余量: ${maxRemain}`}
+                            className="w-16 px-1.5 py-0.5 text-center border border-blue-400 rounded bg-white font-mono font-bold text-blue-700 tabular-nums"
+                            title={tr(`最大未到货余量: ${maxRemain}`, `Max remaining open qty: ${maxRemain}`)}
                           />
                         </td>
                         <td className="border-r border-slate-200 px-2 py-1.5 bg-blue-50/40">
@@ -505,22 +516,22 @@ export const AcceptanceNewPage: React.FC = () => {
                             onChange={(e) =>
                               updateAcceptanceLinePrice(line.id, Number(e.target.value))
                             }
-                            className="w-20 px-1.5 py-0.5 text-right border border-slate-300 rounded bg-white font-mono"
+                            className="w-20 px-1.5 py-0.5 text-right border border-slate-300 rounded bg-white font-mono tabular-nums"
                           />
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono tabular-nums">
                           {line.taxRate}%
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40 tabular-nums">
                           {noTaxUnitPrice.toFixed(precision)}
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40 tabular-nums">
                           {noTaxAmount.toFixed(2)}
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono text-amber-900 bg-amber-50/40 tabular-nums">
                           {taxAmount.toFixed(2)}
                         </td>
-                        <td className="border-r border-slate-200 px-2 py-2 font-mono font-bold text-emerald-700 bg-emerald-50/50">
+                        <td className="border-r border-slate-200 px-2 py-2 font-mono font-bold text-emerald-700 bg-emerald-50/50 tabular-nums">
                           {taxIncludedAmount.toFixed(2)}
                         </td>
                         <td className="border-r border-slate-200 px-2 py-2 font-mono text-[11px]">
@@ -535,10 +546,10 @@ export const AcceptanceNewPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => removeAcceptanceLine(line.id)}
-                            className="text-rose-600 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                            className="text-rose-600 hover:underline inline-flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
                           >
-                            <Trash2 className="w-3 h-3" />
-                            <span>删除</span>
+                            <Trash2 className="w-3 h-3 shrink-0" />
+                            <span>{tr('删除', 'Delete')}</span>
                           </button>
                         </td>
                       </tr>
@@ -564,9 +575,9 @@ export const AcceptanceNewPage: React.FC = () => {
                 e.stopPropagation();
                 handleDoSubmit(false);
               }}
-              className="px-6 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow cursor-pointer"
+              className="px-6 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow cursor-pointer whitespace-nowrap"
             >
-              {submitBtnWidget.props.label}
+              {td(submitBtnWidget.props.label)}
             </button>
             <button
               type="button"
@@ -574,10 +585,10 @@ export const AcceptanceNewPage: React.FC = () => {
                 e.stopPropagation();
                 handleDoSubmit(true);
               }}
-              className="px-6 py-1.5 rounded bg-blue-500 hover:bg-blue-400 text-white text-xs font-medium flex items-center gap-1 cursor-pointer"
+              className="px-6 py-1.5 rounded bg-blue-500 hover:bg-blue-400 text-white text-xs font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>暂存</span>
+              <Save className="w-3.5 h-3.5 shrink-0" />
+              <span>{tr('暂存', 'Save Draft')}</span>
             </button>
             <button
               type="button"
@@ -585,15 +596,15 @@ export const AcceptanceNewPage: React.FC = () => {
                 e.stopPropagation();
                 setActivePage('acceptance-list');
               }}
-              className="px-6 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 text-xs cursor-pointer"
+              className="px-6 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 text-xs cursor-pointer whitespace-nowrap"
             >
-              返回台账
+              {tr('返回台账', 'Back to Ledger')}
             </button>
 
             <ComponentStickyPin
               pageId="acceptance-new"
               widgetId="btn-submit-acceptance"
-              badgeLabel="#5 提交动作便签"
+              badgeLabel={tr('#5 提交动作便签', '#5 Submit Action Pin')}
               position="left"
             />
           </div>
@@ -612,13 +623,13 @@ export const AcceptanceNewPage: React.FC = () => {
         >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2.5 mb-3">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-md bg-amber-100 border border-amber-300 flex items-center justify-center">
+              <span className="w-6 h-6 rounded-md bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0">
                 <Sparkles className="w-3.5 h-3.5 text-amber-700" />
               </span>
-              <span className="font-semibold text-xs text-slate-900">{stickyWidget.props.label}</span>
+              <span className="font-semibold text-xs text-slate-900">{td(stickyWidget.props.label)}</span>
             </div>
             <span className="text-[11px] text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-md">
-              双向联动：点击任意条目的【锚定组件】可直接定位并弹出上方对应组件的便签
+              {tr('双向联动：点击任意条目的【锚定组件】可直接定位并弹出上方对应组件的便签', 'Two-way sync: click any [Anchored Widget] tag to highlight and open its pin popover above')}
             </span>
           </div>
 
@@ -634,11 +645,11 @@ export const AcceptanceNewPage: React.FC = () => {
                       : 'bg-slate-50 border-slate-200 opacity-60 line-through'
                   }`}
                 >
-                  <div className="flex items-start gap-2.5">
+                  <div className="flex items-start gap-2.5 min-w-0">
                     <button
                       type="button"
                       onClick={() => toggleStickyRule(rule.id)}
-                      className="mt-0.5 cursor-pointer"
+                      className="mt-0.5 cursor-pointer shrink-0"
                     >
                       {rule.active ? (
                         <CheckSquare className="w-4 h-4 text-amber-600 shrink-0" />
@@ -646,7 +657,7 @@ export const AcceptanceNewPage: React.FC = () => {
                         <Square className="w-4 h-4 text-slate-400 shrink-0" />
                       )}
                     </button>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono font-bold text-amber-700">#{rule.index}</span>
                         <button
@@ -656,26 +667,26 @@ export const AcceptanceNewPage: React.FC = () => {
                             setActivePopoverWidgetId(rule.targetWidgetId);
                           }}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-[10px] font-medium cursor-pointer transition"
-                          title="点击高亮定位到页面上对应的组件便签"
+                          title={tr('点击高亮定位到页面上对应的组件便签', 'Click to highlight and open the corresponding widget pin')}
                         >
-                          <Pin className="w-2.5 h-2.5 text-amber-600" />
-                          <span>{rule.targetWidgetName}</span>
+                          <Pin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                          <span>{td(rule.targetWidgetName)}</span>
                         </button>
-                        <span className="text-slate-800">{rule.text}</span>
+                        <span className="text-slate-800 break-words">{rule.text}</span>
                       </div>
-                      <div className="font-mono text-[10px] text-slate-500 mt-1">
-                        ↳ 绑定执行契约: `{rule.compiledRule}`
+                      <div className="font-mono text-[10px] text-slate-500 mt-1 break-words">
+                        {tr('↳ 绑定执行契约: ', '↳ Bound execution contract: ')}`{rule.compiledRule}`
                       </div>
                     </div>
                   </div>
                   <span
-                    className={`text-[10px] font-medium px-2 py-0.5 rounded-md border shrink-0 ${
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded-md border shrink-0 whitespace-nowrap ${
                       rule.active
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}
                   >
-                    {rule.active ? '生效中' : '已挂起'}
+                    {rule.active ? tr('生效中', 'Active') : tr('已挂起', 'Suspended')}
                   </span>
                 </div>
               ))}
@@ -688,25 +699,25 @@ export const AcceptanceNewPage: React.FC = () => {
                 }
                 className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-600"
               >
-                <option value="field-supplier-select">绑定到：供应商下拉框</option>
-                <option value="btn-import-po">绑定到：[选择采购明细] 按钮</option>
-                <option value="acceptance-detail-grid">绑定到：到货验收明细表</option>
-                <option value="btn-submit-acceptance">绑定到：[提交 / 暂存] 按钮</option>
-                <option value="header-form-group">绑定到：表头表单区</option>
+                <option value="field-supplier-select">{tr('绑定到：供应商下拉框', 'Bind to: Supplier Dropdown')}</option>
+                <option value="btn-import-po">{tr('绑定到：[选择采购明细] 按钮', 'Bind to: [Select PO Lines] Button')}</option>
+                <option value="acceptance-detail-grid">{tr('绑定到：到货验收明细表', 'Bind to: Acceptance Lines Table')}</option>
+                <option value="btn-submit-acceptance">{tr('绑定到：[提交 / 暂存] 按钮', 'Bind to: [Submit / Save Draft] Buttons')}</option>
+                <option value="header-form-group">{tr('绑定到：表头表单区', 'Bind to: Header Form Section')}</option>
               </select>
               <input
                 type="text"
                 value={newStickyInput}
                 onChange={(e) => setNewStickyInput(e.target.value)}
-                placeholder="选择目标组件并输入新便签规则（将同时贴在上方组件旁与底部汇总表中）..."
+                placeholder={tr('选择目标组件并输入新便签规则（将同时贴在上方组件旁与底部汇总表中）...', 'Select target widget and enter a new spec rule (pinned above & listed here)...')}
                 className="flex-1 min-w-[240px] px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-600"
               />
               <button
                 type="submit"
-                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1 cursor-pointer transition"
+                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1 cursor-pointer transition whitespace-nowrap shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>添加便签规则</span>
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>{tr('添加便签规则', 'Add Spec Rule')}</span>
               </button>
             </form>
           </div>
@@ -717,26 +728,28 @@ export const AcceptanceNewPage: React.FC = () => {
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-slate-900">
-                  跨模块调取：从【采购订单确认】转入待验收明细
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="text-sm font-semibold text-slate-900 truncate">
+                  {tr('跨模块调取：从【采购订单确认】转入待验收明细', 'Cross-Module Import: Select Pending Lines from [PO Confirmation]')}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setImportModalOpen(false)}
-                className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer whitespace-nowrap shrink-0"
               >
-                关闭 ✕
+                {tr('关闭 ✕', 'Close ✕')}
               </button>
             </div>
 
             <div className="p-4 space-y-3 text-xs">
-              <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 text-slate-700 flex items-center justify-between">
+              <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 text-slate-700 flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  以下数据实时读取自左侧菜单 <strong>【采购与招标管理 → 采购订单确认】</strong> 中状态为“已确认”的采购单：
+                  {tr('以下数据实时读取自左侧菜单 ', 'Live data read from left menu ')}
+                  <strong>{tr('【采购与招标管理 → 采购订单确认】', '[Procurement & Bidding → PO Confirmation]')}</strong>
+                  {tr(' 中状态为“已确认”的采购单：', ' where status is "Confirmed":')}
                 </span>
                 <button
                   type="button"
@@ -744,22 +757,22 @@ export const AcceptanceNewPage: React.FC = () => {
                     setImportModalOpen(false);
                     setActivePage('purchase-order-confirm');
                   }}
-                  className="text-[11px] font-medium text-blue-600 hover:underline shrink-0 ml-2 cursor-pointer"
+                  className="text-[11px] font-medium text-blue-600 hover:underline shrink-0 cursor-pointer whitespace-nowrap"
                 >
-                  去采购模块确认更多订单 →
+                  {tr('去采购模块确认更多订单 →', 'Confirm more POs in Procurement →')}
                 </button>
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="border border-slate-200 rounded-xl overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 whitespace-nowrap">
                     <tr>
-                      <th className="p-2.5">选择</th>
-                      <th className="p-2.5">采购单号</th>
-                      <th className="p-2.5">物料名称 / 规格</th>
-                      <th className="p-2.5">供应商</th>
-                      <th className="p-2.5">未到货余量</th>
-                      <th className="p-2.5">含税单价</th>
+                      <th className="p-2.5">{tr('选择', 'Select')}</th>
+                      <th className="p-2.5">{tr('采购单号', 'PO No.')}</th>
+                      <th className="p-2.5">{tr('物料名称 / 规格', 'Material / Spec')}</th>
+                      <th className="p-2.5">{tr('供应商', 'Supplier')}</th>
+                      <th className="p-2.5">{tr('未到货余量', 'Open Qty')}</th>
+                      <th className="p-2.5">{tr('含税单价', 'Tax-Incl. Price')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
@@ -784,10 +797,10 @@ export const AcceptanceNewPage: React.FC = () => {
                             <div className="text-[10px] text-slate-500">{po.spec}</div>
                           </td>
                           <td className="p-2.5 text-slate-700">{po.supplierName}</td>
-                          <td className="p-2.5 font-mono font-medium text-emerald-700">
-                            {po.orderedQty - po.deliveredQty} {po.unit} (共订{po.orderedQty})
+                          <td className="p-2.5 font-mono font-medium text-emerald-700 tabular-nums whitespace-nowrap">
+                            {po.orderedQty - po.deliveredQty} {po.unit} {tr(`(共订${po.orderedQty})`, `(of ${po.orderedQty})`)}
                           </td>
-                          <td className="p-2.5 font-mono text-slate-800">
+                          <td className="p-2.5 font-mono text-slate-800 tabular-nums whitespace-nowrap">
                             ¥{po.unitPriceTaxIncluded} ({po.taxRate}%)
                           </td>
                         </tr>
@@ -801,16 +814,16 @@ export const AcceptanceNewPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setImportModalOpen(false)}
-                  className="px-4 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="px-4 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap"
                 >
-                  取消
+                  {tr('取消', 'Cancel')}
                 </button>
                 <button
                   type="button"
                   onClick={() => importPoItemsToAcceptance(selectedPoIds)}
-                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium cursor-pointer"
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium cursor-pointer tabular-nums whitespace-nowrap"
                 >
-                  确认转入选中明细 ({selectedPoIds.length} 项)
+                  {tr(`确认转入选中明细 (${selectedPoIds.length} 项)`, `Import Selected Lines (${selectedPoIds.length})`)}
                 </button>
               </div>
             </div>

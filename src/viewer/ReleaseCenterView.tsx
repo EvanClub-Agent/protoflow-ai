@@ -23,6 +23,8 @@ import { AlexLogo } from '../components/AlexLogo';
 import { ReleaseWorkspace } from './ReleaseWorkspace';
 import { assetReady, assetVersionIssue, releaseInput, releaseTitleIssue } from './releasePresentation';
 import { ThemeSwitch, useThemePreference } from '../components/ThemeSwitch';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { useI18n } from '../i18n';
 import {
   addReleaseAssetLink,
   approveReleaseAsset,
@@ -67,6 +69,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
   isAdminRoute = false,
   onNavigateRoute,
 }) => {
+  const { locale, tr, td } = useI18n();
   const theme = useThemePreference();
   const visitorPlatform = useMemo(() => detectBrowserPlatform(), []);
   const idPrefix = useId();
@@ -172,7 +175,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
       setCopiedKey(key);
       setTimeout(() => setCopiedKey((prev) => (prev === key ? null : prev)), 2000);
     } catch {
-      showToast('复制失败，请手动选中复制');
+      showToast(tr('复制失败，请手动选中复制', 'Copy failed. Please select and copy manually.'));
     }
   };
 
@@ -241,7 +244,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
         }
       }
     } catch (e) {
-      setAdminAuthError(e instanceof Error ? e.message : '读取平台管理员状态失败');
+      setAdminAuthError(e instanceof Error ? e.message : tr('读取平台管理员状态失败', 'Failed to verify platform admin status'));
     } finally {
       setAdminChecking(false);
     }
@@ -271,14 +274,19 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
         return res.items.some(release => release.id === selected) ? selected : res.items[0]?.id ?? null;
       });
     } catch (e) {
-      if (epoch === loadEpoch.current) setError(e instanceof Error ? e.message : '加载版本列表失败');
+      if (epoch === loadEpoch.current) setError(e instanceof Error ? e.message : tr('加载版本列表失败', 'Failed to load releases'));
     } finally {
       if (epoch === loadEpoch.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    document.title = isAdminRoute ? 'Alex · 版本管理' : 'Alex · 版本下载';
+    document.title = isAdminRoute
+      ? tr('Alex · 版本管理', 'Alex · Release Admin')
+      : tr('Alex · 版本下载', 'Alex · Downloads');
+  }, [isAdminRoute, locale, tr]);
+
+  useEffect(() => {
     void loadReleases();
     return () => { loadEpoch.current++; };
   }, [isAdminRoute, adminToken, adminProfile]);
@@ -289,21 +297,25 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
     if (!isAdminAuthenticated || mutationLock.current) return;
     mutationLock.current = true; setMutationBusy(true); setMutationError('');
     try { await action(); }
-    catch (e) { setMutationError(e instanceof Error ? e.message : '操作失败，请重试'); }
+    catch (e) { setMutationError(e instanceof Error ? e.message : tr('操作失败，请重试', 'Action failed. Please try again.')); }
     finally { mutationLock.current = false; setMutationBusy(false); }
   };
   const changeVisibility = (release: DesktopRelease) => void runReleaseAction(async () => {
     if (!release.published) {
-      if (!release.assets.some(assetReady)) throw new Error('请先上传至少一个平台的安装包并完成签名确认。');
+      if (!release.assets.some(assetReady)) throw new Error(tr('请先上传至少一个平台的安装包并完成签名确认。', 'Please upload and sign at least one platform installer first.'));
       const issue = releaseTitleIssue(release.version, release.title);
       if (issue) throw new Error(issue);
-    } else if (!window.confirm(`将 v${release.version} 撤回为草稿？下载页将不再展示，安装包仍保留。`)) return;
+    } else if (!window.confirm(tr(`将 v${release.version} 撤回为草稿？下载页将不再展示，安装包仍保留。`, `Unpublish v${release.version} to draft? It will be hidden from public downloads while keeping its installers.`))) return;
     await updateManagedRelease(adminToken, release.id, {
       version:release.version, title:release.title, notes:release.notes, channel:release.channel,
       mandatory:release.mandatory, published:!release.published,
     });
     await loadReleases(release.id);
-    showToast(release.published ? `v${release.version} 已撤回为草稿` : `v${release.version} 已公开，可继续补充其他平台`);
+    showToast(
+      release.published
+        ? tr(`v${release.version} 已撤回为草稿`, `v${release.version} reverted to draft`)
+        : tr(`v${release.version} 已公开，可继续补充其他平台`, `v${release.version} published. Other platforms can still be added.`)
+    );
   });
   const openCreateReleaseModal = () => {
     setEditingRelease(null);
@@ -377,40 +389,41 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               {isAdminRoute ? (
                 <span className="hidden sm:inline-flex items-center gap-1 rounded-md bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 whitespace-nowrap">
                   <ShieldCheck size={12} />
-                  <span>版本管理后台</span>
+                  <span>{tr('版本管理后台', 'Release Admin')}</span>
                 </span>
               ) : (
                 <span className="hidden sm:inline-flex items-center rounded-md bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
-                  版本发布与更新中心
+                  {tr('版本发布与更新中心', 'Release & Update Center')}
                 </span>
               )}
             </div>
             <p className="text-[11px] text-slate-500 hidden sm:block truncate">
               {isAdminRoute
-                ? '维护版本信息，逐步补充各平台安装包'
-                : '查看更新，选择适合你的版本与平台'}
+                ? tr('维护版本信息，逐步补充各平台安装包', 'Manage releases and upload installers across platforms')
+                : tr('查看更新，选择适合你的版本与平台', 'Browse updates and choose the right version for your platform')}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <ThemeSwitch {...theme} />
+          <LanguageSwitch />
 
           {isAdminRoute ? (
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => switchRoute(false)}
-                className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition"
+                className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap"
               >
                 <ArrowLeft size={13.5} />
-                <span className="hidden sm:inline">返回公开下载页</span><span className="sm:hidden">下载页</span>
+                <span className="hidden sm:inline">{tr('返回公开下载页', 'Public Downloads')}</span><span className="sm:hidden">{tr('下载页', 'Downloads')}</span>
               </button>
               {isAdminAuthenticated && adminProfile && (
                 <>
-                  <span className="hidden lg:inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  <span className="hidden lg:inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                     <ShieldCheck size={13.5} />
-                    <span>管理员：{adminProfile.displayName}</span>
+                    <span>{tr(`管理员：${adminProfile.displayName}`, `Admin: ${adminProfile.displayName}`)}</span>
                   </span>
                   <button
                     type="button"
@@ -430,13 +443,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                           // ignore
                         }
                       }
-                      showToast('已退出平台管理员后台');
+                      showToast(tr('已退出平台管理员后台', 'Signed out of admin console'));
                     }}
-                    title="退出平台管理员登录"
-                    className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-2.5 py-1.5 text-xs flex items-center gap-1 cursor-pointer transition"
+                    title={tr('退出平台管理员登录', 'Sign out of platform admin')}
+                    className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-2.5 py-1.5 text-xs flex items-center gap-1 cursor-pointer transition whitespace-nowrap"
                   >
                     <LogOut size={13.5} />
-                    <span className="hidden sm:inline">退出管理</span>
+                    <span className="hidden sm:inline">{tr('退出管理', 'Sign Out')}</span>
                   </button>
                 </>
               )}
@@ -446,7 +459,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               {clientUser ? (
                 <div className="flex items-center gap-1.5">
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                    <UserCheck size={13} className="text-blue-600" />
+                    <UserCheck size={13} className="text-blue-600 shrink-0" />
                     <span className="max-w-20 truncate sm:max-w-40">{clientUser.displayName}</span>
                   </span>
                   <button
@@ -467,9 +480,9 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                           // ignore
                         }
                       }
-                      showToast('已退出客户端账号');
+                      showToast(tr('已退出客户端账号', 'Signed out of client account'));
                     }}
-                    title="退出客户端账号"
+                    title={tr('退出客户端账号', 'Sign out of client account')}
                     className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 p-1.5 text-xs cursor-pointer"
                   >
                     <LogOut size={13} />
@@ -483,20 +496,20 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     setUserAuthMode('login');
                     setUserDialogOpen(true);
                   }}
-                  className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                  className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs whitespace-nowrap"
                 >
                   <UserPlus size={13.5} className="text-blue-600" />
-                  <span className="hidden sm:inline">用户登录 / 注册</span><span className="sm:hidden">登录</span>
+                  <span className="hidden sm:inline">{tr('用户登录 / 注册', 'Sign In / Register')}</span><span className="sm:hidden">{tr('登录', 'Sign In')}</span>
                 </button>
               )}
 
               <button
                 type="button"
                 onClick={() => switchRoute(true)}
-                className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition"
+                className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap"
               >
                 <KeyRound size={13.5} />
-                <span className="hidden sm:inline">版本管理后台</span><span className="sm:hidden">管理</span>
+                <span className="hidden sm:inline">{tr('版本管理后台', 'Release Admin')}</span><span className="sm:hidden">{tr('管理', 'Admin')}</span>
               </button>
             </div>
           )}
@@ -525,12 +538,20 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </span>
               <div className="space-y-1">
                 <h1 className="text-base font-extrabold text-slate-900">
-                  {adminInitialized ? '平台管理员登录 · 版本管理后台' : '需在服务端命令行初始化平台管理员'}
+                  {adminInitialized
+                    ? tr('平台管理员登录 · 版本管理后台', 'Platform Admin Sign In · Release Admin')
+                    : tr('需在服务端命令行初始化平台管理员', 'Initialize Platform Admin via Server CLI')}
                 </h1>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {adminInitialized
-                    ? '桌面端版本发布、编辑、删除与安装包替换仅限平台管理员 (platform_admins) 访问，普通原型发布凭证与客户端用户无权操作。'
-                    : '为防止匿名抢注，已关闭网页端首次管理员初始化入口。请由运维人员在服务端执行 CLI 命令完成初始化。'}
+                    ? tr(
+                        '桌面端版本发布、编辑、删除与安装包替换仅限平台管理员 (platform_admins) 访问，普通原型发布凭证与客户端用户无权操作。',
+                        'Publishing, editing, deleting desktop releases and replacing installers is restricted to platform admins (platform_admins).'
+                      )
+                    : tr(
+                        '为防止匿名抢注，已关闭网页端首次管理员初始化入口。请由运维人员在服务端执行 CLI 命令完成初始化。',
+                        'To prevent unauthorized claiming, web-based initial admin setup is disabled. Please run the CLI command on the server.'
+                      )}
                 </p>
               </div>
             </div>
@@ -538,25 +559,29 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
             {adminChecking ? (
               <div className="py-8 flex items-center justify-center gap-2 text-xs text-slate-500">
                 <RefreshCw size={15} className="animate-spin text-blue-600" />
-                <span>正在验证平台管理员状态…</span>
+                <span>{tr('正在验证平台管理员状态…', 'Verifying platform admin status…')}</span>
               </div>
             ) : !adminChannelAllowed ? (
               <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-xs text-amber-900">
                 <p className="leading-relaxed">{adminAuthError}</p>
                 <button type="button" onClick={() => void checkAdminStatusAndSession()} className="font-semibold underline cursor-pointer">
-                  重新检测访问权限
+                  {tr('重新检测访问权限', 'Retry Access Check')}
                 </button>
               </div>
             ) : !adminInitialized ? (
               <div className="space-y-4 text-xs">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5 text-slate-700">
-                  <p className="font-semibold text-slate-800">请在服务器终端执行以下命令创建或重置管理员账号：</p>
+                  <p className="font-semibold text-slate-800">{tr('请在服务器终端执行以下命令创建或重置管理员账号：', 'Run the following command on the server terminal to create or reset an admin account:')}</p>
                   <pre className="rounded-lg bg-slate-900 text-slate-100 p-3 font-mono text-[11px] overflow-x-auto">
-                    {`# 密码从标准输入或 PROTOFLOW_ADMIN_PASSWORD 读取\nnpm run server:create-admin -- admin`}
+                    {tr(
+                      `# 密码从标准输入或 PROTOFLOW_ADMIN_PASSWORD 读取\nnpm run server:create-admin -- admin`,
+                      `# Password is read from stdin or PROTOFLOW_ADMIN_PASSWORD\nnpm run server:create-admin -- admin`
+                    )}
                   </pre>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    生产环境可直接执行 <code className="font-mono text-slate-700">protoflow create-admin admin</code>
-                    ，按提示输入 8–128 位管理员密码后点击下方按钮刷新状态。
+                    {tr('生产环境可直接执行 ', 'In production, run ')}
+                    <code className="font-mono text-slate-700">protoflow create-admin admin</code>
+                    {tr('，按提示输入 8–128 位管理员密码后点击下方按钮刷新状态。', ', enter an 8–128 character password when prompted, then click below to refresh.')}
                   </p>
                 </div>
 
@@ -565,7 +590,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     role="alert"
                     className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
                   >
-                    {adminAuthError}
+                    {td(adminAuthError)}
                   </p>
                 )}
 
@@ -574,7 +599,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   onClick={() => void checkAdminStatusAndSession()}
                   className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-2.5 text-xs font-semibold text-white cursor-pointer transition shadow-2xs"
                 >
-                  已完成 CLI 初始化，重新检测状态
+                  {tr('已完成 CLI 初始化，重新检测状态', 'CLI Initialized — Refresh Status')}
                 </button>
               </div>
             ) : (
@@ -599,9 +624,9 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                       // ignore
                     }
                     setAdminPassword('');
-                    showToast(`欢迎，平台管理员 ${res.admin.displayName}！`);
+                    showToast(tr(`欢迎，平台管理员 ${res.admin.displayName}！`, `Welcome, Platform Admin ${res.admin.displayName}!`));
                   } catch (err) {
-                    setAdminAuthError(err instanceof Error ? err.message : '管理员认证失败');
+                    setAdminAuthError(err instanceof Error ? err.message : tr('管理员认证失败', 'Admin authentication failed'));
                   } finally {
                     setAdminAuthBusy(false);
                   }
@@ -609,7 +634,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               >
                 <div className="space-y-1.5">
                   <label htmlFor={`${idPrefix}-admin-user`} className="block font-semibold text-slate-700">
-                    管理员账号 (Username) *
+                    {tr('管理员账号 (Username) *', 'Admin Username *')}
                   </label>
                   <input
                     id={`${idPrefix}-admin-user`}
@@ -620,7 +645,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    placeholder="例如：admin"
+                    placeholder={tr('例如：admin', 'e.g. admin')}
                     value={adminUsername}
                     onChange={(e) => {
                       setAdminUsername(e.target.value);
@@ -632,7 +657,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
                 <div className="space-y-1.5">
                   <label htmlFor={`${idPrefix}-admin-pass`} className="block font-semibold text-slate-700">
-                    管理员密码 (至少 8 位) *
+                    {tr('管理员密码 (至少 8 位) *', 'Admin Password (min 8 chars) *')}
                   </label>
                   <input
                     id={`${idPrefix}-admin-pass`}
@@ -644,7 +669,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    placeholder="输入平台管理员密码..."
+                    placeholder={tr('输入平台管理员密码...', 'Enter platform admin password...')}
                     value={adminPassword}
                     onChange={(e) => {
                       setAdminPassword(e.target.value);
@@ -659,7 +684,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     role="alert"
                     className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
                   >
-                    {adminAuthError}
+                    {td(adminAuthError)}
                   </p>
                 )}
 
@@ -668,12 +693,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   disabled={adminAuthBusy || !adminChannelAllowed}
                   className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 py-2.5 text-xs font-semibold text-white cursor-pointer transition shadow-2xs"
                 >
-                  {adminAuthBusy ? '正在验证…' : '登录版本管理后台'}
+                  {adminAuthBusy ? tr('正在验证…', 'Verifying…') : tr('登录版本管理后台', 'Sign In to Release Admin')}
                 </button>
 
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  如需重置管理员密码，可在服务器终端执行{' '}
-                  <code className="font-mono text-slate-600">protoflow create-admin &lt;用户名&gt;</code>。
+                  {tr('如需重置管理员密码，可在服务器终端执行 ', 'To reset an admin password, run ')}{' '}
+                  <code className="font-mono text-slate-600">{tr('protoflow create-admin <用户名>', 'protoflow create-admin <username>')}</code>
+                  {tr('。', ' on the server.')}
                 </p>
               </form>
             )}
@@ -681,8 +707,8 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
         ) : (
           <>
             {isAdminAuthenticated && <div className="space-y-3">
-              <button type="button" onClick={()=>setDiagnosticsOpen(value=>!value)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">{diagnosticsOpen?'收起运行诊断':'查询运行诊断'}</button>
-              {diagnosticsOpen&&<React.Suspense fallback={<p>正在加载运行诊断…</p>}><RuntimeDiagnosticsPanel token={adminToken}/></React.Suspense>}
+              <button type="button" onClick={()=>setDiagnosticsOpen(value=>!value)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">{diagnosticsOpen ? tr('收起运行诊断', 'Hide Runtime Diagnostics') : tr('查询运行诊断', 'Runtime Diagnostics')}</button>
+              {diagnosticsOpen&&<React.Suspense fallback={<p>{tr('正在加载运行诊断…', 'Loading runtime diagnostics…')}</p>}><RuntimeDiagnosticsPanel token={adminToken}/></React.Suspense>}
             </div>}
             {/* Error Banner */}
             {error && (
@@ -692,14 +718,14 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <AlertCircle size={16} className="shrink-0" />
-                  <span>{error}</span>
+                  <span>{td(error)}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => void loadReleases()}
                   className="px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100 cursor-pointer shrink-0"
                 >
-                  重新加载
+                  {tr('重新加载', 'Reload')}
                 </button>
               </div>
             )}
@@ -708,26 +734,26 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               releases={isAdminRoute ? releases : releases.filter(release=>release.published)}
               selectedId={selectedReleaseId} onSelect={setSelectedReleaseId}
               admin={isAdminAuthenticated} loading={loading} channel={channelFilter} onChannel={setChannelFilter}
-              visitorOS={visitorPlatform.os} busy={mutationBusy} error={mutationError}
+              visitorOS={visitorPlatform.os} busy={mutationBusy} error={mutationError ? td(mutationError) : ''}
               onCreate={openCreateReleaseModal} onEdit={openEditReleaseModal} onUpload={openAssetModal}
               onVisibility={changeVisibility}
               onDelete={release=>void runReleaseAction(async()=>{
-                if (!window.confirm(`确定要永久删除版本 v${release.version} 及其全部安装包吗？`)) return;
-                await deleteManagedRelease(adminToken,release.id); await loadReleases(); showToast(`已删除 v${release.version}`);
+                if (!window.confirm(tr(`确定要永久删除版本 v${release.version} 及其全部安装包吗？`, `Permanently delete v${release.version} and all of its installers?`))) return;
+                await deleteManagedRelease(adminToken,release.id); await loadReleases(); showToast(tr(`已删除 v${release.version}`, `Deleted v${release.version}`));
               })}
               onApprove={(release,asset)=>void runReleaseAction(async()=>{
                 await approveReleaseAsset(adminToken,release.id,asset.id,asset.sha256);
-                await loadReleases(release.id); showToast(`已确认并签名 ${asset.fileName}`);
+                await loadReleases(release.id); showToast(tr(`已确认并签名 ${asset.fileName}`, `Approved and signed ${asset.fileName}`));
               })}
               onRemove={(release,asset)=>void runReleaseAction(async()=>{
-                if (!window.confirm(`确认移除 v${release.version} 的安装包 ${asset.fileName} 吗？`)) return;
+                if (!window.confirm(tr(`确认移除 v${release.version} 的安装包 ${asset.fileName} 吗？`, `Remove installer ${asset.fileName} from v${release.version}?`))) return;
                 await deleteReleaseAsset(adminToken,release.id,asset.id);
-                await loadReleases(release.id); showToast(`已移除 ${asset.fileName}`);
+                await loadReleases(release.id); showToast(tr(`已移除 ${asset.fileName}`, `Removed ${asset.fileName}`));
               })}
             />
             {isAdminAuthenticated && signingPublicKey && <details className="text-xs text-slate-500 border-t border-slate-200 pt-4">
-              <summary className="cursor-pointer">高级信息 · 更新签名公钥</summary>
-              <div className="flex flex-wrap gap-3 items-center pt-3"><code className="break-all">{signingPublicKey}</code><button type="button" onClick={()=>void copyText('pub-key',signingPublicKey)} className="text-blue-600">{copiedKey==='pub-key'?'已复制':'复制公钥'}</button></div>
+              <summary className="cursor-pointer">{tr('高级信息 · 更新签名公钥', 'Advanced · Update Signing Public Key')}</summary>
+              <div className="flex flex-wrap gap-3 items-center pt-3"><code className="break-all">{signingPublicKey}</code><button type="button" onClick={()=>void copyText('pub-key',signingPublicKey)} className="text-blue-600">{copiedKey==='pub-key' ? tr('已复制', 'Copied') : tr('复制公钥', 'Copy Public Key')}</button></div>
             </details>}
           </>
         )}
@@ -750,16 +776,16 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </span>
               <div>
                 <h2 id={`${idPrefix}-user-auth-title`} className="text-sm font-bold text-slate-900">
-                  {userAuthMode === 'login' ? '客户端用户登录' : '注册客户端用户账号'}
+                  {userAuthMode === 'login' ? tr('客户端用户登录', 'Client User Sign In') : tr('注册客户端用户账号', 'Register Client Account')}
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  登录或注册 Alex 客户端用户账号 (client_users)
+                  {tr('登录或注册 Alex 客户端用户账号 (client_users)', 'Sign in or create an Alex client account (client_users)')}
                 </p>
               </div>
             </div>
             <button
               type="button"
-              aria-label="关闭用户登录窗口"
+              aria-label={tr('关闭用户登录窗口', 'Close sign-in dialog')}
               onClick={() => setUserDialogOpen(false)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
@@ -778,7 +804,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 userAuthMode === 'login' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-600'
               }`}
             >
-              账号登录
+              {tr('账号登录', 'Sign In')}
             </button>
             <button
               type="button"
@@ -790,7 +816,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 userAuthMode === 'register' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-600'
               }`}
             >
-              注册新用户
+              {tr('注册新用户', 'Register')}
             </button>
           </div>
 
@@ -824,11 +850,11 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 setUserDialogOpen(false);
                 showToast(
                   userAuthMode === 'login'
-                    ? `欢迎回来，${res.user.displayName}！`
-                    : `注册成功，欢迎 ${res.user.displayName}！`
+                    ? tr(`欢迎回来，${res.user.displayName}！`, `Welcome back, ${res.user.displayName}!`)
+                    : tr(`注册成功，欢迎 ${res.user.displayName}！`, `Account created. Welcome, ${res.user.displayName}!`)
                 );
               } catch (err) {
-                setUserAuthError(err instanceof Error ? err.message : '操作失败');
+                setUserAuthError(err instanceof Error ? err.message : tr('操作失败', 'Operation failed'));
               } finally {
                 setUserAuthBusy(false);
               }
@@ -836,7 +862,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
           >
             <div className="space-y-1.5">
               <label htmlFor={`${idPrefix}-user-name`} className="block font-semibold text-slate-700">
-                用户名 *
+                {tr('用户名 *', 'Username *')}
               </label>
               <input
                 id={`${idPrefix}-user-name`}
@@ -847,7 +873,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                placeholder="3–40 位字母、数字或下划线"
+                placeholder={tr('3–40 位字母、数字或下划线', '3–40 letters, numbers, or underscores')}
                 value={userUsername}
                 onChange={(e) => {
                   setUserUsername(e.target.value);
@@ -860,14 +886,14 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
             {userAuthMode === 'register' && (
               <div className="space-y-1.5">
                 <label htmlFor={`${idPrefix}-user-display`} className="block font-semibold text-slate-700">
-                  显示昵称
+                  {tr('显示昵称', 'Display Name')}
                 </label>
                 <input
                   id={`${idPrefix}-user-display`}
                   name="displayName"
                   type="text"
                   autoComplete="name"
-                  placeholder="例如：产品设计师张工"
+                  placeholder={tr('例如：产品设计师张工', 'e.g. Alex Taylor')}
                   value={userDisplayName}
                   onChange={(e) => setUserDisplayName(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-slate-50/70 px-3.5 py-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
@@ -877,7 +903,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             <div className="space-y-1.5">
               <label htmlFor={`${idPrefix}-user-pass`} className="block font-semibold text-slate-700">
-                登录密码 (至少 8 位) *
+                {tr('登录密码 (至少 8 位) *', 'Password (min 8 chars) *')}
               </label>
               <input
                 id={`${idPrefix}-user-pass`}
@@ -889,7 +915,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                placeholder="输入登录密码..."
+                placeholder={tr('输入登录密码...', 'Enter password...')}
                 value={userPassword}
                 onChange={(e) => {
                   setUserPassword(e.target.value);
@@ -901,7 +927,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             {userAuthError && (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                {userAuthError}
+                {td(userAuthError)}
               </p>
             )}
 
@@ -911,14 +937,14 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 onClick={() => setUserDialogOpen(false)}
                 className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-xs font-medium text-slate-700 cursor-pointer"
               >
-                取消
+                {tr('取消', 'Cancel')}
               </button>
               <button
                 type="submit"
                 disabled={userAuthBusy}
                 className="rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-4 py-2 text-xs font-semibold text-white cursor-pointer"
               >
-                {userAuthBusy ? '正在提交…' : userAuthMode === 'login' ? '立即登录' : '立即注册'}
+                {userAuthBusy ? tr('正在提交…', 'Submitting…') : userAuthMode === 'login' ? tr('立即登录', 'Sign In') : tr('立即注册', 'Create Account')}
               </button>
             </div>
           </form>
@@ -939,15 +965,15 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
           <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 id={`${idPrefix}-release-title`} className="text-base font-bold text-slate-900">
-                {editingRelease ? `编辑 v${editingRelease.version} 的信息` : '新建版本草稿'}
+                {editingRelease ? tr(`编辑 v${editingRelease.version} 的信息`, `Edit v${editingRelease.version} Metadata`) : tr('新建版本草稿', 'New Release Draft')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                先建草稿，再上传任意平台的安装包。其他平台可以之后补充。
+                {tr('先建草稿，再上传任意平台的安装包。其他平台可以之后补充。', 'Create a draft first, then upload an installer for any platform. Other platforms can be added later.')}
               </p>
             </div>
             <button
               type="button"
-              aria-label="关闭版本编辑窗口"
+              aria-label={tr('关闭版本编辑窗口', 'Close release editor')}
               disabled={releaseSaving} onClick={() => setReleaseDialogOpen(false)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
@@ -970,13 +996,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 setReleaseDialogOpen(false);
                 showToast(
                   editingRelease
-                    ? `已更新版本 v${saved.version}`
-                    : `已创建版本 v${saved.version}，现在可以上传各平台安装包`
+                    ? tr(`已更新版本 v${saved.version}`, `Updated release v${saved.version}`)
+                    : tr(`已创建版本 v${saved.version}，现在可以上传各平台安装包`, `Created release v${saved.version}. You can now upload platform installers.`)
                 );
                 setChannelFilter('all');
                 await loadReleases(saved.id);
               } catch (err) {
-                setReleaseFormError(err instanceof Error ? err.message : '保存版本失败');
+                setReleaseFormError(err instanceof Error ? err.message : tr('保存版本失败', 'Failed to save release'));
               } finally {
                 setReleaseSaving(false);
               }
@@ -985,7 +1011,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label htmlFor={`${idPrefix}-ver`} className="block font-semibold text-slate-700">
-                  版本号 *
+                  {tr('版本号 *', 'Version *')}
                 </label>
                 <input disabled={releaseSaving}
                   id={`${idPrefix}-ver`}
@@ -995,7 +1021,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  placeholder="例如：0.0.6"
+                  placeholder={tr('例如：0.0.6', 'e.g. 0.0.6')}
                   value={releaseForm.version}
                   onChange={(e) => {
                     setReleaseForm((f) => ({ ...f, version: e.target.value }));
@@ -1006,8 +1032,8 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </div>
 
               <fieldset className="space-y-1.5">
-                <legend className="font-semibold text-slate-700">发布通道</legend>
-                <div className="flex items-center gap-4 pt-1.5">
+                <legend className="font-semibold text-slate-700">{tr('发布通道', 'Channel')}</legend>
+                <div className="flex flex-wrap items-center gap-4 pt-1.5">
                   <label htmlFor={`${idPrefix}-ch-stable`} className="inline-flex items-center gap-1.5 cursor-pointer">
                     <input disabled={releaseSaving}
                       id={`${idPrefix}-ch-stable`}
@@ -1017,7 +1043,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                       checked={releaseForm.channel === 'stable'}
                       onChange={() => setReleaseForm((f) => ({ ...f, channel: 'stable' }))}
                     />
-                    <span>正式版 (Stable)</span>
+                    <span>{tr('正式版 (Stable)', 'Stable')}</span>
                   </label>
                   <label htmlFor={`${idPrefix}-ch-beta`} className="inline-flex items-center gap-1.5 cursor-pointer">
                     <input disabled={releaseSaving}
@@ -1028,7 +1054,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                       checked={releaseForm.channel === 'beta'}
                       onChange={() => setReleaseForm((f) => ({ ...f, channel: 'beta' }))}
                     />
-                    <span>测试版 (Beta)</span>
+                    <span>{tr('测试版 (Beta)', 'Beta')}</span>
                   </label>
                 </div>
               </fieldset>
@@ -1036,13 +1062,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             <div className="space-y-1.5">
               <label htmlFor={`${idPrefix}-title`} className="block font-semibold text-slate-700">
-                版本主题（选填）
+                {tr('版本主题（选填）', 'Release Subtitle (Optional)')}
               </label>
               <input disabled={releaseSaving}
                 id={`${idPrefix}-title`}
                 name="title"
                 type="text"
-                placeholder="例如：移动审批明细修复，不需要重复填写版本号"
+                placeholder={tr('例如：移动审批明细修复，不需要重复填写版本号', 'e.g. Mobile approval detail fixes (do not repeat version number)')}
                 value={releaseForm.title}
                 onChange={(e) => setReleaseForm((f) => ({ ...f, title: e.target.value }))}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
@@ -1051,13 +1077,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             <div className="space-y-1.5">
               <label htmlFor={`${idPrefix}-notes`} className="block font-semibold text-slate-700">
-                版本更新说明 (Changelog)
+                {tr('版本更新说明 (Changelog)', 'Release Notes (Changelog)')}
               </label>
               <textarea disabled={releaseSaving}
                 id={`${idPrefix}-notes`}
                 name="notes"
                 rows={5}
-                placeholder="填写本次版本的新增功能、体验优化与问题修复说明..."
+                placeholder={tr('填写本次版本的新增功能、体验优化与问题修复说明...', 'Summarize new features, improvements, and bug fixes in this release...')}
                 value={releaseForm.notes}
                 onChange={(e) => setReleaseForm((f) => ({ ...f, notes: e.target.value }))}
                 className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none"
@@ -1066,7 +1092,9 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div className="rounded-xl bg-slate-50 p-3 text-slate-600 leading-relaxed">
-                {editingRelease?.published ? '当前版本已公开。保存信息不会撤回发布，补充安装包后会直接提供下载。' : '保存为草稿，安装包准备好后在版本详情中发布。'}
+                {editingRelease?.published
+                  ? tr('当前版本已公开。保存信息不会撤回发布，补充安装包后会直接提供下载。', 'This release is public. Saving metadata keeps it published, and newly added installers become downloadable immediately.')
+                  : tr('保存为草稿，安装包准备好后在版本详情中发布。', 'Saved as a draft. Publish from the release detail pane once an installer is ready.')}
               </div>
 
               <label
@@ -1074,8 +1102,8 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex items-center justify-between gap-2 cursor-pointer"
               >
                 <div>
-                  <div className="font-semibold text-slate-800">标记为重要强制更新</div>
-                  <div className="text-[11px] text-slate-400">桌面端启动时主动弹窗提醒升级</div>
+                  <div className="font-semibold text-slate-800">{tr('标记为重要强制更新', 'Mandatory Update')}</div>
+                  <div className="text-[11px] text-slate-400">{tr('桌面端启动时主动弹窗提醒升级', 'Prompts desktop users to upgrade on startup')}</div>
                 </div>
                 <input disabled={releaseSaving}
                   id={`${idPrefix}-mandatory`}
@@ -1083,7 +1111,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   type="checkbox"
                   checked={releaseForm.mandatory}
                   onChange={(e) => setReleaseForm((f) => ({ ...f, mandatory: e.target.checked }))}
-                  className="w-4 h-4"
+                  className="w-4 h-4 shrink-0"
                 />
               </label>
             </div>
@@ -1092,7 +1120,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             {releaseFormError && (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                {releaseFormError}
+                {td(releaseFormError)}
               </p>
             )}
 
@@ -1102,14 +1130,14 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 disabled={releaseSaving} onClick={() => setReleaseDialogOpen(false)}
                 className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 font-medium text-slate-700 cursor-pointer"
               >
-                取消
+                {tr('取消', 'Cancel')}
               </button>
               <button
                 type="submit"
                 disabled={releaseSaving}
                 className="rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-5 py-2 font-semibold text-white cursor-pointer"
               >
-                {releaseSaving ? '正在保存…' : editingRelease ? '保存修改' : '创建草稿'}
+                {releaseSaving ? tr('正在保存…', 'Saving…') : editingRelease ? tr('保存修改', 'Save Changes') : tr('创建草稿', 'Create Draft')}
               </button>
             </div>
           </form>
@@ -1132,16 +1160,16 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
           <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 id={`${idPrefix}-asset-title`} className="text-base font-bold text-slate-900">
-                配置安装包 · v{assetTargetRelease?.version}
+                {tr(`配置安装包 · v${assetTargetRelease?.version}`, `Configure Installer · v${assetTargetRelease?.version}`)}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                安装包归属当前版本。已公开的版本补包后直接可下载，无需重新发布。
+                {tr('安装包归属当前版本。已公开的版本补包后直接可下载，无需重新发布。', 'Installers belong to this version. Adding packages to a published release makes them downloadable immediately.')}
               </p>
             </div>
             <button
               type="button"
               disabled={assetSaving}
-              aria-label="关闭安装包配置窗口"
+              aria-label={tr('关闭安装包配置窗口', 'Close installer dialog')}
               onClick={() => setAssetDialogOpen(false)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
             >
@@ -1164,8 +1192,8 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <HardDrive size={14} />
-              <span>上传文件到服务端托管</span>
+              <HardDrive size={14} className="shrink-0" />
+              <span>{tr('上传文件到服务端托管', 'Upload Hosted File')}</span>
             </button>
             <button
               type="button"
@@ -1180,8 +1208,8 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Link2 size={14} />
-              <span>填写外部下载 URL</span>
+              <Link2 size={14} className="shrink-0" />
+              <span>{tr('填写外部下载 URL', 'External Download URL')}</span>
             </button>
           </div>
 
@@ -1195,7 +1223,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               try {
                 if (assetMode === 'upload') {
                   if (!selectedFile) {
-                    throw new Error('请先选择要上传的安装包文件');
+                    throw new Error(tr('请先选择要上传的安装包文件', 'Please select an installer file to upload first'));
                   }
                   const issue = assetVersionIssue(selectedFile.name,assetTargetRelease.version);
                   if (issue) throw new Error(issue);
@@ -1207,7 +1235,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     { os: assetOS, arch: assetArch, packageType: assetPkg },
                     (percent, loaded, total) => setUploadProgress({ percent, loaded, total })
                   );
-                  showToast(`已上传并签名 ${uploaded.fileName} (${formatBytes(uploaded.sizeBytes)})`);
+                  showToast(tr(`已上传并签名 ${uploaded.fileName} (${formatBytes(uploaded.sizeBytes)})`, `Uploaded and signed ${uploaded.fileName} (${formatBytes(uploaded.sizeBytes)})`));
                 } else {
                   const issue = assetVersionIssue(linkFileName.trim(),assetTargetRelease.version);
                   if (issue) throw new Error(issue);
@@ -1220,12 +1248,12 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     sizeBytes: Number(linkSize) > 0 ? Number(linkSize) : 0,
                     sha256: linkSha256.trim(),
                   });
-                  showToast(`已关联并签名安装包 ${saved.fileName}`);
+                  showToast(tr(`已关联并签名安装包 ${saved.fileName}`, `Linked and signed installer ${saved.fileName}`));
                 }
                 setAssetDialogOpen(false);
                 await loadReleases(assetTargetRelease.id);
               } catch (err) {
-                setAssetError(err instanceof Error ? err.message : '保存安装包失败');
+                setAssetError(err instanceof Error ? err.message : tr('保存安装包失败', 'Failed to save installer'));
               } finally {
                 setAssetSaving(false);
                 setUploadProgress(null);
@@ -1235,7 +1263,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
             {assetMode === 'upload' ? (
               <div className="space-y-2">
                 <label htmlFor={`${idPrefix}-file`} className="block font-semibold text-slate-700">
-                  选择本地构建产物文件 (.exe / .dmg / .zip / .deb / .AppImage / .tar.gz) *
+                  {tr('选择本地构建产物文件 (.exe / .dmg / .zip / .deb / .AppImage / .tar.gz) *', 'Select local build artifact (.exe / .dmg / .zip / .deb / .AppImage / .tar.gz) *')}
                 </label>
                 <label
                   htmlFor={`${idPrefix}-file`}
@@ -1244,16 +1272,16 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   <FileArchive size={24} className="text-blue-600" />
                   {selectedFile ? (
                     <div className="space-y-0.5">
-                      <div className="font-bold text-slate-900">{selectedFile.name}</div>
+                      <div className="font-bold text-slate-900 break-all">{selectedFile.name}</div>
                       <div className="text-[11px] text-slate-500">
-                        大小：{formatBytes(selectedFile.size)} · 已自动识别目标系统与包格式
+                        {tr(`大小：${formatBytes(selectedFile.size)} · 已自动识别目标系统与包格式`, `Size: ${formatBytes(selectedFile.size)} · Target OS & package format auto-detected`)}
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-0.5">
-                      <div className="font-semibold text-slate-700">点击选择安装包文件</div>
+                      <div className="font-semibold text-slate-700">{tr('点击选择安装包文件', 'Click to choose installer file')}</div>
                       <div className="text-[11px] text-slate-400">
-                        支持自动从文件名识别系统、架构与格式，服务端将流式计算 SHA-256 并生成 Ed25519 签名
+                        {tr('支持自动从文件名识别系统、架构与格式，服务端将流式计算 SHA-256 并生成 Ed25519 签名', 'Auto-detects OS, arch, and format from filename; server computes SHA-256 and Ed25519 signature')}
                       </div>
                     </div>
                   )}
@@ -1271,7 +1299,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <label htmlFor={`${idPrefix}-ext-url`} className="block font-semibold text-slate-700">
-                    外部安装包下载 URL *
+                    {tr('外部安装包下载 URL *', 'External Installer Download URL *')}
                   </label>
                   <input disabled={assetSaving}
                     id={`${idPrefix}-ext-url`}
@@ -1281,7 +1309,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    placeholder="填写当前版本安装包的完整下载地址"
+                    placeholder={tr('填写当前版本安装包的完整下载地址', 'Full download URL for this installer')}
                     value={linkUrl}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -1300,7 +1328,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label htmlFor={`${idPrefix}-ext-name`} className="block font-semibold text-slate-700">
-                      文件名（留空则自动从 URL 提取）
+                      {tr('文件名（留空则自动从 URL 提取）', 'Filename (auto-extracted from URL if blank)')}
                     </label>
                     <input disabled={assetSaving}
                       id={`${idPrefix}-ext-name`}
@@ -1309,7 +1337,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
-                      placeholder="填写实际安装包文件名"
+                      placeholder={tr('填写实际安装包文件名', 'Actual installer filename')}
                       value={linkFileName}
                       onChange={(e) => setLinkFileName(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-slate-900 focus:border-blue-600 focus:outline-none"
@@ -1317,7 +1345,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                   </div>
                   <div className="space-y-1.5">
                     <label htmlFor={`${idPrefix}-ext-size`} className="block font-semibold text-slate-700">
-                      文件准确字节大小 (Bytes) *
+                      {tr('文件准确字节大小 (Bytes) *', 'Exact File Size (Bytes) *')}
                     </label>
                     <input disabled={assetSaving}
                       id={`${idPrefix}-ext-size`}
@@ -1328,7 +1356,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
-                      placeholder="例如：125931306"
+                      placeholder={tr('例如：125931306', 'e.g. 125931306')}
                       value={linkSize}
                       onChange={(e) => setLinkSize(e.target.value.replace(/\D/g, ''))}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-slate-900 focus:border-blue-600 focus:outline-none"
@@ -1338,7 +1366,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
                 <div className="space-y-1.5">
                   <label htmlFor={`${idPrefix}-ext-sha`} className="block font-semibold text-slate-700">
-                    SHA-256 校验值 (64 位十六进制，必填) *
+                    {tr('SHA-256 校验值 (64 位十六进制，必填) *', 'SHA-256 Checksum (64-char hex, required) *')}
                   </label>
                   <input disabled={assetSaving}
                     id={`${idPrefix}-ext-sha`}
@@ -1350,7 +1378,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    placeholder="必填：用于签名与客户端下载完整性强制校验"
+                    placeholder={tr('必填：用于签名与客户端下载完整性强制校验', 'Required for Ed25519 signing and client integrity verification')}
                     value={linkSha256}
                     onChange={(e) => setLinkSha256(e.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-slate-900 focus:border-blue-600 focus:outline-none"
@@ -1362,7 +1390,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
             {/* Target OS / Arch / Package Format */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <fieldset disabled={assetSaving} className="space-y-1.5">
-                <legend className="font-semibold text-slate-700">目标操作系统</legend>
+                <legend className="font-semibold text-slate-700">{tr('目标操作系统', 'Target OS')}</legend>
                 <div className="space-y-1">
                   {(['windows', 'macos', 'linux'] as const).map((osOpt) => (
                     <label
@@ -1387,7 +1415,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </fieldset>
 
               <fieldset disabled={assetSaving} className="space-y-1.5">
-                <legend className="font-semibold text-slate-700">CPU 架构</legend>
+                <legend className="font-semibold text-slate-700">{tr('CPU 架构', 'CPU Architecture')}</legend>
                 <div className="space-y-1">
                   {(['x64', 'arm64', ...(assetOS === 'macos' ? (['universal'] as const) : [])] as const).map(
                     (archOpt) => (
@@ -1414,7 +1442,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </fieldset>
 
               <fieldset disabled={assetSaving} className="space-y-1.5">
-                <legend className="font-semibold text-slate-700">安装包格式</legend>
+                <legend className="font-semibold text-slate-700">{tr('安装包格式', 'Package Format')}</legend>
                 <div className="space-y-1">
                   {PLATFORM_LABELS[assetOS].packages.map((pkgOpt) => (
                     <label
@@ -1439,13 +1467,13 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
               </fieldset>
             </div>
 
-            {assetTargetRelease?.assets.some(asset=>asset.os===assetOS&&asset.arch===assetArch&&asset.packageType===assetPkg) && <p className="rounded-lg bg-amber-50 p-3 text-amber-800">当前版本已有此平台、架构和格式的安装包，保存将替换该包。其他安装包保持不变。</p>}
+            {assetTargetRelease?.assets.some(asset=>asset.os===assetOS&&asset.arch===assetArch&&asset.packageType===assetPkg) && <p className="rounded-lg bg-amber-50 p-3 text-amber-800">{tr('当前版本已有此平台、架构和格式的安装包，保存将替换该包。其他安装包保持不变。', 'An installer for this OS, architecture, and format already exists in this release and will be replaced. Other installers remain unchanged.')}</p>}
             {assetTargetRelease && assetVersionIssue(assetMode === 'upload' ? selectedFile?.name ?? '' : linkFileName,assetTargetRelease.version) && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-800">{assetVersionIssue(assetMode === 'upload' ? selectedFile?.name ?? '' : linkFileName,assetTargetRelease.version)}</p>}
 
             {uploadProgress && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-1.5">
                 <div className="flex items-center justify-between text-[11px] font-semibold text-blue-800">
-                  <span>正在上传并计算 SHA-256… ({uploadProgress.percent}%)</span>
+                  <span>{tr(`正在上传并计算 SHA-256… (${uploadProgress.percent}%)`, `Uploading & computing SHA-256… (${uploadProgress.percent}%)`)}</span>
                   <span>
                     {formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)}
                   </span>
@@ -1462,7 +1490,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
 
             {assetError && (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                {assetError}
+                {td(assetError)}
               </p>
             )}
 
@@ -1473,7 +1501,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 onClick={() => setAssetDialogOpen(false)}
                 className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 font-medium text-slate-700 cursor-pointer disabled:opacity-40"
               >
-                取消
+                {tr('取消', 'Cancel')}
               </button>
               <button
                 type="submit"
@@ -1481,7 +1509,7 @@ export const ReleaseCenterView: React.FC<ReleaseCenterViewProps> = ({
                 className="rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-5 py-2 font-semibold text-white flex items-center gap-1.5 cursor-pointer"
               >
                 {assetMode === 'upload' ? <Upload size={14} /> : <ExternalLink size={14} />}
-                <span>{assetSaving ? '正在处理…' : assetMode === 'upload' ? '开始上传并保存' : '保存下载链接'}</span>
+                <span>{assetSaving ? tr('正在处理…', 'Processing…') : assetMode === 'upload' ? tr('开始上传并保存', 'Upload & Save') : tr('保存下载链接', 'Save Download Link')}</span>
               </button>
             </div>
           </form>

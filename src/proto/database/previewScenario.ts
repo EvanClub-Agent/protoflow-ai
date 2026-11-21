@@ -1,5 +1,6 @@
-import type { DBTableSchema } from '../../store/useProtoStore';
+import type { DBColumnSchema, DBTableSchema } from '../../store/useProtoStore';
 import type { Row } from '../runtime/mock';
+import { sqlEnumValues } from './enumContract';
 import { diagramRelations } from './relations';
 import { resolveUniqueConstraints } from './uniqueConstraints';
 import { previewRelationIssues } from './previewRelations';
@@ -10,7 +11,10 @@ const scalar = (v: unknown) => v === null || typeof v === 'string' || typeof v =
 
 const integerType = /^(?:(?:TINY|SMALL|MEDIUM|BIG)?INT|INTEGER)\b/i;
 const decimalType = /^(?:DECIMAL|NUMERIC|FLOAT|DOUBLE|REAL)\b/i;
-function validColumnValue(type: string, value: unknown) {
+function validColumnValue(col: DBColumnSchema, value: unknown) {
+  const type = col.dataType;
+  const allowed = sqlEnumValues(col);
+  if (allowed !== null) return allowed.some(option => option === value);
   if (integerType.test(type)) return typeof value === 'number' ? Number.isSafeInteger(value) : typeof value === 'string' && /^-?\d+$/.test(value);
   if (decimalType.test(type)) return typeof value === 'number' || typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value);
   if (/^(?:(?:VAR)?CHAR|TEXT|ENUM|DATE|TIMESTAMP)\b/i.test(type)) return typeof value === 'string';
@@ -52,7 +56,7 @@ export function preparePreviewScenario(tables: DBTableSchema[], existing: Datase
         const value = row[col.name];
         if (value === null || value === undefined) {
           if (!col.nullable || col.isPrimaryKey) throw new Error(`演示记录 ${row.id} 缺少必填字段 ${table.tableName}.${col.name}`);
-        } else if (!validColumnValue(col.dataType, value)) {
+        } else if (!validColumnValue(col, value)) {
           throw new Error(`演示记录 ${row.id} 的 ${table.tableName}.${col.name} 与类型 ${col.dataType} 不一致`);
         }
       }

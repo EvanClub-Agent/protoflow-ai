@@ -1,3 +1,4 @@
+import { tr } from '../i18n/runtime';
 import { columnDefaultSql } from '../proto/database/columnDefault';
 import { diagramRelations, type DiagramRelation } from '../proto/database/relations';
 import { resolveUniqueConstraints, sqlIdentifier, uniqueConstraintSql } from '../proto/database/uniqueConstraints';
@@ -115,7 +116,12 @@ export function resolveScopedRelations(
     for (const fk of declared.relations) {
       const parent = byId.get(fk.fromTableId)!;
       if (!uniqueNames.get(parent.id)!.has(fk.fromColumnName)) {
-        issues.push(`${child.tableName}.${fk.toColumnName}：外键引用 ${parent.tableName}(${fk.fromColumnName}) 的目标列缺少单列主键或 UNIQUE 约束，已跳过外键 DDL`);
+        issues.push(
+          tr(
+            `${child.tableName}.${fk.toColumnName}：外键引用 ${parent.tableName}(${fk.fromColumnName}) 的目标列缺少单列主键或 UNIQUE 约束，已跳过外键 DDL`,
+            `${child.tableName}.${fk.toColumnName}: target column of foreign key reference ${parent.tableName}(${fk.fromColumnName}) lacks a single-column PRIMARY KEY or UNIQUE constraint; skipped foreign key DDL`
+          )
+        );
         continue;
       }
       if (includeDependencies) included.add(parent.id);
@@ -161,10 +167,16 @@ export function renderDatabaseDdl(graph: ReturnType<typeof resolveScopedRelation
 
     const pending = tbl.modeling?.pendingRules?.length;
     const boundary = pending
-      ? `-- 注意：有 ${pending} 项业务规则需在应用服务层或触发器实现\n`
+      ? tr(
+          `-- 注意：有 ${pending} 项业务规则需在应用服务层或触发器实现\n`,
+          `-- Note: ${pending} business rule(s) must be enforced in the application service layer or triggers\n`
+        )
       : '';
     const sharedMenus = tbl.sharedByMenus.map((m) => m.menuTitle).join(' | ');
-    const header = `${boundary}-- 表: ${tbl.tableName} (${singleLine(tbl.cnName)})${sharedMenus ? `\n-- 共表菜单: ${singleLine(sharedMenus)}` : ''}`;
+    const header = tr(
+      `${boundary}-- 表: ${tbl.tableName} (${singleLine(tbl.cnName)})${sharedMenus ? `\n-- 共表菜单: ${singleLine(sharedMenus)}` : ''}`,
+      `${boundary}-- Table: ${tbl.tableName} (${singleLine(tbl.cnName)})${sharedMenus ? `\n-- Shared menus: ${singleLine(sharedMenus)}` : ''}`
+    );
     const tableSuffix =
       dialect === 'mysql' && tbl.cnName.trim()
         ? ` COMMENT='${escapeMysqlComment(`${tbl.cnName}${tbl.description ? ` - ${tbl.description}` : ''}`)}'`
@@ -199,7 +211,9 @@ export function renderDatabaseDdl(graph: ReturnType<typeof resolveScopedRelation
     );
   }
   for (const issue of graph.issues) {
-    blocks.push(`-- 待修复的外键引用：${singleLine(issue)}`);
+    blocks.push(
+      tr(`-- 待修复的外键引用：${singleLine(issue)}`, `-- Unresolved foreign key reference: ${singleLine(issue)}`)
+    );
   }
 
   return blocks.join('\n\n');

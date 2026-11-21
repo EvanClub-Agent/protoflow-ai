@@ -174,7 +174,7 @@ export function prepareTableRows(records: Row[], props: Record<string, unknown>,
     const difference = typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'zh-CN');
     return sort.asc ? difference : -difference;
   }) : records;
-  const conditions = Object.entries(query).filter(([, v]) => v !== '' && v != null && v !== '全部' && !Array.isArray(v));
+  const conditions = Object.entries(query).filter(([, v]) => v !== '' && v != null && !Array.isArray(v));
   const matches = (r: Row) => conditions.every(([k, v]) => k === '__keyword'
     ? Object.values(r).some(x => String(x ?? '').includes(String(v)))
     : String(r[k] ?? '').includes(String(v)));

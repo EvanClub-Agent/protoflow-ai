@@ -1,4 +1,5 @@
 import { compactRpReview, expandRpReview } from '../proto/axure/reviewSource';
+import { isEnLocale, tr } from '../i18n/runtime';
 import { checkRpTableExtension } from '../proto/axure/schema';
 import { axureCatalog, axureScopePages, axureCopyId, type AxureScope } from '../proto/axure/task';
 import { generationEvidenceIssues, pageGenerationOrder, reviewPageDependencies } from './projectDependencies';
@@ -463,7 +464,7 @@ const instructions = () => `${buildProtoFlowHermesSkillMarkdown(useProtoStore.ge
 RP 迁移先用 protoflow_inspect_axure_project 在指定页面、目录或全项目按 nextOffset 盘点。结合项目约定区分列表、录入、查询、主单和明细；逐个核对实体及行粒度再选择共享表，同名表头不能证明字段归属。只读分析只给出来源、候选结构、疑问和分批建议。转换任务先用 protoflow_inspect_page（view 为 axure）按页和 pfId 读取证据，按 nextOffset 翻页并核对表头、grid.columnActions 行动作一致性、nearbyLabel 邻近标签、当前及隐藏状态和 importNotes 转换限制。先用 protoflow_get_project 核对表目录，字段依据明确时用 protoflow_upsert_db_table 或 protoflow_upsert_db_column 暂存结构；不能从标题、示例值或字段同名推断主外键、唯一性和必填性，且暂存表结构不等于已完成页面转换（参考工具返回的 rpMigrationProgress）。RP 优化副本默认以标准流式布局为目标：优先调用 protoflow_reshape_axure_page（传入源页 rp-page-... ID，由宿主生成副本 ID 与来源标记；后续可对副本增量调用 protoflow_edit_page_block），将平铺的查询标签/输入框/按钮合成为 QueryForm（target 指向 Table 的 pfId），将业务表格转为绑定真实表的 Table；仅在列动作逐行一致（grid.columnActions 中 consistentAcrossDataRows 为 true 且 requiresConfirmation 为 false，如每行一致的“查看”跳转）时迁入 Table.rowActions（跨页查看使用 navigate(目标页ID, "row") 或行内 openDrawer/openModal 以携带当前行），单行样例动作（如某一行才有的“删除”）严禁直接推广到全表 rowActions。严禁单凭外观静默删掉侧栏 OutlineTree、自定义分页、隐藏 DynamicPanel、未支持占位元件或条件点击警告；所有源页面核心区块必须在 coverage 中逐项交代为 converted（已转换）、retained（保留原控件）或 pending（待确认及原因）。若仅需在原自由画布内做单点替换，仍可使用 protoflow_bind_axure_table 或 protoflow_optimize_axure_block。用户核对候选修改后由宿主应用。
 需要用户决定时可用 protoflow_ask_questions 提供真实选项并等待回答。需要持续生成一整套页面时，可用 protoflow_set_project_plan 提交可执行方案；对已有方案的局部调整可用 protoflow_revise_project_page。合并并移除旧菜单须用明确的 merge 描述来源、目标弹层和展示方式，不能靠全量方案省略页面来暗示删除。先查明原有功能和关联。
 对具体工作可以直接组合工具：例如调整多个页面、移动已有菜单、创建目录、修改表或便签；不需要先建整套方案。工程修改暂存在同一份候选快照，宿主展示变更供用户确认。只读回答不产生修改。不要声称未确认的操作已经执行。使用当前会话注册的工具名（可能带 MCP 前缀），不要依赖历史消息中的可用工具列表。
-只有宿主明确发起已确认方案的单页生成时，才以本轮指定 pageId 为修改范围。读取 dependencyReview、上下游页面和真实来源键。单选引用字段用 returnSelection(表格pfId,显示字段,值字段)，来源行弹层的 Table.sourceForeignKey 指向当前明细表已声明的外键。新建关系后核查 databaseDesignReview 的 affectedRules，按当前来源更新已过时的结构说明，保留待接服务或待业务验证部分。完成可用的组件、交互与弹层并检查结果。`;
+只有宿主明确发起已确认方案的单页生成时，才以本轮指定 pageId 为修改范围。读取 dependencyReview、上下游页面和真实来源键。单选引用字段用 returnSelection(表格pfId,显示字段,值字段)，来源行弹层的 Table.sourceForeignKey 指向当前明细表已声明的外键。新建关系后核查 databaseDesignReview 的 affectedRules，按当前来源更新已过时的结构说明，保留待接服务或待业务验证部分。完成可用的组件、交互与弹层并检查结果。${isEnLocale() ? '\nCurrent UI locale is English (en-US). Unless the user explicitly requests Chinese, write all chat replies, clarifying questions/options in protoflow_ask_questions, plan summaries/folder & page titles/requirements/acceptanceCases in protoflow_set_project_plan or protoflow_revise_project_page, project agreements, database cnName/comments, sticky notes, and generated page UI copy in idiomatic English.' : ''}`;
 
 export function projectPlanProgress() {
   const plan = useProtoStore.getState().projectPlan, sources = usePageStore.getState().pageSources;
@@ -471,28 +472,28 @@ export function projectPlanProgress() {
 }
 function assertProject(projectId: string) {
   const s = useProtoStore.getState();
-  if (s.isProjectClosed || s.currentProjectMeta.projectId !== projectId) throw new Error('项目已切换，任务已停止');
+  if (s.isProjectClosed || s.currentProjectMeta.projectId !== projectId) throw new Error(tr('项目已切换，任务已停止', 'Project switched; task stopped'));
 }
 async function task(projectId: string, work: (scope: HermesProjectConversation, check: () => void) => Promise<void>) {
   assertProject(projectId);
-  if (pendingProjectAiTasks.has(projectId) || useHermesStore.getState().runningProjects[projectId]) throw new Error('当前项目已有 AI 任务');
+  if (pendingProjectAiTasks.has(projectId) || useHermesStore.getState().runningProjects[projectId]) throw new Error(tr('当前项目已有 AI 任务', 'An AI task is already running for this project'));
   const index = useAiChatStore.getState().loadProjectIndex(projectId);
   const scope = projectChatScope(projectId, index.activeId), key = conversationKey(scope);
   const cancellation = useHermesStore.getState().cancelGeneration[key];
-  const check = () => { assertProject(projectId); if (useHermesStore.getState().cancelGeneration[key] !== cancellation) throw new Error('已停止，已完成页面保留，可继续剩余页面'); };
+  const check = () => { assertProject(projectId); if (useHermesStore.getState().cancelGeneration[key] !== cancellation) throw new Error(tr('已停止，已完成页面保留，可继续剩余页面', 'Stopped; completed pages preserved. You can resume the remaining pages.')); };
   pendingProjectAiTasks.add(projectId);
-  useProjectWorkflow.setState(s => ({ running: { ...s.running, [projectId]: true }, runningChat:{ ...s.runningChat, [projectId]:key }, status: { ...s.status, [conversationKey(scope)]: '正在连接 AI…' } }));
+  useProjectWorkflow.setState(s => ({ running: { ...s.running, [projectId]: true }, runningChat:{ ...s.runningChat, [projectId]:key }, status: { ...s.status, [conversationKey(scope)]: tr('正在连接 AI…', 'Connecting to AI…') } }));
   try { await withAiBackgroundTask(scope, () => work(scope, check)); }
   catch (error) {
-    void captureRuntimeError(error,{category:'ai',code:'PROJECT_WORKFLOW_FAILED',stage:'workflow',message:'项目工作流未完成',context:scope});
+    void captureRuntimeError(error,{category:'ai',code:'PROJECT_WORKFLOW_FAILED',stage:'workflow',message:tr('项目工作流未完成', 'Project workflow did not complete'),context:scope});
     useProjectWorkflow.setState(s => ({ status: { ...s.status, [conversationKey(scope)]: error instanceof Error ? error.message : String(error) } })); throw error;
   }
   finally { pendingProjectAiTasks.delete(projectId); useProjectWorkflow.setState(s => ({ running: { ...s.running, [projectId]: false }, runningChat:{ ...s.runningChat, [projectId]:undefined } })); }
 }
 async function loadProjectTools(scope: HermesProjectConversation) {
   const session = await useHermesStore.getState().ensureSession(scope);
-  if (!Array.isArray(session.projectTools)) throw new Error('当前桌面进程仍使用旧版项目工具。请保存项目、完全退出并重新打开 Alex，再在原对话中重试。');
-  if (!['protoflow_get_project_brief','protoflow_search_history','protoflow_upsert_project_agreement','protoflow_ask_questions','protoflow_revise_project_page','protoflow_set_project_plan','protoflow_move_sitemap_item','protoflow_apply_tsx_patch'].every(name => session.projectTools!.includes(name))) throw new Error('Hermes 加载的项目工具不完整，请刷新当前会话后重试。');
+  if (!Array.isArray(session.projectTools)) throw new Error(tr('当前桌面进程仍使用旧版项目工具。请保存项目、完全退出并重新打开 Alex，再在原对话中重试。', 'Current desktop process is still using legacy project tools. Save your project, quit and reopen Alex, then retry in this conversation.'));
+  if (!['protoflow_get_project_brief','protoflow_search_history','protoflow_upsert_project_agreement','protoflow_ask_questions','protoflow_revise_project_page','protoflow_set_project_plan','protoflow_move_sitemap_item','protoflow_apply_tsx_patch'].every(name => session.projectTools!.includes(name))) throw new Error(tr('Hermes 加载的项目工具不完整，请刷新当前会话后重试。', 'Hermes loaded an incomplete set of project tools. Refresh the current session and retry.'));
   return session;
 }
 type WarmPreparation = {
@@ -521,14 +522,14 @@ export function warmProjectSession(scope: HermesProjectConversation) {
   const checkPreparation = () => {
     assertProject(scope.projectId);
     if (getHermesApi() !== api || useHermesStore.getState().status !== 'running' || warmingSessions.get(key) !== entry)
-      throw new Error('AI 连接或会话已变化，请重试');
+      throw new Error(tr('AI 连接或会话已变化，请重试', 'AI connection or session changed; please retry'));
   };
   const prepare = async () => {
     const prepared = await loadProjectTools(scope);
     checkPreparation();
     const skillMarkdown = projectSkillMarkdown(prepared);
     const synced = await api.sync({ ...scope, skillMarkdown });
-    if (!synced.synced) throw new Error('项目指令同步失败');
+    if (!synced.synced) throw new Error(tr('项目指令同步失败', 'Failed to sync project instructions'));
     checkPreparation();
     // Adopt changed instructions now, rather than leaving the rebind on the user's first request.
     const ready = await loadProjectTools(scope);
@@ -638,12 +639,12 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
   const startedAtIso = new Date().toISOString();
   const chat = useAiChatStore.getState(), key = conversationKey(scope);
   const target = phase === 'generating' ? useProtoStore.getState().projectPlan?.pages.find(page => page.pageId === targetPageId) : undefined;
-  if (phase === 'generating' && !target) throw new Error('目标页面不在已确认方案内');
+  if (phase === 'generating' && !target) throw new Error(tr('目标页面不在已确认方案内', 'Target page is not in the approved plan'));
   const priorMessage = phase === 'conversation' ? chat.byConversation[key]?.at(-1) : undefined;
   const priorDraft = priorMessage?.projectChangeReview;
   const priorDecision = priorMessage?.projectReviewDecision;
-  chat.addMessage({ ...scope, role: phase === 'conversation' ? 'user' : 'assistant', text: target ? `开始生成「${target.title}」。` : (originalText ?? prompt), status: 'done', images, mindmaps });
-  const replyId = chat.addMessage({ ...scope, role: 'assistant', text: '正在分析项目…', status: 'pending' });
+  chat.addMessage({ ...scope, role: phase === 'conversation' ? 'user' : 'assistant', text: target ? tr(`开始生成「${target.title}」。`, `Generating "${target.title}"…`) : (originalText ?? prompt), status: 'done', images, mindmaps });
+  const replyId = chat.addMessage({ ...scope, role: 'assistant', text: tr('正在分析项目…', 'Analyzing project…'), status: 'pending' });
   const base = captureProjectPayload(), revision = projectRevision();
   const focus = targetPageId === undefined ? contextFocus : {pageId:targetPageId};
   const brief = projectExecutionBrief(base.stateSnapshot, focus);
@@ -700,7 +701,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
   useHermesStore.setState(s => ({ partial: { ...s.partial, [key]: '' } }));
   const unsubscribe = useHermesStore.subscribe(s => {
     if (activeExecuteStartedAt !== null) {
-      if (firstOutputMs === null && ((s.partial[key] && s.partial[key] !== previous) || (s.progress[key] && s.progress[key] !== previousProgress && s.progress[key] !== 'Hermes 正在处理…'))) {
+      if (firstOutputMs === null && ((s.partial[key] && s.partial[key] !== previous) || (s.progress[key] && s.progress[key] !== previousProgress && s.progress[key] !== 'Hermes 正在处理…' && s.progress[key] !== 'Hermes is working…'))) {
         firstOutputMs = roundMs(nowMs() - activeExecuteStartedAt);
       }
       if (firstTextMs === null && s.partial[key] && s.partial[key] !== previous) {
@@ -720,7 +721,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         const required = ['protoflow_inspect_axure_project','protoflow_inspect_page','protoflow_get_project'];
         if (!readOnly) required.push('protoflow_bind_axure_table','protoflow_optimize_axure_block','protoflow_upsert_db_table','protoflow_upsert_db_column');
         if (!required.every(tool => preparedTools.session.projectTools?.includes(tool)))
-          throw new Error('当前项目会话尚未加载 RP 迁移工具。请保存工程、重启更新后的 Alex，然后重试。');
+          throw new Error(tr('当前项目会话尚未加载 RP 迁移工具。请保存工程、重启更新后的 Alex，然后重试。', 'Current project session has not loaded RP migration tools. Save your project, restart the updated Alex app, and retry.'));
       }
       ensureToolsMs = preparedTools.event.durationMs;
       sessionEvents.push(preparedTools.event);
@@ -736,7 +737,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
     diagnosticStage = 'sync';
     const sync = await getHermesApi().sync({ ...scope, skillMarkdown });
     syncMs = roundMs(nowMs() - syncStartedAt);
-    if (!sync.synced) throw new Error('项目指令同步失败');
+    if (!sync.synced) throw new Error(tr('项目指令同步失败', 'Failed to sync project instructions'));
     check();
     const absorbExecuteMetrics = (
       execMetrics: import('./hermesClient').HermesExecuteMetrics | undefined,
@@ -815,12 +816,12 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
             { ...projectContext(requestedPage), requirementSources },
             latestFootprint,
           );
-          if (!checkResult.ok) throw new Error('项目内容已变化，请基于最新项目重试');
+          if (!checkResult.ok) throw new Error(tr('项目内容已变化，请基于最新项目重试', 'Project content changed; please retry on the latest project'));
         } else if (projectRevision() !== revision) {
-          throw new Error('项目内容已变化，请基于最新项目重试');
+          throw new Error(tr('项目内容已变化，请基于最新项目重试', 'Project content changed; please retry on the latest project'));
         }
       } else if (projectRevision() !== revision) {
-        throw new Error('项目内容已变化，请基于最新项目重试');
+        throw new Error(tr('项目内容已变化，请基于最新项目重试', 'Project content changed; please retry on the latest project'));
       }
       runModelInvocations += 1;
       diagnosticContext = {...diagnosticContext,attempt:runModelInvocations-1,runId:undefined,checks:undefined,boundTableIds:undefined};
@@ -970,10 +971,10 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         result.taskKey !== expectedTaskKey ||
         (phase !== 'generating' && registeredRun.execSessionId !== session.sessionId)
       ) {
-        throw new Error('AI 返回了其他会话或未登记轮次的结果');
+        throw new Error(tr('AI 返回了其他会话或未登记轮次的结果', 'AI returned output from another session or unregistered turn'));
       }
       if (sync.skillDigest && result.skillDigest && result.skillDigest !== sync.skillDigest) {
-        throw new Error('项目会话尚未加载最新指令，请刷新当前会话后重试');
+        throw new Error(tr('项目会话尚未加载最新指令，请刷新当前会话后重试', 'Project session has not loaded the latest instructions; refresh the session and retry'));
       }
       if (result.dependencyFootprint?.version === 3) {
         latestFootprint = result.dependencyFootprint;
@@ -995,13 +996,13 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
       : '';
     const durable = `本轮先调用 protoflow_get_project_brief，范围：${JSON.stringify(focus ?? {})}。压缩后或历史细节不确定时再次读取；工具返回的持久项目资料优先于旧草稿。必要时用 protoflow_search_history 检索本会话原文。不要猜测已确认约定。\n当前已确认约定数：${brief.agreements.length}；已保存页面进度：${brief.plan?.progress ? `${brief.plan.progress.generatedPageIds.length}/${brief.plan.progress.total}` : '尚无已确认方案'}。`;
     let result = await runModel(`${durable}\n${taskPrompt}${references}\n用户要求：${prompt}`);
-    if (readOnly && (result.operations.length || result.requirementFindings?.length)) throw new Error('只读分析返回了工程修改，已拒绝应用');
+    if (readOnly && (result.operations.length || result.requirementFindings?.length)) throw new Error(tr('只读分析返回了工程修改，已拒绝应用', 'Read-only analysis returned project edits; rejected'));
     if (rpMigration && !readOnly) {
       const authorized = new Set(axureScopePages(axureCatalog(base.stateSnapshot),rpMigration.scope).map(p=>axureCopyId(p.pageId)));
       for (const op of result.operations) {
         if (op.tool === 'protoflow_apply_tsx_patch' && typeof op.args.pageId === 'string' && authorized.has(op.args.pageId)) continue;
         if (!['protoflow_upsert_db_table','protoflow_upsert_db_column','protoflow_ask_questions'].includes(op.tool))
-          throw new Error('RP 迁移建议包含所选范围以外的修改');
+          throw new Error(tr('RP 迁移建议包含所选范围以外的修改', 'RP migration proposal includes edits outside the selected scope'));
       }
     }
     let activeRequirementFindings: RequirementSubmission[] | undefined = result.requirementFindings;
@@ -1012,14 +1013,14 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         const valStartedAt = nowMs();
         let questions;
         try {
-          if (result.operations.length !== 1) throw new Error('请先提交问题，等待用户回答后再调整方案');
+          if (result.operations.length !== 1) throw new Error(tr('请先提交问题，等待用户回答后再调整方案', 'Submit questions first and wait for user answers before revising the plan'));
           questions = question.args.questions;
           validateProjectQuestions(questions);
-          if (projectRevision() !== revision) throw new Error('项目内容已变化，请基于最新项目重试');
+          if (projectRevision() !== revision) throw new Error(tr('项目内容已变化，请基于最新项目重试', 'Project content changed; please retry on the latest project'));
         } finally {
           hostValidationMs = roundMs(hostValidationMs + (nowMs() - valStartedAt));
         }
-        chat.updateMessage(replyId, { status: 'done', text: result.text.trim() || '请确认下方问题。', projectQuestions: questions,
+        chat.updateMessage(replyId, { status: 'done', text: result.text.trim() || tr('请确认下方问题。', 'Please confirm the questions below.'), projectQuestions: questions,
           ...(rpMigration && {rpQuestionScope:rpMigration.scope}) });
         outcome = 'questions';
         return 'questions';
@@ -1038,20 +1039,20 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
             checkRpTableExtension(base.stateSnapshot.dbTables.find(t=>t.id === table.id),table);
           const existingIssues = new Set(analyzeProject(base.stateSnapshot).issues);
           const introduced = analyzeProject(prepared.next.stateSnapshot).issues.filter(issue => !existingIssues.has(issue));
-          if (introduced.length) throw new Error('本次修改会产生无效的项目关联：' + introduced.slice(0,4).join('；'));
+          if (introduced.length) throw new Error(tr('本次修改会产生无效的项目关联：' + introduced.slice(0,4).join('；'), 'Proposed edits introduce invalid project references: ' + introduced.slice(0,4).join('; ')));
           review = {
             ...(requestedPage && { requestedPage }),
             baseDigest: await revisionDigest(revision),
             operations: await compactRpReview(base.stateSnapshot.pageSources, result.operations, revisionDigest),
             requirementRecords: collectedRecords,
-            items: [...(reviewOnly ? ['保存需求原文与数据库约束的核对结果'] : []), ...describeChanges(base.stateSnapshot, prepared.next.stateSnapshot, result.operations, prepared.mergedSourceId, rpMigration?.scope), ...prepared.databaseRisks.map(risk => `数据模型待复核 · ${risk}`)],
+            items: [...(reviewOnly ? [tr('保存需求原文与数据库约束的核对结果', 'Save requirement source & database constraint verification')] : []), ...describeChanges(base.stateSnapshot, prepared.next.stateSnapshot, result.operations, prepared.mergedSourceId, rpMigration?.scope), ...prepared.databaseRisks.map(risk => tr(`数据模型待复核 · ${risk}`, `Data model review needed · ${risk}`))],
           };
         } finally {
           hostValidationMs = roundMs(hostValidationMs + (nowMs() - valStartedAt));
         }
         check();
-        if (projectRevision() !== revision) throw new Error('讨论期间工程已修改，请基于当前版本重试');
-        chat.updateMessage(replyId, { status:'done', text: result.text.trim() || '请查看本次改动。', viaHermes:true,
+        if (projectRevision() !== revision) throw new Error(tr('讨论期间工程已修改，请基于当前版本重试', 'Project changed during discussion; please retry on the current version'));
+        chat.updateMessage(replyId, { status:'done', text: result.text.trim() || tr('请查看本次改动。', 'Please review the proposed changes.'), viaHermes:true,
           sessionId:session.sessionId, modelId:result.modelId, projectChangeReview:review, requirementAudit:prepared.requirementAudit });
         outcome = 'review';
         return 'review';
@@ -1091,7 +1092,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
                     ))),
             )
           ) {
-            throw new Error('返回操作超出当前页面生成范围');
+            throw new Error(tr('返回操作超出当前页面生成范围', 'Returned operation exceeds the current page generation scope'));
           }
           if (attempt > 0 && result.continuationMerged) {
             candidateOperations = result.operations;
@@ -1117,14 +1118,14 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
           try {
             const prepared = prepareProjectChanges(base, candidateOperations, undefined, undefined, false, records(), requestedPage);
             if (!targetPageId || !prepared.changedPages.includes(targetPageId)) {
-              diagnostic = '本轮未收到目标页面的写入操作';
+              diagnostic = tr('本轮未收到目标页面的写入操作', 'No write operation received for the target page in this turn');
             } else {
               diagnostic = pagePrototypeIssue(prepared.next.stateSnapshot.pageSources[targetPageId]);
               if (!diagnostic) {
-                diagnostic = generationEvidenceIssues(prepared.next.stateSnapshot, [targetPageId]).join('；');
+                diagnostic = generationEvidenceIssues(prepared.next.stateSnapshot, [targetPageId]).join(tr('；', '; '));
               }
               if (!diagnostic && prepared.requirementAudit.conflicts.length) {
-                diagnostic = '需求正反例与表约束冲突：' + prepared.requirementAudit.conflicts.join('；');
+                diagnostic = tr('需求正反例与表约束冲突：' + prepared.requirementAudit.conflicts.join('；'), 'Requirement examples conflict with table constraints: ' + prepared.requirementAudit.conflicts.join('; '));
               }
             }
             if (diagnostic && targetPageId) {
@@ -1159,7 +1160,10 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
               : new Error(
                   prepareFailure
                     ? String(prepareFailure)
-                    : `AI 没有生成有效页面「${target?.title}」：${diagnostic}。可在右侧单独重试此页。${result.text.trim() ? ' AI 回复：' + result.text.trim().slice(0, 400) : ''}`,
+                    : tr(
+                        `AI 没有生成有效页面「${target?.title}」：${diagnostic}。可在右侧单独重试此页。${result.text.trim() ? ' AI 回复：' + result.text.trim().slice(0, 400) : ''}`,
+                        `AI did not generate a valid page "${target?.title}": ${diagnostic}. You can retry this page individually on the right.${result.text.trim() ? ' AI reply: ' + result.text.trim().slice(0, 400) : ''}`,
+                      ),
                 );
           (finalErr as Error & { failureEnvelope?: HermesFailureEnvelope }).failureEnvelope = validationEnvelope;
           throw finalErr;
@@ -1193,9 +1197,9 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
         );
       }
     }
-    if (!result.text.trim() && !result.operations.length) throw new Error('AI 未返回回复或修改');
+    if (!result.text.trim() && !result.operations.length) throw new Error(tr('AI 未返回回复或修改', 'AI returned neither a reply nor project edits'));
     const merge = phase === 'generating' && base.stateSnapshot.projectPlan?.revision?.merge;
-    let summary = result.text.trim() || '已保存项目修改';
+    let summary = result.text.trim() || tr('已保存项目修改', 'Saved project changes');
     let requirementAudit;
     const applyStartedAt = nowMs();
     try {
@@ -1216,8 +1220,8 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
             : undefined,
         );
         requirementAudit = applied.requirementAudit;
-        if (applied.databaseRisks.length) summary += '\n\n数据模型待复核\n' + applied.databaseRisks.join('\n');
-      } else if (projectRevision() !== revision) throw new Error('讨论期间项目已变化，请基于最新项目重试');
+        if (applied.databaseRisks.length) summary += '\n\n' + tr('数据模型待复核', 'Data Model Review Needed') + '\n' + applied.databaseRisks.join('\n');
+      } else if (projectRevision() !== revision) throw new Error(tr('讨论期间项目已变化，请基于最新项目重试', 'Project changed during discussion; please retry on the latest project'));
     } finally {
       applyChangesMs = roundMs(applyChangesMs + (nowMs() - applyStartedAt));
     }
@@ -1241,7 +1245,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
   } catch (error) {
     errorMessage = error instanceof Error ? error.message : String(error);
     void captureRuntimeError(error,{category:'ai',code:diagnosticStage==='validation'?'AI_GENERATION_REJECTED':'AI_TURN_FAILED',stage:diagnosticStage,
-      message:'项目 AI 任务未完成',context:{...diagnosticContext,durationMs:roundMs(nowMs()-turnStartedAt),toolCallCount,failedToolCallCount}})
+      message:tr('项目 AI 任务未完成', 'Project AI task did not complete'),context:{...diagnosticContext,durationMs:roundMs(nowMs()-turnStartedAt),toolCallCount,failedToolCallCount}})
       .then(id=>{if(id)chat.updateMessage(replyId,{diagnosticId:id});});
     chat.updateMessage(replyId, { status: 'error', text: errorMessage }); throw error;
   } finally {
@@ -1312,7 +1316,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
   }
 }
 export async function discussProject(projectId: string, prompt: string, files: ChatImageDraft[] = [], mindmapIds: string[] = [], contextFocus?: {pageId?:string;folderId?:string}, requestedPage?: RequestedPage, rpMigration?:{scope:AxureScope; readOnly:boolean}) {
-  if (!prompt.trim() && !files.length && !mindmapIds.length) throw new Error('请输入项目需求，或添加脑图、参考图片');
+  if (!prompt.trim() && !files.length && !mindmapIds.length) throw new Error(tr('请输入项目需求，或添加脑图、参考图片', 'Enter project requirements, or attach a mindmap or reference images'));
   return task(projectId, async (scope, check) => {
     const existingPlan = useProtoStore.getState().projectPlan;
     const latest = useAiChatStore.getState().byConversation[conversationKey(scope)]?.at(-1);
@@ -1329,10 +1333,12 @@ export async function discussProject(projectId: string, prompt: string, files: C
       useProtoStore.setState({ projectPlan: { ...old, discussionPending:true } });
       await flushProjectChanges(); check();
     }
-    const defaultPrompt = mindmaps ? '请根据所选脑图和随附资料，规划项目的目录、菜单和页面原型，给出生成方案。' : '请结合当前项目分析这些参考图片。';
+    const defaultPrompt = mindmaps
+      ? tr('请根据所选脑图和随附资料，规划项目的目录、菜单和页面原型，给出生成方案。', 'Based on the selected mindmaps and attached materials, plan the project folders, menus, and page prototypes and propose a generation plan.')
+      : tr('请结合当前项目分析这些参考图片。', 'Analyze these reference images in the context of the current project.');
     const outcome = await turn(scope, prompt.trim() || defaultPrompt, 'conversation', check, { images, mindmaps, originalText:prompt, contextFocus, requestedPage, rpMigration });
-    const message = outcome === 'questions' ? '等待你回答问题' : outcome === 'review' ? '已准备修改，等待你查看并应用。'
-      : outcome === 'answer' ? '本轮没有提交工程修改。' : '已收到新方案，请确认生成范围。';
+    const message = outcome === 'questions' ? tr('等待你回答问题', 'Waiting for your answers') : outcome === 'review' ? tr('已准备修改，等待你查看并应用。', 'Changes prepared; waiting for your review.')
+      : outcome === 'answer' ? tr('本轮没有提交工程修改。', 'No project changes submitted in this turn.') : tr('已收到新方案，请确认生成范围。', 'New plan received; please confirm the generation scope.');
     useProjectWorkflow.setState(s => ({ status: { ...s.status, [conversationKey(scope)]: message } }));
   });
 }
@@ -1342,7 +1348,7 @@ export async function resolveProjectReview(projectId: string, messageId: string,
     const chat = useAiChatStore.getState(), key = conversationKey(scope);
     const latest = () => useAiChatStore.getState().byConversation[key]?.at(-1);
     const m = latest(), review = m?.projectChangeReview;
-    if (!m || m.id !== messageId || !review) throw new Error('该修改建议已被新的对话取代');
+    if (!m || m.id !== messageId || !review) throw new Error(tr('该修改建议已被新的对话取代', 'This change proposal has been superseded by a newer message'));
     const generate = accept && includesPlanAndSchema(review.operations);
     const inheritedEvents: ProjectSessionSetupEvent[] = [];
     if (accept) {
@@ -1352,20 +1358,20 @@ export async function resolveProjectReview(projectId: string, messageId: string,
         check();
       }
       const revision = projectRevision(), base = captureProjectPayload();
-      if (await revisionDigest(revision) !== review.baseDigest) throw new Error('提出修改后工程已变化，请让 AI 按当前工程重新调整。');
+      if (await revisionDigest(revision) !== review.baseDigest) throw new Error(tr('提出修改后工程已变化，请让 AI 按当前工程重新调整。', 'Project changed after this proposal was created; ask AI to revise based on the current project.'));
       check();
       const operations = await expandRpReview(base.stateSnapshot.pageSources,review.operations,revisionDigest);
       check();
-      if (latest()?.id !== messageId) throw new Error('该修改建议已被新的对话取代');
+      if (latest()?.id !== messageId) throw new Error(tr('该修改建议已被新的对话取代', 'This change proposal has been superseded by a newer message'));
       applyProjectChanges(base, revision, operations, undefined, messageId, undefined, true, review.requirementRecords, review.requestedPage);
     }
     const acceptedPlan = generate ? useProtoStore.getState().projectPlan : null;
-    const message = generate ? '已确认方案，目录、菜单和数据表已就绪。' : accept ? '已应用本次修改。' : '已放弃本次修改。';
+    const message = generate ? tr('已确认方案，目录、菜单和数据表已就绪。', 'Plan confirmed; folders, menus, and tables are ready.') : accept ? tr('已应用本次修改。', 'Changes applied.') : tr('已放弃本次修改。', 'Changes discarded.');
     chat.updateMessage(m.id, {projectChangeReview:undefined, projectReviewDecision:accept ? 'applied' : 'discarded', text:m.text + '\n\n' + message, ...(accept ? {changeId:messageId, changedDoc:true} : {})});
     await flushProjectChanges(); check();
     useProjectWorkflow.setState(s => ({status:{...s.status,[conversationKey(scope)]:message}}));
     if (generate) {
-      if (useProtoStore.getState().projectPlan !== acceptedPlan) throw new Error('方案已变化，请重新确认生成范围');
+      if (useProtoStore.getState().projectPlan !== acceptedPlan) throw new Error(tr('方案已变化，请重新确认生成范围', 'Plan changed; please reconfirm the generation scope'));
       await generatePlanPages(scope, check, undefined, inheritedEvents);
     }
   });
@@ -1374,12 +1380,12 @@ export async function resumePriorPlan(projectId: string) {
   return task(projectId, async (scope, check) => {
     const plan = useProtoStore.getState().projectPlan;
     const last = useAiChatStore.getState().byConversation[conversationKey(scope)]?.at(-1);
-    if (!plan?.discussionPending || last?.projectChangeReview) throw new Error('请先处理当前建议');
+    if (!plan?.discussionPending || last?.projectChangeReview) throw new Error(tr('请先处理当前建议', 'Please resolve the current proposal first'));
     const {discussionPending, ...prior} = plan;
     useProtoStore.setState({projectPlan:prior});
-    useAiChatStore.getState().addMessage({...scope,role:'user',status:'done',text:'沿用原方案。'});
+    useAiChatStore.getState().addMessage({...scope,role:'user',status:'done',text:tr('沿用原方案。', 'Keep original plan.')});
     await flushProjectChanges(); check();
-    useProjectWorkflow.setState(s => ({status:{...s.status,[conversationKey(scope)]:'已恢复原方案。'}}));
+    useProjectWorkflow.setState(s => ({status:{...s.status,[conversationKey(scope)]:tr('已恢复原方案。', 'Original plan restored.')}}));
   });
 }
 export async function generateProject(
@@ -1404,14 +1410,14 @@ async function generatePlanPages(
   const { projectId } = scope;
   const key = conversationKey(scope);
   const plan = useProtoStore.getState().projectPlan;
-  if (!plan) throw new Error('请先通过需求对话形成项目方案');
+  if (!plan) throw new Error(tr('请先通过需求对话形成项目方案', 'Create a project plan via project chat first'));
   validateProjectPlan(plan);
-  if (plan.discussionPending) throw new Error('正在讨论新的要求，原方案已暂停。请先确认新方案或明确沿用原方案。');
-  if (onlyPageId !== undefined && !plan.approved) throw new Error('请先确认方案');
-  if (onlyPageId !== undefined && plan.revision && onlyPageId !== plan.revision.pageId) throw new Error('此页不在本轮调整范围');
+  if (plan.discussionPending) throw new Error(tr('正在讨论新的要求，原方案已暂停。请先确认新方案或明确沿用原方案。', 'New requirements are under discussion and the original plan is paused. Confirm the new plan or restore the original plan first.'));
+  if (onlyPageId !== undefined && !plan.approved) throw new Error(tr('请先确认方案', 'Please confirm the plan first'));
+  if (onlyPageId !== undefined && plan.revision && onlyPageId !== plan.revision.pageId) throw new Error(tr('此页不在本轮调整范围', 'This page is outside the current revision scope'));
   const targetId = onlyPageId ?? plan.revision?.pageId;
   const initialWorkPages = targetId === undefined ? pageGenerationOrder(plan.pages, projectPlanProgress()) : plan.pages.filter(page => page.pageId === targetId);
-  if (!initialWorkPages.length) throw new Error('待生成页面已不在方案中');
+  if (!initialWorkPages.length) throw new Error(tr('待生成页面已不在方案中', 'Pending pages are no longer in the plan'));
   const preflightEvents: ProjectSessionSetupEvent[] = [...inheritedEvents];
   let preGenerationSetupMs = roundMs(preflightEvents.reduce((sum, ev) => sum + ev.durationMs, 0));
   let preGenerationApplyMs = 0;
@@ -1433,9 +1439,9 @@ async function generatePlanPages(
       throw preflightErr;
     }
     check();
-    if (useProtoStore.getState().projectPlan !== plan) throw new Error('方案已变化，请重新确认');
+    if (useProtoStore.getState().projectPlan !== plan) throw new Error(tr('方案已变化，请重新确认', 'Plan changed; please reconfirm'));
     const workPages = targetId === undefined ? pageGenerationOrder(plan.pages, projectPlanProgress()) : plan.pages.filter(page => page.pageId === targetId);
-    if (!workPages.length) throw new Error('待生成页面已不在方案中');
+    if (!workPages.length) throw new Error(tr('待生成页面已不在方案中', 'Pending pages are no longer in the plan'));
     plannedPageCount = workPages.length;
     const retainedGeneratedPageIds = projectPlanProgress();
     const base = captureProjectPayload(), revision = projectRevision();
@@ -1445,7 +1451,7 @@ async function generatePlanPages(
       assertProject(projectId);
       const latest = useProtoStore.getState().projectPlan;
       if (!latest?.approved || latest.discussionPending || JSON.stringify({ summary: latest.summary, folders: latest.folders, pages: latest.pages, revision: latest.revision }) !== planIdentity) {
-        throw new Error('生成期间方案已变化，请重新确认方案');
+        throw new Error(tr('生成期间方案已变化，请重新确认方案', 'Plan changed during generation; please reconfirm the plan'));
       }
     };
     const checkPlan = () => {
@@ -1510,7 +1516,7 @@ async function generatePlanPages(
         }
         continue;
       }
-      useProjectWorkflow.setState(s => ({ status: { ...s.status, [key]: `正在生成 ${page.title}（${workPages.indexOf(page) + 1}/${workPages.length}）` } }));
+      useProjectWorkflow.setState(s => ({ status: { ...s.status, [key]: tr(`正在生成 ${page.title}（${workPages.indexOf(page) + 1}/${workPages.length}）`, `Generating ${page.title} (${workPages.indexOf(page) + 1}/${workPages.length})`) } }));
       const shouldRestartThisPage =
         restartFromProject &&
         (onlyPageId !== undefined || restartPageId === undefined || restartPageId === page.pageId);
@@ -1519,8 +1525,8 @@ async function generatePlanPages(
       const diagnostic =
         failure?.pageId === page.pageId
           ? shouldRestartThisPage && failureNeedsArchiveRestart(failure)
-            ? '\n（上轮中断草稿已归档，未写入工程；请直接读取当前工程状态完整生成此页。）'
-            : `\n上次此页未提交，宿主诊断：${failure.diagnostic}`
+            ? tr('\n（上轮中断草稿已归档，未写入工程；请直接读取当前工程状态完整生成此页。）', '\n(Interrupted draft from the previous run was archived without modifying the project; read the current project state and generate this page completely.)')
+            : tr(`\n上次此页未提交，宿主诊断：${failure.diagnostic}`, `\nPrevious attempt for this page was not committed. Host diagnostic: ${failure.diagnostic}`)
           : '';
       const turnInheritedEvents = pendingPreflightEvents;
       pendingPreflightEvents = undefined;
@@ -1542,7 +1548,7 @@ async function generatePlanPages(
         const needsArchiveRestart = Boolean(
           envelope?.candidateStatus === 'uncertain' ||
             (envelope?.code === 'DRAFT_RECOVERY_CONFLICT' &&
-              !/登录账号|原登录账号|其他账号或会话/.test(errText)) ||
+              !/登录账号|原登录账号|其他账号或会话|signed-in account|original account|another account or session/i.test(errText)) ||
             failureDiagnosticNeedsArchiveRestart(errText),
         );
         let cancelled = false;
@@ -1579,7 +1585,7 @@ async function generatePlanPages(
         const preservedPriorNeedsArchive =
           cancelled &&
           !shouldRestartThisPage &&
-          errText === '已停止，已完成页面保留，可继续剩余页面' &&
+          (errText === '已停止，已完成页面保留，可继续剩余页面' || errText === 'Stopped; completed pages preserved. You can resume the remaining pages.') &&
           failure?.pageId === page.pageId &&
           failureNeedsArchiveRestart(failure);
         const effectiveNeedsArchive = needsArchiveRestart || preservedPriorNeedsArchive;
@@ -1599,12 +1605,16 @@ async function generatePlanPages(
       if (workPages.length === 1) {
         throw firstFailed.error;
       }
-      const failedNames = failedValidationPages.map(item => `「${item.title}」`).join('、');
-      const skippedNames = skippedDependentPages.map(item => `「${item.title}」`).join('、');
-      const summaryStatus =
+      const failedNames = failedValidationPages.map(item => tr(`「${item.title}」`, `"${item.title}"`)).join(tr('、', ', '));
+      const skippedNames = skippedDependentPages.map(item => tr(`「${item.title}」`, `"${item.title}"`)).join(tr('、', ', '));
+      const summaryStatus = tr(
         `已完成 ${completedPageCount} 页；页面验收未通过：${failedNames}（候选草稿已保留，可单独点击“继续此页”恢复）` +
-        (skippedDependentPages.length > 0 ? `；已跳过下游依赖页：${skippedNames}` : '') +
-        `。首个问题：${firstFailed.diagnostic}`;
+          (skippedDependentPages.length > 0 ? `；已跳过下游依赖页：${skippedNames}` : '') +
+          `。首个问题：${firstFailed.diagnostic}`,
+        `Completed ${completedPageCount} page(s); validation failed on: ${failedNames} (candidate draft preserved; click "Resume page" to continue)` +
+          (skippedDependentPages.length > 0 ? `; skipped downstream dependent pages: ${skippedNames}` : '') +
+          `. First issue: ${firstFailed.diagnostic}`,
+      );
       useProjectWorkflow.setState(s => ({ status: { ...s.status, [key]: summaryStatus } }));
       const batchErr = new Error(summaryStatus, {
         cause: firstFailed.error instanceof Error ? firstFailed.error : undefined,
@@ -1622,18 +1632,21 @@ async function generatePlanPages(
     let status = '';
     try {
       const newIssues = analyzeProject(captureProjectPayload().stateSnapshot).issues.filter(issue => !previousIssues.has(issue));
-      if (newIssues.length) throw new Error(`页面已保存，但项目关联检查发现问题：${newIssues.slice(0, 5).join('；')}。请通过项目对话调整方案后修复。`);
+      if (newIssues.length) throw new Error(tr(`页面已保存，但项目关联检查发现问题：${newIssues.slice(0, 5).join('；')}。请通过项目对话调整方案后修复。`, `Pages saved, but project reference check found issues: ${newIssues.slice(0, 5).join('; ')}. Adjust the plan via project chat to fix.`));
       const canvases = publishablePages();
       const current = useProtoStore.getState().activePageId;
       const entry = canvases.find(page => page.pageId === current) ?? canvases[0];
-      if (!entry) throw new Error('没有可生成发布预览的页面');
+      if (!entry) throw new Error(tr('没有可生成发布预览的页面', 'No publishable pages available for preview'));
       let snapshot;
       try { snapshot = createPublishedSnapshot(entry.pageId); }
-      catch (error) { throw new Error(`页面已保存，发布预检发现问题：${error instanceof Error ? error.message : String(error)}`); }
+      catch (error) { throw new Error(tr(`页面已保存，发布预检发现问题：${error instanceof Error ? error.message : String(error)}`, `Pages saved, but publish preflight found issues: ${error instanceof Error ? error.message : String(error)}`)); }
       const dataIssues = previewRelationIssues(snapshot.tables, snapshot.tableRows);
       const review = reviewPageDependencies(captureProjectPayload().stateSnapshot);
       const gaps = review.links.filter(link => link.status !== '已核对结构与页面绑定').length;
-      status = `已生成发布快照（${snapshot.pages.length} 页）。待核对数据依赖 ${gaps} 项，预览外键异常 ${dataIssues.length} 项，使用内置示例的图表 ${review.sampleCharts.length} 个，业务场景待验收 ${review.cases.length} 项。`;
+      status = tr(
+        `已生成发布快照（${snapshot.pages.length} 页）。待核对数据依赖 ${gaps} 项，预览外键异常 ${dataIssues.length} 项，使用内置示例的图表 ${review.sampleCharts.length} 个，业务场景待验收 ${review.cases.length} 项。`,
+        `Generated published snapshot (${snapshot.pages.length} page(s)). Unverified data dependencies: ${gaps}, preview FK issues: ${dataIssues.length}, sample-data charts: ${review.sampleCharts.length}, business scenarios pending acceptance: ${review.cases.length}.`,
+      );
     } finally {
       postGenerationValidationMs = roundMs(nowMs() - postValStartedAt);
     }

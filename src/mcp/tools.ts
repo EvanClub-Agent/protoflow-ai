@@ -1,3 +1,4 @@
+import { tr } from '../i18n/runtime';
 import { verifiedAxureSourceId } from '../proto/axure/task';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
@@ -470,7 +471,10 @@ export function executeSpecTool(
 
       if (filterNames && filterNames.size > 0 && selectedTables.length === 0) {
         throw new Error(
-          `未找到匹配的数据表（请求：${Array.from(filterNames).join(', ')}；工程现有表：${s.dbTables.map((t) => t.tableName).join(', ') || '无'}）`
+          tr(
+            `未找到匹配的数据表（请求：${Array.from(filterNames).join(', ')}；工程现有表：${s.dbTables.map((t) => t.tableName).join(', ') || '无'}）`,
+            `No matching database tables found (requested: ${Array.from(filterNames).join(', ')}; available: ${s.dbTables.map((t) => t.tableName).join(', ') || 'none'})`
+          )
         );
       }
 
@@ -528,10 +532,13 @@ export function executeSpecTool(
       }));
 
       const legacyWarning = !workspace.uniqueConstraintsComplete
-        ? `当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），未保存字段级 isUnique 与表级 uniqueConstraints 唯一约束元数据；请重新发布为 V5+ 格式或核对原工程后再执行建表。`
+        ? tr(
+            `当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），未保存字段级 isUnique 与表级 uniqueConstraints 唯一约束元数据；请重新发布为 V5+ 格式或核对原工程后再执行建表。`,
+            `This online share uses legacy publication format (V${workspace.publishedFormatVersion ?? 'legacy'}) without column-level isUnique or table-level uniqueConstraints metadata; republish in V5+ format or verify the source project before running DDL.`
+          )
         : null;
       const rawDdl = renderDatabaseDdl(scopedGraph, dialect);
-      const ddl = legacyWarning ? `-- [警告] ${legacyWarning}\n\n${rawDdl}` : rawDdl;
+      const ddl = legacyWarning ? `${tr('-- [警告]', '-- [WARNING]')} ${legacyWarning}\n\n${rawDdl}` : rawDdl;
       const dbReview = reviewDatabaseDesign(scopedGraph.tables, scopedGraph);
       const warnings = [...(legacyWarning ? [legacyWarning] : []), ...scopedGraph.issues];
 
@@ -550,13 +557,16 @@ export function executeSpecTool(
 
     case 'protoflow_get_page_spec': {
       const pageId = typeof args.pageId === 'string' ? args.pageId.trim() : '';
-      if (!pageId) throw new Error('缺少必填参数 pageId');
+      if (!pageId) throw new Error(tr('缺少必填参数 pageId', 'Missing required parameter pageId'));
       const includeSource = args.includeSource !== false;
 
       const pageEntry = analysis.pages.find((p) => p.pageId === pageId);
       if (!pageEntry) {
         throw new Error(
-          `找不到页面 "${pageId}"。可用 pageId：${analysis.pages.map((p) => p.pageId).join(', ') || '无'}`
+          tr(
+            `找不到页面 "${pageId}"。可用 pageId：${analysis.pages.map((p) => p.pageId).join(', ') || '无'}`,
+            `Page "${pageId}" not found. Available pageIds: ${analysis.pages.map((p) => p.pageId).join(', ') || 'none'}`
+          )
         );
       }
 
@@ -779,7 +789,7 @@ export function executeSpecTool(
 
     case 'protoflow_search_spec': {
       const query = typeof args.query === 'string' ? args.query.trim() : '';
-      if (!query) throw new Error('缺少搜索关键词 query');
+      if (!query) throw new Error(tr('缺少搜索关键词 query', 'Missing required search query'));
       const limit =
         typeof args.limit === 'number' && Number.isFinite(args.limit)
           ? Math.max(1, Math.min(100, Math.trunc(args.limit)))
@@ -805,7 +815,9 @@ export function executeSpecTool(
             id: tbl.tableName,
             title: `${tbl.tableName} (${tbl.cnName})`,
             location: `database/${tbl.tableName}`,
-            snippet: tbl.description || `业务域：${tbl.domain}，共 ${tbl.columns.length} 列`,
+            snippet:
+              tbl.description ||
+              tr(`业务域：${tbl.domain}，共 ${tbl.columns.length} 列`, `Domain: ${tbl.domain}, ${tbl.columns.length} columns`),
           });
         }
         for (const col of tbl.columns) {
@@ -816,7 +828,7 @@ export function executeSpecTool(
               id: `${tbl.tableName}.${col.name}`,
               title: `${tbl.tableName}.${col.name} (${col.dataType})`,
               location: `database/${tbl.tableName}#${col.name}`,
-              snippet: `${col.comment}${col.references ? ` -> 引用 ${col.references}` : ''}`,
+              snippet: `${col.comment}${col.references ? tr(` -> 引用 ${col.references}`, ` -> references ${col.references}`) : ''}`,
             });
           }
         }
@@ -828,7 +840,7 @@ export function executeSpecTool(
           pushHit({
             category: 'sticky_note',
             id: note.id,
-            title: `便签 #${note.index} · ${note.targetWidgetName}`,
+            title: tr(`便签 #${note.index} · ${note.targetWidgetName}`, `Sticky #${note.index} · ${note.targetWidgetName}`),
             location: `page:${note.pageId}#${note.targetWidgetId}`,
             snippet: note.text,
           });
@@ -857,7 +869,7 @@ export function executeSpecTool(
           const snippet =
             idx >= 0
               ? src.slice(Math.max(0, idx - 50), Math.min(src.length, idx + query.length + 90)).replace(/\s+/g, ' ')
-              : `路由：${page.path}`;
+              : tr(`路由：${page.path}`, `Route: ${page.path}`);
           pushHit({
             category: 'page',
             id: page.pageId,
@@ -995,7 +1007,10 @@ export function executeSpecTool(
 
       const legacyChecklistWarnings = !workspace.uniqueConstraintsComplete
         ? [
-            `当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），唯一约束（isUnique / uniqueConstraints）未随旧版快照保存，建表前请核对原工程或重新发布。`,
+            tr(
+              `当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），唯一约束（isUnique / uniqueConstraints）未随旧版快照保存，建表前请核对原工程或重新发布。`,
+              `This online share uses legacy publication format (V${workspace.publishedFormatVersion ?? 'legacy'}) without unique constraints (isUnique / uniqueConstraints); verify the source project or republish before creating tables.`
+            ),
           ]
         : [];
 
@@ -1016,7 +1031,7 @@ export function executeSpecTool(
     }
 
     default:
-      throw new Error(`未知的 MCP 工具：${name}`);
+      throw new Error(tr(`未知的 MCP 工具：${name}`, `Unknown MCP tool: ${name}`));
   }
 }
 
@@ -1027,24 +1042,35 @@ export function getSpecPrompt(
 ): { description: string; messages: { role: 'user'; content: { type: 'text'; text: string } }[] } {
   const projectName = workspace.payload.meta.projectName;
   if (name === 'implement-module') {
-    const mod = args?.moduleKeyword?.trim() || '全部核心模块';
-    const stack = args?.techStack?.trim() || '当前仓库默认技术栈';
+    const mod = args?.moduleKeyword?.trim() || tr('全部核心模块', 'all core modules');
+    const stack = args?.techStack?.trim() || tr('当前仓库默认技术栈', "the repository's default stack");
     return {
-      description: `按照 ${projectName} 原型规格实现模块：${mod}`,
+      description: tr(`按照 ${projectName} 原型规格实现模块：${mod}`, `Implement module from ${projectName} prototype specification: ${mod}`),
       messages: [
         {
           role: 'user',
           content: {
             type: 'text',
-            text: [
-              `请基于 Alex (ProtoFlow AI) 原型工程「${projectName}」实现生产级代码（目标范围：${mod}；技术栈：${stack}）。`,
-              '',
-              '请严格按以下顺序调用 ProtoFlow MCP 工具，不要凭空猜测字段或交互：',
-              '1. 调用 `protoflow_get_project_overview` 了解路由结构、模块边界与全局业务共识；',
-              '2. 调用 `protoflow_get_database_schema` 获取物理表、主外键、唯一约束与种子数据，先完成数据库 Schema 与接口契约对齐；',
-              '3. 对目标范围内的每个页面逐一调用 `protoflow_get_page_spec`（必要时调用 `protoflow_get_docs_and_flows`），严格还原表格列、表单校验、交互事件链（增删改查/状态流转/单据下推）以及挂载在组件上的产品便签规则；',
-              '4. 完成后调用 `protoflow_get_implementation_checklist` 逐项核销，确保没有遗漏任何物理表约束或产品批注。',
-            ].join('\n'),
+            text: tr(
+              [
+                `请基于 Alex (ProtoFlow AI) 原型工程「${projectName}」实现生产级代码（目标范围：${mod}；技术栈：${stack}）。`,
+                '',
+                '请严格按以下顺序调用 ProtoFlow MCP 工具，不要凭空猜测字段或交互：',
+                '1. 调用 `protoflow_get_project_overview` 了解路由结构、模块边界与全局业务共识；',
+                '2. 调用 `protoflow_get_database_schema` 获取物理表、主外键、唯一约束与种子数据，先完成数据库 Schema 与接口契约对齐；',
+                '3. 对目标范围内的每个页面逐一调用 `protoflow_get_page_spec`（必要时调用 `protoflow_get_docs_and_flows`），严格还原表格列、表单校验、交互事件链（增删改查/状态流转/单据下推）以及挂载在组件上的产品便签规则；',
+                '4. 完成后调用 `protoflow_get_implementation_checklist` 逐项核销，确保没有遗漏任何物理表约束或产品批注。',
+              ].join('\n'),
+              [
+                `Implement production-grade code from the Alex (ProtoFlow AI) prototype project "${projectName}" (scope: ${mod}; stack: ${stack}).`,
+                '',
+                'Call ProtoFlow MCP tools in the exact order below rather than guessing fields or interactions:',
+                '1. Call `protoflow_get_project_overview` to inspect the route tree, module boundaries, and global business agreements;',
+                '2. Call `protoflow_get_database_schema` to read physical tables, primary/foreign keys, unique constraints, and seed rows, aligning database schemas and API contracts first;',
+                '3. For each page in scope, call `protoflow_get_page_spec` (and `protoflow_get_docs_and_flows` when needed) to implement table columns, form validations, interactive action chains, and component-pinned sticky-note rules;',
+                '4. Finally call `protoflow_get_implementation_checklist` to verify every database constraint and product requirement.',
+              ].join('\n')
+            ),
           },
         },
       ],
@@ -1053,27 +1079,38 @@ export function getSpecPrompt(
 
   if (name === 'generate-db-layer') {
     const dialect = args?.dialect === 'mysql' ? 'mysql' : 'postgres';
-    const orm = args?.orm?.trim() || '项目现有 ORM / SQL Migration';
+    const orm = args?.orm?.trim() || tr('项目现有 ORM / SQL Migration', "the project's existing ORM / SQL migrations");
     return {
-      description: `基于 ${projectName} ER 物理表生成数据库迁移与数据访问层`,
+      description: tr(
+        `基于 ${projectName} ER 物理表生成数据库迁移与数据访问层`,
+        `Generate database migrations and data access layer from ${projectName} ER schema`
+      ),
       messages: [
         {
           role: 'user',
           content: {
             type: 'text',
-            text: [
-              `请调用 \`protoflow_get_database_schema\`（设置 \`dialect: "${dialect}"\`, \`includeSampleRows: true\`）读取「${projectName}」的完整 ER 物理表设计，并生成适配 **${orm}** 的生产代码：`,
-              '1. 完整表结构、主键、组合唯一索引与外键关联（注意遵循每张表的 `modeling.grain` 与 `onDelete` 策略）；',
-              '2. 可重复执行的数据库 Migration 脚本；',
-              '3. 基于 `sampleRows` 的开发环境 Seed 初始化脚本。',
-            ].join('\n'),
+            text: tr(
+              [
+                `请调用 \`protoflow_get_database_schema\`（设置 \`dialect: "${dialect}"\`, \`includeSampleRows: true\`）读取「${projectName}」的完整 ER 物理表设计，并生成适配 **${orm}** 的生产代码：`,
+                '1. 完整表结构、主键、组合唯一索引与外键关联（注意遵循每张表的 `modeling.grain` 与 `onDelete` 策略）；',
+                '2. 可重复执行的数据库 Migration 脚本；',
+                '3. 基于 `sampleRows` 的开发环境 Seed 初始化脚本。',
+              ].join('\n'),
+              [
+                `Call \`protoflow_get_database_schema\` (with \`dialect: "${dialect}"\`, \`includeSampleRows: true\`) to read the complete ER physical table schema of "${projectName}", and generate production code for **${orm}**:`,
+                '1. Complete table definitions, primary keys, composite unique indexes, and foreign key relations (following each table\'s `modeling.grain` and `onDelete` policy);',
+                '2. Repeatable database migration scripts;',
+                '3. Development seed scripts derived from `sampleRows`.',
+              ].join('\n')
+            ),
           },
         },
       ],
     };
   }
 
-  throw new Error(`未知的 MCP Prompt：${name}`);
+  throw new Error(tr(`未知的 MCP Prompt：${name}`, `Unknown MCP Prompt: ${name}`));
 }
 
 export function readSpecResource(
@@ -1092,7 +1129,10 @@ export function readSpecResource(
     };
   }
   const legacyPrefix = !workspace.uniqueConstraintsComplete
-    ? `-- [警告] 当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），唯一约束（isUnique / uniqueConstraints）缺失，请重新发布或核对原工程！\n\n`
+    ? tr(
+        `-- [警告] 当前在线分享为旧版发布格式（V${workspace.publishedFormatVersion ?? 'legacy'}），唯一约束（isUnique / uniqueConstraints）缺失，请重新发布或核对原工程！\n\n`,
+        `-- [WARNING] This online share uses legacy publication format (V${workspace.publishedFormatVersion ?? 'legacy'}) without unique constraints (isUnique / uniqueConstraints); republish or verify the source project!\n\n`
+      )
     : '';
   if (uri === 'protoflow://database/schema.postgres.sql') {
     return {
@@ -1116,5 +1156,5 @@ export function readSpecResource(
       ],
     };
   }
-  throw new Error(`未知的 MCP Resource URI：${uri}`);
+  throw new Error(tr(`未知的 MCP Resource URI：${uri}`, `Unknown MCP Resource URI: ${uri}`));
 }

@@ -32,6 +32,8 @@ import {
 import type { PropValue, ProtoDoc, ProtoNode } from '../types';
 import { isActionChain, isNode } from '../types';
 import { COMPONENT_MAP, OVERLAY_TYPES, FIELD_TYPES } from '../registry/meta';
+import { localizeComponentMeta } from '../registry/localizeMeta';
+import { useI18n } from '../../i18n';
 import { insertNode, nodeText, pathTo, setProp, walk } from '../dsl/tree';
 import { printPageSource } from '../dsl/printer';
 import { columnLabel, defaultDisplayColumns } from '../runtime/mock';
@@ -71,6 +73,28 @@ interface NodeInspectorPanelProps {
   embedded?: boolean;
 }
 
+const CELL_EDITOR_EN_LABELS: Record<string, string> = {
+  input: 'Text Input',
+  textarea: 'Textarea',
+  number: 'Number',
+  select: 'Select',
+  date: 'Date',
+  time: 'Time',
+  dateTime: 'Date & Time',
+  switch: 'Switch',
+};
+
+const SAMPLE_FIELD_EN_TITLES: Record<string, string> = {
+  id: 'ID',
+  parentId: 'Parent ID',
+  name: 'Name',
+  status: 'Status',
+  remark: 'Notes',
+  quantity: 'Quantity',
+  updated: 'Updated',
+  enabled: 'Enabled',
+};
+
 export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
   pageId,
   doc,
@@ -89,6 +113,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
   onSaveAsComposite,
   embedded = false,
 }) => {
+  const { locale, isEn, tr, td } = useI18n();
   const [tab, setTab] = useState<'props' | 'events' | 'sticky' | 'ai'>(() => {
     if (typeof window !== 'undefined') {
       const t = new URLSearchParams(window.location.search).get('inspectorTab');
@@ -114,7 +139,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
     setModalOpen: setHermesModalOpen,
   } = useHermesStore();
 
-  const meta = COMPONENT_MAP[selectedNode.type];
+  const rawMeta = COMPONENT_MAP[selectedNode.type];
+  const meta = rawMeta ? localizeComponentMeta(rawMeta, locale) : undefined;
   const nodePath = pathTo(doc.root, selectedNode.pfId);
   const isRoot = selectedNode.pfId === doc.root.pfId;
 
@@ -220,8 +246,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
     <aside
       className={
         embedded
-          ? 'flex-1 min-h-0 w-full bg-white flex flex-col select-none'
-          : 'w-[332px] shrink-0 border-l border-slate-200 bg-white flex flex-col h-full select-none'
+          ? 'pf-inspector-cq flex-1 min-h-0 w-full bg-white flex flex-col select-none'
+          : 'pf-inspector-cq w-[332px] shrink-0 border-l border-slate-200 bg-white flex flex-col h-full select-none'
       }
     >
       {/* Slim Header: Single-row Component Badge + Actions & Compact Tab Switcher */}
@@ -252,7 +278,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
         <div className="flex items-center justify-between gap-1.5 min-h-[24px]">
           <div
             className="flex items-center gap-1.5 min-w-0"
-            title={`节点 ID: ${selectedNode.pfId}`}
+            title={tr(`节点 ID: ${selectedNode.pfId}`, `Node ID: ${selectedNode.pfId}`)}
           >
             <span className="text-xs font-semibold text-slate-900 truncate">
               {meta?.title ?? selectedNode.type}
@@ -268,7 +294,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 type="button"
                 onClick={() => onMoveNode(selectedNode.pfId, -1)}
                 className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 cursor-pointer"
-                title="上移节点"
+                title={tr('上移节点', 'Move node up')}
               >
                 <ArrowUp className="w-3 h-3" />
               </button>
@@ -276,7 +302,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 type="button"
                 onClick={() => onMoveNode(selectedNode.pfId, 1)}
                 className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 cursor-pointer"
-                title="下移节点"
+                title={tr('下移节点', 'Move node down')}
               >
                 <ArrowDown className="w-3 h-3" />
               </button>
@@ -284,7 +310,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 type="button"
                 onClick={() => onDuplicateNode(selectedNode.pfId)}
                 className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 cursor-pointer"
-                title="复制节点"
+                title={tr('复制节点', 'Duplicate node')}
               >
                 <Copy className="w-3 h-3" />
               </button>
@@ -293,17 +319,20 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   type="button"
                   onClick={() => onSaveAsComposite(selectedNode.pfId)}
                   className="px-1.5 py-0.5 rounded-md border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-semibold flex items-center gap-0.5 cursor-pointer"
-                  title="将当前选中组件/区块沉淀为团队业务复合组件"
+                  title={tr(
+                    '将当前选中组件/区块沉淀为团队业务复合组件',
+                    'Save selected component/section as a reusable block',
+                  )}
                 >
-                  <BookmarkPlus className="w-3 h-3" />
-                  <span>沉淀</span>
+                  <BookmarkPlus className="w-3 h-3 shrink-0" />
+                  <span>{tr('沉淀', 'Save')}</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => onRemoveNode(selectedNode.pfId)}
                 className="p-1 rounded-md border border-slate-200 bg-white hover:bg-red-50 text-slate-600 hover:text-red-600 cursor-pointer"
-                title="删除节点"
+                title={tr('删除节点', 'Delete node')}
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -312,43 +341,43 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
         </div>
 
         {/* 4-Tab Switcher */}
-        <div className="grid grid-cols-4 p-0.5 gap-0.5 bg-slate-100/90 rounded-lg border border-slate-200/80 text-[11px] font-medium">
+        <div className="pf-inspector-tabs grid grid-cols-4 p-0.5 gap-0.5 bg-slate-100/90 rounded-lg border border-slate-200/80 text-[11px] font-medium">
           <button
             type="button"
             onClick={() => setTab('props')}
-            className={`py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
+            className={`min-w-0 py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
               tab === 'props'
                 ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Sliders className="w-3 h-3 text-blue-600" />
-            <span>属性</span>
+            <Sliders className="w-3 h-3 text-blue-600 shrink-0" />
+            <span className="truncate">{tr('属性', 'Props')}</span>
           </button>
           <button
             type="button"
             onClick={() => setTab('events')}
-            className={`py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
+            className={`min-w-0 py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
               tab === 'events'
                 ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Zap className="w-3 h-3 text-amber-500" />
-            <span>交互</span>
+            <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+            <span className="truncate">{tr('交互', 'Events')}</span>
           </button>
           <button
             type="button"
             onClick={() => setTab('sticky')}
-            className={`py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
+            className={`min-w-0 py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
               tab === 'sticky'
                 ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <StickyNote className="w-3 h-3 text-amber-600" />
-            <span>
-              便签(
+            <StickyNote className="w-3 h-3 text-amber-600 shrink-0" />
+            <span className="truncate">
+              {tr('便签', 'Notes')}(
               {nodeStickies.length > 0
                 ? `${nodeStickies.length}/${pageStickies.length}`
                 : pageStickies.length}
@@ -358,14 +387,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
           <button
             type="button"
             onClick={() => setTab('ai')}
-            className={`py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
+            className={`min-w-0 py-0.5 px-1 rounded-md flex items-center justify-center gap-1 cursor-pointer transition ${
               tab === 'ai'
                 ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Code2 className="w-3 h-3 text-blue-600" />
-            <span>AI/代码</span>
+            <Code2 className="w-3 h-3 text-blue-600 shrink-0" />
+            <span className="truncate">{tr('AI/代码', 'AI·Code')}</span>
           </button>
         </div>
       </div>
@@ -402,29 +431,31 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
               return (
                 <div className="p-2.5 rounded-xl bg-indigo-50/45 border border-indigo-200/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-indigo-950">
-                      快速排版与占宽
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] font-bold text-indigo-950 truncate">
+                      {tr('快速排版与占宽', 'Grid Span & Layout')}
                     </span>
-                    <span className="text-[10px] text-indigo-600/80">
-                      支持画布左右拖拽并排
+                    <span className="text-[10px] text-indigo-600/80 shrink-0">
+                      {tr('支持画布左右拖拽并排', 'Drag side-by-side')}
                     </span>
                   </div>
 
                   {inFlowGrid && (
                     <div className="space-y-1">
                       <div className="text-[10px] text-slate-600">
-                        {parentNode?.type === 'Col' ? '当前组件占所在列的宽度' : '当前组件占父容器的宽度（可并排多个组件）'}
+                        {parentNode?.type === 'Col'
+                          ? tr('当前组件占所在列的宽度', 'Width inside parent column')
+                          : tr('当前组件占父容器的宽度（可并排多个组件）', 'Width inside parent container (pair items side-by-side)')}
                       </div>
                       <div className="grid grid-cols-6 gap-1">
                         {(
                           [
-                            { k: 'auto', label: '紧凑', span: 0 },
+                            { k: 'auto', label: tr('紧凑', 'Auto'), span: 0 },
                             { k: '1/4', label: '1/4', span: 3 },
                             { k: '1/3', label: '1/3', span: 4 },
                             { k: '1/2', label: '1/2', span: 6 },
                             { k: '2/3', label: '2/3', span: 8 },
-                            { k: 'full', label: parentNode?.type === 'Col' ? '填满本列' : '整行', span: 12 },
+                            { k: 'full', label: parentNode?.type === 'Col' ? tr('填满本列', 'Fill') : tr('整行', 'Full'), span: 12 },
                           ] as const
                         ).map((opt) => {
                           const active =
@@ -440,7 +471,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   opt.k
                                 )
                               }
-                              className={`py-1 rounded-md text-[11px] font-medium border transition cursor-pointer ${
+                              className={`py-1 px-0.5 rounded-md text-[11px] font-medium border transition cursor-pointer truncate ${
                                 active
                                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                                   : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
@@ -453,10 +484,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       </div>
                       {parentNode?.type === 'Col' && parentRow?.type === 'Row' && (
                         <div className="rounded-md bg-white/80 p-2 text-[10px] leading-relaxed text-slate-600 space-y-1">
-                          <p>所在列占本行 {columnWidthLabel(columnSpan(parentNode))}。填满本列不会改变外层列宽。</p>
+                          <p>
+                            {tr(
+                              `所在列占本行 ${columnWidthLabel(columnSpan(parentNode))}。填满本列不会改变外层列宽。`,
+                              `Parent column spans ${columnWidthLabel(columnSpan(parentNode))} of the row. Filling this column keeps outer column widths unchanged.`,
+                            )}
+                          </p>
                           <div className="flex flex-wrap gap-x-3 gap-y-1">
-                            <button type="button" className="text-indigo-700 underline cursor-pointer" onClick={() => onSelectNode(parentNode.pfId)}>调整所在列</button>
-                            {columnSpace && effectiveSpan === 12 && <button type="button" className="text-indigo-700 underline cursor-pointer" onClick={() => onPropChange(parentNode.pfId, 'span', columnSpace.nextSpan)}>填满右侧</button>}
+                            <button type="button" className="text-indigo-700 underline cursor-pointer" onClick={() => onSelectNode(parentNode.pfId)}>{tr('调整所在列', 'Select Parent Col')}</button>
+                            {columnSpace && effectiveSpan === 12 && <button type="button" className="text-indigo-700 underline cursor-pointer" onClick={() => onPropChange(parentNode.pfId, 'span', columnSpace.nextSpan)}>{tr('填满右侧', 'Fill Remaining Row')}</button>}
                           </div>
                         </div>
                       )}
@@ -466,7 +502,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   {inFlexRow && (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-slate-600">工具栏内位置</span>
+                        <span className="text-[10px] text-slate-600">{tr('工具栏内位置', 'Toolbar Position')}</span>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
@@ -477,7 +513,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
                             }`}
                           >
-                            ↔ 紧挨左侧
+                            ↔ {tr('紧挨左侧', 'Inline')}
                           </button>
                           <button
                             type="button"
@@ -494,26 +530,26 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
                             }`}
                           >
-                            ⇥ 推至右侧
+                            ⇥ {tr('推至右侧', 'Push Right')}
                           </button>
                         </div>
                       </div>
                       {isFieldControl && (
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-slate-600">控件输入框宽度</span>
+                          <span className="text-[10px] text-slate-600">{tr('控件输入框宽度', 'Input Width')}</span>
                           <div className="flex items-center gap-1">
                             {(
                               [
-                                { k: 'sm', label: '窄 (112px)' },
-                                { k: '', label: '标准 (160px)' },
-                                { k: 'lg', label: '宽 (224px)' },
+                                { k: 'sm', label: tr('窄 (112px)', 'S (112px)') },
+                                { k: '', label: tr('标准 (160px)', 'M (160px)') },
+                                { k: 'lg', label: tr('宽 (224px)', 'L (224px)') },
                               ] as const
                             ).map((cw) => {
                               const cur = String(selectedNode.props.controlWidth ?? '');
                               const active = cur === cw.k;
                               return (
                                 <button
-                                  key={cw.label}
+                                  key={cw.k || 'md'}
                                   type="button"
                                   onClick={() =>
                                     onPropChange(selectedNode.pfId, 'controlWidth', cw.k || undefined)
@@ -536,7 +572,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
                   {['Card', 'Form', 'QueryForm'].includes(selectedNode.type) && (
                     <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <span className="text-[10px] text-slate-600">容器内部默认列数</span>
+                      <span className="text-[10px] text-slate-600">{tr('容器内部默认列数', 'Default Columns')}</span>
                       <div className="flex items-center gap-1">
                         {[1, 2, 3, 4].map((c) => {
                           const curCols = Number(
@@ -554,7 +590,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
                               }`}
                             >
-                              {c}列
+                              {tr(`${c}列`, `${c} Col`)}
                             </button>
                           );
                         })}
@@ -566,14 +602,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   {(selectedNode.type === 'Form' || selectedNode.type === 'QueryForm') && (
                     <div className="pt-1.5 border-t border-indigo-200/60 space-y-1.5">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-slate-600">标签排列 (layout)</span>
+                        <span className="text-[10px] text-slate-600">{tr('标签排列 (layout)', 'Label Layout')}</span>
                         <div className="flex items-center gap-1">
                           {(
                             [
-                              { k: 'horizontal', label: '水平居左' },
-                              { k: 'vertical', label: '垂直居上' },
+                              { k: 'horizontal', label: tr('水平居左', 'Horiz') },
+                              { k: 'vertical', label: tr('垂直居上', 'Vert') },
                               ...(selectedNode.type === 'Form'
-                                ? ([{ k: 'inline', label: '行内紧凑' }] as const)
+                                ? ([{ k: 'inline', label: tr('行内紧凑', 'Inline') }] as const)
                                 : []),
                             ] as const
                           ).map((ly) => {
@@ -602,12 +638,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-slate-600">标签对齐 & 冒号</span>
+                        <span className="text-[10px] text-slate-600">{tr('标签对齐 & 冒号', 'Label Align')}</span>
                         <div className="flex items-center gap-1">
                           {(
                             [
-                              { k: 'left', label: '左对齐' },
-                              { k: 'right', label: '右对齐' },
+                              { k: 'left', label: tr('左对齐', 'Left') },
+                              { k: 'right', label: tr('右对齐', 'Right') },
                             ] as const
                           ).map((al) => {
                             const cur =
@@ -643,7 +679,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                             }`}
                           >
-                            冒号(:)
+                            {tr('冒号(:)', 'Colon(:)')}
                           </button>
                         </div>
                       </div>
@@ -653,20 +689,20 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   {/* Individual Field Label Layout Quick Bar */}
                   {isFieldControl && (
                     <div className="pt-1.5 border-t border-indigo-200/60 flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-slate-600">标签位置</span>
+                      <span className="text-[10px] text-slate-600">{tr('标签位置', 'Label Layout')}</span>
                       <div className="flex items-center gap-1">
                         {(
                           [
-                            { k: '', label: '默认' },
-                            { k: 'horizontal', label: '居左' },
-                            { k: 'vertical', label: '居上' },
-                            { k: 'inline', label: '紧凑' },
+                            { k: '', label: tr('默认', 'Auto') },
+                            { k: 'horizontal', label: tr('居左', 'Left') },
+                            { k: 'vertical', label: tr('居上', 'Top') },
+                            { k: 'inline', label: tr('紧凑', 'Inline') },
                           ] as const
                         ).map((ly) => {
                           const cur = String(selectedNode.props.labelLayout ?? '');
                           return (
                             <button
-                              key={ly.label}
+                              key={ly.k || 'auto'}
                               type="button"
                               onClick={() =>
                                 onPropChange(selectedNode.pfId, 'labelLayout', ly.k || undefined)
@@ -689,7 +725,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   {selectedNode.type === 'Table' && (
                     <div className="pt-1.5 border-t border-indigo-200/60 space-y-1.5">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-slate-600">表格视觉风格</span>
+                        <span className="text-[10px] text-slate-600">{tr('表格视觉风格', 'Table Style')}</span>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
@@ -706,7 +742,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                             }`}
                           >
-                            斑马纹
+                            {tr('斑马纹', 'Striped')}
                           </button>
                           <button
                             type="button"
@@ -723,7 +759,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                             }`}
                           >
-                            网格边框
+                            {tr('网格边框', 'Bordered')}
                           </button>
                           <button
                             type="button"
@@ -740,18 +776,18 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300'
                             }`}
                           >
-                            合计行
+                            {tr('合计行', 'Summary')}
                           </button>
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-slate-600">行高密度 (size)</span>
+                        <span className="text-[10px] text-slate-600">{tr('行高密度 (size)', 'Density')}</span>
                         <div className="flex items-center gap-1">
                           {(
                             [
-                              { k: 'small', label: '紧凑 (small)' },
-                              { k: 'middle', label: '标准 (middle)' },
-                              { k: 'large', label: '宽松 (large)' },
+                              { k: 'small', label: tr('紧凑 (small)', 'Small') },
+                              { k: 'middle', label: tr('标准 (middle)', 'Middle') },
+                              { k: 'large', label: tr('宽松 (large)', 'Large') },
                             ] as const
                           ).map((sz) => {
                             const cur = (selectedNode.props.size as string) || 'middle';
@@ -778,7 +814,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   {/* AntD Descriptions Quick Appearance Bar */}
                   {selectedNode.type === 'Descriptions' && (
                     <div className="pt-1.5 border-t border-indigo-200/60 flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-slate-600">展示风格</span>
+                      <span className="text-[10px] text-slate-600">{tr('展示风格', 'Display Style')}</span>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
@@ -795,7 +831,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                           }`}
                         >
-                          带边框表格态
+                          {tr('带边框表格态', 'Bordered')}
                         </button>
                         <button
                           type="button"
@@ -812,7 +848,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                           }`}
                         >
-                          {selectedNode.props.layout === 'vertical' ? '上下垂直' : '左右水平'}
+                          {selectedNode.props.layout === 'vertical' ? tr('上下垂直', 'Vertical') : tr('左右水平', 'Horizontal')}
                         </button>
                       </div>
                     </div>
@@ -824,12 +860,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             {/* If this is an Overlay node, show sub-page shortcut */}
             {OVERLAY_TYPES.has(selectedNode.type) && typeof selectedNode.props.id === 'string' && (
               <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-semibold text-blue-900 text-xs">
-                    弹层独立子页面 (#{selectedNode.props.id})
+                <div className="min-w-0">
+                  <div className="font-semibold text-blue-900 text-xs truncate">
+                    {tr(`弹层独立子页面 (#${selectedNode.props.id})`, `Overlay Sub-Canvas (#${selectedNode.props.id})`)}
                   </div>
                   <div className="text-[10px] text-blue-700 mt-0.5">
-                    可在顶部子页面导航直接进入该弹层画布拖入表单或表格
+                    {tr('可在顶部子页面导航直接进入该弹层画布拖入表单或表格', 'Open this overlay sub-canvas to drop forms or tables inside')}
                   </div>
                 </div>
                 <button
@@ -837,7 +873,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   onClick={() => onOpenOverlayDesigner(selectedNode.props.id as string)}
                   className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium shrink-0 cursor-pointer"
                 >
-                  进入子画布
+                  {tr('进入子画布', 'Open')}
                 </button>
               </div>
             )}
@@ -846,29 +882,29 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             {hasTextEditor && (
               <div className="space-y-1">
                 <label className="block text-[11px] font-semibold text-slate-700">
-                  显示文本 (Children Text)
+                  {tr('显示文本 (Children Text)', 'Text Content (Children)')}
                 </label>
                 <input
                   type="text"
                   value={textChild}
                   onChange={(e) => onTextChange(selectedNode.pfId, e.target.value)}
-                  placeholder="输入按钮或文本内容..."
+                  placeholder={tr('输入按钮或文本内容...', 'Enter button or text content...')}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-blue-600"
                 />
               </div>
             )}
 
             {inPositionedCanvas && <details className="space-y-2 rounded-lg border border-slate-200 p-2">
-              <summary className="cursor-pointer text-xs font-semibold">位置与外观</summary>
-              <div className="mt-2 grid grid-cols-2 gap-2">{Object.entries({ x: '横坐标', y: '纵坐标', width: '宽度', height: '高度' }).map(([key,label]) =>
+              <summary className="cursor-pointer text-xs font-semibold">{tr('位置与外观', 'Position & Style')}</summary>
+              <div className="mt-2 grid grid-cols-2 gap-2">{Object.entries({ x: tr('横坐标', 'X'), y: tr('纵坐标', 'Y'), width: tr('宽度', 'Width'), height: tr('高度', 'Height') }).map(([key,label]) =>
                 <label key={key}>{label}<input type="number" className="w-full rounded border px-2 py-1" value={typeof frame?.[key] === 'number' ? Number(frame[key]) : ''}
                   onChange={e => { const next = { ...frame }; if (e.target.value === '') delete next[key]; else next[key] = Number(e.target.value); onPropChange(selectedNode.pfId,'layoutFrame',next); }} /></label>)}</div>
               <label className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/50 px-2.5 py-1.5 text-xs cursor-pointer">
-                <span>初始隐藏 (hidden)</span>
+                <span>{tr('初始隐藏 (hidden)', 'Initially Hidden (hidden)')}</span>
                 <input type="checkbox" className="w-4 h-4 accent-blue-600 rounded cursor-pointer" checked={frame?.hidden === true}
                   onChange={e => { const next = { ...frame }; if (e.target.checked) next.hidden = true; else delete next.hidden; onPropChange(selectedNode.pfId, 'layoutFrame', next); }} />
               </label>
-              <StructuredPropEditor key={selectedNode.pfId + JSON.stringify(frame)} label="定位与样式参数" value={frame}
+              <StructuredPropEditor key={selectedNode.pfId + JSON.stringify(frame)} label={tr('定位与样式参数', 'Frame & Style JSON')} value={frame}
                 onChange={value => onPropChange(selectedNode.pfId, 'layoutFrame', value)} />
             </details>}
 
@@ -917,7 +953,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }}
                           className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
                         >
-                          <span>打开表结构 ({boundTable.columns.length}列)</span>
+                          <span>{tr(`打开表结构 (${boundTable.columns.length}列)`, `Open Schema (${boundTable.columns.length} cols)`)}</span>
                           <ExternalLink className="w-2.5 h-2.5" />
                         </button>
                       )}
@@ -934,14 +970,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       }}
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-600"
                     >
-                      <option value="">-- 未绑定物理表 --</option>
+                      <option value="">{tr('-- 未绑定物理表 --', '-- Unbound --')}</option>
                       {dbTables.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.tableName} ({t.cnName})
                         </option>
                       ))}
                     </select>
-                    {selectedNode.type === 'Table' && Array.isArray(selectedNode.props.cellMerges) && selectedNode.props.cellMerges.length > 0 && <p className="text-[10px] text-slate-500">切换绑定表会清除按记录指定的合并区域。</p>}
+                    {selectedNode.type === 'Table' && Array.isArray(selectedNode.props.cellMerges) && selectedNode.props.cellMerges.length > 0 && <p className="text-[10px] text-slate-500">{tr('切换绑定表会清除按记录指定的合并区域。', 'Switching bound table clears row-specific cell merges.')}</p>}
 
                   </div>
                 );
@@ -961,7 +997,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           onClick={() => onOpenOverlayDesigner(ovVal)}
                           className="text-[10px] text-blue-600 hover:underline cursor-pointer"
                         >
-                          编辑该弹框 →
+                          {tr('编辑该弹框 →', 'Edit Overlay →')}
                         </button>
                       )}
                     </div>
@@ -976,7 +1012,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       }
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-600"
                     >
-                      <option value="">-- 选择关联弹层 --</option>
+                      <option value="">{tr('-- 选择关联弹层 --', '-- Select Overlay --')}</option>
                       {overlays.map((o) => (
                         <option key={o.overlayId} value={o.overlayId}>
                           #{o.overlayId} · {o.title}
@@ -1008,7 +1044,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       }
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-600"
                     >
-                      <option value="">-- 选择页面内目标组件 --</option>
+                      <option value="">{tr('-- 选择页面内目标组件 --', '-- Select Target Component --')}</option>
                       {referenceNodes.filter(node => !propMeta.refTypes || propMeta.refTypes.includes(node.type)).map(node => {
                         const table = dbTables.find(t => t.id === node.props.table);
                         return <option key={node.pfId} value={node.pfId}>#{node.pfId} · {node.type}{table && ` (${table.tableName})`}</option>;
@@ -1040,7 +1076,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       </label>
                       {colTable && (
                         <span className="text-[10px] text-emerald-600 font-mono">
-                          来自 {colTable.tableName}
+                          {tr(`来自 ${colTable.tableName}`, `from ${colTable.tableName}`)}
                         </span>
                       )}
                     </div>
@@ -1064,7 +1100,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }}
                           className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-600"
                         >
-                          <option value="">-- 从表字段选择或自定义 --</option>
+                          <option value="">{tr('-- 从表字段选择或自定义 --', '-- Select Column or Custom --')}</option>
                           {colTable.columns.map((c) => (
                             <option key={c.name} value={c.name}>
                               {c.name} · {columnLabel(c)}
@@ -1074,7 +1110,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         <input
                           type="text"
                           value={strVal}
-                          placeholder="自定义字段名"
+                          placeholder={tr('自定义字段名', 'Custom field')}
                           onChange={(e) =>
                             onPropChange(
                               selectedNode.pfId,
@@ -1089,7 +1125,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       <input
                         type="text"
                         value={strVal}
-                        placeholder={propMeta.description || '输入字段名 (如 order_no)'}
+                        placeholder={propMeta.description || tr('输入字段名 (如 order_no)', 'Enter field name (e.g. order_no)')}
                         onChange={(e) =>
                           onPropChange(
                             selectedNode.pfId,
@@ -1152,12 +1188,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         className="px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                       >
                         <Plus className="w-2.5 h-2.5" />
-                        <span>加过滤条件</span>
+                        <span>{tr('加过滤条件', 'Add Filter')}</span>
                       </button>
                     </div>
                     {entries.length === 0 ? (
                       <div className="text-[11px] text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-1.5">
-                        未设置静态过滤（展示全部模拟行）
+                        {tr('未设置静态过滤（展示全部模拟行）', 'No static filter (shows all mock rows)')}
                       </div>
                     ) : (
                       <div className="space-y-1">
@@ -1198,7 +1234,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   });
                                   onPropChange(selectedNode.pfId, propMeta.name, next);
                                 }}
-                                placeholder="字段名"
+                                placeholder={tr('字段名', 'Field')}
                                 className="w-24 px-1.5 py-1 rounded border border-slate-200 bg-white font-mono text-[11px]"
                               />
                             )}
@@ -1213,7 +1249,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 };
                                 onPropChange(selectedNode.pfId, propMeta.name, next);
                               }}
-                              placeholder="匹配值 (如 待验收)"
+                              placeholder={tr('匹配值 (如 待验收)', 'Value (e.g. Pending)')}
                               className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs"
                             />
                             <button
@@ -1262,7 +1298,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       }}
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-blue-600"
                     >
-                      <option value="">默认</option>
+                      <option value="">{tr('默认', 'Default')}</option>
                       {propMeta.options.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
@@ -1406,14 +1442,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 boundTable?.columns[0];
                               newItem = nextCol
                                 ? { dataIndex: nextCol.name, title: columnLabel(nextCol) }
-                                : { dataIndex: `field_${n}`, title: `字段 ${n}` };
+                                : { dataIndex: `field_${n}`, title: tr(`字段 ${n}`, `Field ${n}`) };
                             } else {
                               newItem = {
                                 ...(hasKey ? { key: `item_${n}` } : {}),
                                 ...(hasRole
                                   ? { role: n % 2 === 1 ? 'user' : 'assistant' }
                                   : {}),
-                                title: `新项目 ${n}`,
+                                title: tr(`新项目 ${n}`, `Item ${n}`),
                               };
                             }
                             updateObjItems([...objItems, newItem]);
@@ -1421,13 +1457,16 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           className="px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                         >
                           <Plus className="w-2.5 h-2.5" />
-                          <span>新增项</span>
+                          <span>{tr('新增项', 'Add Item')}</span>
                         </button>
                       </div>
 
                       {objItems.length === 0 ? (
                         <div className="text-[11px] text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-1.5">
-                          未显式配置（将使用内置演示项或绑定表默认展示）
+                          {tr(
+                            '未显式配置（将使用内置演示项或绑定表默认展示）',
+                            'Not explicitly configured (uses built-in demo items or bound table defaults)'
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -1451,7 +1490,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                       updateObjItems(next);
                                     }}
                                     className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                                    title="上移"
+                                    title={tr('上移', 'Move up')}
                                   >
                                     ↑
                                   </button>
@@ -1465,7 +1504,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                       updateObjItems(next);
                                     }}
                                     className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                                    title="下移"
+                                    title={tr('下移', 'Move down')}
                                   >
                                     ↓
                                   </button>
@@ -1475,7 +1514,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                       updateObjItems(objItems.filter((_, i) => i !== idx))
                                     }
                                     className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
-                                    title="删除此项"
+                                    title={tr('删除此项', 'Delete item')}
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>
@@ -1562,7 +1601,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                           }
                                           className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-200 bg-white text-xs text-slate-800"
                                         >
-                                          <option value="">默认</option>
+                                          <option value="">{tr('默认', 'Default')}</option>
                                           {field.options.map((opt) => (
                                             <option key={opt} value={opt}>
                                               {opt}
@@ -1703,13 +1742,13 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const next = [...listArr, `选项 ${listArr.length + 1}`];
+                          const next = [...listArr, tr(`选项 ${listArr.length + 1}`, `Item ${listArr.length + 1}`)];
                           onPropChange(selectedNode.pfId, propMeta.name, next);
                         }}
                         className="px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                       >
                         <Plus className="w-2.5 h-2.5" />
-                        <span>新增项</span>
+                        <span>{tr('新增项', 'Add Item')}</span>
                       </button>
                     </div>
                     {listArr.length > 0 && (
@@ -1740,7 +1779,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 onPropChange(selectedNode.pfId, propMeta.name, next);
                               }}
                               className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                              title="上移"
+                              title={tr('上移', 'Move up')}
                             >
                               ↑
                             </button>
@@ -1754,7 +1793,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 onPropChange(selectedNode.pfId, propMeta.name, next);
                               }}
                               className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                              title="下移"
+                              title={tr('下移', 'Move down')}
                             >
                               ↓
                             </button>
@@ -1779,7 +1818,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                     <input
                       type="text"
                       value={listArr.join(',')}
-                      placeholder={propMeta.description || '也可直接用英文逗号分隔输入'}
+                      placeholder={propMeta.description || tr('也可直接用英文逗号分隔输入', 'Or enter comma-separated values')}
                       onChange={(e) => {
                         const val = e.target.value;
                         onPropChange(
@@ -1839,6 +1878,11 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           : 'text',
                     };
                   })
+                : isEn
+                ? SAMPLE_COLUMNS.map((c) => ({
+                    ...c,
+                    title: SAMPLE_FIELD_EN_TITLES[String(c.dataIndex)] ?? c.title,
+                  }))
                 : SAMPLE_COLUMNS;
 
               const effectiveCols: Record<string, PropValue>[] =
@@ -1851,7 +1895,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                     <div className="flex items-center justify-between gap-1 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-semibold text-slate-800">
-                          表格列配置 (columns)
+                          {tr('表格列配置 (columns)', 'Table Columns (columns)')}
                         </span>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -1861,12 +1905,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }`}
                         >
                           {isAutoMode
-                            ? `自动推导 (${effectiveCols.length}列)`
-                            : `自定义 (${columnItems.length}列)`}
+                            ? tr(`自动推导 (${effectiveCols.length}列)`, `Auto (${effectiveCols.length})`)
+                            : tr(`自定义 (${columnItems.length}列)`, `Custom (${columnItems.length})`)}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
                         {boundTable && (
                           <button
                             type="button"
@@ -1874,9 +1918,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               onPropChange(selectedNode.pfId, 'columns', autoCols);
                             }}
                             className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-medium cursor-pointer"
-                            title="从绑定的物理表一键导入默认列以便增删改"
+                            title={tr('从绑定的物理表一键导入默认列以便增删改', 'Import default columns from the bound table for editing')}
                           >
-                            从物理表导入列
+                            {tr('从物理表导入列', 'Import Columns')}
                           </button>
                         )}
                         {!isAutoMode && (
@@ -1886,9 +1930,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               onPropChange(selectedNode.pfId, 'columns', undefined)
                             }
                             className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] cursor-pointer"
-                            title="清空自定义列，恢复按物理表自动推导"
+                            title={tr('清空自定义列，恢复按物理表自动推导', 'Clear custom columns and revert to auto-inferred columns')}
                           >
-                            恢复自动列
+                            {tr('恢复自动列', 'Reset Auto')}
                           </button>
                         )}
                         <button
@@ -1909,7 +1953,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 }
                               : {
                                   dataIndex: `col_${base.length + 1}`,
-                                  title: `新列 ${base.length + 1}`,
+                                  title: tr(`新列 ${base.length + 1}`, `Column ${base.length + 1}`),
                                   render: 'text',
                                 };
                             onPropChange(selectedNode.pfId, 'columns', [...base, nextCol]);
@@ -1917,7 +1961,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium flex items-center gap-0.5 cursor-pointer shadow-xs"
                         >
                           <Plus className="w-3 h-3" />
-                          <span>新增列</span>
+                          <span>{tr('新增列', 'Add Col')}</span>
                         </button>
                       </div>
                     </div>
@@ -1954,7 +1998,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           className="w-full px-2 py-1 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-900 text-[11px] focus:outline-none focus:border-emerald-500"
                         >
                           <option value="">
-                            + 从物理表 [{boundTable.tableName}] 选择字段快速加列...
+                            {tr(
+                              `+ 从物理表 [${boundTable.tableName}] 选择字段快速加列...`,
+                              `+ Quick-add column from [${boundTable.tableName}]...`
+                            )}
                           </option>
                           {boundTable.columns.map((c) => (
                             <option key={c.name} value={c.name}>
@@ -1966,7 +2013,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                     )}
                   </div>
 
-                  {!boundTable && <datalist id="pf-table-sample-fields">{SAMPLE_FIELDS.map(c => <option key={c.dataIndex} value={c.dataIndex}>{c.title}</option>)}</datalist>}
+                  {!boundTable && (
+                    <datalist id="pf-table-sample-fields">
+                      {SAMPLE_FIELDS.map((c) => (
+                        <option key={c.dataIndex} value={c.dataIndex}>
+                          {isEn ? SAMPLE_FIELD_EN_TITLES[c.dataIndex] ?? c.title : c.title}
+                        </option>
+                      ))}
+                    </datalist>
+                  )}
                   {/* Column list — uses full height of the inspector panel without nested max-height clipping */}
                   <div className="space-y-2">
                     {effectiveCols.map((col, idx) => {
@@ -2007,7 +2062,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               type="text"
                               value={titleVal}
                               onChange={(e) => updateCol({ title: e.target.value })}
-                              placeholder="列标题 (如 物料名称)"
+                              placeholder={tr('列标题 (如 物料名称)', 'Column title')}
                               className="w-24 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs font-medium text-slate-800"
                             />
                             {boundTable ? (
@@ -2026,7 +2081,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white font-mono text-[11px] text-slate-700"
                               >
                                 <option value={dataIndexVal}>
-                                  {dataIndexVal || '--选择字段--'}
+                                  {dataIndexVal || tr('--选择字段--', '--Select field--')}
                                 </option>
                                 {boundTable.columns
                                   .filter((c) => c.name !== dataIndexVal)
@@ -2041,7 +2096,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 type="text" list="pf-table-sample-fields"
                                 value={dataIndexVal}
                                 onChange={(e) => updateCol({ dataIndex: e.target.value })}
-                                placeholder="字段名 dataIndex"
+                                placeholder={tr('字段名 dataIndex', 'Field dataIndex')}
                                 className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white font-mono text-[11px] text-slate-700"
                               />
                             )}
@@ -2055,7 +2110,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 onPropChange(selectedNode.pfId, 'columns', base);
                               }}
                               className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                              title="左移/上移列"
+                              title={tr('左移/上移列', 'Move column up/left')}
                             >
                               ↑
                             </button>
@@ -2069,7 +2124,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 onPropChange(selectedNode.pfId, 'columns', base);
                               }}
                               className="px-1 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
-                              title="右移/下移列"
+                              title={tr('右移/下移列', 'Move column down/right')}
                             >
                               ↓
                             </button>
@@ -2085,24 +2140,24 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 );
                               }}
                               className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
-                              title="删除该列"
+                              title={tr('删除该列', 'Delete column')}
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
 
                           <div className="flex items-center gap-1.5 pl-4 flex-wrap">
-                            <span className="text-[10px] text-slate-400 shrink-0">渲染:</span>
+                            <span className="text-[10px] text-slate-400 shrink-0">{tr('渲染:', 'Render:')}</span>
                             <select
                               value={renderVal}
                               onChange={(e) => updateCol({ render: e.target.value })}
                               className="flex-1 min-w-[96px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[10px] text-slate-700"
                             >
-                              <option value="text">普通文本 (text)</option>
-                              <option value="tag">状态徽章 (tag)</option>
-                              <option value="money">金额千分位 (money)</option>
-                              <option value="link">超链接单号 (link)</option>
-                              <option value="date">日期时间 (date)</option>
+                              <option value="text">{tr('普通文本 (text)', 'Text (text)')}</option>
+                              <option value="tag">{tr('状态徽章 (tag)', 'Status Tag (tag)')}</option>
+                              <option value="money">{tr('金额千分位 (money)', 'Currency (money)')}</option>
+                              <option value="link">{tr('超链接单号 (link)', 'Link (link)')}</option>
+                              <option value="date">{tr('日期时间 (date)', 'Date/Time (date)')}</option>
                             </select>
                             <select
                               value={typeof col.align === 'string' ? col.align : 'left'}
@@ -2112,11 +2167,11 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 })
                               }
                               className="px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[10px] text-slate-700"
-                              title="列对齐方式"
+                              title={tr('列对齐方式', 'Column alignment')}
                             >
-                              <option value="left">居左</option>
-                              <option value="center">居中</option>
-                              <option value="right">居右</option>
+                              <option value="left">{tr('居左', 'Left')}</option>
+                              <option value="center">{tr('居中', 'Center')}</option>
+                              <option value="right">{tr('居右', 'Right')}</option>
                             </select>
                             <label className="inline-flex items-center gap-0.5 text-[10px] text-slate-600 cursor-pointer">
                               <input
@@ -2127,7 +2182,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 }
                                 className="w-3 h-3 rounded accent-blue-600"
                               />
-                              <span>排序</span>
+                              <span>{tr('排序', 'Sort')}</span>
                             </label>
                             <input
                               type="text"
@@ -2137,17 +2192,17 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   width: e.target.value ? e.target.value : undefined,
                                 })
                               }
-                              placeholder="列宽自适应"
+                              placeholder={tr('列宽自适应', 'Auto width')}
                               className="w-16 shrink-0 px-1.5 py-0.5 rounded border border-slate-200 bg-white font-mono text-[10px] text-slate-700"
                             />
                           </div>
                           <div className="flex flex-wrap items-center gap-2 pl-4 text-[11px] text-slate-600">
-                            <label className="flex items-center gap-1"><input type="checkbox" checked={col.mergeRows === true} onChange={e => updateCol({ mergeRows: e.target.checked || undefined })} />合并相邻同值行</label>
-                            <label className="flex items-center gap-1">单元格编辑器
+                            <label className="flex items-center gap-1"><input type="checkbox" checked={col.mergeRows === true} onChange={e => updateCol({ mergeRows: e.target.checked || undefined })} />{tr('合并相邻同值行', 'Merge equal rows')}</label>
+                            <label className="flex items-center gap-1">{tr('单元格编辑器', 'Cell Editor')}
                               <select value={typeof col.editor === 'string' ? col.editor : ''} disabled={!col.editor && Boolean(lockedColumn(dataIndexVal, selectedNode.props, boundTable))}
                                 onChange={e => updateCol({ editor: e.target.value || undefined, editorOptions: undefined })}
                                 className="rounded border border-slate-200 bg-white px-1 py-0.5">
-                                <option value="">只读</option>{Object.entries(CELL_EDITORS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                                <option value="">{tr('只读', 'Read-only')}</option>{Object.entries(CELL_EDITORS).map(([key, label]) => <option key={key} value={key}>{isEn ? (CELL_EDITOR_EN_LABELS[key] ?? td(label)) : label}</option>)}
                               </select>
                             </label>
                           </div>
@@ -2184,7 +2239,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                     <div className="flex items-center justify-between gap-1 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-semibold text-slate-800">
-                          表单字段配置 (fields)
+                          {tr('表单字段配置 (fields)', 'Form Fields (fields)')}
                         </span>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -2194,12 +2249,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }`}
                         >
                           {isAutoFields
-                            ? `自动推导 (${effectiveFields.length}项)`
-                            : `自定义 (${fieldItems.length}项)`}
+                            ? tr(`自动推导 (${effectiveFields.length}项)`, `Auto (${effectiveFields.length})`)
+                            : tr(`自定义 (${fieldItems.length}项)`, `Custom (${fieldItems.length})`)}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
                         {boundTable && (
                           <button
                             type="button"
@@ -2208,7 +2263,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             }}
                             className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-medium cursor-pointer"
                           >
-                            从物理表导入字段
+                            {tr('从物理表导入字段', 'Import Fields')}
                           </button>
                         )}
                         {!isAutoFields && (
@@ -2219,7 +2274,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             }
                             className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] cursor-pointer"
                           >
-                            恢复自动
+                            {tr('恢复自动', 'Reset Auto')}
                           </button>
                         )}
                         <button
@@ -2230,7 +2285,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               ...base,
                               {
                                 name: `field_${base.length + 1}`,
-                                label: `新字段 ${base.length + 1}`,
+                                label: tr(`新字段 ${base.length + 1}`, `Field ${base.length + 1}`),
                                 type: 'input',
                               },
                             ];
@@ -2239,7 +2294,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                         >
                           <Plus className="w-3 h-3" />
-                          <span>新增字段</span>
+                          <span>{tr('新增字段', 'Add Field')}</span>
                         </button>
                       </div>
                     </div>
@@ -2264,7 +2319,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         className="w-full px-2 py-1 rounded-lg border border-emerald-200 bg-emerald-50/50 text-emerald-900 text-[11px]"
                       >
                         <option value="">
-                          + 从物理表 [{boundTable.tableName}] 选择字段加入表单...
+                          {tr(
+                            `+ 从物理表 [${boundTable.tableName}] 选择字段加入表单...`,
+                            `+ Add field from [${boundTable.tableName}]...`
+                          )}
                         </option>
                         {boundTable.columns.map((c) => (
                           <option key={c.name} value={c.name}>
@@ -2312,14 +2370,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 type="text"
                                 value={typeof f.label === 'string' ? f.label : ''}
                                 onChange={(e) => updateField({ label: e.target.value })}
-                                placeholder="中文标签"
+                                placeholder={tr('中文标签', 'Label')}
                                 className="w-24 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs font-medium"
                               />
                               <input
                                 type="text"
                                 value={typeof f.name === 'string' ? f.name : ''}
                                 onChange={(e) => updateField({ name: e.target.value })}
-                                placeholder="字段名"
+                                placeholder={tr('字段名', 'Field key')}
                                 className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white font-mono text-[11px]"
                               />
                               <select
@@ -2327,17 +2385,17 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 onChange={(e) => updateField({ type: e.target.value })}
                                 className="px-1 py-1 rounded border border-slate-200 bg-white text-[11px]"
                               >
-                                <option value="input">文本 (input)</option>
-                                <option value="select">下拉 (select)</option>
-                                <option value="date">日期 (date)</option>
-                                <option value="dateRange">日期区间 (dateRange)</option>
-                                <option value="number">数字 (number)</option>
-                                <option value="textarea">多行 (textarea)</option>
-                                <option value="picker">弹框选单 (picker)</option>
-                                <option value="radio">单选 (radio)</option>
-                                <option value="checkbox">多选 (checkbox)</option>
-                                <option value="switch">开关 (switch)</option>
-                                <option value="upload">上传附件 (upload)</option>
+                                <option value="input">{tr('文本 (input)', 'Text (input)')}</option>
+                                <option value="select">{tr('下拉 (select)', 'Select (select)')}</option>
+                                <option value="date">{tr('日期 (date)', 'Date (date)')}</option>
+                                <option value="dateRange">{tr('日期区间 (dateRange)', 'Date Range (dateRange)')}</option>
+                                <option value="number">{tr('数字 (number)', 'Number (number)')}</option>
+                                <option value="textarea">{tr('多行 (textarea)', 'Textarea (textarea)')}</option>
+                                <option value="picker">{tr('弹框选单 (picker)', 'Modal Picker (picker)')}</option>
+                                <option value="radio">{tr('单选 (radio)', 'Radio (radio)')}</option>
+                                <option value="checkbox">{tr('多选 (checkbox)', 'Checkbox (checkbox)')}</option>
+                                <option value="switch">{tr('开关 (switch)', 'Switch (switch)')}</option>
+                                <option value="upload">{tr('上传附件 (upload)', 'Upload (upload)')}</option>
                               </select>
                               <button
                                 type="button"
@@ -2349,6 +2407,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   onPropChange(selectedNode.pfId, 'fields', base);
                                 }}
                                 className="px-1 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                                title={tr('上移', 'Move up')}
                               >
                                 ↑
                               </button>
@@ -2362,6 +2421,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   onPropChange(selectedNode.pfId, 'fields', base);
                                 }}
                                 className="px-1 text-[10px] text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                                title={tr('下移', 'Move down')}
                               >
                                 ↓
                               </button>
@@ -2377,6 +2437,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   );
                                 }}
                                 className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                                title={tr('删除字段', 'Delete field')}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
@@ -2393,10 +2454,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                     }
                                     className="rounded border-slate-300 text-blue-600"
                                   />
-                                  <span>必填</span>
+                                  <span>{tr('必填', 'Required')}</span>
                                 </label>
                                 <span className="text-slate-400">|</span>
-                                <span>跨列(span):</span>
+                                <span>{tr('跨列(span):', 'Span:')}</span>
                                 <select
                                   value={String(fSpan)}
                                   onChange={(e) =>
@@ -2404,10 +2465,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   }
                                   className="px-1 py-0.5 rounded border border-slate-200 bg-white text-[10px]"
                                 >
-                                  <option value="1">1列</option>
-                                  <option value="2">2列</option>
-                                  <option value="3">3列</option>
-                                  <option value="4">4列 (整行)</option>
+                                  <option value="1">{tr('1列', '1 col')}</option>
+                                  <option value="2">{tr('2列', '2 cols')}</option>
+                                  <option value="3">{tr('3列', '3 cols')}</option>
+                                  <option value="4">{tr('4列 (整行)', '4 cols (Full)')}</option>
                                 </select>
                               </div>
                             )}
@@ -2417,7 +2478,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               fType === 'checkbox') && (
                               <div className="flex items-center gap-1.5 pl-1">
                                 <span className="text-[10px] text-slate-400 shrink-0">
-                                  候选项:
+                                  {tr('候选项:', 'Options:')}
                                 </span>
                                 <input
                                   type="text"
@@ -2429,7 +2490,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                         : undefined,
                                     })
                                   }
-                                  placeholder="用逗号分隔，如 合格,让步接收,不合格"
+                                  placeholder={tr('用逗号分隔，如 合格,让步接收,不合格', 'Comma-separated, e.g. Pass,Conditional,Fail')}
                                   className="flex-1 min-w-0 px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[10px]"
                                 />
                               </div>
@@ -2438,7 +2499,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             {fType === 'picker' && (
                               <div className="flex items-center gap-1.5 pl-1">
                                 <span className="text-[10px] text-slate-400 shrink-0">
-                                  关联弹层:
+                                  {tr('关联弹层:', 'Overlay:')}
                                 </span>
                                 <select
                                   value={fOverlay}
@@ -2449,7 +2510,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   }
                                   className="flex-1 min-w-0 px-1.5 py-0.5 rounded border border-slate-200 bg-white font-mono text-[10px]"
                                 >
-                                  <option value="">-- 选择点击调起的弹框/抽屉 --</option>
+                                  <option value="">{tr('-- 选择点击调起的弹框/抽屉 --', '-- Select modal / drawer --')}</option>
                                   {overlays.map((o) => (
                                     <option key={o.overlayId} value={o.overlayId}>
                                       #{o.overlayId} · {o.title}
@@ -2483,7 +2544,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 <div className="pt-2.5 border-t border-slate-200 space-y-2">
                   <div className="flex items-center justify-between gap-1 flex-wrap">
                     <span className="text-[11px] font-semibold text-slate-800">
-                      描述项列表 ({isAutoDesc ? '自动推导' : `${descOrTimelineItems.length}项`})
+                      {tr(
+                        `描述项列表 (${isAutoDesc ? '自动推导' : `${descOrTimelineItems.length}项`})`,
+                        `Description Items (${isAutoDesc ? 'Auto' : `${descOrTimelineItems.length}`})`
+                      )}
                     </span>
                     <div className="flex items-center gap-1">
                       {boundTable && (
@@ -2494,7 +2558,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }
                           className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-medium cursor-pointer"
                         >
-                          从物理表导入
+                          {tr('从物理表导入', 'Import from Table')}
                         </button>
                       )}
                       <button
@@ -2503,13 +2567,13 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           const base = isAutoDesc ? autoItems : descOrTimelineItems;
                           onPropChange(selectedNode.pfId, 'items', [
                             ...base,
-                            { label: `字段 ${base.length + 1}`, value: '示例内容' },
+                            { label: tr(`字段 ${base.length + 1}`, `Field ${base.length + 1}`), value: tr('示例内容', 'Sample value') },
                           ]);
                         }}
                         className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                       >
                         <Plus className="w-3 h-3" />
-                        <span>新增描述项</span>
+                        <span>{tr('新增描述项', 'Add Item')}</span>
                       </button>
                     </div>
                   </div>
@@ -2530,7 +2594,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             );
                             onPropChange(selectedNode.pfId, 'items', next);
                           }}
-                          placeholder="标签"
+                          placeholder={tr('标签', 'Label')}
                           className="w-24 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs"
                         />
                         {boundTable ? (
@@ -2556,7 +2620,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             }}
                             className="w-28 px-1 py-1 rounded border border-slate-200 bg-white font-mono text-[11px]"
                           >
-                            <option value="">--固定值--</option>
+                            <option value="">{tr('--固定值--', '--Static--')}</option>
                             {boundTable.columns.map((c) => (
                               <option key={c.name} value={c.name}>
                                 {c.name}
@@ -2580,7 +2644,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             );
                             onPropChange(selectedNode.pfId, 'items', next);
                           }}
-                          placeholder="展示值"
+                          placeholder={tr('展示值', 'Value')}
                           className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs"
                         />
                         <button
@@ -2610,6 +2674,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               const defaultSteps: Record<string, PropValue>[] =
                 descOrTimelineItems.length > 0
                   ? descOrTimelineItems
+                  : isEn
+                  ? [
+                      { title: 'Submitted', time: '2026-04-16 09:30', status: 'done' },
+                      { title: 'Manager Review', time: '2026-04-16 14:15', status: 'current' },
+                      { title: 'Archived', time: 'Pending', status: 'wait' },
+                    ]
                   : [
                       { title: '发起申请', time: '2026-04-16 09:30', status: 'done' },
                       { title: '部门主管审批', time: '2026-04-16 14:15', status: 'current' },
@@ -2620,7 +2690,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 <div className="pt-2.5 border-t border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-slate-800">
-                      时间线节点 ({defaultSteps.length}项)
+                      {tr(`时间线节点 (${defaultSteps.length}项)`, `Timeline Steps (${defaultSteps.length})`)}
                     </span>
                     <button
                       type="button"
@@ -2628,7 +2698,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         onPropChange(selectedNode.pfId, 'items', [
                           ...defaultSteps,
                           {
-                            title: `新节点 ${defaultSteps.length + 1}`,
+                            title: tr(`新节点 ${defaultSteps.length + 1}`, `Step ${defaultSteps.length + 1}`),
                             time: '2026-04-16 16:00',
                             status: 'wait',
                           },
@@ -2637,7 +2707,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium flex items-center gap-0.5 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>新增节点</span>
+                      <span>{tr('新增节点', 'Add Step')}</span>
                     </button>
                   </div>
                   <div className="space-y-1.5 pb-4">
@@ -2656,7 +2726,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             );
                             onPropChange(selectedNode.pfId, 'items', next);
                           }}
-                          placeholder="节点标题"
+                          placeholder={tr('节点标题', 'Step title')}
                           className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white text-xs"
                         />
                         <input
@@ -2669,7 +2739,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             );
                             onPropChange(selectedNode.pfId, 'items', next);
                           }}
-                          placeholder="时间/描述"
+                          placeholder={tr('时间/描述', 'Time / note')}
                           className="w-28 px-1.5 py-1 rounded border border-slate-200 bg-white text-[11px]"
                         />
                         <select
@@ -2683,10 +2753,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           }}
                           className="px-1 py-1 rounded border border-slate-200 bg-white text-[11px]"
                         >
-                          <option value="done">已完成</option>
-                          <option value="current">进行中</option>
-                          <option value="wait">待处理</option>
-                          <option value="error">已驳回</option>
+                          <option value="done">{tr('已完成', 'Done')}</option>
+                          <option value="current">{tr('进行中', 'In Progress')}</option>
+                          <option value="wait">{tr('待处理', 'Pending')}</option>
+                          <option value="error">{tr('已驳回', 'Rejected')}</option>
                         </select>
                         <button
                           type="button"
@@ -2722,15 +2792,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
                 return (
                   <div className="pt-2.5 border-t border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1 flex-wrap">
                       <span className="text-[11px] font-semibold text-slate-800">
                         {selectedNode.type === 'Tabs'
-                          ? `页签项管理 (${nodeChildren.length}个 Tab)`
+                          ? tr(`页签项管理 (${nodeChildren.length}个 Tab)`, `Tab Panes (${nodeChildren.length})`)
                           : selectedNode.type === 'MPillTabs'
-                          ? `胶囊项管理 (${nodeChildren.length}个 MTab)`
+                          ? tr(`胶囊项管理 (${nodeChildren.length}个 MTab)`, `Pill Tabs (${nodeChildren.length})`)
                           : selectedNode.type === 'Row'
-                          ? `栅格列管理 (${nodeChildren.length}个 Col)`
-                          : `内部按钮/子项 (${nodeChildren.length}个)`}
+                          ? tr(`栅格列管理 (${nodeChildren.length}个 Col)`, `Grid Columns (${nodeChildren.length})`)
+                          : tr(`内部按钮/子项 (${nodeChildren.length}个)`, `Child Items (${nodeChildren.length})`)}
                       </span>
                       <button
                         type="button"
@@ -2743,7 +2813,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               pfId: `${selectedNode.pfId}-tab-${Date.now().toString(36).slice(-3)}`,
                               props: {
                                 key: `tab_${childIdx}`,
-                                label: `新页签 ${childIdx}`,
+                                label: tr(`新页签 ${childIdx}`, `Tab ${childIdx}`),
                               },
                               children: [],
                             };
@@ -2761,7 +2831,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               type: 'MTab',
                               pfId: `${selectedNode.pfId}-mtab-${Date.now().toString(36).slice(-3)}`,
                               props: {
-                                title: `新胶囊 ${childIdx}`,
+                                title: tr(`新胶囊 ${childIdx}`, `Pill ${childIdx}`),
                               },
                               children: [],
                             };
@@ -2795,7 +2865,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               type: 'Button',
                               pfId: `${selectedNode.pfId}-btn-${Date.now().toString(36).slice(-3)}`,
                               props: {
-                                label: `操作按钮 ${childIdx}`,
+                                label: tr(`操作按钮 ${childIdx}`, `Action ${childIdx}`),
                                 variant: childIdx === 1 ? 'primary' : 'default',
                               },
                               children: [],
@@ -2815,24 +2885,24 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                         <Plus className="w-3 h-3" />
                         <span>
                           {selectedNode.type === 'Tabs'
-                            ? '新增页签 (Tab)'
+                            ? tr('新增页签 (Tab)', 'Add Tab')
                             : selectedNode.type === 'MPillTabs'
-                            ? '新增胶囊 (MTab)'
+                            ? tr('新增胶囊 (MTab)', 'Add Pill')
                             : selectedNode.type === 'Row'
-                            ? '新增栅格列 (Col)'
-                            : '新增按钮 (Button)'}
+                            ? tr('新增栅格列 (Col)', 'Add Col')
+                            : tr('新增按钮 (Button)', 'Add Button')}
                         </span>
                       </button>
                     </div>
 
                     {selectedNode.type === 'Row' && (
                       <div className="flex items-center gap-1 flex-wrap">
-                        <span className="text-[10px] text-slate-400">快速分栏预设:</span>
+                        <span className="text-[10px] text-slate-400">{tr('快速分栏预设:', 'Presets:')}</span>
                         {[
-                          { label: '两等分 (12:12)', spans: [12, 12] },
-                          { label: '三等分 (8:8:8)', spans: [8, 8, 8] },
-                          { label: '四等分 (6:6:6:6)', spans: [6, 6, 6, 6] },
-                          { label: '左窄右宽 (8:16)', spans: [8, 16] },
+                          { label: tr('两等分 (12:12)', '2 Equal (12:12)'), spans: [12, 12] },
+                          { label: tr('三等分 (8:8:8)', '3 Equal (8:8:8)'), spans: [8, 8, 8] },
+                          { label: tr('四等分 (6:6:6:6)', '4 Equal (6:6:6:6)'), spans: [6, 6, 6, 6] },
+                          { label: tr('左窄右宽 (8:16)', 'Sidebar + Main (8:16)'), spans: [8, 16] },
                         ].map((preset) => (
                           <button
                             key={preset.label}
@@ -2890,7 +2960,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   onChange={(e) =>
                                     onPropChange(ch.pfId, 'label', e.target.value)
                                   }
-                                  placeholder="页签名称"
+                                  placeholder={tr('页签名称', 'Tab label')}
                                   className="flex-1 min-w-0 px-1.5 py-0.5 rounded border border-slate-200 bg-white text-xs"
                                 />
                                 <input
@@ -2918,7 +2988,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   onChange={(e) =>
                                     onPropChange(ch.pfId, 'title', e.target.value)
                                   }
-                                  placeholder="胶囊标题"
+                                  placeholder={tr('胶囊标题', 'Pill title')}
                                   className="flex-1 min-w-0 px-1.5 py-0.5 rounded border border-slate-200 bg-white text-xs"
                                 />
                                 <input
@@ -2938,7 +3008,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                         : Math.max(0, Number(e.target.value))
                                     )
                                   }
-                                  placeholder="角标"
+                                  placeholder={tr('角标', 'Badge')}
                                   className="w-16 px-1.5 py-0.5 rounded border border-slate-200 bg-white font-mono text-[10px]"
                                 />
                               </>
@@ -2948,7 +3018,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                 <span className="text-xs text-slate-700 font-mono flex-1 truncate">
                                   {ch.pfId}
                                 </span>
-                                <span className="text-[10px] text-slate-400">跨度:</span>
+                                <span className="text-[10px] text-slate-400">{tr('跨度:', 'Span:')}</span>
                                 <select
                                   value={String(ch.props.span || 12)}
                                   onChange={(e) =>
@@ -2961,7 +3031,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                   <option value="12">12 (1/2)</option>
                                   <option value="16">16 (2/3)</option>
                                   <option value="18">18 (3/4)</option>
-                                  <option value="24">24 (整行)</option>
+                                  <option value="24">{tr('24 (整行)', '24 (Full)')}</option>
                                 </select>
                               </>
                             )}
@@ -2992,11 +3062,11 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                                     }
                                     className="px-1 py-0.5 rounded border border-slate-200 bg-white text-[10px]"
                                   >
-                                    <option value="primary">主按钮</option>
-                                    <option value="default">次按钮</option>
-                                    <option value="dashed">虚线</option>
-                                    <option value="danger">危险</option>
-                                    <option value="ghost">幽灵</option>
+                                    <option value="primary">{tr('主按钮', 'Primary')}</option>
+                                    <option value="default">{tr('次按钮', 'Default')}</option>
+                                    <option value="dashed">{tr('虚线', 'Dashed')}</option>
+                                    <option value="danger">{tr('危险', 'Danger')}</option>
+                                    <option value="ghost">{tr('幽灵', 'Ghost')}</option>
                                   </select>
                                 )}
                               </>
@@ -3015,7 +3085,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
         {tab === 'events' && (
           <div className="space-y-3">
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-              配置组件事件触发的交互动作链（如点击按钮打开弹框 <code className="font-mono text-blue-600">openModal</code>、在弹框中继续打开抽屉 <code className="font-mono text-blue-600">openDrawer</code> 或回填选单数据 <code className="font-mono text-blue-600">returnSelection</code>）。
+              {isEn ? (
+                <>
+                  Configure interactive action chains triggered by component events (e.g., <code className="font-mono text-blue-600">openModal</code>, nested <code className="font-mono text-blue-600">openDrawer</code>, or <code className="font-mono text-blue-600">returnSelection</code>).
+                </>
+              ) : (
+                <>
+                  配置组件事件触发的交互动作链（如点击按钮打开弹框 <code className="font-mono text-blue-600">openModal</code>、在弹框中继续打开抽屉 <code className="font-mono text-blue-600">openDrawer</code> 或回填选单数据 <code className="font-mono text-blue-600">returnSelection</code>）。
+                </>
+              )}
             </div>
 
             {eventSpecs.map((ev) => {
@@ -3039,13 +3117,16 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             {/* Row actions for tables and mobile task cards */}
             {(selectedNode.type === 'Table' || selectedNode.type === 'MTaskList') && (
               <div className="space-y-2.5 pt-2 border-t border-slate-200">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-900">
-                      行操作按钮 (rowActions)
+                      {tr('行操作按钮 (rowActions)', 'Row Actions (rowActions)')}
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      每一行右侧的操作按钮，可打开详情抽屉、编辑弹框或嵌套子页面
+                      {tr(
+                        '每一行右侧的操作按钮，可打开详情抽屉、编辑弹框或嵌套子页面',
+                        'Per-row action buttons to open detail drawers, edit modals, or sub-pages'
+                      )}
                     </div>
                   </div>
                   <button
@@ -3054,7 +3135,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       const next: Record<string, PropValue>[] = [
                         ...rowActions,
                         {
-                          label: '新操作',
+                          label: tr('新操作', 'Action'),
                         },
                       ];
                       updateRowActions(next);
@@ -3062,12 +3143,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                     className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0"
                   >
                     <Plus className="w-3 h-3" />
-                    <span>新增行按钮</span>
+                    <span>{tr('新增行按钮', 'Add Action')}</span>
                   </button>
                 </div>
 
                 {rowActions.map((ra, idx) => {
-                  const lbl = typeof ra.label === 'string' ? ra.label : `按钮${idx + 1}`;
+                  const lbl = typeof ra.label === 'string' ? ra.label : tr(`按钮${idx + 1}`, `Action ${idx + 1}`);
                   const danger = Boolean(ra.danger);
                   const primary = Boolean(ra.primary);
                   const chain = isActionChain(ra.onClick) ? ra.onClick : undefined;
@@ -3077,7 +3158,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                       key={idx}
                       className="p-2.5 rounded-xl border border-slate-200 bg-white space-y-2 shadow-2xs min-w-0 overflow-hidden"
                     >
-                      <div className="flex items-center justify-between gap-2 min-w-0">
+                      <div className="flex items-center justify-between gap-2 min-w-0 flex-wrap">
                         <input
                           type="text"
                           value={lbl}
@@ -3087,8 +3168,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             );
                             updateRowActions(next);
                           }}
-                          className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600"
-                          placeholder="按钮文字"
+                          className="flex-1 min-w-[96px] px-2 py-1 rounded border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600"
+                          placeholder={tr('按钮文字', 'Button label')}
                         />
                         {selectedNode.type === 'MTaskList' && (
                           <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer shrink-0">
@@ -3103,7 +3184,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                               }}
                               className="accent-blue-600"
                             />
-                            <span>主色胶囊</span>
+                            <span>{tr('主色胶囊', 'Primary Pill')}</span>
                           </label>
                         )}
                         <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer shrink-0">
@@ -3118,7 +3199,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             }}
                             className="accent-red-600"
                           />
-                          <span>危险红字</span>
+                          <span>{tr('危险红字', 'Danger')}</span>
                         </label>
                         <button
                           type="button"
@@ -3126,14 +3207,14 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                             updateRowActions(rowActions.filter((_, i) => i !== idx))
                           }
                           className="p-1 text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
-                          title="删除该行操作按钮"
+                          title={tr('删除该行操作按钮', 'Delete row action')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
                       <ActionChainEditor
-                        label={`行按钮「${lbl}」动作`}
+                        label={tr(`行按钮「${lbl}」动作`, `Row Action "${lbl}"`)}
                         eventName="onClick"
                         value={chain}
                         overlays={overlays}
@@ -3163,15 +3244,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               selectedNode.type !== 'Table' &&
               selectedNode.type !== 'MTaskList' && (
                 <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400">
-                  {doc.root.type === 'MobilePage' ? (
-                    <>
-                      当前组件 &lt;{selectedNode.type}&gt; 无直接点击事件，您可在其中放入 &lt;MButton&gt; 或 &lt;MTaskList&gt; 配置交互。
-                    </>
-                  ) : (
-                    <>
-                      当前组件 &lt;{selectedNode.type}&gt; 无直接点击事件，您可在其中放入 &lt;Button&gt; 或 &lt;Table&gt; 配置交互。
-                    </>
-                  )}
+                  {doc.root.type === 'MobilePage'
+                    ? tr(
+                        `当前组件 <${selectedNode.type}> 无直接点击事件，您可在其中放入 <MButton> 或 <MTaskList> 配置交互。`,
+                        `<${selectedNode.type}> has no direct events. Place an <MButton> or <MTaskList> inside to configure interactions.`
+                      )
+                    : tr(
+                        `当前组件 <${selectedNode.type}> 无直接点击事件，您可在其中放入 <Button> 或 <Table> 配置交互。`,
+                        `<${selectedNode.type}> has no direct events. Place a <Button> or <Table> inside to configure interactions.`
+                      )}
                 </div>
               )}
           </div>
@@ -3182,7 +3263,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
           <div className="space-y-3">
             <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 leading-relaxed space-y-1.5">
               <div>
-                为当前选中控件 <code className="font-mono font-semibold">{selectedNode.pfId}</code> 挂载业务规则便签，或点击画布上的黄色 <strong className="font-semibold">📌 便签</strong> 标签直接批注。
+                {isEn ? (
+                  <>
+                    Attach requirement notes to <code className="font-mono font-semibold">{selectedNode.pfId}</code>, or click yellow <strong className="font-semibold">📌 Note</strong> badges directly on the canvas.
+                  </>
+                ) : (
+                  <>
+                    为当前选中控件 <code className="font-mono font-semibold">{selectedNode.pfId}</code> 挂载业务规则便签，或点击画布上的黄色 <strong className="font-semibold">📌 便签</strong> 标签直接批注。
+                  </>
+                )}
               </div>
               <button
                 type="button"
@@ -3193,7 +3282,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 className="w-full py-1 px-2.5 rounded-lg bg-white hover:bg-amber-100/70 text-amber-900 border border-amber-300 font-medium flex items-center justify-center gap-1.5 cursor-pointer text-[11px]"
               >
                 <Sparkles className="w-3 h-3 text-amber-600" />
-                <span>AI 扫描便签与画布推导表字段 →</span>
+                <span>{tr('AI 扫描便签与画布推导表字段 →', 'AI Derive Schema from Notes & Canvas →')}</span>
               </button>
             </div>
 
@@ -3214,27 +3303,35 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 rows={2}
                 value={newStickyText}
                 onChange={(e) => setNewStickyText(e.target.value)}
-                placeholder={`为当前选中组件【${meta?.title ?? selectedNode.type} (${selectedNode.pfId})】新增需求便签...`}
+                placeholder={tr(
+                  `为当前选中组件【${meta?.title ?? selectedNode.type} (${selectedNode.pfId})】新增需求便签...`,
+                  `Add requirement note for ${meta?.title ?? selectedNode.type} (${selectedNode.pfId})...`
+                )}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-blue-600"
               />
               <button
                 type="submit"
                 className="w-full py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>挂载便签到此组件 ({selectedNode.pfId})</span>
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">
+                  {tr(`挂载便签到此组件 (${selectedNode.pfId})`, `Attach Note to ${selectedNode.pfId}`)}
+                </span>
               </button>
             </form>
 
             {/* Current Component Stickies */}
             <div className="space-y-2">
               <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                <span>当前组件便签 ({nodeStickies.length})</span>
+                <span>{tr(`当前组件便签 (${nodeStickies.length})`, `Component Notes (${nodeStickies.length})`)}</span>
                 <span className="font-mono text-[10px] text-slate-400">{selectedNode.pfId}</span>
               </div>
               {nodeStickies.length === 0 ? (
                 <div className="p-2.5 rounded-xl border border-dashed border-slate-200 text-center text-[11px] text-slate-400">
-                  当前选中组件暂未挂载便签（可点击下方本页便签快速定位对应组件）
+                  {tr(
+                    '当前选中组件暂未挂载便签（可点击下方本页便签快速定位对应组件）',
+                    'No notes attached to this component (click any page note below to jump to its target)'
+                  )}
                 </div>
               ) : (
                 nodeStickies.map((st) => (
@@ -3244,7 +3341,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-200/80 text-amber-900">
-                        便签 #{st.index} · 当前组件
+                        {tr(`便签 #${st.index} · 当前组件`, `Note #${st.index} · Current`)}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -3252,7 +3349,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           onClick={() => toggleStickyRule(st.id)}
                           className="text-[10px] text-slate-500 hover:text-slate-800 cursor-pointer"
                         >
-                          {st.active ? '已生效' : '已停用'}
+                          {st.active ? tr('已生效', 'Active') : tr('已停用', 'Inactive')}
                         </button>
                         <button
                           type="button"
@@ -3275,8 +3372,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             {pageStickies.length > 0 && (
               <div className="pt-2 border-t border-slate-200 space-y-2">
                 <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                  <span>本页全部需求便签 ({pageStickies.length})</span>
-                  <span className="text-[10px] text-slate-400">点击定位画布控件</span>
+                  <span>{tr(`本页全部需求便签 (${pageStickies.length})`, `All Page Notes (${pageStickies.length})`)}</span>
+                  <span className="text-[10px] text-slate-400">{tr('点击定位画布控件', 'Click to locate')}</span>
                 </div>
                 {pageStickies.map((st) => {
                   const isCurrent = st.targetWidgetId === selectedNode.pfId;
@@ -3303,7 +3400,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           </span>
                         </div>
                         <span className="text-[10px] font-semibold text-blue-600 shrink-0">
-                          定位 →
+                          {tr('定位 →', 'Locate →')}
                         </span>
                       </div>
                       <div className="text-xs text-slate-800 leading-relaxed">
@@ -3324,7 +3421,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
                   <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span>AI 局部 AST 微调</span>
+                  <span>{tr('AI 局部 AST 微调', 'AI Scoped AST Edit')}</span>
                 </div>
                 <button
                   type="button"
@@ -3339,7 +3436,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                   <span>
                     {hermesStatus === 'running'
                       ? `Hermes ${hermesVer}`
-                      : '启用 Hermes'}
+                      : tr('启用 Hermes', 'Connect Hermes')}
                   </span>
                 </button>
               </div>
@@ -3347,45 +3444,68 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 rows={3}
                 value={aiInput}
                 onChange={(e) => setAiInput(e.target.value)}
-                placeholder="例如：插入单据标准三栏表头；或给表格增加【AI风控审批】行按钮并自动创建审批弹框..."
+                placeholder={tr(
+                  '例如：插入单据标准三栏表头；或给表格增加【AI风控审批】行按钮并自动创建审批弹框...',
+                  'e.g., Insert a 3-column order header, or add an Approval row action with modal...'
+                )}
                 className="w-full p-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-blue-600"
               />
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
                   onClick={() => {
-                    onRunAiPrompt('插入单据标准三栏表头');
+                    onRunAiPrompt(
+                      tr(
+                        '插入单据标准三栏表头',
+                        'Insert a standard 3-column document header block'
+                      )
+                    );
                   }}
                   className="text-[10px] px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 cursor-pointer font-medium"
                 >
-                  + 插入单据三栏表头 (业务块)
+                  {tr('+ 插入单据三栏表头 (业务块)', '+ 3-Col Document Header')}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    onRunAiPrompt('给表格增加AI风控审批行操作并生成审批弹框');
+                    onRunAiPrompt(
+                      tr(
+                        '给表格增加AI风控审批行操作并生成审批弹框',
+                        'Add an Approval row action to the table and generate an approval modal'
+                      )
+                    );
                   }}
                   className="text-[10px] px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 cursor-pointer"
                 >
-                  + 审批行按钮与弹框
+                  {tr('+ 审批行按钮与弹框', '+ Approval Row Action & Modal')}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    onRunAiPrompt('增加Excel批量导入弹框，并在弹框内嵌套校验异常抽屉');
+                    onRunAiPrompt(
+                      tr(
+                        '增加Excel批量导入弹框，并在弹框内嵌套校验异常抽屉',
+                        'Add a bulk Excel import modal with a nested validation error drawer'
+                      )
+                    );
                   }}
                   className="text-[10px] px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 cursor-pointer"
                 >
-                  + 批量导入弹框→异常抽屉
+                  {tr('+ 批量导入弹框→异常抽屉', '+ Bulk Import Modal → Error Drawer')}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    onRunAiPrompt('新增一个业务流转日志抽屉');
+                    onRunAiPrompt(
+                      tr(
+                        '新增一个业务流转日志抽屉',
+                        'Add a workflow audit log drawer'
+                      )
+                    );
                   }}
                   className="text-[10px] px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 cursor-pointer"
                 >
-                  + 业务详情抽屉
+                  {tr('+ 业务详情抽屉', '+ Audit Log Drawer')}
                 </button>
               </div>
               <button
@@ -3404,8 +3524,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>
                   {hermesStatus === 'running'
-                    ? `由 Hermes (${hermesVer}) 执行改写`
-                    : '执行 AI 局部改写'}
+                    ? tr(`由 Hermes (${hermesVer}) 执行改写`, `Apply with Hermes (${hermesVer})`)
+                    : tr('执行 AI 局部改写', 'Run AI Scoped Edit')}
                 </span>
               </button>
             </div>
@@ -3415,9 +3535,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
                   <Layers className="w-3 h-3 text-blue-600" />
-                  <span>当前节点受约束 TSX 源码</span>
+                  <span>{tr('当前节点受约束 TSX 源码', 'Selected Node Constrained TSX')}</span>
                 </span>
-                <span className="text-[10px] font-mono text-slate-400">AST 双向同步</span>
+                <span className="text-[10px] font-mono text-slate-400">{tr('AST 双向同步', '2-Way AST Sync')}</span>
               </div>
               <pre className="p-2.5 rounded-xl bg-slate-900 text-slate-100 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-72">
                 {nodeTsxPreview}

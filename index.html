@@ -7,7 +7,7 @@
     <!-- MANDATORY: Declare support for both light and dark themes -->
     <meta name="color-scheme" content="light dark" />
     <script>
-      // Resolve the persisted theme before first paint to avoid a flash of the wrong theme.
+      // Resolve the persisted theme & locale before first paint to avoid flash.
       try {
         var pref = localStorage.getItem("color-scheme") || "light";
         var resolved =
@@ -19,6 +19,19 @@
       } catch (e) {
         document.documentElement.dataset.theme = "light";
       }
+      try {
+        var savedLoc = localStorage.getItem("protoflow-locale");
+        var rawLang = savedLoc || ((navigator.languages && navigator.languages[0]) || navigator.language || "zh-CN");
+        var isZh = /^zh\b/i.test(rawLang) || String(rawLang).toLowerCase().indexOf("zh") === 0;
+        var loc = isZh ? "zh-CN" : "en-US";
+        document.documentElement.lang = loc === "en-US" ? "en" : "zh-CN";
+        if (savedLoc) {
+          document.documentElement.dataset.locale = loc;
+        }
+        if (loc === "en-US") {
+          document.title = "Alex — AI Interactive Prototype & Data Flow Workbench";
+        }
+      } catch (e) {}
     </script>
     <title>Alex — AI 时代可运行原型与数据流转沙盒</title>
   </head>

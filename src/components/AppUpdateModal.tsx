@@ -2,14 +2,16 @@ import React, { useEffect, useId, useRef } from 'react';
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Package, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useUpdateStore } from '../store/useUpdateStore';
 import { formatBytes, getUpdaterDesktopBridge } from '../services/releaseClient';
+import { useI18n } from '../i18n';
 
 export const AppUpdatePanel: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+  const { tr, td } = useI18n();
   const update = useUpdateStore();
   const { status, currentVersion, os, serverUrl, hasUpdate, latestRelease,
     recommendedAsset, progress, lastCheckedAt, error, installGuide, isUpdating } = update;
   const native = Boolean(getUpdaterDesktopBridge());
   const busy = isUpdating || status === 'checking' || status === 'downloading' || status === 'installing';
-  const buttonClass = 'rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm flex items-center gap-2 cursor-pointer disabled:cursor-wait transition';
+  const buttonClass = 'rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm flex items-center gap-2 cursor-pointer disabled:cursor-wait transition shrink-0';
   const platformName = os === 'macos' ? 'macOS' : os === 'windows' ? 'Windows' : 'Linux';
   const progressPercent = Math.min(100, Math.max(0, progress?.percent ?? 0));
 
@@ -17,59 +19,59 @@ export const AppUpdatePanel: React.FC<{ embedded?: boolean }> = ({ embedded = fa
     <div className={`flex flex-col gap-5 ${embedded ? 'h-full overflow-y-auto p-6' : 'p-5 sm:p-6'}`}>
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">软件更新</h2>
-          <p className="mt-1 text-sm text-slate-500">当前版本 v{currentVersion} · {platformName}</p>
-          <p className="mt-2 text-xs text-slate-500">自动为这台电脑选择更新，保留你的项目和设置。</p>
+          <h2 className="text-lg font-bold text-slate-900">{tr('软件更新', 'Software Updates')}</h2>
+          <p className="mt-1 text-sm text-slate-500 tabular-nums">{tr(`当前版本 v${currentVersion} · ${platformName}`, `Current version v${currentVersion} · ${platformName}`)}</p>
+          <p className="mt-2 text-xs text-slate-500">{tr('自动为这台电脑选择更新，保留你的项目和设置。', 'Automatically selects the right installer for your device while preserving your projects and settings.')}</p>
         </div>
         <button type="button" disabled={busy} className={buttonClass} onClick={() => void update.checkForUpdates()}>
           <RefreshCw size={15} className={status === 'checking' ? 'animate-spin' : ''} />
-          {status === 'checking' ? '正在检查…' : '检查更新'}
+          {status === 'checking' ? tr('正在检查…', 'Checking…') : tr('检查更新', 'Check for Updates')}
         </button>
       </div>
 
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 flex items-start gap-2">
-        <AlertCircle size={17} className="shrink-0 mt-0.5" /><div><p className="font-semibold">更新未完成</p><p className="mt-1 break-words">{error}</p></div>
+        <AlertCircle size={17} className="shrink-0 mt-0.5" /><div><p className="font-semibold">{tr('更新未完成', 'Update Incomplete')}</p><p className="mt-1 break-words">{td(error)}</p></div>
       </div>}
 
       {status === 'up-to-date' && !hasUpdate && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 flex items-start gap-3">
         <CheckCircle2 size={23} className="text-emerald-600 shrink-0" />
-        <div><p className="font-semibold text-slate-900">已经是最新版本</p><p className="mt-1 text-sm text-slate-600">你正在使用 v{currentVersion}。{lastCheckedAt && `上次检查：${new Date(lastCheckedAt).toLocaleTimeString()}`}</p></div>
+        <div><p className="font-semibold text-slate-900">{tr('已经是最新版本', 'Up to Date')}</p><p className="mt-1 text-sm text-slate-600 tabular-nums">{tr(`你正在使用 v${currentVersion}。`, `You are running v${currentVersion}.`)}{lastCheckedAt && tr(`上次检查：${new Date(lastCheckedAt).toLocaleTimeString()}`, ` Last checked: ${new Date(lastCheckedAt).toLocaleTimeString()}`)}</p></div>
       </div>}
 
-      {latestRelease && hasUpdate && <section aria-label="可用更新" className="rounded-2xl border border-blue-200 bg-white overflow-hidden">
+      {latestRelease && hasUpdate && <section aria-label={tr('可用更新', 'Available Update')} className="rounded-2xl border border-blue-200 bg-white overflow-hidden">
         <div className="bg-blue-50 p-5 border-b border-blue-100">
-          <p className="text-xs font-semibold text-blue-600">{latestRelease.mandatory ? '重要更新' : '发现新版本'}</p>
-          <h3 className="mt-1 text-lg font-bold text-slate-900">Alex v{latestRelease.version}</h3>
-          {recommendedAsset && <p className="mt-1 text-xs text-slate-500">已为你的电脑选择合适的安装包 · {formatBytes(recommendedAsset.sizeBytes)}</p>}
+          <p className="text-xs font-semibold text-blue-600">{latestRelease.mandatory ? tr('重要更新', 'Important Update') : tr('发现新版本', 'New Version Available')}</p>
+          <h3 className="mt-1 text-lg font-bold text-slate-900 tabular-nums">Alex v{latestRelease.version}</h3>
+          {recommendedAsset && <p className="mt-1 text-xs text-slate-500 tabular-nums">{tr(`已为你的电脑选择合适的安装包 · ${formatBytes(recommendedAsset.sizeBytes)}`, `Selected installer for your device · ${formatBytes(recommendedAsset.sizeBytes)}`)}</p>}
         </div>
         <div className="p-5 space-y-4">
           {latestRelease.notes && <div className="whitespace-pre-wrap text-sm text-slate-700 leading-6 max-h-52 overflow-y-auto">{latestRelease.notes}</div>}
           {status === 'downloading' && <div role="status" className="space-y-2">
-            <div className="flex justify-between text-sm text-slate-600"><span>正在下载更新…</span><span>{progressPercent.toFixed(0)}%</span></div>
-            <div role="progressbar" aria-label="下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${progressPercent}%` }} /></div>
-            {progress && <p className="text-xs text-slate-500">{formatBytes(progress.transferredBytes)} / {formatBytes(progress.totalBytes)}</p>}
+            <div className="flex justify-between text-sm text-slate-600 tabular-nums"><span>{tr('正在下载更新…', 'Downloading update…')}</span><span>{progressPercent.toFixed(0)}%</span></div>
+            <div role="progressbar" aria-label={tr('下载进度', 'Download progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${progressPercent}%` }} /></div>
+            {progress && <p className="text-xs text-slate-500 tabular-nums">{formatBytes(progress.transferredBytes)} / {formatBytes(progress.totalBytes)}</p>}
           </div>}
-          {status === 'installing' && !installGuide && <div role="status" className="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">正在安装更新，请在系统弹窗中输入电脑的管理员密码。安装完成后将自动重启。</div>}
-          {status === 'downloaded' && <p className="text-sm text-emerald-700 flex items-center gap-2"><ShieldCheck size={16} />更新已下载并通过安全验证</p>}
+          {status === 'installing' && !installGuide && <div role="status" className="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{tr('正在安装更新，请在系统弹窗中输入电脑的管理员密码。安装完成后将自动重启。', 'Installing update — please enter your system administrator password if prompted. Alex will restart automatically when finished.')}</div>}
+          {status === 'downloaded' && <p className="text-sm text-emerald-700 flex items-center gap-2"><ShieldCheck size={16} />{tr('更新已下载并通过安全验证', 'Update downloaded and verified')}</p>}
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" disabled={busy || !recommendedAsset} className={buttonClass} onClick={() => void update.installLatestUpdate()}>
-              <Download size={16} />{status === 'installing' ? '正在安装…' : isUpdating ? '正在更新…' : native ? '立即更新' : '下载安装包'}
+              <Download size={16} />{status === 'installing' ? tr('正在安装…', 'Installing…') : isUpdating ? tr('正在更新…', 'Updating…') : native ? tr('立即更新', 'Update Now') : tr('下载安装包', 'Download Installer')}
             </button>
-            {status === 'downloading' && <button type="button" className="text-sm text-slate-500 hover:text-slate-800" onClick={() => void update.cancelDownload()}>取消下载</button>}
+            {status === 'downloading' && <button type="button" className="text-sm text-slate-500 hover:text-slate-800" onClick={() => void update.cancelDownload()}>{tr('取消下载', 'Cancel Download')}</button>}
           </div>
-          <p className="text-xs text-slate-500">{os === 'linux' ? '自动下载、安全校验并安装。系统可能会要求输入管理员密码。' : os === 'windows' ? '自动下载并打开安装向导，按提示完成更新。' : '自动下载并打开安装包，按提示替换应用。'}</p>
+          <p className="text-xs text-slate-500">{os === 'linux' ? tr('自动下载、安全校验并安装。系统可能会要求输入管理员密码。', 'Automatically downloads, verifies, and installs. Your system may prompt for an administrator password.') : os === 'windows' ? tr('自动下载并打开安装向导，按提示完成更新。', 'Automatically downloads and opens the setup wizard to complete the update.') : tr('自动下载并打开安装包，按提示替换应用。', 'Automatically downloads and opens the installer package to replace the app.')}</p>
         </div>
       </section>}
 
       {installGuide && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700">
-        <p className="font-semibold text-blue-900">{installGuide.title}</p>
-        <ol className="list-decimal list-inside space-y-1 mt-2">{installGuide.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
+        <p className="font-semibold text-blue-900">{td(installGuide.title)}</p>
+        <ol className="list-decimal list-inside space-y-1 mt-2">{installGuide.steps.map((step, index) => <li key={index}>{td(step)}</li>)}</ol>
       </div>}
 
-      {status === 'idle' && !error && <p className="text-sm text-slate-500">点击“检查更新”，即可获取最新版本。</p>}
+      {status === 'idle' && !error && <p className="text-sm text-slate-500">{tr('点击“检查更新”，即可获取最新版本。', 'Click "Check for Updates" to look for the latest release.')}</p>}
       <div className="flex items-center gap-3 text-xs text-slate-500">
-        <ShieldCheck size={14} /><span>更新包会自动验证来源和完整性</span>
-        <button type="button" disabled={busy} className="ml-auto flex items-center gap-1 hover:text-blue-600 cursor-pointer disabled:opacity-40" onClick={() => void update.openReleaseCenterWeb()}><ExternalLink size={13} />{serverUrl ? '版本记录' : 'GitHub Releases'}</button>
+        <ShieldCheck size={14} className="shrink-0" /><span>{tr('更新包会自动验证来源和完整性', 'Update packages are automatically verified for origin and integrity')}</span>
+        <button type="button" disabled={busy} className="ml-auto flex items-center gap-1 hover:text-blue-600 cursor-pointer disabled:opacity-40 shrink-0" onClick={() => void update.openReleaseCenterWeb()}><ExternalLink size={13} />{serverUrl ? tr('版本记录', 'Release Notes') : 'GitHub Releases'}</button>
       </div>
 
 
@@ -78,6 +80,7 @@ export const AppUpdatePanel: React.FC<{ embedded?: boolean }> = ({ embedded = fa
 };
 
 export const AppUpdateModal: React.FC = () => {
+  const { tr } = useI18n();
   const idPrefix = useId();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const { isModalOpen, setModalOpen, status, isUpdating } = useUpdateStore();
@@ -104,12 +107,12 @@ export const AppUpdateModal: React.FC = () => {
         <div className="flex items-center gap-2">
           <Package size={16} className="text-blue-600" />
           <span id={`${idPrefix}-modal-title`} className="text-xs font-bold text-slate-800">
-            Alex · 版本更新中心
+            {tr('Alex · 版本更新中心', 'Alex · Software Updates')}
           </span>
         </div>
         <button
           type="button"
-          aria-label="关闭版本更新窗口"
+          aria-label={tr('关闭版本更新窗口', 'Close update dialog')}
           disabled={isUpdating || status === 'downloading' || status === 'installing'}
           onClick={() => setModalOpen(false)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 cursor-pointer disabled:opacity-40"

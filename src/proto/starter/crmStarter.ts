@@ -6,6 +6,7 @@ import type { DesignerPage } from '../store/usePageStore';
 import type { Row } from '../runtime/mock';
 import { parsePageSource } from '../dsl/parser';
 import { printPageSource } from '../dsl/printer';
+import { isEnLocale } from '../../i18n/runtime';
 
 function norm(tsx: string): string {
   const res = parsePageSource(tsx);
@@ -24,7 +25,1266 @@ export interface CrmStarterDataset {
   entryPageId: string;
 }
 
+function createEnglishCrmStarterDataset(): CrmStarterDataset {
+  const customersTable: DBTableSchema = {
+    id: 't_crm_customers',
+    tableName: 't_crm_customers',
+    cnName: 'Enterprise Accounts & Opportunities',
+    domain: 'Customer Growth (CRM)',
+    description: 'Stores enterprise account profiles, 18-char tax registration IDs, pipeline stages, and projected ARR across analytics, CRM ledgers, and contract pickers.',
+    modeling: {
+      entity: 'Enterprise Account',
+      grain: 'One row per legal corporate entity (uniquely identified by customer_code and credit_code)',
+      reason: 'Shared across contracts, billing collections, and VAT invoicing so tax registration IDs stay consistent.',
+      pendingRules: [
+        {
+          rule: 'Verify credit_code is a valid 18-character tax registration ID before issuing VAT invoices',
+          reason: 'Format and tax-authority verification must be enforced in the application service layer',
+        },
+      ],
+    },
+    sharedByMenus: [
+      {
+        pageId: 'crm-dashboard',
+        menuTitle: 'CRM & Revenue Ops → Executive Revenue Dashboard',
+        accessMode: 'READ 查询',
+        fieldMappingNote: 'Aggregates projected ARR by region and counts active enterprise accounts',
+      },
+      {
+        pageId: 'crm-customers',
+        menuTitle: 'CRM & Revenue Ops → Accounts & Pipeline Ledger',
+        accessMode: 'CRUD 读写',
+        fieldMappingNote: 'Filters accounts, creates customer profiles, and updates tax IDs and pipeline stages',
+      },
+      {
+        pageId: 'crm-contracts',
+        menuTitle: 'CRM & Revenue Ops → Sales Contracts & Fulfillment',
+        accessMode: 'FK 外键引用',
+        fieldMappingNote: 'Links customer ID and company name via modal picker when drafting a contract',
+      },
+    ],
+    columns: [
+      { id: 'c_crm_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Account ID' },
+      { id: 'c_crm_code', name: 'customer_code', dataType: 'VARCHAR(40)', nullable: false, isUnique: true, comment: 'Account Code' },
+      { id: 'c_crm_credit', name: 'credit_code', dataType: 'VARCHAR(18)', nullable: false, isUnique: true, comment: 'Tax Registration ID (18 chars)' },
+      { id: 'c_crm_name', name: 'company_name', dataType: 'VARCHAR(120)', nullable: false, comment: 'Company Name' },
+      { id: 'c_crm_region', name: 'region', dataType: 'VARCHAR(32)', nullable: false, comment: 'Region (East/South/North/West)' },
+      { id: 'c_crm_ind', name: 'industry', dataType: 'VARCHAR(60)', nullable: false, comment: 'Industry' },
+      { id: 'c_crm_owner', name: 'owner_name', dataType: 'VARCHAR(60)', nullable: false, comment: 'Account Executive' },
+      { id: 'c_crm_arr', name: 'annual_arr', dataType: 'DECIMAL(14,2)', nullable: false, defaultValue: '0.00', comment: 'Projected ARR (¥)' },
+      { id: 'c_crm_status', name: 'status', dataType: 'VARCHAR(32)', nullable: false, defaultValue: 'In Progress', comment: 'Stage (Lead/In Progress/Proposal/Closed Won)' },
+      { id: 'c_crm_remark', name: 'remark', dataType: 'VARCHAR(255)', nullable: true, comment: 'Follow-up Notes' },
+    ],
+  };
+
+  const contractsTable: DBTableSchema = {
+    id: 't_crm_contracts',
+    tableName: 't_crm_contracts',
+    cnName: 'Sales Contracts',
+    domain: 'Revenue & Contracts (Contract)',
+    description: 'Tracks signed contract amounts, cumulative collections, invoiced amounts, and legal approval / fulfillment status across desktop and mobile workflows.',
+    modeling: {
+      entity: 'Commercial Sales Contract',
+      grain: 'One row per drafted or executed commercial sales contract',
+      reason: 'Centralizes contract total, collected amount, and invoiced amount to keep desktop finance and field mobile teams synchronized.',
+      pendingRules: [
+        {
+          rule: 'received_amount <= contract_amount and invoiced_amount <= contract_amount',
+          reason: 'Cross-table collection and invoicing caps require transactional row-level locking on the backend',
+        },
+      ],
+    },
+    sharedByMenus: [
+      {
+        pageId: 'crm-dashboard',
+        menuTitle: 'CRM & Revenue Ops → Executive Revenue Dashboard',
+        accessMode: 'READ 查询',
+        fieldMappingNote: 'Counts active contracts and summarizes contract value',
+      },
+      {
+        pageId: 'crm-contracts',
+        menuTitle: 'CRM & Revenue Ops → Sales Contracts & Fulfillment',
+        accessMode: 'CRUD 读写',
+        fieldMappingNote: 'Drafts contracts, runs legal sign-off, and drills into milestone payment schedules',
+      },
+      {
+        pageId: 'crm-finance',
+        menuTitle: 'CRM & Revenue Ops → Collections & Billing Workbench',
+        accessMode: 'FK 外键引用',
+        fieldMappingNote: 'Validates contract status and remaining invoiceable balance during reconciliation',
+      },
+      {
+        pageId: 'mob-crm-approvals',
+        menuTitle: 'Field Sales Mobile → Mobile Approvals & Collections',
+        accessMode: 'STATE 状态流转',
+        fieldMappingNote: 'Sales directors approve contracts on mobile and inspect payment milestones',
+      },
+      {
+        pageId: 'mob-crm-invoice',
+        menuTitle: 'Field Sales Mobile → Field Visits & Mobile Invoicing',
+        accessMode: 'FK 外键引用',
+        fieldMappingNote: 'Field reps select an active contract via bottom-sheet picker when requesting an invoice',
+      },
+    ],
+    columns: [
+      { id: 'c_con_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Contract ID' },
+      { id: 'c_con_no', name: 'contract_no', dataType: 'VARCHAR(40)', nullable: false, isUnique: true, comment: 'Contract No.' },
+      { id: 'c_con_title', name: 'contract_title', dataType: 'VARCHAR(120)', nullable: false, comment: 'Contract Title' },
+      {
+        id: 'c_con_cust_id',
+        name: 'customer_id',
+        dataType: 'VARCHAR(36)',
+        nullable: false,
+        isForeignKey: true,
+        references: 't_crm_customers(id)',
+        foreignKeyOptions: { name: 'fk_crm_contracts_customer', cardinality: '1:N', onDelete: 'RESTRICT' },
+        comment: 'Account ID',
+      },
+      { id: 'c_con_cust_name', name: 'customer_name', dataType: 'VARCHAR(120)', nullable: false, comment: 'Customer Name' },
+      { id: 'c_con_date', name: 'sign_date', dataType: 'DATE', nullable: false, comment: 'Sign Date' },
+      { id: 'c_con_amt', name: 'contract_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Contract Value (¥)' },
+      { id: 'c_con_rec', name: 'received_amount', dataType: 'DECIMAL(14,2)', nullable: false, defaultValue: '0.00', comment: 'Collected Amount (¥)' },
+      { id: 'c_con_inv', name: 'invoiced_amount', dataType: 'DECIMAL(14,2)', nullable: false, defaultValue: '0.00', comment: 'Invoiced Amount (¥)' },
+      { id: 'c_con_owner', name: 'owner_name', dataType: 'VARCHAR(60)', nullable: false, comment: 'Account Executive' },
+      { id: 'c_con_status', name: 'status', dataType: 'VARCHAR(32)', nullable: false, defaultValue: 'Pending Legal', comment: 'Status (Draft/Pending Legal/Active/Completed/Rejected)' },
+      { id: 'c_con_remark', name: 'remark', dataType: 'VARCHAR(255)', nullable: true, comment: 'Payment & Delivery Terms' },
+    ],
+  };
+
+  const paymentPlansTable: DBTableSchema = {
+    id: 't_crm_payment_plans',
+    tableName: 't_crm_payment_plans',
+    cnName: 'Contract Payment Milestones',
+    domain: 'Billing & Settlement (Billing)',
+    description: 'Breaks contracts into milestone receivables (deposit, go-live, retention) with composite uniqueness per contract stage for overdue alerts and bank reconciliation.',
+    modeling: {
+      entity: 'Contract Payment Milestone',
+      grain: 'One row per payment stage (contract_id + stage_no) under a sales contract',
+      reason: 'Enterprise contracts settle in milestones (e.g. 30/60/10); dedicated rows enable per-stage overdue tracking and master-detail drilldown.',
+      pendingRules: [
+        {
+          rule: 'Sum of plan_amount across stages of a contract must equal parent contract_amount',
+          reason: 'Total milestone conservation must be validated inside the save transaction',
+        },
+      ],
+    },
+    uniqueConstraints: [
+      { name: 'uq_contract_stage', columnIds: ['c_pp_contract_id', 'c_pp_stage'] },
+    ],
+    sharedByMenus: [
+      {
+        pageId: 'crm-dashboard',
+        menuTitle: 'CRM & Revenue Ops → Executive Revenue Dashboard',
+        accessMode: 'READ 查询',
+        fieldMappingNote: 'Filters overdue uncollected payment milestones on the executive dashboard',
+      },
+      {
+        pageId: 'crm-contracts',
+        menuTitle: 'CRM & Revenue Ops → Sales Contracts & Fulfillment',
+        accessMode: 'CRUD 读写',
+        fieldMappingNote: 'Displays isolated payment milestones per contract via sourceForeignKey=contract_id',
+      },
+      {
+        pageId: 'crm-finance',
+        menuTitle: 'CRM & Revenue Ops → Collections & Billing Workbench',
+        accessMode: 'STATE 状态流转',
+        fieldMappingNote: 'Finance reconciles bank receipts or flags overdue milestones',
+      },
+      {
+        pageId: 'mob-crm-approvals',
+        menuTitle: 'Field Sales Mobile → Mobile Approvals & Collections',
+        accessMode: 'READ 查询',
+        fieldMappingNote: 'Tapping a contract card slides up a bottom sheet showing its payment milestones',
+      },
+    ],
+    columns: [
+      { id: 'c_pp_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Milestone ID' },
+      {
+        id: 'c_pp_contract_id',
+        name: 'contract_id',
+        dataType: 'VARCHAR(36)',
+        nullable: false,
+        isForeignKey: true,
+        references: 't_crm_contracts(id)',
+        foreignKeyOptions: { name: 'fk_payment_plans_contract', cardinality: '1:N', onDelete: 'RESTRICT' },
+        comment: 'Contract ID',
+      },
+      { id: 'c_pp_con_no', name: 'contract_no', dataType: 'VARCHAR(40)', nullable: false, comment: 'Contract No.' },
+      { id: 'c_pp_stage', name: 'stage_no', dataType: 'INT', nullable: false, comment: 'Stage No. (1/2/3)' },
+      { id: 'c_pp_milestone', name: 'milestone_name', dataType: 'VARCHAR(80)', nullable: false, comment: 'Milestone (Deposit 30%/Go-Live 60%/Retention 10%)' },
+      { id: 'c_pp_due', name: 'due_date', dataType: 'DATE', nullable: false, comment: 'Due Date' },
+      { id: 'c_pp_plan_amt', name: 'plan_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Scheduled Amount (¥)' },
+      { id: 'c_pp_act_amt', name: 'actual_received', dataType: 'DECIMAL(14,2)', nullable: false, defaultValue: '0.00', comment: 'Received Amount (¥)' },
+      { id: 'c_pp_overdue', name: 'is_overdue', dataType: 'TINYINT(1)', nullable: false, defaultValue: '0', comment: 'Overdue Flag (0/1)' },
+      { id: 'c_pp_status', name: 'status', dataType: 'VARCHAR(32)', nullable: false, defaultValue: 'Pending', comment: 'Status (Pending/Overdue/Reconciled)' },
+    ],
+  };
+
+  const invoicesTable: DBTableSchema = {
+    id: 't_crm_invoices',
+    tableName: 't_crm_invoices',
+    cnName: 'Tax Invoice Requests',
+    domain: 'Billing & Settlement (Billing)',
+    description: 'Captures digital tax invoice requests linked to sales contracts, supporting mobile field submission and desktop finance review.',
+    modeling: {
+      entity: 'Tax Invoice Request',
+      grain: 'One row per tax invoice issuance request submitted to Finance',
+      reason: 'Field reps submit invoice requests on-site from mobile while Finance verifies contract status and remaining balance on desktop.',
+      pendingRules: [
+        {
+          rule: 'Only contracts with status IN (Active, Completed) may issue invoices, and cumulative invoiced amount cannot exceed contract_amount',
+          reason: 'Prevents premature or over-budget invoicing on draft/rejected contracts',
+        },
+      ],
+    },
+    sharedByMenus: [
+      {
+        pageId: 'crm-finance',
+        menuTitle: 'CRM & Revenue Ops → Collections & Billing Workbench',
+        accessMode: 'STATE 状态流转',
+        fieldMappingNote: 'Finance verifies buyer tax ID and contract quota to issue or reject invoices',
+      },
+      {
+        pageId: 'mob-crm-invoice',
+        menuTitle: 'Field Sales Mobile → Field Visits & Mobile Invoicing',
+        accessMode: 'CRUD 读写',
+        fieldMappingNote: 'Field reps track invoice status and submit new requests linked to active contracts',
+      },
+    ],
+    columns: [
+      { id: 'c_inv_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Invoice Request ID' },
+      { id: 'c_inv_no', name: 'invoice_apply_no', dataType: 'VARCHAR(40)', nullable: false, isUnique: true, comment: 'Request No.' },
+      {
+        id: 'c_inv_con_id',
+        name: 'contract_id',
+        dataType: 'VARCHAR(36)',
+        nullable: false,
+        isForeignKey: true,
+        references: 't_crm_contracts(id)',
+        foreignKeyOptions: { name: 'fk_invoices_contract', cardinality: '1:N', onDelete: 'RESTRICT' },
+        comment: 'Contract ID',
+      },
+      { id: 'c_inv_buyer', name: 'buyer_title', dataType: 'VARCHAR(120)', nullable: false, comment: 'Billing Entity Name' },
+      { id: 'c_inv_tax_no', name: 'tax_no', dataType: 'VARCHAR(18)', nullable: false, comment: 'Buyer Tax ID' },
+      { id: 'c_inv_type', name: 'invoice_type', dataType: 'VARCHAR(32)', nullable: false, defaultValue: 'Special VAT', comment: 'Invoice Type (Special VAT/Standard VAT)' },
+      { id: 'c_inv_rate', name: 'tax_rate', dataType: 'DECIMAL(5,2)', nullable: false, defaultValue: '6.00', comment: 'Tax Rate (%)' },
+      { id: 'c_inv_amt', name: 'apply_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Invoice Amount (¥)' },
+      { id: 'c_inv_user', name: 'applicant', dataType: 'VARCHAR(60)', nullable: false, comment: 'Requested By' },
+      { id: 'c_inv_status', name: 'status', dataType: 'VARCHAR(32)', nullable: false, defaultValue: 'Pending Finance', comment: 'Status (Pending Finance/Issued/Rejected)' },
+      { id: 'c_inv_remark', name: 'remark', dataType: 'VARCHAR(255)', nullable: true, comment: 'Delivery Email & Notes' },
+    ],
+  };
+
+  const revenueTable: DBTableSchema = {
+    id: 't_crm_monthly_revenue',
+    tableName: 't_crm_monthly_revenue',
+    cnName: 'Monthly Bookings & Collections',
+    domain: 'Analytics & BI (BI)',
+    description: 'Summarizes monthly signed bookings, cash collections, and targets for the multi-series executive trend chart.',
+    modeling: {
+      entity: 'Monthly Revenue Snapshot',
+      grain: 'One row per calendar month (YYYY-MM)',
+      reason: 'Compares signed bookings against actual cash collections and quota targets over time.',
+    },
+    sharedByMenus: [
+      {
+        pageId: 'crm-dashboard',
+        menuTitle: 'CRM & Revenue Ops → Executive Revenue Dashboard',
+        accessMode: 'READ 查询',
+        fieldMappingNote: 'Powers the 3-series Bookings vs. Cash Collected vs. Quota line chart',
+      },
+    ],
+    columns: [
+      { id: 'c_rev_id', name: 'id', dataType: 'VARCHAR(36)', nullable: false, isPrimaryKey: true, comment: 'Primary Key ID' },
+      { id: 'c_rev_month', name: 'month_label', dataType: 'VARCHAR(20)', nullable: false, isUnique: true, comment: 'Month (YYYY-MM)' },
+      { id: 'c_rev_signed', name: 'signed_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Signed Bookings (¥10K)' },
+      { id: 'c_rev_received', name: 'received_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Cash Collected (¥10K)' },
+      { id: 'c_rev_target', name: 'target_amount', dataType: 'DECIMAL(14,2)', nullable: false, comment: 'Monthly Target (¥10K)' },
+    ],
+  };
+
+  const dbTables: DBTableSchema[] = [
+    customersTable,
+    contractsTable,
+    paymentPlansTable,
+    invoicesTable,
+    revenueTable,
+  ];
+
+  const tableRows: Record<string, Row[]> = {
+    t_crm_customers: [
+      {
+        id: 'cust-1',
+        customer_code: 'CUS-2026-001',
+        credit_code: '91310115MA1K48921X',
+        company_name: 'Nebula Smart Manufacturing Corp.',
+        region: 'East',
+        industry: 'Industrial Automation',
+        owner_name: 'Liam Lin',
+        annual_arr: 480000,
+        status: 'Closed Won',
+        remark: 'Strategic flagship account; Phase 2 multi-plant rollout in discussion',
+      },
+      {
+        id: 'cust-2',
+        customer_code: 'CUS-2026-002',
+        credit_code: '91440300MA5F92018L',
+        company_name: 'DeepBlue Digital Media Group',
+        region: 'South',
+        industry: 'Digital Marketing',
+        owner_name: 'Elena Chen',
+        annual_arr: 260000,
+        status: 'Closed Won',
+        remark: 'Master service agreement executed; quarterly billing cycle',
+      },
+      {
+        id: 'cust-3',
+        customer_code: 'CUS-2026-003',
+        credit_code: '91110108MA01X7732Q',
+        company_name: 'Horizon Clean Energy Software Inc.',
+        region: 'North',
+        industry: 'CleanTech SaaS',
+        owner_name: 'Marcus Wang',
+        annual_arr: 620000,
+        status: 'Proposal',
+        remark: 'Technical POC passed; awaiting final commercial negotiation',
+      },
+      {
+        id: 'cust-4',
+        customer_code: 'CUS-2026-004',
+        credit_code: '91510100MA6C21904W',
+        company_name: 'Metro Cold-Chain Logistics Group',
+        region: 'West',
+        industry: 'Smart Cold Chain',
+        owner_name: 'Claire Zhou',
+        annual_arr: 320000,
+        status: 'Closed Won',
+        remark: 'Phase 1 WMS + billing reconciliation UAT in progress',
+      },
+      {
+        id: 'cust-5',
+        customer_code: 'CUS-2026-005',
+        credit_code: '91330106MA2H08415K',
+        company_name: 'Aurora Precision Optics Ltd.',
+        region: 'East',
+        industry: 'Semiconductors & Optics',
+        owner_name: 'Liam Lin',
+        annual_arr: 390000,
+        status: 'In Progress',
+        remark: 'CIO evaluating on-premise deployment and data residency controls',
+      },
+    ],
+    t_crm_contracts: [
+      {
+        id: 'con-1',
+        contract_no: 'HT-2026-0101',
+        contract_title: 'Nebula Enterprise Digital Platform Annual Subscription',
+        customer_id: 'cust-1',
+        customer_name: 'Nebula Smart Manufacturing Corp.',
+        sign_date: '2026-09-15',
+        contract_amount: 480000,
+        received_amount: 144000,
+        invoiced_amount: 432000,
+        owner_name: 'Liam Lin',
+        status: 'Active',
+        remark: '30% deposit / 60% go-live acceptance / 10% warranty retention',
+      },
+      {
+        id: 'con-2',
+        contract_no: 'HT-2026-0102',
+        contract_title: 'DeepBlue Multi-Brand CRM Private Cloud License',
+        customer_id: 'cust-2',
+        customer_name: 'DeepBlue Digital Media Group',
+        sign_date: '2026-10-08',
+        contract_amount: 260000,
+        received_amount: 260000,
+        invoiced_amount: 260000,
+        owner_name: 'Elena Chen',
+        status: 'Completed',
+        remark: 'Paid in full and Special VAT invoice delivered',
+      },
+      {
+        id: 'con-3',
+        contract_no: 'HT-2026-0103',
+        contract_title: 'Metro Cold-Chain Multi-Warehouse Collaboration Suite',
+        customer_id: 'cust-4',
+        customer_name: 'Metro Cold-Chain Logistics Group',
+        sign_date: '2026-11-12',
+        contract_amount: 320000,
+        received_amount: 0,
+        invoiced_amount: 0,
+        owner_name: 'Claire Zhou',
+        status: 'Pending Legal',
+        remark: 'Liability cap clause adjusted to 15%; awaiting General Counsel sign-off',
+      },
+      {
+        id: 'con-4',
+        contract_no: 'HT-2026-0104',
+        contract_title: 'Horizon Carbon Telemetry Data Platform Agreement',
+        customer_id: 'cust-3',
+        customer_name: 'Horizon Clean Energy Software Inc.',
+        sign_date: '2026-11-16',
+        contract_amount: 620000,
+        received_amount: 0,
+        invoiced_amount: 0,
+        owner_name: 'Marcus Wang',
+        status: 'Pending Legal',
+        remark: 'Includes executive wallboard add-on; expedited approval requested by Friday',
+      },
+    ],
+    t_crm_payment_plans: [
+      {
+        id: 'pp-1',
+        contract_id: 'con-1',
+        contract_no: 'HT-2026-0101',
+        stage_no: 1,
+        milestone_name: 'Initial Deposit (30%)',
+        due_date: '2026-09-25',
+        plan_amount: 144000,
+        actual_received: 144000,
+        is_overdue: 0,
+        status: 'Reconciled',
+      },
+      {
+        id: 'pp-2',
+        contract_id: 'con-1',
+        contract_no: 'HT-2026-0101',
+        stage_no: 2,
+        milestone_name: 'Go-Live Acceptance (60%)',
+        due_date: '2026-11-05',
+        plan_amount: 288000,
+        actual_received: 0,
+        is_overdue: 1,
+        status: 'Overdue',
+      },
+      {
+        id: 'pp-3',
+        contract_id: 'con-1',
+        contract_no: 'HT-2026-0101',
+        stage_no: 3,
+        milestone_name: 'Warranty Retention (10%)',
+        due_date: '2027-03-15',
+        plan_amount: 48000,
+        actual_received: 0,
+        is_overdue: 0,
+        status: 'Pending',
+      },
+      {
+        id: 'pp-4',
+        contract_id: 'con-2',
+        contract_no: 'HT-2026-0102',
+        stage_no: 1,
+        milestone_name: 'Upfront Full Payment (100%)',
+        due_date: '2026-10-15',
+        plan_amount: 260000,
+        actual_received: 260000,
+        is_overdue: 0,
+        status: 'Reconciled',
+      },
+      {
+        id: 'pp-5',
+        contract_id: 'con-3',
+        contract_no: 'HT-2026-0103',
+        stage_no: 1,
+        milestone_name: 'Contract Deposit (50%)',
+        due_date: '2026-11-25',
+        plan_amount: 160000,
+        actual_received: 0,
+        is_overdue: 0,
+        status: 'Pending',
+      },
+    ],
+    t_crm_invoices: [
+      {
+        id: 'inv-1',
+        invoice_apply_no: 'INV-202610-001',
+        contract_id: 'con-1',
+        buyer_title: 'Nebula Smart Manufacturing Corp.',
+        tax_no: '91310115MA1K48921X',
+        invoice_type: 'Special VAT',
+        tax_rate: 6,
+        apply_amount: 144000,
+        applicant: 'Liam Lin',
+        status: 'Issued',
+        remark: '30% deposit invoice sent to customer AP inbox',
+      },
+      {
+        id: 'inv-2',
+        invoice_apply_no: 'INV-202611-002',
+        contract_id: 'con-1',
+        buyer_title: 'Nebula Smart Manufacturing Corp.',
+        tax_no: '91310115MA1K48921X',
+        invoice_type: 'Special VAT',
+        tax_rate: 6,
+        apply_amount: 288000,
+        applicant: 'Liam Lin',
+        status: 'Pending Finance',
+        remark: 'Customer AP requires go-live invoice prior to wire release',
+      },
+      {
+        id: 'inv-3',
+        invoice_apply_no: 'INV-202610-003',
+        contract_id: 'con-2',
+        buyer_title: 'DeepBlue Digital Media Group',
+        tax_no: '91440300MA5F92018L',
+        invoice_type: 'Special VAT',
+        tax_rate: 6,
+        apply_amount: 260000,
+        applicant: 'Elena Chen',
+        status: 'Issued',
+        remark: 'Full contract invoice archived',
+      },
+    ],
+    t_crm_monthly_revenue: [
+      { id: 'rev-1', month_label: '2026-06', signed_amount: 118, received_amount: 96, target_amount: 110 },
+      { id: 'rev-2', month_label: '2026-07', signed_amount: 135, received_amount: 112, target_amount: 125 },
+      { id: 'rev-3', month_label: '2026-08', signed_amount: 142, received_amount: 128, target_amount: 140 },
+      { id: 'rev-4', month_label: '2026-09', signed_amount: 168, received_amount: 145, target_amount: 150 },
+      { id: 'rev-5', month_label: '2026-10', signed_amount: 195, received_amount: 172, target_amount: 170 },
+      { id: 'rev-6', month_label: '2026-11', signed_amount: 226, received_amount: 189, target_amount: 200 },
+    ],
+  };
+
+  const designerFolders: DesignerFolder[] = [
+    { id: 'fld-crm-main', title: 'CRM & Revenue Ops', parentFolderId: null },
+    { id: 'fld-crm-mobile', title: 'Field Sales Mobile', parentFolderId: null },
+  ];
+
+  const dashboardSource = norm(`// @protoflow page: crm-dashboard
+export default function Page() {
+  return (
+    <Page title="Executive Revenue Dashboard" description="Real-time visibility across accounts, contracts, milestone cash collections, and overdue alerts">
+      <PageHeader title="CRM Revenue & Collections Overview" breadcrumb={['CRM & Revenue Ops', 'Executive Revenue Dashboard']} />
+      <Toolbar align="between">
+        <Tag color="blue">5 Shared Physical Tables · Live Sync Between Desktop & Field Mobile</Tag>
+        <Button pfId="btn-dash-go-contracts" type="primary" onClick={() => navigate('crm-contracts')}>Open Contract Ledger</Button>
+      </Toolbar>
+      <Row gutter={16}>
+        <Col span={6}><Statistic pfId="stat-cust-total" title="Enterprise Accounts" table="t_crm_customers" /></Col>
+        <Col span={6}><Statistic pfId="stat-con-total" title="Active Contracts" table="t_crm_contracts" /></Col>
+        <Col span={6}><Statistic pfId="stat-rec-rate" title="Q4 Collection Rate" value="94.5%" trend="up" /></Col>
+        <Col span={6}><Statistic pfId="stat-overdue-cnt" title="Overdue Milestones" value="1" trend="down" /></Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={14}>
+          <Card title="Monthly Signed Bookings vs. Cash Collected vs. Quota">
+            <LineChart
+              pfId="chart-rev-trend"
+              title="Bookings vs. Collections Trend (¥10K)"
+              source="table"
+              table="t_crm_monthly_revenue"
+              dimension="month_label"
+              metrics={[
+                { field: 'signed_amount', label: 'Signed Bookings' },
+                { field: 'received_amount', label: 'Cash Collected' },
+                { field: 'target_amount', label: 'Monthly Quota' }
+              ]}
+              smooth={true}
+              height={280}
+            />
+          </Card>
+        </Col>
+        <Col span={10}>
+          <Card title="Projected ARR by Region">
+            <BarChart
+              pfId="chart-region-arr"
+              title="Regional Projected ARR (¥)"
+              source="table"
+              table="t_crm_customers"
+              dimension="region"
+              metrics={[{ field: 'annual_arr', label: 'Projected ARR' }]}
+              aggregation="sum"
+              palette="blue"
+              height={280}
+            />
+          </Card>
+        </Col>
+      </Row>
+      <Card title="Overdue Receivable Alerts (Live Filter: status = Overdue)">
+        <Toolbar align="between" title="Milestones Requiring Joint AE & Finance Follow-up">
+          <Button pfId="btn-dash-go-finance" type="primary" onClick={() => navigate('crm-finance')}>Reconcile in Finance</Button>
+        </Toolbar>
+        <Table
+          pfId="tbl-dash-overdue"
+          table="t_crm_payment_plans"
+          filter={{ status: 'Overdue' }}
+          columns={[
+            { dataIndex: 'contract_no', title: 'Contract No.' },
+            { dataIndex: 'stage_no', title: 'Stage' },
+            { dataIndex: 'milestone_name', title: 'Milestone' },
+            { dataIndex: 'due_date', title: 'Due Date' },
+            { dataIndex: 'plan_amount', title: 'Overdue Amount (¥)' },
+            { dataIndex: 'status', title: 'Status' }
+          ]}
+          rowActions={[
+            { label: 'Open Finance Workbench', onClick: () => navigate('crm-finance') }
+          ]}
+        />
+      </Card>
+    </Page>
+  );
+}
+`);
+
+  const customersSource = norm(`// @protoflow page: crm-customers
+export default function Page() {
+  return (
+    <Page title="Accounts & Pipeline Ledger" description="Manage enterprise tax IDs, regional assignments, industries, and sales pipeline stages">
+      <PageHeader title="Accounts & Pipeline Ledger" breadcrumb={['CRM & Revenue Ops', 'Accounts & Pipeline Ledger']} />
+      <Card>
+        <QueryForm
+          pfId="qf-customers"
+          target="tbl-customers-all"
+          cols={4}
+          fields={[
+            { name: 'company_name', label: 'Company Name' },
+            { name: 'credit_code', label: 'Tax Registration ID' },
+            { name: 'region', label: 'Region', type: 'select', options: 'East,South,North,West' },
+            { name: 'status', label: 'Pipeline Stage', type: 'select', options: 'Lead,In Progress,Proposal,Closed Won' }
+          ]}
+        />
+      </Card>
+      <Card>
+        <Tabs pfId="tabs-customers">
+          <Tab title="All Accounts">
+            <Toolbar align="between" title="Enterprise Account Directory">
+              <Button pfId="btn-create-customer" type="primary" icon="plus" onClick={() => openModal('m-create-customer')}>New Account</Button>
+              <Button onClick={() => navigate('crm-contracts')}>Draft Contract</Button>
+            </Toolbar>
+            <Table
+              pfId="tbl-customers-all"
+              table="t_crm_customers"
+              selectable={true}
+              rowActions={[
+                { label: 'View', onClick: () => openDrawer('d-customer-detail') },
+                { label: 'Edit', onClick: () => openModal('m-edit-customer') },
+                { label: 'Mark Won', onClick: () => { updateRow({ status: 'Closed Won' }); toast('Account marked as Closed Won'); } }
+              ]}
+            />
+          </Tab>
+          <Tab title="Active Proposals">
+            <Table
+              pfId="tbl-customers-following"
+              table="t_crm_customers"
+              filter={{ status: 'Proposal' }}
+              rowActions={[
+                { label: 'View', onClick: () => openDrawer('d-customer-detail') },
+                { label: 'Confirm Won', onClick: () => { updateRow({ status: 'Closed Won' }); toast('Marked Closed Won — ready to draft contract'); } }
+              ]}
+            />
+          </Tab>
+          <Tab title="Closed Won">
+            <Table
+              pfId="tbl-customers-won"
+              table="t_crm_customers"
+              filter={{ status: 'Closed Won' }}
+              rowActions={[
+                { label: 'View', onClick: () => openDrawer('d-customer-detail') }
+              ]}
+            />
+          </Tab>
+        </Tabs>
+      </Card>
+      <Modal id="m-create-customer" title="Create Enterprise Account" width={720} footer={false}>
+        <Form pfId="form-create-customer" table="t_crm_customers" cols={2}>
+          <Input label="Account Code" name="customer_code" placeholder="e.g. CUS-2026-006" required={true} />
+          <Input pfId="input-credit-code" label="Tax Registration ID" name="credit_code" maxLength={18} placeholder="18-character tax ID" required={true} />
+          <Input label="Company Name" name="company_name" placeholder="Must match legal billing title" required={true} />
+          <Select label="Region" name="region" options="East,South,North,West" required={true} />
+          <Input label="Industry" name="industry" placeholder="e.g. Industrial Automation / CleanTech" required={true} />
+          <Input label="Account Executive" name="owner_name" required={true} />
+          <NumberInput label="Projected ARR (¥)" name="annual_arr" prefix="¥" precision={2} min={0} required={true} />
+          <Select label="Pipeline Stage" name="status" options="Lead,In Progress,Proposal,Closed Won" required={true} />
+          <Textarea label="Follow-up Notes" name="remark" span={2} />
+        </Form>
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button pfId="btn-save-customer" type="primary" onClick={() => { submitForm('form-create-customer'); toast('Enterprise account created'); closeOverlay(); refresh('tbl-customers-all'); }}>Save</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-edit-customer" title="Edit Enterprise Account" width={720} footer={false}>
+        <Form pfId="form-edit-customer" table="t_crm_customers" cols={2}>
+          <Input label="Account Code" name="customer_code" required={true} />
+          <Input label="Tax Registration ID" name="credit_code" maxLength={18} required={true} />
+          <Input label="Company Name" name="company_name" required={true} />
+          <Select label="Region" name="region" options="East,South,North,West" required={true} />
+          <Input label="Industry" name="industry" required={true} />
+          <Input label="Account Executive" name="owner_name" required={true} />
+          <NumberInput label="Projected ARR (¥)" name="annual_arr" prefix="¥" precision={2} min={0} required={true} />
+          <Select label="Pipeline Stage" name="status" options="Lead,In Progress,Proposal,Closed Won" required={true} />
+          <Textarea label="Follow-up Notes" name="remark" span={2} />
+        </Form>
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button type="primary" onClick={() => { submitForm('form-edit-customer'); toast('Account updated'); closeOverlay(); refresh('tbl-customers-all'); }}>Save</Button>
+        </Toolbar>
+      </Modal>
+      <Drawer id="d-customer-detail" title="Account Profile & Pipeline Details" width={520}>
+        <Descriptions table="t_crm_customers" column={1} />
+      </Drawer>
+    </Page>
+  );
+}
+`);
+
+  const contractsSource = norm(`// @protoflow page: crm-contracts
+export default function Page() {
+  return (
+    <Page title="Sales Contracts & Fulfillment" description="Draft commercial contracts, run legal approvals, and drill down into milestone payment schedules">
+      <PageHeader title="Sales Contracts & Fulfillment" breadcrumb={['CRM & Revenue Ops', 'Sales Contracts & Fulfillment']} />
+      <Alert type="info" message="Master-detail linkage: click [Milestones] on any contract row to inspect isolated payment stages via contract_id." />
+      <Card>
+        <QueryForm
+          pfId="qf-contracts"
+          target="tbl-contracts-all"
+          cols={4}
+          fields={[
+            { name: 'contract_no', label: 'Contract No.' },
+            { name: 'contract_title', label: 'Contract Title' },
+            { name: 'customer_name', label: 'Customer' },
+            { name: 'status', label: 'Status', type: 'select', options: 'Draft,Pending Legal,Active,Completed,Rejected' }
+          ]}
+        />
+      </Card>
+      <Card>
+        <Tabs pfId="tabs-contracts">
+          <Tab title="All Contracts">
+            <Toolbar align="between" title="Sales Contract Master Ledger">
+              <Button pfId="btn-open-new-contract" type="primary" icon="plus" onClick={() => openModal('m-create-contract')}>New Contract</Button>
+              <Button onClick={() => navigate('crm-finance')}>Open Billing Workbench</Button>
+            </Toolbar>
+            <Table
+              pfId="tbl-contracts-all"
+              table="t_crm_contracts"
+              selectable={true}
+              rowActions={[
+                { label: 'Milestones', onClick: () => openDrawer('d-contract-detail') },
+                { label: 'Legal Review', onClick: () => openModal('m-approve-contract') }
+              ]}
+            />
+          </Tab>
+          <Tab title="Pending Legal" badge={2}>
+            <Table
+              pfId="tbl-contracts-pending"
+              table="t_crm_contracts"
+              filter={{ status: 'Pending Legal' }}
+              rowActions={[
+                { label: 'Milestones', onClick: () => openDrawer('d-contract-detail') },
+                { label: 'Approve', onClick: () => { updateRow({ status: 'Active' }); toast('Approved by Legal — contract is now Active'); } },
+                { label: 'Reject', danger: true, onClick: () => { updateRow({ status: 'Rejected' }); toast('Returned to AE for clause revision', 'warning'); } }
+              ]}
+            />
+          </Tab>
+          <Tab title="Active">
+            <Table
+              pfId="tbl-contracts-active"
+              table="t_crm_contracts"
+              filter={{ status: 'Active' }}
+              rowActions={[
+                { label: 'Milestones', onClick: () => openDrawer('d-contract-detail') }
+              ]}
+            />
+          </Tab>
+        </Tabs>
+      </Card>
+      <Modal id="m-create-contract" title="Draft Sales Contract" width={760} footer={false}>
+        <Form pfId="form-create-contract" table="t_crm_contracts" cols={2}>
+          <Input label="Contract No." name="contract_no" placeholder="e.g. HT-2026-0105" required={true} />
+          <Input label="Contract Title" name="contract_title" placeholder="Full commercial agreement title" required={true} />
+          <PickerInput pfId="picker-contract-customer" label="Select Account (ID)" name="customer_id" overlay="m-pick-customer" required={true} />
+          <Input label="Customer Name" name="customer_name" placeholder="Confirm legal entity name" required={true} />
+          <DatePicker label="Sign Date" name="sign_date" required={true} />
+          <NumberInput pfId="input-contract-amount" label="Contract Value (¥)" name="contract_amount" prefix="¥" precision={2} min={0.01} required={true} />
+          <Input label="Account Executive" name="owner_name" required={true} />
+          <Select label="Initial Status" name="status" options="Draft,Pending Legal" required={true} />
+          <Textarea label="Payment & Delivery Terms" name="remark" span={2} />
+        </Form>
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button pfId="btn-submit-contract" type="primary" onClick={() => { submitForm('form-create-contract'); toast('Submitted to Legal review queue'); closeOverlay(); refresh('tbl-contracts-all'); }}>Submit</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-pick-customer" title="Select Enterprise Account" width={820} footer={false}>
+        <Table pfId="tbl-pick-customer" table="t_crm_customers" selectable={true} pageSize={5} />
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button type="primary" onClick={() => returnSelection('tbl-pick-customer', 'company_name', 'id')}>Select Account</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-approve-contract" title="Legal & Risk Sign-Off" width={580} footer={false}>
+        <Descriptions table="t_crm_contracts" column={2} />
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button pfId="btn-reject-contract" type="danger" onClick={() => { updateRow({ status: 'Rejected' }); toast('Contract returned to drafter', 'warning'); closeOverlay(); }}>Reject</Button>
+          <Button pfId="btn-pass-contract" type="primary" onClick={() => { updateRow({ status: 'Active' }); toast('Approved — contract is now Active'); closeOverlay(); }}>Approve</Button>
+        </Toolbar>
+      </Modal>
+      <Drawer id="d-contract-detail" title="Contract Summary & Payment Milestones" width={780}>
+        <Descriptions table="t_crm_contracts" column={2} />
+        <Card title="Payment Schedule Milestones (Filtered by contract_id)">
+          <Table
+            pfId="tbl-contract-plans"
+            table="t_crm_payment_plans"
+            sourceForeignKey="contract_id"
+            columns={[
+              { dataIndex: 'stage_no', title: 'Stage' },
+              { dataIndex: 'milestone_name', title: 'Milestone' },
+              { dataIndex: 'due_date', title: 'Due Date' },
+              { dataIndex: 'plan_amount', title: 'Scheduled (¥)' },
+              { dataIndex: 'actual_received', title: 'Received (¥)' },
+              { dataIndex: 'status', title: 'Status' }
+            ]}
+          />
+        </Card>
+      </Drawer>
+    </Page>
+  );
+}
+`);
+
+  const financeSource = norm(`// @protoflow page: crm-finance
+export default function Page() {
+  return (
+    <Page title="Collections & Billing Workbench" description="Reconcile bank wire receipts, flag overdue installments, and review VAT invoice requests">
+      <PageHeader title="Collections & Tax Billing Workbench" breadcrumb={['CRM & Revenue Ops', 'Collections & Billing Workbench']} />
+      <Card>
+        <Tabs pfId="tabs-finance-workbench">
+          <Tab title="Milestone Reconciliation" badge={1}>
+            <QueryForm
+              pfId="qf-payment-plans"
+              target="tbl-finance-plans"
+              cols={3}
+              fields={[
+                { name: 'contract_no', label: 'Contract No.' },
+                { name: 'milestone_name', label: 'Milestone' },
+                { name: 'status', label: 'Status', type: 'select', options: 'Pending,Overdue,Reconciled' }
+              ]}
+            />
+            <Toolbar align="between" title="Scheduled vs. Collected Installments">
+              <Tag color="orange">Guardrail: cumulative receipts cannot exceed contract value; full collection completes the contract</Tag>
+              <Button onClick={() => navigate('crm-contracts')}>View Contracts</Button>
+            </Toolbar>
+            <Table
+              pfId="tbl-finance-plans"
+              table="t_crm_payment_plans"
+              rowActions={[
+                { label: 'Reconcile Receipt', onClick: () => openModal('m-reconcile-plan') },
+                { label: 'Flag Overdue', danger: true, onClick: () => { updateRow({ status: 'Overdue', is_overdue: 1 }); toast('Flagged as Overdue and synced to dashboard', 'warning'); } }
+              ]}
+            />
+          </Tab>
+          <Tab title="Invoice Review Queue" badge={1}>
+            <Toolbar align="between" title="VAT Invoice Requests (Synced with Field Mobile)">
+              <Button pfId="btn-pc-new-invoice" type="primary" icon="plus" onClick={() => openModal('m-create-invoice')}>New Invoice Request</Button>
+            </Toolbar>
+            <Table
+              pfId="tbl-finance-invoices"
+              table="t_crm_invoices"
+              rowActions={[
+                { label: 'Review & Issue', onClick: () => openModal('m-review-invoice') },
+                { label: 'Reject', danger: true, onClick: () => { updateRow({ status: 'Rejected' }); toast('Invoice request rejected', 'warning'); } }
+              ]}
+            />
+          </Tab>
+        </Tabs>
+      </Card>
+      <Modal id="m-reconcile-plan" title="Confirm Bank Receipt Reconciliation" width={560} footer={false}>
+        <Descriptions table="t_crm_payment_plans" column={2} />
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button pfId="btn-confirm-reconcile" type="primary" onClick={() => { updateRow({ status: 'Reconciled', is_overdue: 0 }); toast('Milestone reconciled'); closeOverlay(); }}>Confirm Reconciliation</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-review-invoice" title="Verify Tax Qualification & Issue Invoice" width={580} footer={false}>
+        <Descriptions table="t_crm_invoices" column={2} />
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button type="danger" onClick={() => { updateRow({ status: 'Rejected' }); toast('Invoice request rejected', 'warning'); closeOverlay(); }}>Reject</Button>
+          <Button pfId="btn-issue-invoice" type="primary" onClick={() => { updateRow({ status: 'Issued' }); toast('Invoice issued and delivered'); closeOverlay(); }}>Issue Invoice</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-create-invoice" title="Create VAT Invoice Request" width={720} footer={false}>
+        <Form pfId="form-pc-invoice" table="t_crm_invoices" cols={2}>
+          <Input label="Request No." name="invoice_apply_no" placeholder="e.g. INV-202611-004" required={true} />
+          <PickerInput label="Sales Contract" name="contract_id" overlay="m-pick-invoice-contract" required={true} />
+          <Input label="Billing Entity Name" name="buyer_title" required={true} />
+          <Input pfId="input-invoice-taxno" label="Buyer Tax ID" name="tax_no" maxLength={18} required={true} />
+          <Select label="Invoice Type" name="invoice_type" options="Special VAT,Standard VAT" required={true} />
+          <NumberInput label="Tax Rate (%)" name="tax_rate" precision={2} min={0} max={13} required={true} />
+          <NumberInput pfId="input-invoice-amount" label="Invoice Amount (¥)" name="apply_amount" prefix="¥" precision={2} min={0.01} required={true} />
+          <Input label="Requested By" name="applicant" required={true} />
+          <Select label="Initial Status" name="status" options="Pending Finance" required={true} />
+          <Textarea label="Delivery Email & Notes" name="remark" span={2} />
+        </Form>
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button pfId="btn-save-pc-invoice" type="primary" onClick={() => { submitForm('form-pc-invoice'); toast('Submitted to Finance review queue'); closeOverlay(); refresh('tbl-finance-invoices'); }}>Submit</Button>
+        </Toolbar>
+      </Modal>
+      <Modal id="m-pick-invoice-contract" title="Select Active Sales Contract" width={820} footer={false}>
+        <Table pfId="tbl-pick-contract" table="t_crm_contracts" selectable={true} pageSize={5} />
+        <Toolbar align="right">
+          <Button onClick={() => closeOverlay()}>Cancel</Button>
+          <Button type="primary" onClick={() => returnSelection('tbl-pick-contract', 'contract_title', 'id')}>Select Contract</Button>
+        </Toolbar>
+      </Modal>
+    </Page>
+  );
+}
+`);
+
+  const mobileTabBar = (activeKey: string) => `<MTabBar variant="floating" activeKey="${activeKey}" items={[
+        { key: 'approvals', title: 'Approvals', icon: 'Layers', badge: '2', page: 'mob-crm-approvals' },
+        { key: 'invoice', title: 'Invoicing', icon: 'Sparkles', page: 'mob-crm-invoice' }
+      ]} />`;
+
+  const mobileApprovalsSource = norm(`// @protoflow page: mob-crm-approvals
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="Mobile Approvals & Collections" accent="gemini" surfaceBg="mist">
+      <MTopBar title="Mobile Contract Hub" leftMode="sparkle" rightIcon="bell" onRightClick={() => navigate('mob-crm-invoice')} />
+      <MStatCard pfId="mstat-pending-contracts" title="Pending Approval Value" value="¥940,000" trend="2 urgent deals" trendTone="up" sparkline={true} />
+      <MSearchPill placeholder="Search contract title, No., or customer..." target="mlist-contracts" showFilter={false} />
+      <MPillTabs variant="pill" target="mlist-contracts" filterField="status" items={[
+        { title: 'All', value: '' },
+        { title: 'Pending Legal', value: 'Pending Legal', badge: '2' },
+        { title: 'Active', value: 'Active' }
+      ]} />
+      <MTaskList
+        pfId="mlist-contracts"
+        table="t_crm_contracts"
+        titleField="contract_title"
+        statusField="status"
+        fields={[
+          { dataIndex: 'contract_no', title: 'Contract No.' },
+          { dataIndex: 'customer_name', title: 'Customer' },
+          { dataIndex: 'contract_amount', title: 'Value', render: 'money' },
+          { dataIndex: 'owner_name', title: 'AE' }
+        ]}
+        rowActions={[
+          { label: 'Reject', danger: true, onClick: () => { updateRow({ status: 'Rejected' }); toast('Contract rejected on mobile', 'warning'); } },
+          { label: 'Approve', primary: true, onClick: () => { updateRow({ status: 'Active' }); toast('Contract approved — synced to desktop'); } }
+        ]}
+        onCardClick={() => openDrawer('sheet-contract-plans')}
+      />
+      ${mobileTabBar('approvals')}
+      <MBottomSheet id="sheet-contract-plans" title="Payment Milestones" subtitle="Isolated via foreign key contract_id" size="tall">
+        <MTaskList
+          pfId="mlist-contract-plans"
+          table="t_crm_payment_plans"
+          sourceForeignKey="contract_id"
+          titleField="milestone_name"
+          statusField="status"
+          fields={[
+            { dataIndex: 'stage_no', title: 'Stage' },
+            { dataIndex: 'due_date', title: 'Due Date' },
+            { dataIndex: 'plan_amount', title: 'Scheduled', render: 'money' }
+          ]}
+        />
+      </MBottomSheet>
+    </MobilePage>
+  );
+}
+`);
+
+  const mobileInvoiceSource = norm(`// @protoflow page: mob-crm-invoice
+// @protoflow platform: mobile
+export default function Page() {
+  return (
+    <MobilePage title="Field Visits & Mobile Invoicing" accent="gemini" surfaceBg="mist">
+      <MTopBar title="Field Mobile Invoicing" leftMode="back" rightIcon="plus" onLeftClick={() => navigate('mob-crm-approvals')} onRightClick={() => openDrawer('sheet-apply-invoice')} />
+      <MHeroHeader mode="greeting" eyebrow="Shared Live Table with Desktop Finance" title="On-Site Tax Invoicing" subtitle="Submit invoice requests right after customer sign-off" />
+      <MPillTabs variant="pill" target="mlist-invoices" filterField="status" items={[
+        { title: 'All', value: '' },
+        { title: 'Pending Finance', value: 'Pending Finance', badge: '1' },
+        { title: 'Issued', value: 'Issued' }
+      ]} />
+      <MTaskList
+        pfId="mlist-invoices"
+        table="t_crm_invoices"
+        titleField="buyer_title"
+        statusField="status"
+        fields={[
+          { dataIndex: 'invoice_apply_no', title: 'Request No.' },
+          { dataIndex: 'invoice_type', title: 'Type' },
+          { dataIndex: 'apply_amount', title: 'Amount', render: 'money' },
+          { dataIndex: 'applicant', title: 'AE' }
+        ]}
+      />
+      ${mobileTabBar('invoice')}
+      <MBottomSheet id="sheet-apply-invoice" title="New Invoice Request" subtitle="Writes directly to t_crm_invoices for desktop Finance review" size="tall">
+        <MForm pfId="mform-invoice" title="Billing & Contract Details" table="t_crm_invoices">
+          <MField label="Request No." name="invoice_apply_no" placeholder="e.g. INV-202611-008" required={true} />
+          <MSheetPicker
+            pfId="mpicker-invoice-contract"
+            label="Sales Contract"
+            name="contract_id"
+            table="t_crm_contracts"
+            labelField="contract_title"
+            valueField="id"
+            placeholder="Select active contract"
+            required={true}
+          />
+          <MField label="Billing Entity Name" name="buyer_title" placeholder="Must match legal customer name" required={true} />
+          <MField label="18-Char Buyer Tax ID" name="tax_no" placeholder="Enter tax registration ID" required={true} />
+          <MChipSelect label="Invoice Type" name="invoice_type" options="Special VAT,Standard VAT" required={true} />
+          <MField label="Tax Rate (%)" name="tax_rate" inputType="number" placeholder="Default 6" required={true} />
+          <MField pfId="mfield-invoice-amount" label="Invoice Amount (¥)" name="apply_amount" inputType="amount" placeholder="0.00" required={true} />
+          <MField label="Requested By" name="applicant" placeholder="Enter AE name" required={true} />
+          <MChipSelect label="Initial Status" name="status" options="Pending Finance" required={true} />
+          <MField label="Delivery Email & Notes" name="remark" inputType="textarea" placeholder="Customer AP email..." />
+        </MForm>
+        <MBottomDock
+          pfId="mdock-submit-invoice"
+          mode="action"
+          secondaryText="Cancel"
+          primaryText="Submit Request"
+          onSecondary={() => closeOverlay()}
+          onPrimary={() => { submitForm('mform-invoice'); toast('Invoice request submitted to Finance'); closeOverlay(); refresh('mlist-invoices'); }}
+        />
+      </MBottomSheet>
+    </MobilePage>
+  );
+}
+`);
+
+  const pageSources: Record<string, string> = {
+    'crm-dashboard': dashboardSource,
+    'crm-customers': customersSource,
+    'crm-contracts': contractsSource,
+    'crm-finance': financeSource,
+    'mob-crm-approvals': mobileApprovalsSource,
+    'mob-crm-invoice': mobileInvoiceSource,
+  };
+
+  const designerPages: DesignerPage[] = [
+    { pageId: 'crm-dashboard', title: 'Executive Revenue Dashboard', folderId: 'fld-crm-main', platform: 'desktop' },
+    { pageId: 'crm-customers', title: 'Accounts & Pipeline Ledger', folderId: 'fld-crm-main', platform: 'desktop' },
+    { pageId: 'crm-contracts', title: 'Sales Contracts & Fulfillment', folderId: 'fld-crm-main', platform: 'desktop' },
+    { pageId: 'crm-finance', title: 'Collections & Billing Workbench', folderId: 'fld-crm-main', platform: 'desktop' },
+    { pageId: 'mob-crm-approvals', title: 'Mobile Approvals & Collections', folderId: 'fld-crm-mobile', platform: 'mobile' },
+    { pageId: 'mob-crm-invoice', title: 'Field Visits & Mobile Invoicing', folderId: 'fld-crm-mobile', platform: 'mobile' },
+  ];
+
+  const stickyNotes: StickyNoteRule[] = [
+    {
+      id: 'sn-crm-1',
+      pageId: 'crm-dashboard',
+      targetWidgetId: 'tbl-dash-overdue',
+      targetWidgetName: 'Overdue Receivable Alert Table',
+      index: 1,
+      text: 'Nightly scheduled job scans t_crm_payment_plans: when due_date < CURRENT_DATE and status = Pending, set status = "Overdue", is_overdue = 1, and notify the AE and Finance.',
+      compiledRule: 'OVERDUE_CRON: due_date < CURRENT_DATE AND status = "Pending" => status = "Overdue", is_overdue = 1',
+      active: true,
+    },
+    {
+      id: 'sn-crm-2',
+      pageId: 'crm-customers',
+      targetWidgetId: 'input-credit-code',
+      targetWidgetName: 'Tax Registration ID Input',
+      index: 1,
+      text: 'credit_code must match the 18-character uppercase alphanumeric pattern (^[0-9A-Z]{18}$), remain globally UNIQUE, and block physical deletion while open contracts exist.',
+      compiledRule: 'UNIQUE(credit_code) && REGEX(/^[0-9A-Z]{18}$/) && ON_DELETE_RESTRICT(t_crm_contracts)',
+      active: true,
+    },
+    {
+      id: 'sn-crm-3',
+      pageId: 'crm-contracts',
+      targetWidgetId: 'btn-submit-contract',
+      targetWidgetName: 'Submit Sales Contract Button',
+      index: 1,
+      text: 'Generate contract_no sequentially as HT-YYYY-NNNN with idempotent uniqueness checks; contract_amount must have 2 decimal places (> 0) and reference an existing account.',
+      compiledRule: 'UNIQUE(contract_no) && contract_amount > 0 && FK_EXISTS(customer_id -> t_crm_customers.id)',
+      active: true,
+    },
+    {
+      id: 'sn-crm-4',
+      pageId: 'crm-contracts',
+      targetWidgetId: 'btn-pass-contract',
+      targetWidgetName: 'Legal Approve Contract Button',
+      index: 2,
+      text: 'State guard: only contracts in "Pending Legal" may transition to "Active" or "Rejected"; rejected drafts must be revised before re-entering review.',
+      compiledRule: 'STATE_GUARD: status == "Pending Legal" -> ["Active", "Rejected"]',
+      active: true,
+    },
+    {
+      id: 'sn-crm-5',
+      pageId: 'crm-contracts',
+      targetWidgetId: 'tbl-contract-plans',
+      targetWidgetName: 'Contract Payment Milestones Grid',
+      index: 3,
+      text: 'Enforce composite uniqueness uq_contract_stage(contract_id, stage_no) and verify that SUM(plan_amount) across stages equals parent contract_amount.',
+      compiledRule: 'UNIQUE(contract_id, stage_no) && SUM(plan_amount WHERE contract_id) == contract.contract_amount',
+      active: true,
+    },
+    {
+      id: 'sn-crm-6',
+      pageId: 'crm-finance',
+      targetWidgetId: 'btn-confirm-reconcile',
+      targetWidgetName: 'Confirm Reconciliation Button',
+      index: 1,
+      text: 'Anti-overcollection rule: lock parent contract row with SELECT ... FOR UPDATE, assert received_amount + plan_amount <= contract_amount, atomically increment received_amount, and mark contract "Completed" when paid in full.',
+      compiledRule: 'TX_LOCK(t_crm_contracts): received_amount + plan_amount <= contract_amount; IF equal THEN contract.status = "Completed"',
+      active: true,
+    },
+    {
+      id: 'sn-crm-7',
+      pageId: 'crm-finance',
+      targetWidgetId: 'btn-issue-invoice',
+      targetWidgetName: 'Issue Invoice Button',
+      index: 2,
+      text: 'Anti-overbilling & tax check: 1) Contract status must be Active or Completed; 2) invoiced_amount + apply_amount <= contract_amount; 3) Special VAT requires an 18-char tax_no; atomically increment invoiced_amount on issue.',
+      compiledRule: 'contract.status IN ("Active","Completed") && invoiced_amount + apply_amount <= contract_amount && LEN(tax_no) == 18',
+      active: true,
+    },
+    {
+      id: 'sn-crm-8',
+      pageId: 'mob-crm-approvals',
+      targetWidgetId: 'mlist-contracts',
+      targetWidgetName: 'Mobile Contract Approval List',
+      index: 1,
+      text: 'Mobile and desktop approvals share optimistic locking: if Legal already processed a contract on desktop, mobile taps show "Status already updated" and refresh.',
+      compiledRule: 'OPTIMISTIC_STATE_CHECK: UPDATE t_crm_contracts WHERE id = :id AND status = "Pending Legal"',
+      active: true,
+    },
+    {
+      id: 'sn-crm-9',
+      pageId: 'mob-crm-invoice',
+      targetWidgetId: 'mdock-submit-invoice',
+      targetWidgetName: 'Mobile Submit Invoice Dock',
+      index: 1,
+      text: 'Backend computes remaining invoiceable quota = contract_amount - invoiced_amount - pending requests, rejecting requests that exceed remaining balance.',
+      compiledRule: 'apply_amount <= contract_amount - invoiced_amount - SUM(pending.apply_amount)',
+      active: true,
+    },
+  ];
+
+  const projectNotes: NoteWorkspace = {
+    nodes: [
+      {
+        id: 'note-fld-crm-prd',
+        kind: 'folder',
+        title: 'CRM Contracts & Billing PRD Specs',
+        parentId: null,
+        icon: '📁',
+        updatedAt: '2026-11-19T10:00:00.000Z',
+      },
+      {
+        id: 'note-crm-state-machine',
+        kind: 'note',
+        title: 'Contract, Milestone & VAT Invoicing State Machines & Invariants',
+        parentId: 'note-fld-crm-prd',
+        icon: '📑',
+        updatedAt: '2026-11-19T10:15:00.000Z',
+        tags: ['State Machine', 'Reconciliation', 'Core Contract'],
+        cover: 'ocean',
+        pinned: true,
+        status: 'confirmed',
+        priority: 'P0',
+        stakeholder: 'VP Finance & RevOps Lead',
+        meetingDate: '2026-11-19',
+        shareable: true,
+        content: [
+          '<h2>1. Core Document State Machines</h2>',
+          '<ul>',
+          '<li><strong>Sales Contracts (t_crm_contracts.status)</strong>: <code>Draft</code> → <code>Pending Legal</code> → (approved) → <code>Active</code> → (100% collected) → <code>Completed</code>; rejected reviews return to <code>Rejected</code> for revision.</li>',
+          '<li><strong>Payment Milestones (t_crm_payment_plans.status)</strong>: <code>Pending</code> → (past due) → <code>Overdue</code> → (bank wire matched) → <code>Reconciled</code>.</li>',
+          '<li><strong>Tax Invoice Requests (t_crm_invoices.status)</strong>: <code>Pending Finance</code> → (approved &amp; issued) → <code>Issued</code>; invalid tax ID or quota returns to <code>Rejected</code>.</li>',
+          '</ul>',
+          '<h2>2. Cross-Table Transactional Invariants</h2>',
+          '<ol>',
+          '<li><strong>Milestone Conservation</strong>: Sum of <code>plan_amount</code> per <code>contract_id</code> equals <code>contract_amount</code>, with composite uniqueness on <code>(contract_id, stage_no)</code>.</li>',
+          '<li><strong>Collection Cap</strong>: At all times <code>received_amount &lt;= contract_amount</code>; reconciling the final installment transitions the contract to <code>Completed</code> in the same transaction.</li>',
+          '<li><strong>Invoicing Cap</strong>: Only <code>Active</code> and <code>Completed</code> contracts can be billed, with <code>invoiced_amount + pending + apply_amount &lt;= contract_amount</code>.</li>',
+          '</ol>',
+        ].join(''),
+      },
+      {
+        id: 'note-crm-money-precision',
+        kind: 'note',
+        title: 'Monetary Precision (DECIMAL 14,2) & Tax Rounding Rules',
+        parentId: 'note-fld-crm-prd',
+        icon: '🧮',
+        updatedAt: '2026-11-19T10:30:00.000Z',
+        tags: ['Currency Precision', 'Tax Calculation', 'Backend Spec'],
+        cover: 'emerald',
+        pinned: true,
+        status: 'confirmed',
+        priority: 'P0',
+        stakeholder: 'Tax Controller & Architecture Team',
+        meetingDate: '2026-11-19',
+        shareable: true,
+        content: [
+          '<h2>1. Storage &amp; Serialization Precision</h2>',
+          '<ul>',
+          '<li>All monetary columns use <code>DECIMAL(14,2)</code> (binary floating-point <code>FLOAT</code> / <code>DOUBLE</code> arithmetic is prohibited).</li>',
+          '<li>Tax rate columns use <code>DECIMAL(5,2)</code> (standard tiers: SaaS services <code>6.00%</code>, hardware/software goods <code>13.00%</code>).</li>',
+          '</ul>',
+          '<h2>2. Tax Separation &amp; Penny-Rounding Rule</h2>',
+          '<p><code>apply_amount</code> represents the <strong>tax-inclusive total</strong>:</p>',
+          '<ul>',
+          '<li><code>net_amount = ROUND(apply_amount / (1 + tax_rate / 100), 2)</code>;</li>',
+          '<li><code>tax_amount = apply_amount - net_amount</code> (computed by subtraction so net + tax always equals gross total to the cent).</li>',
+          '</ul>',
+        ].join(''),
+      },
+    ],
+    links: [
+      { page: { kind: 'page', pageId: 'crm-contracts' }, targetNodeId: 'note-crm-state-machine' },
+      { page: { kind: 'page', pageId: 'crm-finance' }, targetNodeId: 'note-crm-state-machine' },
+      { page: { kind: 'page', pageId: 'mob-crm-approvals' }, targetNodeId: 'note-crm-state-machine' },
+      { page: { kind: 'page', pageId: 'mob-crm-invoice' }, targetNodeId: 'note-crm-state-machine' },
+      { page: { kind: 'page', pageId: 'crm-dashboard' }, targetNodeId: 'note-crm-money-precision' },
+      { page: { kind: 'page', pageId: 'crm-finance' }, targetNodeId: 'note-crm-money-precision' },
+    ],
+  };
+
+  const mindmaps: MindmapWorkspace = {
+    nodes: [
+      {
+        id: 'mm-crm-flow',
+        kind: 'mindmap',
+        title: 'CRM Closed-Loop Quote-to-Cash Flow',
+        parentId: null,
+        source: [
+          'flowchart LR',
+          '  A["Enterprise Account\\n(t_crm_customers · 18-char Tax ID)"] --> B["Draft Contract\\n(t_crm_contracts · Pending Legal)"]',
+          '  B --> C{"Desktop Legal / Mobile Director Sign-Off"}',
+          '  C -- "Approve" --> D["Active Contract\\nMilestone Schedule (uq_contract_stage)"]',
+          '  C -- "Reject" --> B',
+          '  D --> E["Mobile / Desktop Invoice Request\\n(t_crm_invoices · Quota Check)"]',
+          '  E --> F["Finance Issues VAT Invoice\\nIncrement invoiced_amount"]',
+          '  D --> G["Bank Wire Reconciliation\\nIncrement received_amount"]',
+          '  G --> H{"Received == Contract Value?"}',
+          '  H -- "Yes" --> I["Auto-Transition to Completed"]',
+          '  H -- "Past Due" --> J["Flag Overdue · Dashboard Alert"]',
+        ].join('\n'),
+      },
+    ],
+    links: [
+      { page: { kind: 'folder', folderId: 'fld-crm-main' }, targetNodeId: 'mm-crm-flow' },
+      { page: { kind: 'folder', folderId: 'fld-crm-mobile' }, targetNodeId: 'mm-crm-flow' },
+    ],
+  };
+
+  return {
+    dbTables,
+    tableRows,
+    designerFolders,
+    designerPages,
+    pageSources,
+    stickyNotes,
+    projectNotes,
+    mindmaps,
+    entryPageId: 'crm-dashboard',
+  };
+}
+
 export function createCrmStarterDataset(): CrmStarterDataset {
+  if (isEnLocale()) {
+    return createEnglishCrmStarterDataset();
+  }
   const customersTable: DBTableSchema = {
     id: 't_crm_customers',
     tableName: 't_crm_customers',

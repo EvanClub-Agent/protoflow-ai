@@ -1,5 +1,6 @@
 import { buildSitemap, type SitemapLayout } from './sitemap';
 import { flattenSitemap, pageRefKey, type MindmapPageRef } from './mindmaps';
+import { isEnLocale, tr } from '../i18n/runtime';
 
 export type NotePageRef = MindmapPageRef;
 
@@ -118,9 +119,9 @@ export function addNoteAsset(
   assets: Record<string, NoteAsset> | undefined,
   asset: NoteAsset
 ): { id: string; assets: Record<string, NoteAsset> } {
-  if (!NOTE_ASSET_MIMES.has(asset.mime)) throw new Error('仅支持 PNG、JPG、WebP 或 GIF 图片');
+  if (!NOTE_ASSET_MIMES.has(asset.mime)) throw new Error(tr('仅支持 PNG、JPG、WebP 或 GIF 图片', 'Only PNG, JPG, WebP, or GIF images are supported'));
   if (!asset.data || noteAssetBytes(asset.data) > NOTE_ASSET_MAX_BYTES) {
-    throw new Error('图片为空或超过 8 MB，请压缩后再插入');
+    throw new Error(tr('图片为空或超过 8 MB，请压缩后再插入', 'Image is empty or exceeds 8 MB. Please compress before inserting.'));
   }
   const table = assets ?? {};
   const base = noteAssetId(asset.data);
@@ -192,94 +193,94 @@ export function pruneUnusedNoteAssets(data: NoteWorkspace): NoteWorkspace {
 
 export function validateNoteAssets(assets: unknown) {
   if (assets === undefined) return;
-  if (!assets || typeof assets !== 'object' || Array.isArray(assets)) throw new Error('笔记图片数据无效');
+  if (!assets || typeof assets !== 'object' || Array.isArray(assets)) throw new Error(tr('笔记图片数据无效', 'Invalid note image asset map'));
   for (const [id, value] of Object.entries(assets as Record<string, unknown>)) {
     const asset = value as NoteAsset;
-    if (!NOTE_ASSET_ID.test(id)) throw new Error('笔记图片 ID 无效');
-    if (!asset || typeof asset !== 'object' || !NOTE_ASSET_MIMES.has(asset.mime)) throw new Error('笔记图片格式无效');
+    if (!NOTE_ASSET_ID.test(id)) throw new Error(tr('笔记图片 ID 无效', 'Invalid note image ID'));
+    if (!asset || typeof asset !== 'object' || !NOTE_ASSET_MIMES.has(asset.mime)) throw new Error(tr('笔记图片格式无效', 'Invalid note image format'));
     if (typeof asset.data !== 'string' || !asset.data || !/^[A-Za-z0-9+/]+={0,2}$/.test(asset.data)) {
-      throw new Error('笔记图片内容无效');
+      throw new Error(tr('笔记图片内容无效', 'Invalid note image data'));
     }
-    if (noteAssetBytes(asset.data) > NOTE_ASSET_MAX_BYTES) throw new Error('笔记图片超过 8 MB');
+    if (noteAssetBytes(asset.data) > NOTE_ASSET_MAX_BYTES) throw new Error(tr('笔记图片超过 8 MB', 'Note image exceeds 8 MB'));
     if (asset.name !== undefined && (typeof asset.name !== 'string' || asset.name.length > 200)) {
-      throw new Error('笔记图片名称无效');
+      throw new Error(tr('笔记图片名称无效', 'Invalid note image name'));
     }
   }
 }
 
 export const emptyProjectNotes = (): NoteWorkspace => ({ nodes: [], links: [] });
 
-export const NOTE_COVERS: { id: NoteCoverId; label: string; className: string }[] = [
-  { id: 'none', label: '无封面', className: '' },
+export const NOTE_COVERS: { id: NoteCoverId; readonly label: string; className: string }[] = [
+  { id: 'none', get label() { return tr('无封面', 'No Cover'); }, className: '' },
   {
     id: 'ocean',
-    label: '深海蓝渐变',
+    get label() { return tr('深海蓝渐变', 'Ocean Blue'); },
     className: 'bg-gradient-to-r from-blue-600/90 via-indigo-500/85 to-cyan-500/80',
   },
   {
     id: 'emerald',
-    label: '翡翠绿渐变',
+    get label() { return tr('翡翠绿渐变', 'Emerald Green'); },
     className: 'bg-gradient-to-r from-emerald-600/85 via-teal-500/80 to-cyan-600/80',
   },
   {
     id: 'amber',
-    label: '暖阳金渐变',
+    get label() { return tr('暖阳金渐变', 'Warm Amber'); },
     className: 'bg-gradient-to-r from-amber-500/85 via-orange-500/80 to-rose-500/80',
   },
   {
     id: 'violet',
-    label: '极光紫渐变',
+    get label() { return tr('极光紫渐变', 'Aurora Violet'); },
     className: 'bg-gradient-to-r from-violet-600/85 via-purple-500/80 to-fuchsia-500/80',
   },
   {
     id: 'rose',
-    label: '珊瑚粉渐变',
+    get label() { return tr('珊瑚粉渐变', 'Coral Rose'); },
     className: 'bg-gradient-to-r from-rose-500/85 via-pink-500/80 to-orange-400/80',
   },
   {
     id: 'slate',
-    label: '极简石墨灰',
+    get label() { return tr('极简石墨灰', 'Graphite Slate'); },
     className: 'bg-gradient-to-r from-slate-800 via-slate-700 to-slate-600',
   },
 ];
 
-export const NOTE_PRESET_TAGS: { label: string; colorClass: string }[] = [
-  { label: '客户沟通', colorClass: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { label: '需求变更', colorClass: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { label: '会议纪要', colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { label: '原型评审', colorClass: 'bg-purple-50 text-purple-700 border-purple-200' },
-  { label: '业务规则', colorClass: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
-  { label: '待客户确认', colorClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  { label: '已定稿', colorClass: 'bg-slate-100 text-slate-700 border-slate-300' },
+export const NOTE_PRESET_TAGS: { readonly label: string; colorClass: string }[] = [
+  { get label() { return tr('客户沟通', 'Customer Discovery'); }, colorClass: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { get label() { return tr('需求变更', 'Scope Change'); }, colorClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { get label() { return tr('会议纪要', 'Meeting Notes'); }, colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { get label() { return tr('原型评审', 'Prototype Review'); }, colorClass: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { get label() { return tr('业务规则', 'Business Rules'); }, colorClass: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+  { get label() { return tr('待客户确认', 'Awaiting Sign-Off'); }, colorClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  { get label() { return tr('已定稿', 'Finalized'); }, colorClass: 'bg-slate-100 text-slate-700 border-slate-300' },
 ];
 
 export const NOTE_STATUS_OPTIONS: {
   id: NoteRequirementStatus;
-  label: string;
+  readonly label: string;
   dotClass: string;
   badgeClass: string;
 }[] = [
   {
     id: 'draft',
-    label: '草稿整理中',
+    get label() { return tr('草稿整理中', 'Drafting'); },
     dotClass: 'bg-slate-400',
     badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
   },
   {
     id: 'pending_confirm',
-    label: '待客户确认',
+    get label() { return tr('待客户确认', 'Awaiting Sign-Off'); },
     dotClass: 'bg-amber-500',
     badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
   },
   {
     id: 'confirmed',
-    label: '客户已确认',
+    get label() { return tr('客户已确认', 'Confirmed'); },
     dotClass: 'bg-emerald-500',
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   },
   {
     id: 'implemented',
-    label: '已落地原型',
+    get label() { return tr('已落地原型', 'In Prototype'); },
     dotClass: 'bg-blue-600',
     badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
   },
@@ -287,29 +288,29 @@ export const NOTE_STATUS_OPTIONS: {
 
 export const NOTE_PRIORITY_OPTIONS: {
   id: NotePriority;
-  label: string;
+  readonly label: string;
   badgeClass: string;
 }[] = [
-  { id: 'P0', label: 'P0 紧急必做', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  { id: 'P1', label: 'P1 核心迭代', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' },
-  { id: 'P2', label: 'P2 体验优化', badgeClass: 'bg-slate-100 text-slate-600 border-slate-200' },
+  { id: 'P0', get label() { return tr('P0 紧急必做', 'P0 Critical'); }, badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  { id: 'P1', get label() { return tr('P1 核心迭代', 'P1 Core'); }, badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' },
+  { id: 'P2', get label() { return tr('P2 体验优化', 'P2 Polish'); }, badgeClass: 'bg-slate-100 text-slate-600 border-slate-200' },
 ];
 
-export const NOTE_EMOJI_CATALOG: { category: string; emojis: string[] }[] = [
+export const NOTE_EMOJI_CATALOG: { readonly category: string; emojis: string[] }[] = [
   {
-    category: '需求与文档',
+    get category() { return tr('需求与文档', 'Specs & Docs'); },
     emojis: ['📝', '📋', '📄', '📑', '🗂️', '📓', '📔', '📌', '📍', '🏷️'],
   },
   {
-    category: '客户与沟通',
+    get category() { return tr('客户与沟通', 'Discovery & Sync'); },
     emojis: ['🤝', '💬', '🗣️', '👥', '📞', '🎯', '💡', '🔍', '🧭', '📣'],
   },
   {
-    category: '状态与里程碑',
+    get category() { return tr('状态与里程碑', 'Status & Milestones'); },
     emojis: ['✅', '⚠️', '🚨', '🚀', '⏳', '🔥', '⭐', '🔒', '🎉', '🛠️'],
   },
   {
-    category: '业务与数据',
+    get category() { return tr('业务与数据', 'Business & Data'); },
     emojis: ['📊', '📈', '🗄️', '📦', '🧾', '🏢', '🚚', '💳', '⚙️', '🧠'],
   },
 ];
@@ -330,12 +331,56 @@ export interface NoteTemplateItem {
 export const NOTE_TEMPLATES: NoteTemplateItem[] = [
   {
     id: 'customer-discovery',
-    title: '客户需求沟通纪要',
-    desc: '记录客户访谈背景、核心诉求、业务痛点与待确认事项清单',
+    get title() { return tr('客户需求沟通纪要', 'Customer Discovery Notes'); },
+    get desc() { return tr('记录客户访谈背景、核心诉求、业务痛点与待确认事项清单', 'Capture stakeholder context, core requirements, pain points, and follow-up action items'); },
     icon: '🤝',
-    tags: ['客户沟通', '会议纪要'],
+    get tags() { return tr(['客户沟通', '会议纪要'], ['Customer Discovery', 'Meeting Notes']); },
     cover: 'ocean',
-    content: `<h2>1. 沟通背景与参与人</h2>
+    get content() {
+      return isEnLocale()
+        ? `<h2>1. Meeting Context &amp; Participants</h2>
+<ul>
+  <li><strong>Date</strong>: ${TODAY_PLACEHOLDER}</li>
+  <li><strong>Customer Stakeholders</strong>: Business Lead / Operations Specialist</li>
+  <li><strong>Project Team</strong>: Product Manager / Solution Architect</li>
+  <li><strong>Topic</strong>: Core workflow discovery &amp; prototype scope alignment</li>
+</ul>
+<blockquote><p>💡 <strong>Key Takeaway</strong>: Summarize the primary business objective and key decisions in 1–2 sentences here.</p></blockquote>
+<h2>2. Current State &amp; Pain Points</h2>
+<ol>
+  <li><strong>Manual Spreadsheets</strong>: Offline spreadsheets across departments cause version drift and missed orders.</li>
+  <li><strong>Lack of Status Visibility</strong>: No real-time approval tracking or overdue alerts after submission.</li>
+</ol>
+<h2>3. Functional Requirements</h2>
+<table>
+  <tbody>
+    <tr>
+      <th>Module / Page</th>
+      <th>Stakeholder Need</th>
+      <th>Prototype Solution</th>
+      <th>Priority</th>
+    </tr>
+    <tr>
+      <td><p>Order Workbench</p></td>
+      <td><p>Filter by supplier, date range, and status; batch export</p></td>
+      <td><p>Standard list page + top KPI cards</p></td>
+      <td><p>P0</p></td>
+    </tr>
+    <tr>
+      <td><p>Create / Approve Drawer</p></td>
+      <td><p>Validate required fields and show live amount summary</p></td>
+      <td><p>Master-detail drawer + confirmation modal</p></td>
+      <td><p>P0</p></td>
+    </tr>
+  </tbody>
+</table>
+<h2>4. Open Questions &amp; Action Items</h2>
+<ul data-type="taskList">
+  <li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span>Outline primary menu structure in the left Page Directory</span></label><div><p>Outline primary menu structure in the left Page Directory</p></div></li>
+  <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span>Confirm tax rounding precision and credit-note rules with Finance</span></label><div><p>Confirm tax rounding precision and credit-note rules with Finance</p></div></li>
+  <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span>Deliver v1 interactive prototype and schedule review</span></label><div><p>Deliver v1 interactive prototype and schedule review</p></div></li>
+</ul>`
+        : `<h2>1. 沟通背景与参与人</h2>
 <ul>
   <li><strong>沟通时间</strong>：${TODAY_PLACEHOLDER}</li>
   <li><strong>客户方参与人</strong>：业务负责人 / 一线操作员</li>
@@ -376,16 +421,49 @@ export const NOTE_TEMPLATES: NoteTemplateItem[] = [
   <li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span>梳理主流程页面清单并在左侧「页面目录」建立结构</span></label><div><p>梳理主流程页面清单并在左侧「页面目录」建立结构</p></div></li>
   <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span>与客户财务人员确认税率计算精度与红冲规则</span></label><div><p>与客户财务人员确认税率计算精度与红冲规则</p></div></li>
   <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span>完成首版交互原型并发起客户二次评审</span></label><div><p>完成首版交互原型并发起客户二次评审</p></div></li>
-</ul>`,
+</ul>`;
+    },
   },
   {
     id: 'prototype-review',
-    title: '原型评审与修改记录',
-    desc: '在向客户或研发演示原型时，实时记录页面调整项与交互细节',
+    get title() { return tr('原型评审与修改记录', 'Prototype Review & Revisions'); },
+    get desc() { return tr('在向客户或研发演示原型时，实时记录页面调整项与交互细节', 'Track UI adjustments, field changes, and interaction feedback during walkthroughs'); },
     icon: '📋',
-    tags: ['原型评审', '需求变更'],
+    get tags() { return tr(['原型评审', '需求变更'], ['Prototype Review', 'Scope Change']); },
     cover: 'emerald',
-    content: `<h2>1. 评审基本信息</h2>
+    get content() {
+      return isEnLocale()
+        ? `<h2>1. Review Summary</h2>
+<ul>
+  <li><strong>Version</strong>: v1.0 Initial Prototype Walkthrough</li>
+  <li><strong>Audience</strong>: Customer Business Team / Engineering Team</li>
+  <li><strong>Overall Feedback</strong>: Core flow approved; minor form field and button adjustments requested</li>
+</ul>
+<h2>2. Page-Level Revision Checklist</h2>
+<ul data-type="taskList">
+  <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span><strong>[Filter Bar]</strong> Add Created Date Range and Status quick filters</span></label><div><p><strong>[Filter Bar]</strong> Add Created Date Range and Status quick filters</p></div></li>
+  <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span><strong>[Line Grid]</strong> Add Unit Price (Incl. Tax) and Tax Amount columns with footer totals</span></label><div><p><strong>[Line Grid]</strong> Add Unit Price (Incl. Tax) and Tax Amount columns with footer totals</p></div></li>
+  <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span><strong>[Edge Cases]</strong> Reject action must prompt for a required rejection reason</span></label><div><p><strong>[Edge Cases]</strong> Reject action must prompt for a required rejection reason</p></div></li>
+</ul>
+<h2>3. Database Schema Change Log</h2>
+<blockquote><p>📌 <strong>Tip</strong>: Click "Send to Project AI" in the top-right corner to sync schema updates to database tables and prototype canvases.</p></blockquote>
+<table>
+  <tbody>
+    <tr>
+      <th>Physical Table</th>
+      <th>Change</th>
+      <th>Column / Type</th>
+      <th>Description</th>
+    </tr>
+    <tr>
+      <td><p><code>t_biz_order</code></p></td>
+      <td><p>Add Column</p></td>
+      <td><p><code>reject_reason VARCHAR(255)</code></p></td>
+      <td><p>Required reason captured when rejecting an order</p></td>
+    </tr>
+  </tbody>
+</table>`
+        : `<h2>1. 评审基本信息</h2>
 <ul>
   <li><strong>评审版本</strong>：V1.0 原型初稿演示</li>
   <li><strong>评审对象</strong>：客户业务团队 / 内部研发团队</li>
@@ -414,16 +492,59 @@ export const NOTE_TEMPLATES: NoteTemplateItem[] = [
       <td><p>记录审批驳回原因，驳回时必填</p></td>
     </tr>
   </tbody>
-</table>`,
+</table>`;
+    },
   },
   {
     id: 'business-rules',
-    title: '核心业务规则与口径字典',
-    desc: '沉淀状态机流转、计算公式、权限边界与校验规则',
+    get title() { return tr('核心业务规则与口径字典', 'Business Rules & Formula Dictionary'); },
+    get desc() { return tr('沉淀状态机流转、计算公式、权限边界与校验规则', 'Document state machines, calculation formulas, permission boundaries, and validation guards'); },
     icon: '📐',
-    tags: ['业务规则'],
+    get tags() { return tr(['业务规则'], ['Business Rules']); },
     cover: 'violet',
-    content: `<h2>1. 单据生命周期与状态流转</h2>
+    get content() {
+      return isEnLocale()
+        ? `<h2>1. Document Lifecycle &amp; State Machine</h2>
+<p>Define state transitions from creation and submission through final approval:</p>
+<table>
+  <tbody>
+    <tr>
+      <th>Current State</th>
+      <th>Trigger</th>
+      <th>Next State</th>
+      <th>Validation Guard</th>
+    </tr>
+    <tr>
+      <td><p>Draft</p></td>
+      <td><p>Submit for Review</p></td>
+      <td><p>Pending</p></td>
+      <td><p>All required header fields filled and at least 1 valid line item</p></td>
+    </tr>
+    <tr>
+      <td><p>Pending</p></td>
+      <td><p>Approve</p></td>
+      <td><p>Approved</p></td>
+      <td><p>Operator holds approval role; records approver and timestamp</p></td>
+    </tr>
+    <tr>
+      <td><p>Pending</p></td>
+      <td><p>Reject</p></td>
+      <td><p>Rejected</p></td>
+      <td><p>Rejection reason is required; returns to drafter for editing</p></td>
+    </tr>
+  </tbody>
+</table>
+<h2>2. Calculation Formulas &amp; Precision</h2>
+<ul>
+  <li><strong>Total Incl. Tax</strong> = <code>∑(line_qty × unit_price_incl_tax)</code>, rounded to 2 decimal places.</li>
+  <li><strong>Net Amount</strong> = <code>total_incl_tax / (1 + tax_rate)</code>.</li>
+  <li><strong>Uniqueness Guard</strong>: Duplicate SKU codes under the same supplier within one PO are disallowed.</li>
+</ul>
+<h2>3. Edge Cases &amp; Exception Handling</h2>
+<pre><code>IF current_receipt_qty > (ordered_qty - delivered_qty) THEN
+  BLOCK submission and alert: "Receipt quantity exceeds remaining open balance!"
+END IF</code></pre>`
+        : `<h2>1. 单据生命周期与状态流转</h2>
 <p>明确各业务单据从创建、提交、审核到完结的状态机定义：</p>
 <table>
   <tbody>
@@ -462,12 +583,13 @@ export const NOTE_TEMPLATES: NoteTemplateItem[] = [
 <h2>3. 特殊边界与异常处理</h2>
 <pre><code>IF 本次交货数量 > (订单数量 - 已交货数量) THEN
   阻断提交，并高亮提示："本次验收数量超出剩余未交数量！"
-END IF</code></pre>`,
+END IF</code></pre>`;
+    },
   },
   {
     id: 'blank-note',
-    title: '空白笔记',
-    desc: '从零开始自由录入文字，输入 / 随时唤起 Notion 块级命令菜单',
+    get title() { return tr('空白笔记', 'Blank Note'); },
+    get desc() { return tr('从零开始自由录入文字，输入 / 随时唤起 Notion 块级命令菜单', 'Start from a clean page; type / anywhere to open the block command menu'); },
     icon: '📝',
     tags: [],
     cover: 'none',
@@ -490,19 +612,19 @@ export function validateProjectNotes(
 
 /** Structural checks for nodes and hierarchy only; independent of the page sitemap. */
 export function validateNoteNodes(value: unknown): asserts value is NoteWorkspace {
-  if (!value || typeof value !== 'object') throw new Error('项目笔记数据无效');
+  if (!value || typeof value !== 'object') throw new Error(tr('项目笔记数据无效', 'Invalid project notes data'));
   const data = value as NoteWorkspace;
   if (!Array.isArray(data.nodes) || !Array.isArray(data.links)) {
-    throw new Error('项目笔记必须包含 nodes 和 links 数组');
+    throw new Error(tr('项目笔记必须包含 nodes 和 links 数组', 'Project notes must contain nodes and links arrays'));
   }
-  if (data.nodes.length > 2000) throw new Error('项目笔记节点过多');
+  if (data.nodes.length > 2000) throw new Error(tr('项目笔记节点过多', 'Too many project note nodes'));
 
   const byId = new Map<string, NoteNode>();
   const siblingNames = new Set<string>();
 
   for (const node of data.nodes) {
     if (!node || typeof node.id !== 'string' || !node.id.trim() || byId.has(node.id)) {
-      throw new Error('笔记节点 ID 缺失或重复');
+      throw new Error(tr('笔记节点 ID 缺失或重复', 'Missing or duplicate note node ID'));
     }
     if (
       typeof node.title !== 'string' ||
@@ -510,47 +632,47 @@ export function validateNoteNodes(value: unknown): asserts value is NoteWorkspac
       node.title !== node.title.trim() ||
       node.title.length > 100
     ) {
-      throw new Error('笔记或目录名称需为 1–100 个字符，首尾不能有空格');
+      throw new Error(tr('笔记或目录名称需为 1–100 个字符，首尾不能有空格', 'Note or folder title must be 1–100 characters without leading/trailing whitespace'));
     }
     if (node.parentId !== null && (typeof node.parentId !== 'string' || !node.parentId.trim())) {
-      throw new Error('笔记上级目录 ID 无效');
+      throw new Error(tr('笔记上级目录 ID 无效', 'Invalid parent folder ID'));
     }
     if (typeof node.icon !== 'string' || !node.icon.trim() || node.icon.length > 16) {
-      throw new Error('笔记图标无效');
+      throw new Error(tr('笔记图标无效', 'Invalid note icon'));
     }
     if (typeof node.updatedAt !== 'string' || !node.updatedAt.trim()) {
-      throw new Error('笔记更新时间无效');
+      throw new Error(tr('笔记更新时间无效', 'Invalid note updatedAt timestamp'));
     }
     if (node.kind !== 'folder' && node.kind !== 'note') {
-      throw new Error('笔记节点类型无效');
+      throw new Error(tr('笔记节点类型无效', 'Invalid note node kind'));
     }
     if (node.kind === 'note') {
       if (typeof node.content !== 'string') {
-        throw new Error('笔记内容必须是字符串');
+        throw new Error(tr('笔记内容必须是字符串', 'Note content must be a string'));
       }
       if (!Array.isArray(node.tags) || node.tags.some((t) => typeof t !== 'string' || !t.trim())) {
-        throw new Error('笔记标签列表无效');
+        throw new Error(tr('笔记标签列表无效', 'Invalid note tags array'));
       }
       if (!VALID_COVERS.has(node.cover)) {
-        throw new Error('笔记封面类型无效');
+        throw new Error(tr('笔记封面类型无效', 'Invalid note cover type'));
       }
       if (typeof node.pinned !== 'boolean') {
-        throw new Error('笔记置顶标记必须是布尔值');
+        throw new Error(tr('笔记置顶标记必须是布尔值', 'Note pinned flag must be a boolean'));
       }
       if (node.status !== undefined && !VALID_STATUSES.has(node.status)) {
-        throw new Error('笔记需求状态无效');
+        throw new Error(tr('笔记需求状态无效', 'Invalid note requirement status'));
       }
       if (node.priority !== undefined && !VALID_PRIORITIES.has(node.priority)) {
-        throw new Error('笔记优先级无效');
+        throw new Error(tr('笔记优先级无效', 'Invalid note priority'));
       }
       if (node.stakeholder !== undefined && typeof node.stakeholder !== 'string') {
-        throw new Error('笔记客户对接人必须是字符串');
+        throw new Error(tr('笔记客户对接人必须是字符串', 'Note stakeholder must be a string'));
       }
       if (node.meetingDate !== undefined && typeof node.meetingDate !== 'string') {
-        throw new Error('笔记沟通日期必须是字符串');
+        throw new Error(tr('笔记沟通日期必须是字符串', 'Note meetingDate must be a string'));
       }
       if (node.shareable !== undefined && typeof node.shareable !== 'boolean') {
-        throw new Error('笔记外发标记必须是布尔值');
+        throw new Error(tr('笔记外发标记必须是布尔值', 'Note shareable flag must be a boolean'));
       }
     } else {
       if (
@@ -564,12 +686,12 @@ export function validateNoteNodes(value: unknown): asserts value is NoteWorkspac
         node.meetingDate !== undefined ||
         node.shareable !== undefined
       ) {
-        throw new Error('笔记目录不能包含正文、标签、封面或置顶属性');
+        throw new Error(tr('笔记目录不能包含正文、标签、封面或置顶属性', 'Note folder cannot contain body, tags, cover, or pinned attributes'));
       }
     }
     const nameKey = JSON.stringify([node.parentId, node.title]);
     if (siblingNames.has(nameKey)) {
-      throw new Error('同一目录下已存在同名笔记或目录');
+      throw new Error(tr('同一目录下已存在同名笔记或目录', 'A note or folder with the same name already exists in this folder'));
     }
     siblingNames.add(nameKey);
     byId.set(node.id, node);
@@ -580,12 +702,12 @@ export function validateNoteNodes(value: unknown): asserts value is NoteWorkspac
     let parentId = node.parentId;
     while (parentId !== null) {
       if (seen.has(parentId) || seen.size > 40) {
-        throw new Error('笔记目录不能循环嵌套或超过 40 层');
+        throw new Error(tr('笔记目录不能循环嵌套或超过 40 层', 'Note folders cannot contain cycles or exceed 40 levels'));
       }
       seen.add(parentId);
       const parent = byId.get(parentId);
       if (!parent || parent.kind !== 'folder') {
-        throw new Error('笔记上级目录不存在或不是目录');
+        throw new Error(tr('笔记上级目录不存在或不是目录', 'Parent folder does not exist or is not a folder'));
       }
       parentId = parent.parentId;
     }
@@ -616,22 +738,22 @@ export function validateNoteLinks(data: NoteWorkspace, layout: SitemapLayout) {
 
   for (const link of data.links) {
     if (!link || !byId.has(link.targetNodeId) || !link.page) {
-      throw new Error('笔记关联的目标不存在');
+      throw new Error(tr('笔记关联的目标不存在', 'Linked note target does not exist'));
     }
     const ref = link.page;
     if (ref.kind === 'page') {
       if (!pages.has(ref.pageId) || 'folderId' in ref) {
-        throw new Error('笔记关联的页面 ID 无效');
+        throw new Error(tr('笔记关联的页面 ID 无效', 'Invalid page ID linked to note'));
       }
     } else if (ref.kind === 'folder') {
       if (!folders.has(ref.folderId) || 'pageId' in ref) {
-        throw new Error('笔记关联的页面目录 ID 无效');
+        throw new Error(tr('笔记关联的页面目录 ID 无效', 'Invalid folder ID linked to note'));
       }
     } else {
-      throw new Error('笔记关联来源类型无效');
+      throw new Error(tr('笔记关联来源类型无效', 'Invalid note link target kind'));
     }
     const key = JSON.stringify([pageRefKey(ref), link.targetNodeId]);
-    if (links.has(key)) throw new Error('笔记关联重复');
+    if (links.has(key)) throw new Error(tr('笔记关联重复', 'Duplicate note link'));
     links.add(key);
   }
 }
@@ -676,7 +798,7 @@ export function uniqueNoteTitle(
   base: string,
   format: (base: string, n: number) => string = (b, n) => `${b} (${n})`
 ): string {
-  const clean = base.trim().slice(0, 90) || '未命名笔记';
+  const clean = base.trim().slice(0, 90) || tr('未命名笔记', 'Untitled Note');
   const siblings = new Set(data.nodes.filter((n) => n.parentId === parentId).map((n) => n.title));
   let title = clean;
   for (let n = 2; siblings.has(title); n++) title = format(clean, n).slice(0, 100);
@@ -692,12 +814,12 @@ export function noteTemplateContent(template: NoteTemplateItem, now = new Date()
 
 export function notePath(data: NoteWorkspace, id: string): string {
   const node = data.nodes.find((item) => item.id === id);
-  if (!node) throw new Error('笔记节点不存在');
+  if (!node) throw new Error(tr('笔记节点不存在', 'Note node does not exist'));
   return node.parentId === null ? node.title : `${notePath(data, node.parentId)} / ${node.title}`;
 }
 
 export function noteDescendants(data: NoteWorkspace, id: string): Set<string> {
-  if (!data.nodes.some((node) => node.id === id)) throw new Error('笔记节点不存在');
+  if (!data.nodes.some((node) => node.id === id)) throw new Error(tr('笔记节点不存在', 'Note node does not exist'));
   const result = new Set([id]);
   const visit = (parentId: string) => {
     for (const node of data.nodes.filter((item) => item.parentId === parentId)) {
@@ -730,13 +852,13 @@ export function relatedPagesResolver(data: NoteWorkspace, layout: SitemapLayout)
   const byId = new Map(data.nodes.map((node) => [node.id, node]));
   return (noteId: string) => {
     const doc = byId.get(noteId);
-    if (!doc || doc.kind !== 'note') throw new Error('请选择一篇有效的笔记');
+    if (!doc || doc.kind !== 'note') throw new Error(tr('请选择一篇有效的笔记', 'Please select a valid note'));
     const targetIds = new Set([noteId]);
     let parentId = doc.parentId;
     while (parentId !== null) {
       targetIds.add(parentId);
       const parent = byId.get(parentId);
-      if (!parent || parent.kind !== 'folder') throw new Error('笔记上级目录不存在');
+      if (!parent || parent.kind !== 'folder') throw new Error(tr('笔记上级目录不存在', 'Parent note folder does not exist'));
       parentId = parent.parentId;
     }
     const links = data.links.filter((link) => targetIds.has(link.targetNodeId));
@@ -1046,7 +1168,12 @@ export function noteHtmlToMarkdown(
   const lines: string[] = [];
   lines.push(`# ${node.icon ? `${node.icon} ` : ''}${node.title}`);
   if (node.tags && node.tags.length > 0) {
-    lines.push(`> 标签：${node.tags.map((t) => `\`${t}\``).join(' ')} · 更新于 ${node.updatedAt.slice(0, 16).replace('T', ' ')}`);
+    lines.push(
+      tr(
+        `> 标签：${node.tags.map((t) => `\`${t}\``).join(' ')} · 更新于 ${node.updatedAt.slice(0, 16).replace('T', ' ')}`,
+        `> Tags: ${node.tags.map((t) => `\`${t}\``).join(' ')} · Updated ${node.updatedAt.slice(0, 16).replace('T', ' ')}`
+      )
+    );
   }
   lines.push('');
 
@@ -1055,10 +1182,10 @@ export function noteHtmlToMarkdown(
   let md = (node.content || '').replace(/<img\b[^>]*>/gi, (tag) => {
     const index = images.length + 1;
     const src = attr(tag, 'src') ?? '';
-    const alt = noteHtmlToPlainText(attr(tag, 'alt') ?? '').replace(/[[\]\n]/g, ' ').trim() || `图片 ${index}`;
+    const alt = noteHtmlToPlainText(attr(tag, 'alt') ?? '').replace(/[[\]\n]/g, ' ').trim() || tr(`图片 ${index}`, `Image ${index}`);
     const assetId = src.startsWith(NOTE_ASSET_SCHEME) ? src.slice(NOTE_ASSET_SCHEME.length) : undefined;
     const asset = assetId ? options.assets?.[assetId] : undefined;
-    let out = `[图片 ${index}：${alt}]`;
+    let out = tr(`[图片 ${index}：${alt}]`, `[Image ${index}: ${alt}]`);
     if (options.images === 'inline') {
       const url = asset ? noteAssetDataUrl(asset) : parseImageDataUrl(src) ? src : undefined;
       if (url) out = `![${alt}](${url})`;

@@ -9,6 +9,7 @@ import { projectContext, projectRevision } from './hermesProject';
 import { pendingProjectAiTasks } from './hermesTaskLock';
 import { validateMermaidSource } from './mindmapRenderer';
 import { MERMAID_DIAGRAM_TEMPLATES, mermaidTemplate } from './mermaidCatalog';
+import { isEnLocale, td, tr } from '../i18n/runtime';
 
 export const MINDMAP_INSTRUCTIONS = `# Alex 项目脑图
 你负责根据用户要求生成或调整任意官方 Mermaid 图表，支持思维导图、流程图、时序图、类图、状态图、实体关系图、甘特图、图表和架构图等。使用本轮 protoflow MCP 工具读取真实项目内容；不要沿用旧对话中的页面、字段或便签。
@@ -37,7 +38,7 @@ export function extractMindmapSource(text: string): string {
   const blocks = [...text.matchAll(/```mermaid[ \t]*\r?\n([\s\S]*?)```/gi)];
   const source = blocks.length === 1 ? blocks[0][1].trim() : blocks.length === 0 ? text.trim() : '';
   if (!source || (blocks.length === 0 && source.includes('```')))
-    throw new Error('Hermes 未返回唯一且非空的 Mermaid 图表源码，现有内容已保留。请补充要求后重试。');
+    throw new Error(tr('Hermes 未返回唯一且非空的 Mermaid 图表源码，现有内容已保留。请补充要求后重试。', 'Hermes did not return a single non-empty Mermaid code block; existing diagram was preserved. Please retry.'));
   return source;
 }
 
@@ -48,54 +49,62 @@ export async function generateMindmapWithHermes(projectId: string, mindmapId: st
     : `用户选择的图表类型：${selectedType.label}。必须使用这一类型。下面仅为语法示例，不是项目业务数据：\n${selectedType.code}`;
   const project = useProtoStore.getState();
   const origin = project.currentProjectMeta;
-  if (project.isProjectClosed || project.currentProjectMeta.projectId !== projectId) throw new Error('当前项目已变化，请重新打开脑图');
-  if (!prompt.trim()) throw new Error('请描述要生成的图表');
-  if (pendingProjectAiTasks.has(projectId) || useHermesStore.getState().runningProjects[projectId]) throw new Error('当前项目已有 AI 任务，请等待或停止生成');
+  if (project.isProjectClosed || project.currentProjectMeta.projectId !== projectId) throw new Error(tr('当前项目已变化，请重新打开脑图', 'Current project changed; please reopen the mindmap'));
+  if (!prompt.trim()) throw new Error(tr('请描述要生成的图表', 'Please describe the diagram to generate'));
+  if (pendingProjectAiTasks.has(projectId) || useHermesStore.getState().runningProjects[projectId]) throw new Error(tr('当前项目已有 AI 任务，请等待或停止生成', 'An AI task is already running in this project. Please wait or stop it first.'));
   const scope: HermesMindmapConversation = { projectId, kind: 'mindmap', mindmapId };
   const key = conversationKey(scope), revision = projectRevision(), snapshot = { ...projectContext(), currentMindmap: mindmapContext(project.mindmaps, mindmapId, usePageStore.getState()) };
   const cancelVersion = useHermesStore.getState().cancelGeneration[key];
   const checkCancelled = () => {
-    if (useHermesStore.getState().cancelGeneration[key] !== cancelVersion) throw new Error('已停止生成，现有脑图未修改');
+    if (useHermesStore.getState().cancelGeneration[key] !== cancelVersion) throw new Error(tr('已停止生成，现有脑图未修改', 'Stopped generation; existing diagram was preserved'));
   };
   const update = (run: MindmapAiRun) => useMindmapAiStore.setState(state => ({ runs: { ...state.runs, [key]: run } }));
   pendingProjectAiTasks.add(projectId);
-  update({ status: 'running', prompt, message: '正在连接 Hermes…' });
-  useHermesStore.setState(state => ({ error: null, runningProjects: { ...state.runningProjects, [projectId]: true }, runningPageByProject: { ...state.runningPageByProject, [projectId]: undefined }, partial: { ...state.partial, [key]: '' }, progress: { ...state.progress, [key]: '正在准备项目资料…' } }));
+  update({ status: 'running', prompt, message: tr('正在连接 Hermes…', 'Connecting to Hermes…') });
+  useHermesStore.setState(state => ({ error: null, runningProjects: { ...state.runningProjects, [projectId]: true }, runningPageByProject: { ...state.runningPageByProject, [projectId]: undefined }, partial: { ...state.partial, [key]: '' }, progress: { ...state.progress, [key]: tr('正在准备项目资料…', 'Preparing project context…') } }));
   let resultSource: string | undefined;
   try {
     const session = await useHermesStore.getState().ensureSession(scope);
     checkCancelled();
-    const synced = await getHermesApi().sync({ ...scope, skillMarkdown: MINDMAP_INSTRUCTIONS });
-    if (!synced.synced) throw new Error('脑图生成指令同步失败');
+    const skillMarkdown = isEnLocale()
+      ? `${MINDMAP_INSTRUCTIONS}\n\nLanguage Preference (Active UI Locale: English): Unless the user explicitly requests Chinese, use concise English node labels and titles where Mermaid syntax permits.`
+      : MINDMAP_INSTRUCTIONS;
+    const synced = await getHermesApi().sync({ ...scope, skillMarkdown });
+    if (!synced.synced) throw new Error(tr('脑图生成指令同步失败', 'Failed to sync mindmap instructions'));
     checkCancelled();
     const relatedPageIds = snapshot.currentMindmap.relatedPageIds;
     const scopeGuidance = relatedPageIds.length
       ? `当前脑图已关联菜单页面：${relatedPageIds.join('、')}。默认围绕关联页面通过 protoflow_get_project、protoflow_get_page_tsx、protoflow_get_sticky_notes、protoflow_get_db_table 读取真实资料；若用户本轮明确要求绘制全项目全景或跨模块关系，则按用户指定范围扩展读取。`
       : '当前脑图未绑定特定菜单页面。请先调用 protoflow_get_project，再按用户要求通过 protoflow_get_page_tsx、protoflow_get_sticky_notes、protoflow_get_db_table 读取相关真实资料，不要假设某单一页面就是全部范围。';
+    const langHint = isEnLocale()
+      ? '\n\nActive UI Locale is English: unless the user explicitly asks for Chinese, write diagram labels and titles in English.'
+      : '';
     let response = await getHermesApi().execute({
       ...scope, readOnly: true, snapshot,
-      prompt: `本轮只读：禁止调用任何写入工具，最终仅返回一个完整的 \`\`\`mermaid 代码块。\n\n${typeInstruction}\n\n目标范围：项目 ID=${projectId}；当前脑图 ID=${mindmapId}。\n${scopeGuidance}\n\n用户要求：\n${prompt}`,
+      prompt: `本轮只读：禁止调用任何写入工具，最终仅返回一个完整的 \`\`\`mermaid 代码块。\n\n${typeInstruction}\n\n目标范围：项目 ID=${projectId}；当前脑图 ID=${mindmapId}。\n${scopeGuidance}\n\n用户要求：\n${prompt}${langHint}`,
     });
     if (synced.skillDigest && response.skillDigest && response.skillDigest !== synced.skillDigest) {
-      throw new Error('脑图会话尚未加载最新指令，请刷新后重试');
+      throw new Error(tr('脑图会话尚未加载最新指令，请刷新后重试', 'Mindmap session has not loaded the latest instructions. Please retry.'));
     }
     for (let attempt = 0; attempt < 2; attempt++) {
       checkCancelled();
-      if (response.sessionId !== session.sessionId || useHermesStore.getState().sessions[key]?.sessionId !== session.sessionId) throw new Error('Hermes 返回了其他会话的结果，现有脑图未修改');
-      if (response.operations.length) throw new Error('脑图生成返回了项目修改操作，已拒绝全部修改');
+      if (response.sessionId !== session.sessionId || useHermesStore.getState().sessions[key]?.sessionId !== session.sessionId) throw new Error(tr('Hermes 返回了其他会话的结果，现有脑图未修改', 'Hermes returned a response from another session; existing diagram was preserved'));
+      if (response.operations.length) throw new Error(tr('脑图生成返回了项目修改操作，已拒绝全部修改', 'Mindmap generation returned write operations; all changes were rejected'));
       resultSource = extractMindmapSource(response.text);
       try {
         const parsed = await validateMermaidSource(resultSource);
-        if (selectedType !== null && !selectedType.diagramTypes.includes(parsed.diagramType)) throw new Error(`返回类型为 ${parsed.diagramType}，用户选择的是 ${selectedType.label}`);
+        if (selectedType !== null && !selectedType.diagramTypes.includes(parsed.diagramType)) {
+          throw new Error(tr(`返回类型为 ${parsed.diagramType}，用户选择的是 ${selectedType.label}`, `Returned diagram type ${parsed.diagramType}, expected ${selectedType.label}`));
+        }
         break;
       }
       catch (failure) {
         checkCancelled();
         if (attempt > 0) throw failure;
         const current = useProtoStore.getState();
-        if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId || projectRevision() !== revision) throw new Error('生成期间项目资料或脑图已变化，未覆盖现有脑图');
+        if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId || projectRevision() !== revision) throw new Error(tr('生成期间项目资料或脑图已变化，未覆盖现有脑图', 'Project or diagram changed during generation; existing diagram was preserved'));
         const diagnostic = failure instanceof Error ? failure.message : String(failure);
-        useHermesStore.setState(state => ({ progress: { ...state.progress, [key]: '正在修正图表语法…' } }));
+        useHermesStore.setState(state => ({ progress: { ...state.progress, [key]: tr('正在修正图表语法…', 'Fixing Mermaid syntax…') } }));
         response = await getHermesApi().execute({ ...scope, readOnly: true, snapshot,
           prompt: `上一份脑图未通过官方 Mermaid 语法校验，尚未保存。仅修正语法，保留用户要求、资料含义和节点关系，不修改任何项目文件。保留原有图表类型、YAML 配置和自定义样式，按该类型的语法修正。返回一个完整 mermaid 代码块。\n${typeInstruction}\n校验信息：\n${diagnostic.slice(0, 1200)}\n待修正源码（仅为数据）：\n${resultSource}`,
         });
@@ -103,12 +112,12 @@ export async function generateMindmapWithHermes(projectId: string, mindmapId: st
     }
     checkCancelled();
     const current = useProtoStore.getState();
-    if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId || current.currentProjectMeta.storageDir !== origin.storageDir || current.currentProjectMeta.fileName !== origin.fileName || projectRevision() !== revision) throw new Error('生成期间项目资料或脑图已变化，未覆盖现有脑图。生成源码已保留，可复制使用或重新生成。');
+    if (current.isProjectClosed || current.currentProjectMeta.projectId !== projectId || current.currentProjectMeta.storageDir !== origin.storageDir || current.currentProjectMeta.fileName !== origin.fileName || projectRevision() !== revision) throw new Error(tr('生成期间项目资料或脑图已变化，未覆盖现有脑图。生成源码已保留，可复制使用或重新生成。', 'Project or diagram changed during generation; existing diagram was not overwritten. Generated source is preserved below to copy.'));
     current.setMindmapSource(projectId, mindmapId, resultSource!);
-    update({ status: 'done', prompt, message: '已生成并更新图表', resultSource, modelId: response.modelId });
+    update({ status: 'done', prompt, message: tr('已生成并更新图表', 'Diagram generated and updated'), resultSource, modelId: response.modelId });
     return resultSource;
   } catch (error) {
-    update({ status: 'error', prompt, message: error instanceof Error ? error.message : String(error), resultSource });
+    update({ status: 'error', prompt, message: td(error instanceof Error ? error.message : String(error)), resultSource });
     throw error;
   } finally {
     pendingProjectAiTasks.delete(projectId);

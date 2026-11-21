@@ -1,4 +1,5 @@
 import { useProtoStore } from '../store/useProtoStore';
+import { tr } from '../i18n/runtime';
 import { usePageStore } from '../proto/store/usePageStore';
 import { NOTE_ASSET_SCHEME, relatedPagesResolver, type NoteAsset } from '../proto/notes';
 import { sanitizeNoteHtml } from '../proto/noteHtmlSanitize';
@@ -59,7 +60,7 @@ export function publishableNotes(publishedPageIds: Set<string>): {
     notes.reduce((n, note) => n + note.html.length, 0) +
     Object.values(noteAssets).reduce((n, asset) => n + asset.data.length, 0);
   if (size > PUBLISHED_NOTES_BUDGET) {
-    throw new Error('外发笔记（含图片）超过 12 MB，请减少外发笔记或压缩其中的截图后再发布');
+    throw new Error(tr('外发笔记（含图片）超过 12 MB，请减少外发笔记或压缩其中的截图后再发布', 'Shared notes (including images) exceed 12 MB; reduce shared notes or compress screenshots before publishing'));
   }
   return { notes, noteAssets };
 }

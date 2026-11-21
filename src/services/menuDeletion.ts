@@ -1,4 +1,5 @@
 import { buildSitemap, sitemapCatalog } from '../proto/sitemap';
+import { tr } from '../i18n/runtime';
 import { parsePageSource } from '../proto/dsl/parser';
 import { printPageSource } from '../proto/dsl/printer';
 import { walk } from '../proto/dsl/tree';
@@ -17,7 +18,7 @@ export function prepareMenuDeletion(base: PflowBinaryPayload, nodeId: string) {
   const next = structuredClone(base), s = next.stateSnapshot;
   const tree = buildSitemap(s.designerFolders, s.designerPages, s.sitemapOverrides, s.sitemapBase);
   const target = flatten(tree).find(item => item.id === nodeId);
-  if (!target) throw new Error('要删除的菜单或目录已不存在');
+  if (!target) throw new Error(tr('要删除的菜单或目录已不存在', 'Target menu or folder no longer exists'));
   // Use the displayed hierarchy, including moves. A child moved out of this
   // directory must survive even if it was originally in the template subtree.
   const removed = flatten([target]);
@@ -56,7 +57,7 @@ export function prepareMenuDeletion(base: PflowBinaryPayload, nodeId: string) {
   const changedSources: string[] = [];
   for (const [id, source] of Object.entries(s.pageSources)) {
     const parsed = parsePageSource(source);
-    if (!parsed.doc || parsed.issues.length) throw new Error(`页面 ${id} 的源码无法解析，请修复后再删除相关菜单`);
+    if (!parsed.doc || parsed.issues.length) throw new Error(tr(`页面 ${id} 的源码无法解析，请修复后再删除相关菜单`, `Source of page ${id} cannot be parsed; fix it before deleting related menus`));
     let changed = false;
     const removeLinks = (value: PropValue): PropValue => {
       if (isActionChain(value)) {
@@ -94,7 +95,7 @@ export function prepareMenuDeletion(base: PflowBinaryPayload, nodeId: string) {
 }
 export type MenuDeletionPlan = ReturnType<typeof prepareMenuDeletion>;
 export function deleteMenu(plan: MenuDeletionPlan) {
-  if (revision(captureProjectPayload()) !== plan.revision) throw new Error('项目内容已变化，请关闭弹窗后重新选择删除');
+  if (revision(captureProjectPayload()) !== plan.revision) throw new Error(tr('项目内容已变化，请关闭弹窗后重新选择删除', 'Project content changed; close the dialog and select delete again'));
   const history = usePageStore.getState().history;
   applyProjectEditPayload(plan.next);
   const cleared = new Set([...plan.pageIds, ...plan.changedSources]);
@@ -103,7 +104,7 @@ export function deleteMenu(plan: MenuDeletionPlan) {
   return {
     canUndo: () => !useProtoStore.getState().isProjectClosed && revision(captureProjectPayload()) === after,
     undo: () => {
-      if (useProtoStore.getState().isProjectClosed || revision(captureProjectPayload()) !== after) throw new Error('项目内容已变化，不能再撤销这次删除');
+      if (useProtoStore.getState().isProjectClosed || revision(captureProjectPayload()) !== after) throw new Error(tr('项目内容已变化，不能再撤销这次删除', 'Project content changed; cannot undo this deletion'));
       applyProjectEditPayload(plan.before);
       usePageStore.setState({ history });
     },

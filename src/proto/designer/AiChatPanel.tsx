@@ -15,6 +15,7 @@ import { useHermesStore } from '../../store/useHermesStore';
 import { HermesQuestionHost } from '../../components/HermesQuestionCard';
 import { HermesSessionControls } from '../../components/HermesSessionControls';
 import { useProtoStore } from '../../store/useProtoStore';
+import { useI18n } from '../../i18n';
 
 interface AiChatPanelProps {
   pageId: string;
@@ -31,14 +32,22 @@ interface AiChatPanelProps {
   onClearSelection: () => void;
 }
 
-const SUGGESTIONS_PAGE = [
+const SUGGESTIONS_PAGE_ZH = [
   '插入单据标准三栏表头',
   '增加 Excel 批量导入弹框，并嵌套校验异常抽屉',
   '给表格增加审批行操作并生成审批弹框',
   '补充空状态提示与表单必填校验反馈',
 ];
 
-const SUGGESTIONS_NODE = ['把它的标题改得更业务化一些', '给这个表格增加审批行操作', '在它后面新增一个详情抽屉'];
+const SUGGESTIONS_PAGE_EN = [
+  'Insert a standard 3-column document header',
+  'Add an Excel batch import modal with a nested validation drawer',
+  'Add an approval row action and generate an approval modal',
+  'Add empty state hints and required form field validation',
+];
+
+const SUGGESTIONS_NODE_ZH = ['把它的标题改得更业务化一些', '给这个表格增加审批行操作', '在它后面新增一个详情抽屉'];
+const SUGGESTIONS_NODE_EN = ['Make its title more business-focused', 'Add an approval row action to this table', 'Add a detail drawer right after this block'];
 const EMPTY_MESSAGES: AiChatMessage[] = [];
 
 export const AiChatPanel: React.FC<AiChatPanelProps> = ({
@@ -54,6 +63,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
   onSend,
   onClearSelection,
 }) => {
+  const { isEn, tr, td } = useI18n();
   usePageStore(s => s.pageSources);
   const clearMessages = useAiChatStore(s => s.clearMessages);
   const hermesStatus = useHermesStore(s => s.status);
@@ -115,7 +125,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
     try {
       const added = await readChatImageFiles(files, images.length);
       if (isCurrentScope()) updateDraft(key, current => ({ ...current, images: [...current.images, ...added] }));
-    } catch (e) { if (isCurrentScope()) setImageError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { if (isCurrentScope()) setImageError(e instanceof Error ? td(e.message) : td(String(e))); }
     finally { if (isCurrentScope()) { busyRef.current = false; setPreparing(false); } }
   };
   const submit = async (text?: string) => {
@@ -134,7 +144,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       // Reading/saving a file is asynchronous; never send into a newly selected menu.
       const active = useProtoStore.getState();
       if (!isCurrentScope() || active.isProjectClosed || active.currentProjectMeta.projectId !== scope.projectId || active.activePageId !== pageId) return;
-      const pending = onSend(value || '请分析这些图片，结合当前页面给出建议。', attachments, selectedNoteIds.length ? selectedNoteIds : undefined);
+      const pending = onSend(value || tr('请分析这些图片，结合当前页面给出建议。', 'Please analyze these images and suggest updates for the current page.'), attachments, selectedNoteIds.length ? selectedNoteIds : undefined);
       // onSend resolves after generation finishes, not when the user message is submitted.
       // Clear the submitted draft now; keep its exact contents for a failed retry.
       updateDraft(key, () => cleared);
@@ -142,15 +152,18 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       const sent = await pending;
       if (sent === false) {
         restoreDraft();
-        if (isCurrentScope()) setImageError('发送未完成，文字和图片已保留，可调整后重试。');
+        if (isCurrentScope()) setImageError(tr('发送未完成，文字和图片已保留，可调整后重试。', 'Send did not finish. Your text and images are preserved to retry.'));
       }
     } catch (e) {
       restoreDraft();
-      if (isCurrentScope()) setImageError(e instanceof Error ? e.message : String(e));
+      if (isCurrentScope()) setImageError(e instanceof Error ? td(e.message) : td(String(e)));
     } finally { if (isCurrentScope()) { busyRef.current = false; setSending(false); } }
   };
 
   const hermesOn = hermesStatus === 'running';
+  const suggestions = selectedLabel
+    ? (isEn ? SUGGESTIONS_NODE_EN : SUGGESTIONS_NODE_ZH)
+    : (isEn ? SUGGESTIONS_PAGE_EN : SUGGESTIONS_PAGE_ZH);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-white">
@@ -160,12 +173,12 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-xs font-semibold text-slate-900 shrink-0">页面 AI 对话</span>
+            <span className="text-xs font-semibold text-slate-900 shrink-0">{tr('页面 AI 对话', 'Page AI')}</span>
             <span className="text-slate-300 shrink-0">·</span>
             <span className="truncate text-[11px] font-medium text-slate-500" title={pageTitle}>{pageTitle}</span>
           </div>
           <div className="truncate text-[10px] text-slate-400">
-            {selectedLabel ? `已锁定组件：${selectedLabel}` : '作用于当前整页画布'}
+            {selectedLabel ? tr(`已锁定组件：${selectedLabel}`, `Target: ${selectedLabel}`) : tr('作用于当前整页画布', 'Applies to entire page')}
           </div>
         </div>
         <button
@@ -176,10 +189,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
               ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100/70'
               : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/70'
           }`}
-          title={hermesOn ? `Hermes ${currentVersion} 运行中 · 点击管理引擎` : '点击连接或管理 Hermes 引擎'}
+          title={hermesOn ? tr(`Hermes ${currentVersion} 运行中 · 点击管理引擎`, `Hermes ${currentVersion} running · Click to manage`) : tr('点击连接或管理 Hermes 引擎', 'Connect or manage Hermes engine')}
         >
           <span className={`w-1.5 h-1.5 rounded-full ${hermesOn ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          <span>{hermesOn ? `Hermes ${currentVersion}` : '连接 Hermes'}</span>
+          <span>{hermesOn ? `Hermes ${currentVersion}` : tr('连接 Hermes', 'Connect Hermes')}</span>
         </button>
         {messages.length > 0 && (
           <button
@@ -187,25 +200,25 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             onClick={() => void useHermesStore.getState().ensureSession(scope, true).then(() => clearMessages(scope)).catch(e => useHermesStore.setState({error:String(e)}))}
             disabled={isRunning || !hermesOn}
             className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center gap-1 cursor-pointer shrink-0 disabled:opacity-40 transition"
-            title="仅清空当前菜单的对话"
+            title={tr('仅清空当前菜单的对话', 'Clear chat for this page only')}
           >
             <Trash2 className="w-3 h-3" />
-            <span>清空</span>
+            <span>{tr('清空', 'Clear')}</span>
           </button>
         )}
         {onToggleWide && (
           <button
             type="button"
             onClick={onToggleWide}
-            aria-label={wide ? '恢复标准宽度' : '展开宽屏面板'}
-            title={wide ? '恢复标准宽度' : '展开宽屏面板'}
+            aria-label={wide ? tr('恢复标准宽度', 'Standard width') : tr('展开宽屏面板', 'Wide panel')}
+            title={wide ? tr('恢复标准宽度', 'Standard width') : tr('展开宽屏面板', 'Wide panel')}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-800 cursor-pointer transition"
           >
             {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
         )}
         {onCollapse && (
-          <button type="button" onClick={onCollapse} aria-label="收起 AI 对话" title="收起 AI 对话（Esc）"
+          <button type="button" onClick={onCollapse} aria-label={tr('收起 AI 对话', 'Collapse AI chat')} title={tr('收起 AI 对话（Esc）', 'Collapse AI chat (Esc)')}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 cursor-pointer transition focus-visible:outline-blue-600">
             <Minus size={15} />
           </button>
@@ -214,23 +227,23 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
 
       {saveError && (
         <div role="alert" className="px-3 py-1.5 text-[11px] bg-rose-50/80 border-b border-rose-100 text-rose-600 flex items-center justify-between gap-2">
-          <span className="truncate">{saveError}</span>
-          <button className="underline shrink-0 font-medium" onClick={() => { try { useAiChatStore.getState().retrySave(scope); } catch (e) { useHermesStore.setState({ error: String(e) }); } }}>重试</button>
+          <span className="truncate">{td(saveError)}</span>
+          <button className="underline shrink-0 font-medium" onClick={() => { try { useAiChatStore.getState().retrySave(scope); } catch (e) { useHermesStore.setState({ error: String(e) }); } }}>{tr('重试', 'Retry')}</button>
         </div>
       )}
       {projectRunning && runningPage && runningPage !== pageId && (
         <div className="px-3 py-1.5 text-[11px] bg-amber-50/80 border-b border-amber-100 text-amber-700 flex items-center justify-between gap-2">
-          <span className="truncate">其他菜单任务进行中</span>
-          <button className="font-medium hover:underline shrink-0" onClick={() => void useHermesStore.getState().stop({ projectId: currentProjectMeta.projectId, pageId: runningPage }).catch(e => useHermesStore.setState({ error: String(e) }))}>停止任务</button>
+          <span className="truncate">{tr('其他菜单任务进行中', 'Another page task is running')}</span>
+          <button className="font-medium hover:underline shrink-0" onClick={() => void useHermesStore.getState().stop({ projectId: currentProjectMeta.projectId, pageId: runningPage }).catch(e => useHermesStore.setState({ error: String(e) }))}>{tr('停止任务', 'Stop')}</button>
         </div>
       )}
       {isRunning && runningPage === pageId && (
         <div className="px-3 py-1.5 text-[11px] bg-emerald-50/70 border-b border-emerald-100 text-emerald-700 flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 truncate">
             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-            <span className="truncate">{awaitingAnswer ? '等待你回答下方问题' : progress || 'Hermes 正在处理…'}</span>
+            <span className="truncate">{awaitingAnswer ? tr('等待你回答下方问题', 'Waiting for your answer below') : (progress ? td(progress) : tr('Hermes 正在处理…', 'Hermes is working…'))}</span>
           </span>
-          <button className="font-medium hover:underline shrink-0" onClick={() => void useHermesStore.getState().stop(scope).catch(e => useHermesStore.setState({error:String(e)}))}>停止生成</button>
+          <button className="font-medium hover:underline shrink-0" onClick={() => void useHermesStore.getState().stop(scope).catch(e => useHermesStore.setState({error:String(e)}))}>{tr('停止生成', 'Stop')}</button>
         </div>
       )}
 
@@ -251,24 +264,27 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                   <Sparkles size={13} />
                 </span>
                 <span className="text-xs font-semibold text-slate-800">
-                  {selectedLabel ? '针对选中组件微调' : '智能生成与改稿'}
+                  {selectedLabel ? tr('针对选中组件微调', 'Refine Selected Component') : tr('智能生成与改稿', 'AI Generation & Editing')}
                 </span>
               </div>
               <p className="text-[11.5px] leading-relaxed text-slate-600">
-                点选画布上的组件，告诉 AI 想怎么改。也可以直接描述整页需求，或粘贴参考截图。
+                {tr(
+                  '点选画布上的组件，告诉 AI 想怎么改。也可以直接描述整页需求，或粘贴参考截图。',
+                  'Click any component on the canvas and tell AI how to change it — or describe full-page updates and paste reference screenshots.',
+                )}
               </p>
               <div className="flex items-center gap-1.5 rounded-lg border border-slate-200/70 bg-slate-50/70 px-2.5 py-1.5 text-[11px] text-slate-600">
                 <Crosshair size={12} className="text-blue-600 shrink-0" />
                 <span className="truncate">
-                  {selectedLabel ? `当前锁定：${selectedLabel}` : `当前页面：${pageTitle}`}
+                  {selectedLabel ? tr(`当前锁定：${selectedLabel}`, `Target: ${selectedLabel}`) : tr(`当前页面：${pageTitle}`, `Page: ${pageTitle}`)}
                 </span>
               </div>
             </div>
             <div className="space-y-1.5">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">
-                快捷指令
+                {tr('快捷指令', 'Quick Prompts')}
               </div>
-              {(selectedLabel ? SUGGESTIONS_NODE : SUGGESTIONS_PAGE).map((s) => (
+              {suggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -339,17 +355,17 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                   }`}
                 >
                   <ChatMarkdown
-                    content={m.text}
+                    content={m.status === 'error' ? td(m.text) : m.text}
                     streaming={m.status === 'pending'}
                     tone={m.status === 'error' ? 'error' : 'assistant'}
                   />
                   <RequirementAuditPanel report={m.requirementAudit} />
                   {m.status === 'pending' && (
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-blue-600">
-                      <span className="inline-flex items-center" aria-label="正在输出">
+                      <span className="inline-flex items-center" aria-label={tr('正在输出', 'Generating')}>
                         <Loader2 className="w-3 h-3 animate-spin" />
                       </span>
-                      <span>正在生成与同步画布…</span>
+                      <span>{tr('正在生成与同步画布…', 'Generating & syncing canvas…')}</span>
                     </div>
                   )}
                 </div>
@@ -368,17 +384,17 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                           });
                         }}
                         className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-white border border-slate-200/90 text-slate-500 hover:text-slate-800 hover:bg-slate-50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                        title="复制本条 AI 回复"
+                        title={tr('复制本条 AI 回复', 'Copy AI reply')}
                       >
                         {copiedMsgId === m.id ? (
                           <>
                             <Check className="w-2.5 h-2.5 text-emerald-600" />
-                            <span className="text-emerald-600">已复制</span>
+                            <span className="text-emerald-600">{tr('已复制', 'Copied')}</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-2.5 h-2.5" />
-                            <span>复制</span>
+                            <span>{tr('复制', 'Copy')}</span>
                           </>
                         )}
                       </button>
@@ -393,7 +409,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                         className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 flex items-center gap-1 cursor-pointer transition"
                       >
                         <FileText className="w-3 h-3" />
-                        打开新页面
+                        {tr('打开新页面', 'Open New Page')}
                       </button>
                     )}
                     {m.id === lastChangeId && m.changeId && canUndoProjectChange(m.changeId) && (
@@ -409,10 +425,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                         }}
                         disabled={isRunning}
                         className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-white border border-slate-200/90 text-slate-600 hover:text-rose-600 hover:border-rose-200 flex items-center gap-1 cursor-pointer disabled:opacity-40 transition shadow-2xs"
-                        title="撤销这次 AI 修改"
+                        title={tr('撤销这次 AI 修改', 'Undo this AI change')}
                       >
                         <Undo2 className="w-3 h-3" />
-                        撤销修改
+                        {tr('撤销修改', 'Undo Change')}
                       </button>
                     )}
                   </div>
@@ -452,7 +468,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                     type="button"
                     onClick={onClearSelection}
                     className="text-blue-400 hover:text-blue-700 cursor-pointer shrink-0"
-                    title="取消选中，改为针对整页"
+                    title={tr('取消选中，改为针对整页', 'Clear selection and target whole page')}
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
@@ -460,26 +476,26 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
               ) : (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/90 border border-slate-200/70 text-[10px] text-slate-500 truncate max-w-full">
                   <Crosshair className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                  <span className="truncate">整页 · {pageTitle}</span>
+                  <span className="truncate">{tr(`整页 · ${pageTitle}`, `Page · ${pageTitle}`)}</span>
                 </span>
               )}
-              {dragging && <span className="text-[10px] text-blue-600 font-medium shrink-0">松开添加图片</span>}
+              {dragging && <span className="text-[10px] text-blue-600 font-medium shrink-0">{tr('松开添加图片', 'Drop to attach images')}</span>}
             </div>
 
             {/* Linked project notes sent as background context */}
             {linkedNotes.length > 0 && (
-              <div role="group" aria-label="随消息附带的关联笔记" className="flex flex-wrap items-center gap-1 px-0.5">
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400"><BookOpenText size={11} />关联笔记</span>
+              <div role="group" aria-label={tr('随消息附带的关联笔记', 'Linked notes attached as context')} className="flex flex-wrap items-center gap-1 px-0.5">
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400"><BookOpenText size={11} />{tr('关联笔记', 'Notes')}</span>
                 {linkedNotes.map(note => {
                   const on = !excludedNoteIds.includes(note.noteId);
                   return (
                     <button key={note.noteId} type="button" aria-pressed={on} disabled={sending || isRunning}
-                      title={on ? `发送时附带《${note.title}》作为背景资料，点击取消` : `点击附带《${note.title}》`}
+                      title={on ? tr(`发送时附带《${note.title}》作为背景资料，点击取消`, `Attached "${note.title}" as context; click to exclude`) : tr(`点击附带《${note.title}》`, `Click to attach "${note.title}"`)}
                       onClick={() => toggleNote(note.noteId)}
                       className={`inline-flex max-w-[180px] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] cursor-pointer transition disabled:opacity-50 ${on ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-400 line-through'}`}>
                       <span className="shrink-0">{note.icon}</span>
                       <span className="truncate">{note.title}</span>
-                      {note.status === 'pending_confirm' && <span className="shrink-0 text-amber-700">待确认</span>}
+                      {note.status === 'pending_confirm' && <span className="shrink-0 text-amber-700">{tr('待确认', 'Pending')}</span>}
                     </button>
                   );
                 })}
@@ -495,7 +511,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             {/* Auto-fitting Textarea */}
             <textarea
               ref={composerRef}
-              aria-label="页面 AI 对话输入框"
+              aria-label={tr('页面 AI 对话输入框', 'Page AI chat input')}
               rows={1}
               value={input}
               disabled={sending}
@@ -513,7 +529,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                   submit();
                 }
               }}
-              placeholder={selectedLabel ? '怎么改这个组件？（支持粘贴截图）' : '输入修改指令或粘贴参考截图…'}
+              placeholder={selectedLabel ? tr('怎么改这个组件？（支持粘贴截图）', 'How should this component change? (Paste screenshots)') : tr('输入修改指令或粘贴参考截图…', 'Describe changes or paste a reference screenshot…')}
               className="w-full h-auto [field-sizing:content] min-h-[2.25rem] max-h-28 resize-none px-1 py-0.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none bg-transparent leading-relaxed"
             />
 
@@ -530,7 +546,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 accept={CHAT_IMAGE_ACCEPT}
                 multiple
                 className="hidden"
-                aria-label="选择聊天图片"
+                aria-label={tr('选择聊天图片', 'Select chat images')}
                 onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void addImages(files); }}
               />
               <button
@@ -538,7 +554,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 onClick={() => fileRef.current?.click()}
                 disabled={isRunning || preparing || sending || images.length >= MAX_CHAT_IMAGES}
                 className="inline-flex items-center gap-0.5 h-6 px-1.5 rounded-md text-[10px] text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition cursor-pointer disabled:opacity-40"
-                title="添加图片（支持直接粘贴截图或拖入 PNG/JPG/WebP，单张 ≤ 5 MB）"
+                title={tr('添加图片（支持直接粘贴截图或拖入 PNG/JPG/WebP，单张 ≤ 5 MB）', 'Attach images (paste screenshot or drop PNG/JPG/WebP, ≤ 5 MB each)')}
               >
                 {preparing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
                 {images.length > 0 && <span className="tabular-nums font-medium">{images.length}/{MAX_CHAT_IMAGES}</span>}
@@ -548,7 +564,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 onClick={() => submit()}
                 disabled={isRunning || preparing || sending || (!input.trim() && !images.length) || !hermesOn}
                 className="w-6 h-6 rounded-lg flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white shadow-2xs shrink-0 cursor-pointer transition disabled:opacity-35 disabled:cursor-not-allowed"
-                title="发送"
+                title={tr('发送', 'Send')}
               >
                 {isRunning || preparing || sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
               </button>

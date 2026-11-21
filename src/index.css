@@ -1301,3 +1301,28 @@ body {
 .pf-notion-editor .ProseMirror {
   caret-color: var(--brand-color);
 }
+
+/* ============================================================================
+   I18N LAYOUT STABILITY & CONTAINER QUERIES
+   Ensures zh-CN <-> en-US language switching never causes overflow or jitter.
+   ============================================================================ */
+.pf-inspector-cq {
+  container-type: inline-size;
+}
+
+@container (inline-size < 340px) {
+  .pf-inspector-tabs {
+    font-size: 10.5px;
+  }
+}
+
+.pf-stable-scroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+:lang(en) body {
+  letter-spacing: -0.005em;
+}
+

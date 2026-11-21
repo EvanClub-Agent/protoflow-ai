@@ -1,4 +1,5 @@
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
+import { tr } from '../i18n/runtime';
 import { generationEvidenceIssues, regressedPageDependencies } from './projectDependencies';
 import { menuMergeIssue } from './projectMenuMerge';
 import { pagePrototypeIssue } from './projectPlanMenus';
@@ -38,7 +39,7 @@ export function evaluatePageDraftReadiness(
   const source = snapshot.pageSources?.[pageId];
   const planned = Boolean(snapshot.projectPlan?.pages?.some(p => p.pageId === pageId));
   const prototypeIssue =
-    typeof source === 'string' ? pagePrototypeIssue(source) || null : '目标页面尚未写入源码';
+    typeof source === 'string' ? pagePrototypeIssue(source) || null : tr('目标页面尚未写入源码', 'Target page source has not been written yet');
 
   const evidenceIssues =
     planned && !prototypeIssue
@@ -67,7 +68,7 @@ export function evaluatePageDraftReadiness(
   const dependencyRegressions =
     baseSnapshot?.projectPlan?.pages?.some(p => p.dependencies?.length)
       ? regressedPageDependencies(baseSnapshot, snapshot).map(
-          r => `${r.pageId} ← ${r.sourcePageId} · ${r.requirement}（${r.status}）`,
+          r => tr(`${r.pageId} ← ${r.sourcePageId} · ${r.requirement}（${r.status}）`, `${r.pageId} ← ${r.sourcePageId} · ${r.requirement} (${r.status})`),
         )
       : [];
 

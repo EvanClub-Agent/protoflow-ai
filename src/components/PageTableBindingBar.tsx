@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useProtoStore, PageNodeId } from '../store/useProtoStore';
+import { useI18n } from '../i18n';
 
 interface PageTableBindingBarProps {
   pageId: PageNodeId;
@@ -21,6 +22,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
   pageId,
   pageTitle,
 }) => {
+  const { isEn, tr, td } = useI18n();
   const {
     dbTables,
     toggleTableBindingForMenu,
@@ -69,7 +71,14 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
       <div className="flex items-center gap-1 max-w-[260px] overflow-x-auto no-scrollbar">
         {boundTables.map((tbl) => {
           const menuRel = tbl.sharedByMenus.find((m) => m.pageId === pageId);
-          const accessLabel = menuRel?.accessMode.split(' ')[0] || '读写';
+          const rawAccess = menuRel?.accessMode.split(' ')[0] || '读写';
+          const accessLabel = isEn
+            ? rawAccess === '读写'
+              ? 'R/W'
+              : rawAccess === '只读'
+              ? 'R/O'
+              : td(rawAccess)
+            : rawAccess;
           return (
             <div key={tbl.id} className="relative group flex items-center shrink-0">
               <button
@@ -90,7 +99,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
                 className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
               >
                 <span className="relative z-10 text-xs font-medium tracking-tight">
-                  {tbl.cnName} ({accessLabel}) · 点击跳转表设计
+                  {tr(`${tbl.cnName} (${accessLabel}) · 点击跳转表设计`, `${tbl.cnName} (${accessLabel}) · Jump to schema designer`)}
                 </span>
               </div>
             </div>
@@ -103,7 +112,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label={`关联选表 (${dbTables.length})`}
+            aria-label={tr(`关联选表 (${dbTables.length})`, `Link Tables (${dbTables.length})`)}
             onClick={() => setShowSelectDropdown((v) => !v)}
             className={`relative w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition ${
               showSelectDropdown
@@ -120,8 +129,8 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
             role="tooltip"
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
-            <span className="relative z-10 text-xs font-medium tracking-tight">
-              关联数据表 ({boundTables.length}/{dbTables.length})
+            <span className="relative z-10 text-xs font-medium tracking-tight tabular-nums">
+              {tr(`关联数据表 (${boundTables.length}/${dbTables.length})`, `Linked Tables (${boundTables.length}/${dbTables.length})`)}
             </span>
           </div>
         </div>
@@ -130,10 +139,11 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
           <div className="absolute right-0 top-9 w-80 rounded-xl bg-white border border-slate-200 shadow-xl p-3 z-50 space-y-2 whitespace-normal">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <span className="text-xs font-semibold text-slate-900">
-                勾选当前页面关联的数据表
+                {tr('勾选当前页面关联的数据表', 'Select Database Tables Linked to This Page')}
               </span>
               <button
                 type="button"
+                aria-label={tr('关闭选表菜单', 'Close table selector')}
                 onClick={() => setShowSelectDropdown(false)}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
@@ -166,8 +176,8 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
                         <div className="text-[10px] text-slate-500 truncate">{tbl.cnName}</div>
                       </div>
                     </div>
-                    <span className="text-[10px] text-slate-500 shrink-0">
-                      {tbl.sharedByMenus.length} 处引用
+                    <span className="text-[10px] text-slate-500 shrink-0 tabular-nums">
+                      {tr(`${tbl.sharedByMenus.length} 处引用`, `${tbl.sharedByMenus.length} refs`)}
                     </span>
                   </div>
                 );
@@ -179,7 +189,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="新建物理表"
+            aria-label={tr('新建物理表', 'New Database Table')}
             onClick={() => setShowCreateModal(true)}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
           >
@@ -190,7 +200,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              新建物理表并绑定当前页
+              {tr('新建物理表并绑定当前页', 'Create & Bind New Table')}
             </span>
           </div>
         </div>
@@ -198,7 +208,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label={moduleOpenIssuesCount > 0 ? `闭环检查 (${moduleOpenIssuesCount})` : '已闭环'}
+            aria-label={moduleOpenIssuesCount > 0 ? tr(`闭环检查 (${moduleOpenIssuesCount})`, `Module Audit (${moduleOpenIssuesCount})`) : tr('已闭环', 'Audit Passed')}
             onClick={() => {
               setAuditScopeFilter('current_module');
               setViewMode('closed_loop_audit');
@@ -211,7 +221,7 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
               }`}
             />
             {moduleOpenIssuesCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none tabular-nums">
                 {moduleOpenIssuesCount}
               </span>
             )}
@@ -220,10 +230,10 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
             role="tooltip"
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
-            <span className="relative z-10 text-xs font-medium tracking-tight">
+            <span className="relative z-10 text-xs font-medium tracking-tight tabular-nums">
               {moduleOpenIssuesCount > 0
-                ? `模块闭环检查 (${moduleOpenIssuesCount} 项待处理)`
-                : '模块需求闭环检查：已闭环'}
+                ? tr(`模块闭环检查 (${moduleOpenIssuesCount} 项待处理)`, `Module Audit (${moduleOpenIssuesCount} open)`)
+                : tr('模块需求闭环检查：已闭环', 'Module Closed-Loop Audit: Passed')}
             </span>
           </div>
         </div>
@@ -232,18 +242,19 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
       {/* Modal: Create New Table inside Current Menu */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-slate-900">
-                  新建物理表并关联至【{pageTitle}】
+          <div role="dialog" aria-modal="true" aria-label={tr(`新建物理表并关联至【${pageTitle}】`, `Create Table & Link to "${pageTitle}"`)} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Database className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="text-sm font-semibold text-slate-900 truncate">
+                  {tr(`新建物理表并关联至【${pageTitle}】`, `Create Table & Link to "${pageTitle}"`)}
                 </span>
               </div>
               <button
                 type="button"
+                aria-label={tr('关闭新建物理表窗口', 'Close new table dialog')}
                 onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -251,43 +262,45 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
 
             <form onSubmit={handleCreateTableInMenu} className="p-4 space-y-3.5 text-xs">
               <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[11px] leading-relaxed">
-                新建的表将自动绑定到当前页面，并同步加入左侧全局数据库表目录与 ER 模型画布。
+                {tr('新建的表将自动绑定到当前页面，并同步加入左侧全局数据库表目录与 ER 模型画布。', 'The new table will automatically bind to this page and appear in the global Tables directory and ER diagram.')}
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  所属业务域 (Domain)
+                  {tr('所属业务域 (Domain)', 'Business Domain')}
                 </label>
-                <input aria-label="所属业务域" list="table-domains-page" required maxLength={80} value={newDomain}
-                  onChange={e => setNewDomain(e.target.value)} placeholder="选择现有业务域或输入名称"
+                <input aria-label={tr('所属业务域', 'Business Domain')} list="table-domains-page" required maxLength={80} value={newDomain}
+                  onChange={e => setNewDomain(e.target.value)} placeholder={tr('选择现有业务域或输入名称', 'Choose an existing domain or enter a name')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600" />
                 <datalist id="table-domains-page">{domains.map(domain => <option key={domain} value={domain} />)}</datalist>
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  物理表名 (Table Name)
+                  {tr('物理表名 (Table Name)', 'Physical Table Name')}
                 </label>
                 <input
+                  aria-label={tr('物理表名 (Table Name)', 'Physical Table Name')}
                   type="text"
                   required
                   value={newTableName}
                   onChange={(e) => setNewTableName(e.target.value)}
-                  placeholder="例如：t_wms_quality_sample"
+                  placeholder={tr('例如：t_wms_quality_sample', 'e.g., t_wms_quality_sample')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 font-mono focus:outline-none focus:border-blue-600"
                 />
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  表中文注释 (Comment)
+                  {tr('表中文注释 (Comment)', 'Table Display Name / Comment')}
                 </label>
                 <input
+                  aria-label={tr('表中文注释 (Comment)', 'Table Display Name / Comment')}
                   type="text"
                   required
                   value={newCnName}
                   onChange={(e) => setNewCnName(e.target.value)}
-                  placeholder="例如：到货质检抽样记录表"
+                  placeholder={tr('例如：到货质检抽样记录表', 'e.g., Incoming QC Sampling Log')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -298,13 +311,13 @@ export const PageTableBindingBar: React.FC<PageTableBindingBarProps> = ({
                   onClick={() => setShowCreateModal(false)}
                   className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
-                  取消
+                  {tr('取消', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium cursor-pointer"
                 >
-                  创建并绑定
+                  {tr('创建并绑定', 'Create & Bind')}
                 </button>
               </div>
             </form>

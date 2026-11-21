@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isEnLocale, tr } from '../i18n/runtime';
 import { printPageSource } from '../proto/dsl/printer';
 import { emptyMindmaps } from '../proto/mindmaps';
 import type { NoteLink, NoteNode, NoteWorkspace } from '../proto/notes';
@@ -41,20 +42,35 @@ export function parseShareUrl(rawUrl: string): ParsedShareTarget {
   try {
     u = new URL(rawUrl.trim());
   } catch {
-    throw new Error(`无效的在线分享链接：${rawUrl}`);
+    throw new Error(tr(`无效的在线分享链接：${rawUrl}`, `Invalid online share URL: ${rawUrl}`));
   }
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalNetworkHost(u.hostname))) {
-    throw new Error('在线分享地址必须使用 HTTPS（本机 localhost 或内网 IP 允许 HTTP）');
+    throw new Error(
+      tr(
+        '在线分享地址必须使用 HTTPS（本机 localhost 或内网 IP 允许 HTTP）',
+        'Online share URL must use HTTPS (HTTP is allowed for localhost and private LAN IPs)'
+      )
+    );
   }
   if (u.username || u.password) {
-    throw new Error('在线分享链接不应在 URL 内包含账号密码，请使用独立的 password 参数');
+    throw new Error(
+      tr(
+        '在线分享链接不应在 URL 内包含账号密码，请使用独立的 password 参数',
+        'Online share URL must not embed credentials; pass the password parameter separately'
+      )
+    );
   }
   const pMatch = /^\/p\/([A-Za-z0-9_-]{20,80})\/?$/.exec(u.pathname);
   const mcpMatch = /^\/api\/v1\/mcp\/([A-Za-z0-9_-]{20,80})\/?$/.exec(u.pathname);
   const viewMatch = /^\/api\/v1\/view\/([A-Za-z0-9_-]{20,80})\/?$/.exec(u.pathname);
   const shareId = pMatch?.[1] ?? mcpMatch?.[1] ?? viewMatch?.[1];
   if (!shareId || !SHARE_ID_RE.test(shareId)) {
-    throw new Error('链接格式无效：请提供完整的在线原型链接（如 https://proto.example.com/p/<shareId>）');
+    throw new Error(
+      tr(
+        '链接格式无效：请提供完整的在线原型链接（如 https://proto.example.com/p/<shareId>）',
+        'Invalid share URL format: provide a full online prototype link (e.g., https://proto.example.com/p/<shareId>)'
+      )
+    );
   }
   return {
     origin: u.origin,
@@ -244,10 +260,10 @@ export function createLocalWorkspaceLoader(projectFilePath: string): WorkspaceLo
       try {
         stat = fs.statSync(resolved);
       } catch {
-        throw new Error(`找不到本地工程文件：${resolved}`);
+        throw new Error(tr(`找不到本地工程文件：${resolved}`, `Local project file not found: ${resolved}`));
       }
       if (!stat.isFile()) {
-        throw new Error(`指定路径不是有效的 .pflow 文件：${resolved}`);
+        throw new Error(tr(`指定路径不是有效的 .pflow 文件：${resolved}`, `Path is not a regular .pflow file: ${resolved}`));
       }
       if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
         return cached.workspace;
@@ -282,21 +298,30 @@ export function createRemoteWorkspaceLoader(options: {
   return {
     async load(): Promise<LoadedWorkspace> {
       if (typeof fetchFn !== 'function') {
-        throw new Error('当前运行环境不支持 HTTP fetch，无法读取远程分享链接');
+        throw new Error(
+          tr(
+            '当前运行环境不支持 HTTP fetch，无法读取远程分享链接',
+            'Current runtime does not support HTTP fetch; cannot load remote share URL'
+          )
+        );
       }
       const now = Date.now();
       if (cached && now - cached.fetchedAt < ttlMs) {
         return cached.workspace;
       }
 
+      const langHeader: Record<string, string> = isEnLocale() ? { 'Accept-Language': 'en-US' } : {};
       const metaRes = await fetchFn(`${target.origin}/api/v1/view/${target.shareId}`, {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', ...langHeader },
         redirect: 'error',
       });
       const metaJson = (await metaRes.json().catch(() => null)) as Record<string, unknown> | null;
       if (!metaRes.ok) {
-        const msg = typeof metaJson?.error === 'string' ? metaJson.error : `远程分享访问失败 (HTTP ${metaRes.status})`;
+        const msg =
+          typeof metaJson?.error === 'string'
+            ? metaJson.error
+            : tr(`远程分享访问失败 (HTTP ${metaRes.status})`, `Failed to access remote share (HTTP ${metaRes.status})`);
         throw new Error(msg);
       }
       if (
@@ -307,7 +332,7 @@ export function createRemoteWorkspaceLoader(options: {
         !Number.isInteger(metaJson.version) ||
         metaJson.version < 1
       ) {
-        throw new Error('远程分享返回的元数据格式无效');
+        throw new Error(tr('远程分享返回的元数据格式无效', 'Invalid metadata format returned by remote share'));
       }
 
       const metaVersion = metaJson.version;
@@ -317,18 +342,26 @@ export function createRemoteWorkspaceLoader(options: {
       }
 
       if (metaJson.passwordProtected && !options.password) {
-        throw new Error('该在线分享启用了访问密码保护，请在 MCP 配置中提供 password（或环境变量 PROTOFLOW_SHARE_PASSWORD）');
+        throw new Error(
+          tr(
+            '该在线分享启用了访问密码保护，请在 MCP 配置中提供 password（或环境变量 PROTOFLOW_SHARE_PASSWORD）',
+            'This online share is password-protected; provide password in MCP config (or PROTOFLOW_SHARE_PASSWORD)'
+          )
+        );
       }
 
       const openRes = await fetchFn(`${target.origin}/api/v1/view/${target.shareId}/open`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...langHeader },
         body: JSON.stringify({ password: options.password ?? '' }),
         redirect: 'error',
       });
       const openJson = (await openRes.json().catch(() => null)) as Record<string, unknown> | null;
       if (!openRes.ok) {
-        const msg = typeof openJson?.error === 'string' ? openJson.error : `打开远程分享失败 (HTTP ${openRes.status})`;
+        const msg =
+          typeof openJson?.error === 'string'
+            ? openJson.error
+            : tr(`打开远程分享失败 (HTTP ${openRes.status})`, `Failed to open remote share (HTTP ${openRes.status})`);
         throw new Error(msg);
       }
       const pub = openJson?.publication as Record<string, unknown> | undefined;
@@ -340,7 +373,12 @@ export function createRemoteWorkspaceLoader(options: {
         !Number.isInteger(pub.version) ||
         pub.version < 1
       ) {
-        throw new Error('远程分享内容与链接标识不一致或缺少有效版本号');
+        throw new Error(
+          tr(
+            '远程分享内容与链接标识不一致或缺少有效版本号',
+            'Remote share payload does not match share ID or is missing a valid version'
+          )
+        );
       }
       // Always stamp revision and cache with pub.version from the atomic /open response,
       // never metaVersion from the earlier GET which may predate a concurrent republish.

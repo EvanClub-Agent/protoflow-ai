@@ -1,4 +1,5 @@
 import type { HermesChatConversation, HermesProjectConversation, HermesTaskScope } from './hermesConversation';
+import { tr } from '../i18n/runtime';
 import type { DBTableSchema } from '../store/useProtoStore';
 export type HermesImageAttachment = HermesChatConversation & {
   id: string;
@@ -331,7 +332,7 @@ export function getHermesApi(): HermesDesktopApi {
       : undefined;
   if (!api)
     throw new Error(
-      "AI 功能需要桌面端 Hermes 连接，请使用桌面应用并连接 Hermes",
+      tr("AI 功能需要桌面端 Hermes 连接，请使用桌面应用并连接 Hermes", "AI features require a desktop Hermes connection. Open the desktop app and connect Hermes."),
     );
   return api;
 }

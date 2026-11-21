@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import { ChevronDown, Crosshair, LoaderCircle, Sparkles } from 'lucide-react';
 import { useAiChatStore } from '../../store/useAiChatStore';
 import { AiChatPanel } from './AiChatPanel';
+import { useI18n } from '../../i18n';
 
 type FloatingPageChatProps = Pick<React.ComponentProps<typeof AiChatPanel>, 'pageId' | 'pageTitle' | 'selectedLabel' | 'running' | 'onSend' | 'onClearSelection'>;
 
 export function FloatingPageChat(props: FloatingPageChatProps) {
+  const { tr } = useI18n();
   const open = useAiChatStore(state => state.pageChatOpen);
   const setOpen = useAiChatStore(state => state.setPageChatOpen);
   const [hasOpened, setHasOpened] = useState(open);
@@ -48,7 +50,7 @@ export function FloatingPageChat(props: FloatingPageChatProps) {
       <aside
         ref={panelRef}
         id={panelId}
-        aria-label="AI 对话面板"
+        aria-label={tr('AI 对话面板', 'AI Chat Panel')}
         hidden={!open}
         className={
           open
@@ -75,10 +77,10 @@ export function FloatingPageChat(props: FloatingPageChatProps) {
         <button
           ref={triggerRef}
           type="button"
-          aria-label="问 AI"
+          aria-label={tr('问 AI', 'Ask AI')}
           aria-controls={panelId}
           aria-expanded={open}
-          title={props.running ? '当前页面的 AI 任务进行中' : '当前页面的 AI 对话'}
+          title={props.running ? tr('当前页面的 AI 任务进行中', 'AI task running on this page') : tr('当前页面的 AI 对话', 'AI chat for this page')}
           onClick={() => (open ? collapse() : setOpen(true))}
           className={`pointer-events-auto inline-flex h-9 cursor-pointer items-center gap-2 rounded-full px-3.5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
             open
@@ -93,10 +95,10 @@ export function FloatingPageChat(props: FloatingPageChatProps) {
           ) : (
             <Sparkles size={14} aria-hidden="true" className="shrink-0" />
           )}
-          <span>问 AI</span>
+          <span>{tr('问 AI', 'Ask AI')}</span>
           {!open && props.running && (
             <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">
-              生成中
+              {tr('生成中', 'Working')}
             </span>
           )}
           {!open && !props.running && props.selectedLabel && (

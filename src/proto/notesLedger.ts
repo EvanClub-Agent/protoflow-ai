@@ -9,6 +9,7 @@ import {
   type NoteWorkspace,
 } from './notes';
 import type { SitemapLayout } from './sitemap';
+import { tr } from '../i18n/runtime';
 
 /** One row of the requirement ledger (table / kanban). Folders are not rows. */
 export interface NoteLedgerRow {
@@ -190,10 +191,10 @@ export interface NoteLedgerInsight {
 export function ledgerInsights(rows: NoteLedgerRow[]): NoteLedgerInsight[] {
   const count = (filter: NoteLedgerFilter) => filterLedgerRows(rows, filter).length;
   const presets: Omit<NoteLedgerInsight, 'count'>[] = [
-    { id: 'p0-pending', label: 'P0 待客户确认', filter: { priorities: ['P0'], statuses: ['pending_confirm'] }, tone: 'rose' },
-    { id: 'pending', label: '全部待客户确认', filter: { statuses: ['pending_confirm'] }, tone: 'amber' },
-    { id: 'confirmed', label: '已确认待落地', filter: { statuses: ['confirmed'] }, tone: 'blue' },
-    { id: 'open-tasks', label: '有未完成待办', filter: { hasOpenTasks: true }, tone: 'slate' },
+    { id: 'p0-pending', label: tr('P0 待客户确认', 'P0 Awaiting Sign-Off'), filter: { priorities: ['P0'], statuses: ['pending_confirm'] }, tone: 'rose' },
+    { id: 'pending', label: tr('全部待客户确认', 'All Awaiting Sign-Off'), filter: { statuses: ['pending_confirm'] }, tone: 'amber' },
+    { id: 'confirmed', label: tr('已确认待落地', 'Confirmed & Ready'), filter: { statuses: ['confirmed'] }, tone: 'blue' },
+    { id: 'open-tasks', label: tr('有未完成待办', 'Open Action Items'), filter: { hasOpenTasks: true }, tone: 'slate' },
   ];
   const insights: NoteLedgerInsight[] = presets.map((insight) => ({ ...insight, count: count(insight.filter) }));
 
@@ -209,7 +210,7 @@ export function ledgerInsights(rows: NoteLedgerRow[]): NoteLedgerInsight[] {
     .forEach(([stakeholder, n]) =>
       insights.push({
         id: `stakeholder:${stakeholder}`,
-        label: `${stakeholder} · 未落地`,
+        label: tr(`${stakeholder} · 未落地`, `${stakeholder} · Pending`),
         count: n,
         filter: { stakeholder, notImplemented: true },
         tone: 'slate',

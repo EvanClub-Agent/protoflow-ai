@@ -1474,7 +1474,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 
 	requireSigningKeyReady := func(c *gin.Context) {
 		if signingKeyErr != nil || len(signingPriv) != ed25519.PrivateKeySize || signingPubBase64 == "" {
-			fail(c, 500, "版本签名密钥未就绪，请检查服务端 RELEASE_STORAGE_DIR 写权限与密钥配置")
+			fail(c, 500, msg(c, "版本签名密钥未就绪，请检查服务端 RELEASE_STORAGE_DIR 写权限与密钥配置", "Release signing key is not ready. Check server RELEASE_STORAGE_DIR write permissions and signing key configuration"))
 			return
 		}
 		c.Next()
@@ -1482,7 +1482,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 
 	requireAdminChannel := func(c *gin.Context) {
 		if !isAllowedAdminRequest(c, options) {
-			fail(c, 403, "当前网络未获准访问版本管理后台。请使用 HTTPS、本机回环地址，或联系管理员配置允许访问的局域网网段。")
+			fail(c, 403, msg(c, "当前网络未获准访问版本管理后台。请使用 HTTPS、本机回环地址，或联系管理员配置允许访问的局域网网段。", "Current network is not permitted to access release administration. Use HTTPS, loopback, or ask an administrator to configure allowed LAN CIDRs."))
 			return
 		}
 		c.Next()
@@ -1573,7 +1573,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		}
 		pwHash, err := HashPassword(input.Password)
 		if err != nil {
-			fail(c, 500, "加密用户密码失败")
+			fail(c, 500, msg(c, "加密用户密码失败", "Failed to hash user password"))
 			return
 		}
 		rawToken := "pfu_" + NewID() + NewID()
@@ -1588,10 +1588,10 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		})
 		if err != nil {
 			if errors.Is(err, ErrDuplicateUsername) {
-				fail(c, 409, "该用户名已被注册，请更换用户名或直接登录")
+				fail(c, 409, msg(c, "该用户名已被注册，请更换用户名或直接登录", "Username is already taken. Choose another username or sign in"))
 				return
 			}
-			fail(c, 500, "注册客户端账号失败")
+			fail(c, 500, msg(c, "注册客户端账号失败", "Failed to register client account"))
 			return
 		}
 		c.JSON(200, gin.H{
@@ -1606,7 +1606,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			return
 		}
 		if strings.TrimSpace(input.Username) == "" || input.Password == "" || len(input.Password) > 128 {
-			fail(c, 400, "请输入用户名与密码")
+			fail(c, 400, msg(c, "请输入用户名与密码", "Please enter your username and password"))
 			return
 		}
 		rawToken := "pfu_" + NewID() + NewID()
@@ -1614,10 +1614,10 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		user, err := store.AuthenticateClientUser(c.Request.Context(), input.Username, input.Password, TokenHash(rawToken), exp)
 		if err != nil {
 			if errors.Is(err, ErrInvalidAuth) {
-				fail(c, 401, "用户名或密码不正确")
+				fail(c, 401, msg(c, "用户名或密码不正确", "Incorrect username or password"))
 				return
 			}
-			fail(c, 500, "客户端登录服务暂时不可用")
+			fail(c, 500, msg(c, "客户端登录服务暂时不可用", "Client sign-in service is temporarily unavailable"))
 			return
 		}
 		c.JSON(200, gin.H{
@@ -1629,15 +1629,15 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	authGroup.GET("/me", func(c *gin.Context) {
 		token, ok := extractBearer(c)
 		if !ok {
-			fail(c, 401, "请先登录客户端账号")
+			fail(c, 401, msg(c, "请先登录客户端账号", "Please sign in to your client account"))
 			return
 		}
 		user, err := store.ClientUserByToken(c.Request.Context(), TokenHash(token))
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				fail(c, 401, "登录会话已过期或无效，请重新登录")
+				fail(c, 401, msg(c, "登录会话已过期或无效，请重新登录", "Session expired or invalid. Please sign in again"))
 			} else {
-				fail(c, 503, "账号服务暂时不可用，请稍后重试")
+				fail(c, 503, msg(c, "账号服务暂时不可用，请稍后重试", "Account service is temporarily unavailable. Please try again later"))
 			}
 			return
 		}
@@ -1647,15 +1647,15 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	authGroup.POST("/publisher", func(c *gin.Context) {
 		token, ok := extractBearer(c)
 		if !ok {
-			fail(c, 401, "请先登录账号")
+			fail(c, 401, msg(c, "请先登录账号", "Please sign in first"))
 			return
 		}
 		user, err := store.ClientUserByToken(c.Request.Context(), TokenHash(token))
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				fail(c, 401, "登录已失效，请重新登录")
+				fail(c, 401, msg(c, "登录已失效，请重新登录", "Session expired. Please sign in again"))
 			} else {
-				fail(c, 503, "账号服务暂时不可用")
+				fail(c, 503, msg(c, "账号服务暂时不可用", "Account service is temporarily unavailable"))
 			}
 			return
 		}
@@ -1666,17 +1666,17 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			return
 		}
 		if input.LegacyToken == "" || len(input.LegacyToken) > 256 {
-			fail(c, 400, "本机没有可关联的原发布身份")
+			fail(c, 400, msg(c, "本机没有可关联的原发布身份", "No legacy publishing identity is available to link"))
 			return
 		}
 		id, name, err := store.LinkClientPublisher(c.Request.Context(), user.ID, TokenHash(input.LegacyToken))
 		if err != nil {
 			if errors.Is(err, ErrInvalidAuth) {
-				fail(c, 400, "原发布身份已失效，请联系管理员恢复原身份")
+				fail(c, 400, msg(c, "原发布身份已失效，请联系管理员恢复原身份", "Legacy publishing identity is no longer valid. Contact an administrator to recover it"))
 			} else if errors.Is(err, ErrConflict) {
-				fail(c, 409, "发布身份已被关联，或当前账号已开始发布；不能自动合并，请联系管理员")
+				fail(c, 409, msg(c, "发布身份已被关联，或当前账号已开始发布；不能自动合并，请联系管理员", "Publishing identity is already linked or this account already has publications; automatic merge is not allowed. Contact an administrator"))
 			} else {
-				fail(c, 503, "关联发布身份失败，请稍后重试")
+				fail(c, 503, msg(c, "关联发布身份失败，请稍后重试", "Failed to link publishing identity. Please try again later"))
 			}
 			return
 		}
@@ -1691,11 +1691,11 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		}
 		if user, err := store.ClientUserByToken(c.Request.Context(), TokenHash(token)); err == nil {
 			if err := store.LogoutClientUser(c.Request.Context(), user.ID, TokenHash(token)); err != nil {
-				fail(c, 503, "服务器注销失败，请稍后重试")
+				fail(c, 503, msg(c, "服务器注销失败，请稍后重试", "Failed to sign out on the server. Please try again later"))
 				return
 			}
 		} else if !errors.Is(err, ErrNotFound) {
-			fail(c, 503, "服务器注销失败，请稍后重试")
+			fail(c, 503, msg(c, "服务器注销失败，请稍后重试", "Failed to sign out on the server. Please try again later"))
 			return
 		}
 		c.JSON(200, gin.H{"loggedOut": true})
@@ -1710,7 +1710,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	adminAuth.GET("/status", func(c *gin.Context) {
 		initialized, err := store.HasPlatformAdmin(c.Request.Context())
 		if err != nil {
-			fail(c, 500, "查询平台管理员状态失败")
+			fail(c, 500, msg(c, "查询平台管理员状态失败", "Failed to query platform administrator status"))
 			return
 		}
 		c.JSON(200, gin.H{"initialized": initialized, "hasAdmin": initialized, "bootstrapAllowed": false})
@@ -1722,7 +1722,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			return
 		}
 		if strings.TrimSpace(input.Username) == "" || input.Password == "" || len(input.Password) > 128 {
-			fail(c, 400, "请输入管理员账号与密码")
+			fail(c, 400, msg(c, "请输入管理员账号与密码", "Please enter administrator username and password"))
 			return
 		}
 		rawToken := "pfa_" + NewID() + NewID()
@@ -1730,10 +1730,10 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		admin, err := store.AuthenticatePlatformAdmin(c.Request.Context(), input.Username, input.Password, TokenHash(rawToken), exp)
 		if err != nil {
 			if errors.Is(err, ErrInvalidAuth) {
-				fail(c, 401, "管理员账号或密码不正确")
+				fail(c, 401, msg(c, "管理员账号或密码不正确", "Incorrect administrator username or password"))
 				return
 			}
-			fail(c, 500, "管理员登录服务暂时不可用")
+			fail(c, 500, msg(c, "管理员登录服务暂时不可用", "Administrator sign-in service is temporarily unavailable"))
 			return
 		}
 		c.JSON(200, gin.H{
@@ -1745,12 +1745,12 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	adminAuth.GET("/me", func(c *gin.Context) {
 		token, ok := extractBearer(c)
 		if !ok {
-			fail(c, 401, "请使用平台管理员账号登录")
+			fail(c, 401, msg(c, "请使用平台管理员账号登录", "Please sign in with a platform administrator account"))
 			return
 		}
 		admin, err := store.PlatformAdminByToken(c.Request.Context(), TokenHash(token))
 		if err != nil {
-			fail(c, 403, "需要平台管理员权限，普通发布凭证或客户端用户无权访问版本管理后台")
+			fail(c, 403, msg(c, "需要平台管理员权限，普通发布凭证或客户端用户无权访问版本管理后台", "Platform administrator privileges required. Publisher tokens and client accounts cannot access release administration"))
 			return
 		}
 		c.JSON(200, gin.H{"admin": admin})
@@ -1775,12 +1775,12 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	releaseAdmin.Use(requireAdminChannel, requireSigningKeyReady, func(c *gin.Context) {
 		token, ok := extractBearer(c)
 		if !ok {
-			fail(c, 401, "请先登录平台管理员账号")
+			fail(c, 401, msg(c, "请先登录平台管理员账号", "Please sign in as a platform administrator first"))
 			return
 		}
 		admin, err := store.PlatformAdminByToken(c.Request.Context(), TokenHash(token))
 		if err != nil || admin.ID == "" {
-			fail(c, 403, "仅平台管理员可维护桌面版本与安装包，普通发布者无权操作")
+			fail(c, 403, msg(c, "仅平台管理员可维护桌面版本与安装包，普通发布者无权操作", "Only platform administrators can manage desktop releases and installers"))
 			return
 		}
 		c.Set("adminId", admin.ID)
@@ -1791,7 +1791,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	releaseAdmin.GET("", func(c *gin.Context) {
 		items, err := store.ListReleases(c.Request.Context(), false)
 		if err != nil {
-			fail(c, 500, "读取版本列表失败")
+			fail(c, 500, msg(c, "读取版本列表失败", "Failed to load release list"))
 			return
 		}
 		for i := range items {
@@ -1818,7 +1818,10 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		created, err := store.CreateRelease(c.Request.Context(), rel)
 		if err != nil {
 			if errors.Is(err, ErrDuplicateVersion) {
-				fail(c, 409, fmt.Sprintf("版本号 v%s 已存在，请修改版本号或直接编辑已有版本", rel.Version))
+				fail(c, 409, msg(c,
+					fmt.Sprintf("版本号 v%s 已存在，请修改版本号或直接编辑已有版本", rel.Version),
+					fmt.Sprintf("Release v%s already exists. Change the version number or edit the existing release", rel.Version),
+				))
 				return
 			}
 			storeError(c, err)
@@ -1846,7 +1849,10 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		updated, err := store.UpdateRelease(c.Request.Context(), rel)
 		if err != nil {
 			if errors.Is(err, ErrDuplicateVersion) {
-				fail(c, 409, fmt.Sprintf("版本号 v%s 已存在", rel.Version))
+				fail(c, 409, msg(c,
+					fmt.Sprintf("版本号 v%s 已存在", rel.Version),
+					fmt.Sprintf("Release v%s already exists", rel.Version),
+				))
 				return
 			}
 			storeError(c, err)
@@ -1881,16 +1887,16 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
 			mr, err := c.Request.MultipartReader()
 			if err != nil {
-				fail(c, 400, "解析上传表单失败")
+				fail(c, 400, msg(c, "解析上传表单失败", "Failed to parse multipart upload form"))
 				return
 			}
 			if err := os.MkdirAll(storageDir, 0700); err != nil {
-				fail(c, 500, "创建安装包存储目录失败")
+				fail(c, 500, msg(c, "创建安装包存储目录失败", "Failed to create installer storage directory"))
 				return
 			}
 			tmpFile, err := os.CreateTemp(storageDir, "upload-*.tmp")
 			if err != nil {
-				fail(c, 500, "创建临时文件失败")
+				fail(c, 500, msg(c, "创建临时文件失败", "Failed to create temporary upload file"))
 				return
 			}
 			tmpPath := tmpFile.Name()
@@ -1914,9 +1920,9 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 				if err != nil {
 					var maxErr *http.MaxBytesError
 					if errors.As(err, &maxErr) {
-						fail(c, 413, "安装包大小超过 512 MB 限制")
+						fail(c, 413, msg(c, "安装包大小超过 512 MB 限制", "Installer exceeds the 512 MB size limit"))
 					} else {
-						fail(c, 400, "读取上传数据失败")
+						fail(c, 400, msg(c, "读取上传数据失败", "Failed to read uploaded data"))
 					}
 					return
 				}
@@ -1942,9 +1948,9 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 					if copyErr != nil {
 						var maxErr *http.MaxBytesError
 						if errors.As(copyErr, &maxErr) {
-							fail(c, 413, "安装包大小超过 512 MB 限制")
+							fail(c, 413, msg(c, "安装包大小超过 512 MB 限制", "Installer exceeds the 512 MB size limit"))
 						} else {
-							fail(c, 400, "保存上传文件失败")
+							fail(c, 400, msg(c, "保存上传文件失败", "Failed to write uploaded file"))
 						}
 						return
 					}
@@ -1955,7 +1961,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			}
 
 			if !fileReceived || sizeBytes <= 0 {
-				fail(c, 400, "请选择非空的安装包文件上传")
+				fail(c, 400, msg(c, "请选择非空的安装包文件上传", "Please upload a non-empty installer file"))
 				return
 			}
 			_ = tmpFile.Close()
@@ -1985,7 +1991,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			storedName := assetID + "-" + cleanName
 			finalPath := filepath.Join(storageDir, storedName)
 			if err := os.Rename(tmpPath, finalPath); err != nil {
-				fail(c, 500, "持久化安装包文件失败")
+				fail(c, 500, msg(c, "持久化安装包文件失败", "Failed to persist installer file"))
 				return
 			}
 			cleanupTmp = false
@@ -2044,12 +2050,12 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			return
 		}
 		if err := os.MkdirAll(storageDir, 0700); err != nil {
-			fail(c, 500, "创建安装包存储目录失败")
+			fail(c, 500, msg(c, "创建安装包存储目录失败", "Failed to create installer storage directory"))
 			return
 		}
 		tmpFile, err := os.CreateTemp(storageDir, "upload-*.tmp")
 		if err != nil {
-			fail(c, 500, "创建临时文件失败")
+			fail(c, 500, msg(c, "创建临时文件失败", "Failed to create temporary upload file"))
 			return
 		}
 		tmpPath := tmpFile.Name()
@@ -2065,14 +2071,14 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		if err != nil {
 			var maxErr *http.MaxBytesError
 			if errors.As(err, &maxErr) {
-				fail(c, 413, "安装包大小超过 512 MB 限制")
+				fail(c, 413, msg(c, "安装包大小超过 512 MB 限制", "Installer exceeds the 512 MB size limit"))
 			} else {
-				fail(c, 400, "读取安装包内容失败")
+				fail(c, 400, msg(c, "读取安装包内容失败", "Failed to read installer stream"))
 			}
 			return
 		}
 		if sizeBytes <= 0 {
-			fail(c, 400, "安装包文件内容不能为空")
+			fail(c, 400, msg(c, "安装包文件内容不能为空", "Installer file cannot be empty"))
 			return
 		}
 		_ = tmpFile.Close()
@@ -2081,7 +2087,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		storedName := assetID + "-" + cleanName
 		finalPath := filepath.Join(storageDir, storedName)
 		if err := os.Rename(tmpPath, finalPath); err != nil {
-			fail(c, 500, "保存安装包文件失败")
+			fail(c, 500, msg(c, "保存安装包文件失败", "Failed to save installer file"))
 			return
 		}
 		cleanupTmp = false
@@ -2140,7 +2146,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		extURL := strings.TrimSpace(input.ExternalURL)
 		parsedURL, err := url.Parse(extURL)
 		if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") {
-			fail(c, 400, "请填写有效的 HTTP/HTTPS 下载链接")
+			fail(c, 400, msg(c, "请填写有效的 HTTP/HTTPS 下载链接", "Please provide a valid HTTP/HTTPS download URL"))
 			return
 		}
 		fileName := strings.TrimSpace(input.FileName)
@@ -2153,12 +2159,12 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			return
 		}
 		if input.SizeBytes <= 0 {
-			fail(c, 400, "外链安装包必须声明大于 0 的准确字节大小")
+			fail(c, 400, msg(c, "外链安装包必须声明大于 0 的准确字节大小", "External installer must declare an exact sizeBytes greater than 0"))
 			return
 		}
 		checksum := strings.ToLower(strings.TrimSpace(input.SHA256))
 		if !sha256Pattern.MatchString(checksum) {
-			fail(c, 400, "外链安装包必须提供有效的 64 位十六进制 SHA-256 校验值")
+			fail(c, 400, msg(c, "外链安装包必须提供有效的 64 位十六进制 SHA-256 校验值", "External installer must provide a valid 64-character hex SHA-256 checksum"))
 			return
 		}
 		asset, oldStorage, err := store.UpsertReleaseAsset(c.Request.Context(), DesktopReleaseAsset{
@@ -2189,11 +2195,11 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		assetID := c.Param("assetId")
 		asset, rel, err := store.GetReleaseAsset(c.Request.Context(), assetID)
 		if err != nil || asset.ReleaseID != releaseID {
-			fail(c, 404, "安装包不存在或不属于当前版本")
+			fail(c, 404, msg(c, "安装包不存在或不属于当前版本", "Installer asset not found or does not belong to this release"))
 			return
 		}
 		if c.Request.ContentLength == 0 {
-			fail(c, 400, "请提交已核对的 64 位 SHA-256 摘要")
+			fail(c, 400, msg(c, "请提交已核对的 64 位 SHA-256 摘要", "Please submit the verified 64-character SHA-256 digest"))
 			return
 		}
 		var input assetApproveInput
@@ -2202,36 +2208,36 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		}
 		expectedSHA := strings.ToLower(strings.TrimSpace(input.SHA256))
 		if !sha256Pattern.MatchString(expectedSHA) {
-			fail(c, 400, "请提交已核对的 64 位 SHA-256 摘要")
+			fail(c, 400, msg(c, "请提交已核对的 64 位 SHA-256 摘要", "Please submit the verified 64-character SHA-256 digest"))
 			return
 		}
 		if !isTrustedAssetRecord(asset) {
-			fail(c, 409, "该安装包缺少有效的字节大小或 64 位 SHA-256 摘要，请先补全或重新上传")
+			fail(c, 409, msg(c, "该安装包缺少有效的字节大小或 64 位 SHA-256 摘要，请先补全或重新上传", "Installer asset is missing a valid byte size or 64-character SHA-256 digest. Re-upload or complete metadata first"))
 			return
 		}
 		if !strings.EqualFold(expectedSHA, asset.SHA256) {
-			fail(c, 409, "安装包 SHA-256 摘要与当前记录不一致，请刷新页面核对后再确认")
+			fail(c, 409, msg(c, "安装包 SHA-256 摘要与当前记录不一致，请刷新页面核对后再确认", "Submitted SHA-256 digest does not match the current asset record. Refresh and verify before approving"))
 			return
 		}
 		if asset.StoragePath != "" {
 			fullPath := filepath.Join(storageDir, filepath.Base(asset.StoragePath))
 			f, openErr := os.Open(fullPath)
 			if openErr != nil {
-				fail(c, 409, "托管安装包文件不存在，无法确认签名")
+				fail(c, 409, msg(c, "托管安装包文件不存在，无法确认签名", "Hosted installer file is missing on disk; cannot approve signature"))
 				return
 			}
 			h := sha256.New()
 			n, copyErr := io.Copy(h, f)
 			_ = f.Close()
 			if copyErr != nil || n != asset.SizeBytes || !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), expectedSHA) {
-				fail(c, 409, "托管安装包文件内容或大小与记录的 SHA-256 摘要不一致，请重新上传后再确认")
+				fail(c, 409, msg(c, "托管安装包文件内容或大小与记录的 SHA-256 摘要不一致，请重新上传后再确认", "Hosted installer file content or size does not match the recorded SHA-256 digest. Re-upload before approving"))
 				return
 			}
 		}
 		approved, err := store.ApproveReleaseAsset(c.Request.Context(), releaseID, assetID, c.GetString("adminId"), expectedSHA)
 		if err != nil {
 			if errors.Is(err, ErrConflict) {
-				fail(c, 409, "安装包摘要已变更或不可确认，请刷新后重试")
+				fail(c, 409, msg(c, "安装包摘要已变更或不可确认，请刷新后重试", "Installer digest changed or cannot be approved. Refresh and try again"))
 				return
 			}
 			storeError(c, err)
@@ -2260,7 +2266,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		channelFilter := strings.TrimSpace(c.Query("channel"))
 		items, err := store.ListReleases(c.Request.Context(), true)
 		if err != nil {
-			fail(c, 500, "读取版本发布记录失败")
+			fail(c, 500, msg(c, "读取版本发布记录失败", "Failed to load published releases"))
 			return
 		}
 		filtered := make([]DesktopRelease, 0, len(items))
@@ -2317,7 +2323,7 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 		}
 		items, err := store.ListUpdateCandidates(c.Request.Context(), channel, targetOS)
 		if err != nil {
-			fail(c, 500, "检查版本更新失败")
+			fail(c, 500, msg(c, "检查版本更新失败", "Failed to check for updates"))
 			return
 		}
 
@@ -2358,22 +2364,22 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 	public.GET("/assets/:assetId/download", func(c *gin.Context) {
 		asset, rel, err := store.GetReleaseAsset(c.Request.Context(), c.Param("assetId"))
 		if err != nil || !rel.Published {
-			fail(c, 404, "安装包不存在或该版本尚未公开")
+			fail(c, 404, msg(c, "安装包不存在或该版本尚未公开", "Installer not found or release is not published"))
 			return
 		}
 		if !isTrustedAssetRecord(asset) {
-			fail(c, 409, "该历史安装包缺少可信 SHA-256 摘要或文件大小元数据，需由平台管理员补全后才可下载")
+			fail(c, 409, msg(c, "该历史安装包缺少可信 SHA-256 摘要或文件大小元数据，需由平台管理员补全后才可下载", "This legacy installer is missing trusted SHA-256 or size metadata and must be approved by an administrator before download"))
 			return
 		}
 		if !isAssetApprovedAndIntact(storageDir, asset) {
-			fail(c, 403, "该安装包尚未经平台管理员确认签名或其文件内容/摘要已变更，需由管理员重新确认后才可下载")
+			fail(c, 403, msg(c, "该安装包尚未经平台管理员确认签名或其文件内容/摘要已变更，需由管理员重新确认后才可下载", "This installer has not been approved/signed by an administrator or its file digest has changed"))
 			return
 		}
 		if asset.StoragePath != "" {
 			fullPath := filepath.Join(storageDir, filepath.Base(asset.StoragePath))
 			file, err := os.Open(fullPath)
 			if err != nil {
-				fail(c, 404, "安装包文件不存在或已被清理")
+				fail(c, 404, msg(c, "安装包文件不存在或已被清理", "Installer file is missing or has been removed"))
 				return
 			}
 			defer file.Close()
@@ -2389,6 +2395,6 @@ func registerReleaseAndAuthRoutes(api *gin.RouterGroup, rateLimited func(*gin.Co
 			c.Redirect(http.StatusFound, asset.ExternalURL)
 			return
 		}
-		fail(c, 404, "安装包缺少有效的下载地址")
+		fail(c, 404, msg(c, "安装包缺少有效的下载地址", "Installer has no valid download URL"))
 	})
 }

@@ -7,6 +7,7 @@ import {
   type NoteNode,
 } from './notes';
 import { sanitizeNoteHtml } from './noteHtmlSanitize';
+import { isEnLocale, tr } from '../i18n/runtime';
 
 type Note = Extract<NoteNode, { kind: 'note' }>;
 
@@ -21,14 +22,15 @@ export function buildNotesMarkdownBundle(
   notes: Note[],
   assets: Record<string, NoteAsset> | undefined
 ): string {
+  const en = isEnLocale();
   const toc = notes.map((n, i) => `${i + 1}. ${n.title}`).join('\n');
   const body = notes
     .map((note) => {
       const meta = [
-        `状态：${statusLabel(note.status)}`,
-        note.priority ? `优先级：${note.priority}` : '',
-        note.stakeholder ? `对接人：${note.stakeholder}` : '',
-        note.meetingDate ? `沟通日期：${note.meetingDate}` : '',
+        tr(`状态：${statusLabel(note.status)}`, `Status: ${statusLabel(note.status)}`),
+        note.priority ? tr(`优先级：${note.priority}`, `Priority: ${note.priority}`) : '',
+        note.stakeholder ? tr(`对接人：${note.stakeholder}`, `Stakeholder: ${note.stakeholder}`) : '',
+        note.meetingDate ? tr(`沟通日期：${note.meetingDate}`, `Meeting Date: ${note.meetingDate}`) : '',
       ]
         .filter(Boolean)
         .join(' · ');
@@ -36,7 +38,9 @@ export function buildNotesMarkdownBundle(
       return `${md.split('\n')[0]}\n\n> ${meta}\n${md.split('\n').slice(1).join('\n')}`;
     })
     .join('\n\n---\n\n');
-  return `# ${projectName} · 需求文档包\n\n> 导出时间：${new Date().toLocaleString('zh-CN')} · 共 ${notes.length} 篇\n\n## 目录\n\n${toc}\n\n---\n\n${body}\n`;
+  return en
+    ? `# ${projectName} · Requirement Notes Bundle\n\n> Exported: ${new Date().toLocaleString('en-US')} · ${notes.length} note(s)\n\n## Contents\n\n${toc}\n\n---\n\n${body}\n`
+    : `# ${projectName} · 需求文档包\n\n> 导出时间：${new Date().toLocaleString('zh-CN')} · 共 ${notes.length} 篇\n\n## 目录\n\n${toc}\n\n---\n\n${body}\n`;
 }
 
 /**
@@ -48,6 +52,7 @@ export function buildNotesHtmlDocument(
   notes: Note[],
   assets: Record<string, NoteAsset> | undefined
 ): string {
+  const en = isEnLocale();
   const sections = notes
     .map((note, index) => {
       const html = sanitizeNoteHtml(note.content, {
@@ -60,8 +65,8 @@ export function buildNotesHtmlDocument(
       const meta = [
         statusLabel(note.status),
         note.priority ?? '',
-        note.stakeholder ? `对接人 ${note.stakeholder}` : '',
-        note.meetingDate ? `沟通日期 ${note.meetingDate}` : '',
+        note.stakeholder ? tr(`对接人 ${note.stakeholder}`, `Stakeholder: ${note.stakeholder}`) : '',
+        note.meetingDate ? tr(`沟通日期 ${note.meetingDate}`, `Date: ${note.meetingDate}`) : '',
       ]
         .filter(Boolean)
         .map((m) => `<span>${escapeHtml(m)}</span>`)
@@ -71,9 +76,9 @@ export function buildNotesHtmlDocument(
     .join('');
   const toc = notes.map((n, i) => `<li><a href="#note-${i + 1}">${escapeHtml(n.title)}</a></li>`).join('');
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="${en ? 'en' : 'zh-CN'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
-<title>${escapeHtml(projectName)} · 需求文档包</title>
+<title>${escapeHtml(projectName)} · ${tr('需求文档包', 'Requirement Notes Bundle')}</title>
 <style>
 body{font:14px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;max-width:860px;margin:0 auto;padding:32px 24px;}
 header{border-bottom:2px solid #2563eb;margin-bottom:24px;padding-bottom:12px}header h1{margin:0;font-size:24px}header p{color:#64748b;margin:4px 0 0}
@@ -89,8 +94,8 @@ ul[data-type=taskList]{list-style:none;padding-left:4px}ul[data-type=taskList] l
 li[data-checked=true]>div{text-decoration:line-through;color:#94a3b8}
 @media print{body{padding:0}nav{display:none}}
 </style></head><body>
-<header><h1>${escapeHtml(projectName)} · 需求文档包</h1><p>导出时间 ${escapeHtml(new Date().toLocaleString('zh-CN'))} · 共 ${notes.length} 篇</p></header>
-<nav><strong>目录</strong><ol>${toc}</ol></nav>
+<header><h1>${escapeHtml(projectName)} · ${tr('需求文档包', 'Requirement Notes Bundle')}</h1><p>${tr(`导出时间 ${escapeHtml(new Date().toLocaleString('zh-CN'))} · 共 ${notes.length} 篇`, `Exported ${escapeHtml(new Date().toLocaleString('en-US'))} · ${notes.length} note(s)`)}</p></header>
+<nav><strong>${tr('目录', 'Contents')}</strong><ol>${toc}</ol></nav>
 ${sections}
 </body></html>`;
 }

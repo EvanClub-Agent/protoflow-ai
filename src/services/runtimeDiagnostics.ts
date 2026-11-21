@@ -1,3 +1,5 @@
+import { tr } from '../i18n/runtime';
+
 export type DiagnosticCategory = 'ai' | 'tool' | 'renderer' | 'storage' | 'network' | 'main';
 export type DiagnosticFailure = {
   reason?: string; evidence?: 'native-session-log' | 'runtime-error'; logStatus?: 'matched' | 'no-match' | 'unavailable'; observedAt?: string;
@@ -26,7 +28,7 @@ export function diagnosticsBridge():DiagnosticsBridge|undefined {
   return typeof window==='undefined'?undefined:(window as unknown as {protoflowDesktop?:{diagnostics?:DiagnosticsBridge}}).protoflowDesktop?.diagnostics;
 }
 export function isDiagnosticCancellation(error:unknown) {
-  return error instanceof Error && (error.name==='AbortError' || /^(已停止|已取消|项目已切换，任务已停止|model_switch_cancelled|The operation was aborted)/.test(error.message));
+  return error instanceof Error && (error.name==='AbortError' || /^(已停止|已取消|项目已切换，任务已停止|Stopped|Cancelled|Canceled|Project switched|model_switch_cancelled|The operation was aborted)/i.test(error.message));
 }
 const capturedErrors = new WeakMap<Error, Promise<string|null>>();
 let diagnosticLocation:()=>DiagnosticContext = ()=>({});
@@ -40,7 +42,7 @@ export function captureRuntimeError(error:unknown, input:Omit<DiagnosticInput,'m
   if(error instanceof Error && capturedErrors.has(error)) return capturedErrors.get(error)!;
   if(error instanceof Error && error.cause instanceof Error && capturedErrors.has(error.cause)) return capturedErrors.get(error.cause)!;
   const stack=error instanceof Error?error.stack?.split('\n').slice(1).join('\n'):undefined;
-  const result=captureDiagnostic({...input,context:input.context === undefined ? currentDiagnosticLocation() : input.context,message:input.message ?? (error instanceof Error?error.message:'未处理的运行时错误'),stack});
+  const result=captureDiagnostic({...input,context:input.context === undefined ? currentDiagnosticLocation() : input.context,message:input.message ?? (error instanceof Error?error.message:tr('未处理的运行时错误', 'Unhandled runtime error')),stack});
   if(error instanceof Error) capturedErrors.set(error,result);
   return result;
 }

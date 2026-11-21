@@ -1,4 +1,5 @@
 import { parsePageSource } from '../dsl/parser';
+import { isEnLocale, tr } from '../../i18n/runtime';
 import { findNode, walk } from '../dsl/tree';
 import { COMPONENT_MAP } from '../registry/meta';
 import type { DBTableSchema } from '../../store/useProtoStore';
@@ -34,17 +35,23 @@ export function axureBindingChanges(pageId:string, before:string|undefined, afte
     for (const column of node.props.columns) {
       if (!column || typeof column !== 'object' || !('dataIndex' in column) || !('title' in column) || typeof column.title !== 'string') continue;
       const field = db.columns.find(c=>c.name === column.dataIndex);
-      if (field) fields.push(`${headers.has(column.title) ? '原表头' : '物料列'}「${column.title}」 → ${db.tableName}.${field.name}`);
+      if (field) fields.push(tr(
+        `${headers.has(column.title) ? '原表头' : '物料列'}「${column.title}」 → ${db.tableName}.${field.name}`,
+        `${headers.has(column.title) ? 'Original header' : 'Material column'} "${column.title}" → ${db.tableName}.${field.name}`,
+      ));
     }
-    if (node.props.showIndex !== false) fields.push('序号列由物料显示');
-    if (node.props.selectable === true) fields.push('选行由物料处理');
+    if (node.props.showIndex !== false) fields.push(tr('序号列由物料显示', 'Index column rendered by Table'));
+    if (node.props.selectable === true) fields.push(tr('选行由物料处理', 'Row selection handled by Table'));
     if (Array.isArray(node.props.rowActions) && node.props.rowActions.length) {
       const actionLabels = node.props.rowActions
         .map(a => (a && typeof a === 'object' && 'label' in a && typeof a.label === 'string' ? a.label : ''))
         .filter(Boolean);
-      if (actionLabels.length) fields.push(`行操作：${actionLabels.join('、')}`);
+      if (actionLabels.length) fields.push(tr(`行操作：${actionLabels.join('、')}`, `Row actions: ${actionLabels.join(', ')}`));
     }
-    changes.push(`「${source.root.props.title}」的表格（${sourceId} / ${grid.pfId}）绑定「${db.cnName}」。${fields.join('；')}`);
+    changes.push(tr(
+      `「${source.root.props.title}」的表格（${sourceId} / ${grid.pfId}）绑定「${db.cnName}」。${fields.join('；')}`,
+      `Table (${sourceId} / ${grid.pfId}) on "${source.root.props.title}" bound to "${db.cnName}". ${fields.join('; ')}`,
+    ));
   });
   return changes;
 }
@@ -79,17 +86,18 @@ export function axureReshapeReviewItems(
       if (!entry || typeof entry !== 'object') continue;
       const target = typeof entry.targetPfId === 'string' ? findNode(doc.root, entry.targetPfId) : undefined;
       if (!target) continue;
-      const compTitle = COMPONENT_MAP[target.type]?.title ?? target.type;
+      const compTitle = isEnLocale() ? target.type : (COMPONENT_MAP[target.type]?.title ?? target.type);
       if (target.type === 'QueryForm') {
         const fieldNames = Array.isArray(target.props.fields)
           ? target.props.fields
               .map(f => (f && typeof f === 'object' && !Array.isArray(f) ? String((f as { label?: unknown; name?: unknown }).label ?? (f as { name?: unknown }).name ?? '') : ''))
               .filter(Boolean)
           : [];
-        const targetRef = typeof target.props.target === 'string' && target.props.target ? ` → 筛选表格 ${target.props.target}` : '';
-        items.push(
+        const targetRef = typeof target.props.target === 'string' && target.props.target ? tr(` → 筛选表格 ${target.props.target}`, ` → filters Table ${target.props.target}`) : '';
+        items.push(tr(
           `已转换 ·「${sourceTitle}」${compTitle}（${target.pfId}）：${entry.summary}${fieldNames.length ? `（条件：${fieldNames.join('、')}${targetRef}）` : targetRef}`,
-        );
+          `Converted · "${sourceTitle}" ${compTitle} (${target.pfId}): ${entry.summary}${fieldNames.length ? ` (filters: ${fieldNames.join(', ')}${targetRef})` : targetRef}`,
+        ));
       } else if (target.type === 'Table') {
         const db = tables.find(t => t.id === target.props.table);
         const origGridId = Array.isArray(entry.sourcePfIds) ? entry.sourcePfIds.find(id => origTables.has(id)) : undefined;
@@ -103,7 +111,10 @@ export function axureReshapeReviewItems(
           for (const column of target.props.columns) {
             if (!column || typeof column !== 'object' || !('dataIndex' in column) || !('title' in column) || typeof column.title !== 'string') continue;
             const field = db.columns.find(c => c.name === column.dataIndex);
-            if (field) colMappings.push(`${origHeaders.has(column.title) ? '原表头' : '物料列'}「${column.title}」 → ${db.tableName}.${field.name}`);
+            if (field) colMappings.push(tr(
+              `${origHeaders.has(column.title) ? '原表头' : '物料列'}「${column.title}」 → ${db.tableName}.${field.name}`,
+              `${origHeaders.has(column.title) ? 'Original header' : 'Material column'} "${column.title}" → ${db.tableName}.${field.name}`,
+            ));
           }
         }
         const actionLabels = Array.isArray(target.props.rowActions)
@@ -112,13 +123,19 @@ export function axureReshapeReviewItems(
               .filter(Boolean)
           : [];
         const extras = [
-          ...(db ? [`绑定「${db.cnName}」`] : []),
+          ...(db ? [tr(`绑定「${db.cnName}」`, `Bound to "${db.cnName}"`)] : []),
           ...colMappings,
-          ...(actionLabels.length ? [`行操作：${actionLabels.join('、')}`] : []),
-        ].join('；');
-        items.push(`已转换 ·「${sourceTitle}」${compTitle}（${target.pfId}）：${entry.summary}${extras ? `。${extras}` : ''}`);
+          ...(actionLabels.length ? [tr(`行操作：${actionLabels.join('、')}`, `Row actions: ${actionLabels.join(', ')}`)] : []),
+        ].join(tr('；', '; '));
+        items.push(tr(
+          `已转换 ·「${sourceTitle}」${compTitle}（${target.pfId}）：${entry.summary}${extras ? `。${extras}` : ''}`,
+          `Converted · "${sourceTitle}" ${compTitle} (${target.pfId}): ${entry.summary}${extras ? `. ${extras}` : ''}`,
+        ));
       } else {
-        items.push(`已转换 ·「${sourceTitle}」${compTitle}（${target.pfId}）：${entry.summary}`);
+        items.push(tr(
+          `已转换 ·「${sourceTitle}」${compTitle}（${target.pfId}）：${entry.summary}`,
+          `Converted · "${sourceTitle}" ${compTitle} (${target.pfId}): ${entry.summary}`,
+        ));
       }
     }
   }
@@ -126,21 +143,33 @@ export function axureReshapeReviewItems(
   if (Array.isArray(cov.retained) && cov.retained.length > 0) {
     for (const r of cov.retained) {
       if (!r || typeof r !== 'object') continue;
-      const ids = Array.isArray(r.sourcePfIds) ? r.sourcePfIds.join('、') : '';
-      items.push(`保留区块 ·「${sourceTitle}」${ids ? `（${ids}）` : ''}：${r.summary}`);
+      const ids = Array.isArray(r.sourcePfIds) ? r.sourcePfIds.join(tr('、', ', ')) : '';
+      items.push(tr(
+        `保留区块 ·「${sourceTitle}」${ids ? `（${ids}）` : ''}：${r.summary}`,
+        `Retained · "${sourceTitle}"${ids ? ` (${ids})` : ''}: ${r.summary}`,
+      ));
     }
   } else {
-    items.push(`保留区块 ·「${sourceTitle}」：无原样保留的 RP 定位控件`);
+    items.push(tr(
+      `保留区块 ·「${sourceTitle}」：无原样保留的 RP 定位控件`,
+      `Retained · "${sourceTitle}": no positioned RP widgets retained verbatim`,
+    ));
   }
 
   if (Array.isArray(cov.pending) && cov.pending.length > 0) {
     for (const p of cov.pending) {
       if (!p || typeof p !== 'object') continue;
-      const ids = Array.isArray(p.sourcePfIds) && p.sourcePfIds.length ? `（${p.sourcePfIds.join('、')}）` : '';
-      items.push(`待确认 ·「${sourceTitle}」${ids}：${p.reason}`);
+      const ids = Array.isArray(p.sourcePfIds) && p.sourcePfIds.length ? tr(`（${p.sourcePfIds.join('、')}）`, ` (${p.sourcePfIds.join(', ')})`) : '';
+      items.push(tr(
+        `待确认 ·「${sourceTitle}」${ids}：${p.reason}`,
+        `Pending · "${sourceTitle}"${ids}: ${p.reason}`,
+      ));
     }
   } else {
-    items.push(`待确认 ·「${sourceTitle}」：无待确认区块`);
+    items.push(tr(
+      `待确认 ·「${sourceTitle}」：无待确认区块`,
+      `Pending · "${sourceTitle}": none`,
+    ));
   }
 
   return items;

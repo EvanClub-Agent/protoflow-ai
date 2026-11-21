@@ -42,6 +42,24 @@ import { MoveSitemapModal } from './MoveSitemapModal';
 import { DeleteConfirmation } from './DeleteConfirmation';
 import { captureProjectPayload } from '../services/projectStorage';
 import { deleteMenu, prepareMenuDeletion, type MenuDeletionPlan } from '../services/menuDeletion';
+import { useI18n } from '../i18n';
+
+const TEMPLATE_EN_FALLBACK: Record<string, { title: string; description: string }> = {
+  list: { title: 'Standard CRUD List', description: 'Search filters, data table, pagination, and modal form' },
+  form: { title: 'Structured Form', description: 'Multi-section form with validation and submit actions' },
+  detail: { title: 'Detail & Approval', description: 'Header summary, status timeline, and detail tabs' },
+  master_detail: { title: 'Master-Detail Order', description: '3-column document header with editable line items' },
+  dashboard: { title: 'Analytics Dashboard', description: 'KPI cards, trend charts, and operational summary' },
+  kanban: { title: 'Kanban Board', description: 'Multi-stage workflow columns with draggable cards' },
+  blank: { title: 'Blank Canvas', description: 'Empty page ready for freeform layout or AI generation' },
+  mobile_explore: { title: 'Mobile Explore Feed', description: 'Search bar, category pills, cards, and bottom tab bar' },
+  mobile_workspace: { title: 'Mobile B2B Workspace', description: 'Approval tasks, quick actions, and KPI overview' },
+  mobile_detail: { title: 'Mobile Detail & Action', description: 'Hero card, specs section, and sticky bottom action bar' },
+  mobile_form: { title: 'Mobile Form Sheet', description: 'Touch-friendly inputs, pickers, and submit bar' },
+  mobile_chat: { title: 'Mobile AI Assistant', description: 'Conversational stream, prompt chips, and composer' },
+  mobile_profile: { title: 'Mobile Profile Center', description: 'User header, stats row, and settings menu list' },
+  mobile_blank: { title: 'Blank Mobile Page', description: 'Empty mobile viewport ready for custom design' },
+};
 
 function currentLayout(): SitemapLayout {
   const { sitemapBase, designerFolders, designerPages, sitemapOverrides } = usePageStore.getState();
@@ -57,6 +75,7 @@ export const LeftSitemapTree: React.FC = () => {
 };
 
 const ProjectSitemap: React.FC = () => {
+  const { isEn, tr, td } = useI18n();
   const {
     activePageId,
     currentProjectMeta,
@@ -140,8 +159,8 @@ const ProjectSitemap: React.FC = () => {
     moveSitemapItem(target, parentId, projectId);
     const after = currentLayout();
     if (!sameLayout(before, after)) {
-      const destination = parentId === null ? '顶层目录' : folderOptions(after.designerFolders, after.sitemapOverrides, after.sitemapBase).find(folder => folder.id === parentId)!.path;
-      setLastMove({ before, after, parentId: location.parentFolderId, message: `“${location.title}”已移至 ${destination}` });
+      const destination = parentId === null ? tr('顶层目录', 'Top-level') : folderOptions(after.designerFolders, after.sitemapOverrides, after.sitemapBase).find(folder => folder.id === parentId)!.path;
+      setLastMove({ before, after, parentId: location.parentFolderId, message: tr(`“${location.title}”已移至 ${destination}`, `Moved "${location.title}" to ${destination}`) });
       expandDirectory(parentId);
     }
     setMoveError(''); setMoveTarget(null);
@@ -149,7 +168,7 @@ const ProjectSitemap: React.FC = () => {
   const dropInto = (event: React.DragEvent, parentId: string | null) => {
     event.preventDefault(); event.stopPropagation();
     if (drag && dropTargets.has(parentId)) {
-      try { moveItem(drag.target, parentId, drag.projectId); } catch (error) { setMoveError(error instanceof Error ? error.message : '移动失败'); }
+      try { moveItem(drag.target, parentId, drag.projectId); } catch (error) { setMoveError(error instanceof Error ? td(error.message) : tr('移动失败', 'Move failed')); }
     }
     setDrag(null); setDropHover(null);
   };
@@ -180,7 +199,7 @@ const ProjectSitemap: React.FC = () => {
   };
   const openNewPage = (folderId?: string) => {
     if (folderId !== undefined) {
-      if (!folders.some(folder => !folder.deprecated && folder.id === folderId)) { setMoveError('所选目录已不存在或已归档'); return; }
+      if (!folders.some(folder => !folder.deprecated && folder.id === folderId)) { setMoveError(tr('所选目录已不存在或已归档', 'Selected folder no longer exists or is archived')); return; }
       showPageForm(folderId); return;
     }
     const available = folders.filter(folder => !folder.deprecated);
@@ -195,12 +214,15 @@ const ProjectSitemap: React.FC = () => {
     if (!newPageTitle.trim() || creatingPage) return;
     setCreatingPage(true); setNewPageError('');
     try {
-      if (newPageFolderId === null) throw new Error('请先选择页面所属目录');
+      if (newPageFolderId === null) throw new Error(tr('请先选择页面所属目录', 'Please select a parent folder for this page'));
       if (newPageAiPrompt.trim()) {
         const requestedPage = { pageId: newId('page'), platform: newPagePlatform };
-        const request = `新建${newPagePlatform === 'mobile' ? '移动端 (MobilePage)' : 'PC管理端'}页面，标题：${newPageTitle.trim()}，页面 ID：${requestedPage.pageId}，目录 ID：${newPageFolderId}，模板：${newPageTemplate}。${newPageTemplate !== 'blank' && newPageTableId ? `数据表 ID：${newPageTableId}。` : ''}用户需求：${newPageAiPrompt.trim()}`;
+        const request = tr(
+          `新建${newPagePlatform === 'mobile' ? '移动端 (MobilePage)' : 'PC管理端'}页面，标题：${newPageTitle.trim()}，页面 ID：${requestedPage.pageId}，目录 ID：${newPageFolderId}，模板：${newPageTemplate}。${newPageTemplate !== 'blank' && newPageTableId ? `数据表 ID：${newPageTableId}。` : ''}用户需求：${newPageAiPrompt.trim()}`,
+          `Create a new ${newPagePlatform === 'mobile' ? 'Mobile (MobilePage)' : 'Desktop Admin'} page — Title: ${newPageTitle.trim()}, Page ID: ${requestedPage.pageId}, Folder ID: ${newPageFolderId}, Template: ${newPageTemplate}.${newPageTemplate !== 'blank' && newPageTableId ? ` Table ID: ${newPageTableId}.` : ''} Requirements: ${newPageAiPrompt.trim()}`
+        );
         if (activePageId === '') {
-          if (hermesStatus !== 'running') throw new Error('请先连接 Hermes，再通过项目 AI 创建页面');
+          if (hermesStatus !== 'running') throw new Error(tr('请先连接 Hermes，再通过项目 AI 创建页面', 'Connect Hermes first before creating pages with Project AI'));
           setViewMode('project_ai');
           await discussProject(currentProjectMeta.projectId, request, [], [], {folderId:newPageFolderId}, requestedPage);
           setShowNewPageModal(false);
@@ -215,7 +237,7 @@ const ProjectSitemap: React.FC = () => {
       }
       expandDirectory(newPageFolderId);
       setNewPageTitle(''); setNewPageAiPrompt(''); setShowNewPageModal(false);
-    } catch (error) { setNewPageError(error instanceof Error ? error.message : '创建页面失败'); }
+    } catch (error) { setNewPageError(error instanceof Error ? td(error.message) : tr('创建页面失败', 'Failed to create page')); }
     finally { setCreatingPage(false); }
   };
 
@@ -333,41 +355,41 @@ const ProjectSitemap: React.FC = () => {
             <span className="truncate">{item.title}</span>
             {isMobilePageItem && (
               <span className="px-1 py-0.2 rounded text-[9px] font-semibold bg-violet-100 text-violet-700 shrink-0">
-                移动
+                {tr('移动', 'Mobile')}
               </span>
             )}
           </button>
 
           <div className="flex items-center gap-1 shrink-0 ml-1">
-            {linkRef && <button type="button" aria-label={`关联笔记：${item.title}`} title={noteCount ? `已关联 ${noteCount} 篇笔记，点击管理或打开` : '关联项目笔记或客户需求'} onClick={() => setNoteLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${noteCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><BookOpenText size={12} />{noteCount > 0 && <span className="text-[10px]">{noteCount}</span>}</button>}
-            {linkRef && <button type="button" aria-label={`关联脑图：${item.title}`} title={mapCount ? `已关联 ${mapCount} 个脑图节点，点击管理或打开` : '关联脑图目录或菜单'} onClick={() => setMindmapLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${mapCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><Network size={12} />{mapCount > 0 && <span className="text-[10px]">{mapCount}</span>}</button>}
-            <button type="button" aria-label={`删除${item.title}`} title={isFolder ? '删除目录及其内容' : '删除菜单'} onClick={() => {
+            {linkRef && <button type="button" aria-label={tr(`关联笔记：${item.title}`, `Link notes: ${item.title}`)} title={noteCount ? tr(`已关联 ${noteCount} 篇笔记，点击管理或打开`, `${noteCount} linked note(s) — click to manage or open`) : tr('关联项目笔记或客户需求', 'Link project notes or requirements')} onClick={() => setNoteLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${noteCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><BookOpenText size={12} />{noteCount > 0 && <span className="text-[10px] tabular-nums">{noteCount}</span>}</button>}
+            {linkRef && <button type="button" aria-label={tr(`关联脑图：${item.title}`, `Link mindmaps: ${item.title}`)} title={mapCount ? tr(`已关联 ${mapCount} 个脑图节点，点击管理或打开`, `${mapCount} linked mindmap node(s) — click to manage or open`) : tr('关联脑图目录或菜单', 'Link mindmap folder or map')} onClick={() => setMindmapLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${mapCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><Network size={12} />{mapCount > 0 && <span className="text-[10px] tabular-nums">{mapCount}</span>}</button>}
+            <button type="button" aria-label={tr(`删除${item.title}`, `Delete ${item.title}`)} title={isFolder ? tr('删除目录及其内容', 'Delete folder and its contents') : tr('删除菜单', 'Delete menu item')} onClick={() => {
               try { setDeleteTarget(prepareMenuDeletion(captureProjectPayload(), item.id)); setMoveError(''); }
-              catch (e) { setMoveError(e instanceof Error ? e.message : '无法删除菜单'); }
+              catch (e) { setMoveError(e instanceof Error ? td(e.message) : tr('无法删除菜单', 'Unable to delete menu item')); }
             }} className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={12} /></button>
-            {target && <button type="button" aria-label={`移动${item.title}`} title="移动到其他目录" onClick={() => { setMoveTarget(target); setMoveError(''); }} className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-slate-500 hover:bg-blue-100 hover:text-blue-600"><FolderInput size={12} />移动</button>}
+            {target && <button type="button" aria-label={tr(`移动${item.title}`, `Move ${item.title}`)} title={tr('移动到其他目录', 'Move to another folder')} onClick={() => { setMoveTarget(target); setMoveError(''); }} className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-slate-500 hover:bg-blue-100 hover:text-blue-600 whitespace-nowrap"><FolderInput size={12} />{tr('移动', 'Move')}</button>}
             {isFolder && !item.deprecated && <>
-              <button type="button" aria-label={`在${item.title}中新建页面`} title="在此目录新建页面" onClick={() => openNewPage(item.id)} className="p-0.5 rounded text-slate-400 hover:bg-blue-100 hover:text-blue-600"><Plus size={13} /></button>
-              <button type="button" aria-label={`在${item.title}中新建子目录`} title="新建子目录" onClick={() => setFolderDraft({ parentId: item.id })} className="p-0.5 rounded text-slate-400 hover:bg-amber-100 hover:text-amber-600"><FolderPlus size={13} /></button>
+              <button type="button" aria-label={tr(`在${item.title}中新建页面`, `New page in ${item.title}`)} title={tr('在此目录新建页面', 'New page in this folder')} onClick={() => openNewPage(item.id)} className="p-0.5 rounded text-slate-400 hover:bg-blue-100 hover:text-blue-600"><Plus size={13} /></button>
+              <button type="button" aria-label={tr(`在${item.title}中新建子目录`, `New subfolder in ${item.title}`)} title={tr('新建子目录', 'New subfolder')} onClick={() => setFolderDraft({ parentId: item.id })} className="p-0.5 rounded text-slate-400 hover:bg-amber-100 hover:text-amber-600"><FolderPlus size={13} /></button>
             </>}
             {pulseBadge && pulseBadge > 0 && (
               <span
-                className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-blue-600 text-white"
-                title="共表数据发生了更新"
+                className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-blue-600 text-white tabular-nums"
+                title={tr('共表数据发生了更新', 'Shared table data updated')}
               >
                 +{pulseBadge}
               </span>
             )}
             {boundTablesCount > 0 && (
               <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-mono border ${
+                className={`px-1.5 py-0.2 rounded text-[10px] font-mono tabular-nums border ${
                   isActive
                     ? 'bg-blue-100/80 text-blue-700 border-blue-200'
                     : 'bg-slate-100 text-slate-600 border-slate-200'
                 }`}
-                title={`该菜单已关联 ${boundTablesCount} 张数据库表`}
+                title={tr(`该菜单已关联 ${boundTablesCount} 张数据库表`, `Linked to ${boundTablesCount} database table(s)`)}
               >
-                {boundTablesCount}表
+                {tr(`${boundTablesCount}表`, `${boundTablesCount}T`)}
               </span>
             )}
           </div>
@@ -376,7 +398,7 @@ const ProjectSitemap: React.FC = () => {
         {isFolder && isExpanded && item.children && (
           <div className="mt-0.5">
             {item.children.map((child) => renderPageNode(child, depth + 1))}
-            {item.children.length === 0 && <p style={{ paddingLeft: `${(depth + 1) * 13 + 10}px` }} className="py-1.5 text-[11px] text-slate-400">暂无页面，可点击 + 添加</p>}
+            {item.children.length === 0 && <p style={{ paddingLeft: `${(depth + 1) * 13 + 10}px` }} className="py-1.5 text-[11px] text-slate-400">{tr('暂无页面，可点击 + 添加', 'No pages yet — click + to add')}</p>}
           </div>
         )}
       </div>
@@ -394,16 +416,16 @@ const ProjectSitemap: React.FC = () => {
             {leftSidebarTab === 'pages' ? (
               <>
                 <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">页面目录</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono">
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('页面目录', 'Pages')}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono tabular-nums shrink-0">
                   {Object.keys(pageSources).length}
                 </span>
               </>
             ) : (
               <>
                 <Database className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-800 truncate">数据库表</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono">
+                <span className="text-xs font-semibold text-slate-800 truncate">{tr('数据库表', 'Tables')}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-mono tabular-nums shrink-0">
                   {dbTables.length}
                 </span>
               </>
@@ -415,27 +437,27 @@ const ProjectSitemap: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFolderDraft({ parentId: null })}
-                className="flex items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer transition shadow-2xs"
+                className="flex items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer transition shadow-2xs whitespace-nowrap"
               >
-                <FolderPlus size={12} className="text-slate-500" />新建目录
+                <FolderPlus size={12} className="text-slate-500" />{tr('新建目录', 'New Folder')}
               </button>
               <button
                 type="button"
                 onClick={() => openNewPage()}
-                className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 cursor-pointer transition shadow-2xs"
+                className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 cursor-pointer transition shadow-2xs whitespace-nowrap"
               >
-                <Plus size={12} />新建页
+                <Plus size={12} />{tr('新建页', 'New Page')}
               </button>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => setShowNewTableModal(true)}
-              className="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs transition"
-              title="新建物理表"
+              className="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs transition whitespace-nowrap"
+              title={tr('新建物理表', 'New Database Table')}
             >
               <Plus className="w-3 h-3" />
-              <span>新建表</span>
+              <span>{tr('新建表', 'New Table')}</span>
             </button>
           )}
         </div>
@@ -446,10 +468,11 @@ const ProjectSitemap: React.FC = () => {
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              aria-label={leftSidebarTab === 'pages' ? tr('搜索页面菜单', 'Search pages') : tr('搜索表名或注释', 'Search tables or comments')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={
-                leftSidebarTab === 'pages' ? '搜索页面菜单...' : '搜索表名或注释...'
+                leftSidebarTab === 'pages' ? tr('搜索页面菜单...', 'Search pages...') : tr('搜索表名或注释...', 'Search tables or comments...')
               }
               className="w-full pl-8 pr-2.5 py-1 text-xs rounded-lg bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-600"
             />
@@ -460,7 +483,8 @@ const ProjectSitemap: React.FC = () => {
               type="button"
               onClick={() => setShowDeprecatedNodes(!showDeprecatedNodes)}
               className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 text-[10px] flex items-center gap-1 cursor-pointer shrink-0"
-              title={showDeprecatedNodes ? '隐藏作废节点' : '显示作废节点'}
+              aria-label={showDeprecatedNodes ? tr('隐藏作废节点', 'Hide deprecated items') : tr('显示作废节点', 'Show deprecated items')}
+              title={showDeprecatedNodes ? tr('隐藏作废节点', 'Hide deprecated items') : tr('显示作废节点', 'Show deprecated items')}
             >
               {showDeprecatedNodes ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
@@ -470,14 +494,14 @@ const ProjectSitemap: React.FC = () => {
 
       {leftSidebarTab === 'pages' && <div className="flex shrink-0 items-center border-b border-slate-100 px-2 py-1.5 text-[10px] leading-4 text-slate-500">
         {drag?.target.kind === 'folder' && dropTargets.has(null)
-          ? <div data-sitemap-root-drop onDragEnter={event => { event.preventDefault(); setDropHover({ id: null }); }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropHover({ id: null }); }} onDragLeave={() => setDropHover(null)} onDrop={event => dropInto(event, null)} className={`w-full rounded-md border border-dashed py-1.5 text-center text-xs ${dropHover?.id === null ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-blue-300 bg-blue-50 text-blue-600'}`}>拖到这里移至顶层</div>
-          : <span className="px-1">拖入目录调整层级，或点击行末“移动”</span>}
+          ? <div data-sitemap-root-drop onDragEnter={event => { event.preventDefault(); setDropHover({ id: null }); }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropHover({ id: null }); }} onDragLeave={() => setDropHover(null)} onDrop={event => dropInto(event, null)} className={`w-full rounded-md border border-dashed py-1.5 text-center text-xs ${dropHover?.id === null ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-blue-300 bg-blue-50 text-blue-600'}`}>{tr('拖到这里移至顶层', 'Drop here to move to top level')}</div>
+          : <span className="px-1">{tr('拖入目录调整层级，或点击行末“移动”', 'Drag into folders to reorder, or click "Move"')}</span>}
       </div>}
-      {leftSidebarTab === 'pages' && lastMove && sameLayout(layout, lastMove.after) && <div role="status" className="flex items-start gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-800"><span className="min-w-0 flex-1 break-words">{lastMove.message}</span><button type="button" onClick={undoMove} className="flex shrink-0 items-center gap-0.5 text-blue-600 hover:underline"><Undo2 size={12} />撤销</button></div>}
+      {leftSidebarTab === 'pages' && lastMove && sameLayout(layout, lastMove.after) && <div role="status" className="flex items-start gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-800"><span className="min-w-0 flex-1 break-words">{lastMove.message}</span><button type="button" onClick={undoMove} className="flex shrink-0 items-center gap-0.5 text-blue-600 hover:underline"><Undo2 size={12} />{tr('撤销', 'Undo')}</button></div>}
       {moveError && <p role="alert" className="px-3 py-2 text-xs text-rose-600">{moveError}</p>}
-      {lastDelete?.canUndo() && <div role="status" className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"><span>菜单内容已删除</span><button type="button" onClick={() => {
-        try { lastDelete.undo(); setLastDelete(null); } catch (e) { setMoveError(e instanceof Error ? e.message : '无法撤销'); }
-      }} className="flex items-center gap-1 font-medium"><Undo2 size={12} />撤销删除</button></div>}
+      {lastDelete?.canUndo() && <div role="status" className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"><span>{tr('菜单内容已删除', 'Menu item deleted')}</span><button type="button" onClick={() => {
+        try { lastDelete.undo(); setLastDelete(null); } catch (e) { setMoveError(e instanceof Error ? td(e.message) : tr('无法撤销', 'Unable to undo')); }
+      }} className="flex items-center gap-1 font-medium"><Undo2 size={12} />{tr('撤销删除', 'Undo Delete')}</button></div>}
       {/* TAB 1 CONTENT: MODULE PAGES SITEMAP TREE */}
       {leftSidebarTab === 'pages' && (
         <div className="flex-1 overflow-y-auto py-1.5 space-y-0.5">
@@ -529,7 +553,7 @@ const ProjectSitemap: React.FC = () => {
                             ? 'bg-blue-50/70 border-blue-500 ring-1 ring-blue-500/20 shadow-2xs'
                             : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
                         }`}
-                        title={`${tbl.tableName} · 点击选中定位，或拖拽到画布指定位置`}
+                        title={tr(`${tbl.tableName} · 点击选中定位，或拖拽到画布指定位置`, `${tbl.tableName} · Click to locate, or drag onto canvas`)}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
@@ -546,8 +570,8 @@ const ProjectSitemap: React.FC = () => {
                               {tbl.tableName}
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
-                            {tbl.columns.length}字段
+                          <span className="text-[10px] font-mono tabular-nums px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                            {tr(`${tbl.columns.length}字段`, `${tbl.columns.length} cols`)}
                           </span>
                         </div>
 
@@ -557,8 +581,8 @@ const ProjectSitemap: React.FC = () => {
 
                         {/* Shared By Menus quick pills */}
                         <div className="pl-5 pt-0.5 flex items-center gap-1 flex-wrap">
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                            {tbl.sharedByMenus.length} 处菜单引用
+                          <span className="text-[10px] tabular-nums px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                            {tr(`${tbl.sharedByMenus.length} 处菜单引用`, `${tbl.sharedByMenus.length} menu refs`)}
                           </span>
                           {tbl.sharedByMenus.slice(0, 2).map((m, idx) => (
                             <button
@@ -570,7 +594,7 @@ const ProjectSitemap: React.FC = () => {
                                 setViewMode('single_page');
                               }}
                               className="text-[10px] px-1.5 py-0.2 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 transition cursor-pointer truncate max-w-[96px]"
-                              title={`点击跳转到关联页面：${m.menuTitle}`}
+                              title={tr(`点击跳转到关联页面：${m.menuTitle}`, `Jump to linked page: ${m.menuTitle}`)}
                             >
                               {m.menuTitle.split('→')[1]?.trim() || m.menuTitle}
                             </button>
@@ -594,8 +618,8 @@ const ProjectSitemap: React.FC = () => {
             onClick={() => openNewPage()}
             className="w-full py-1.5 px-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-medium flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition"
           >
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-            <span>新建模块页面 (模板 / AI生成)</span>
+            <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">{tr('新建模块页面 (模板 / AI生成)', 'New Page (Template / AI)')}</span>
           </button>
         ) : (
           <button
@@ -603,8 +627,8 @@ const ProjectSitemap: React.FC = () => {
             onClick={() => setShowNewTableModal(true)}
             className="w-full py-1.5 px-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-medium flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition"
           >
-            <Plus className="w-3.5 h-3.5 text-blue-600" />
-            <span>新建全局物理表</span>
+            <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">{tr('新建全局物理表', 'New Database Table')}</span>
           </button>
         )}
       </div>
@@ -612,13 +636,13 @@ const ProjectSitemap: React.FC = () => {
       {moveTarget && <MoveSitemapModal layout={layout} target={moveTarget} onClose={() => setMoveTarget(null)} onMove={parentId => moveItem(moveTarget, parentId)} />}
       {mindmapLinkPage && <MindmapLinksModal projectId={currentProjectMeta.projectId} page={mindmapLinkPage} onClose={() => setMindmapLinkPage(null)} />}
       {noteLinkPage && <NoteLinksModal projectId={currentProjectMeta.projectId} page={noteLinkPage} onClose={() => setNoteLinkPage(null)} />}
-      {deleteTarget && <DeleteConfirmation title={deleteTarget.kind === 'folder' ? '删除目录' : '删除菜单'} onClose={() => setDeleteTarget(null)} onConfirm={() => {
+      {deleteTarget && <DeleteConfirmation title={deleteTarget.kind === 'folder' ? tr('删除目录', 'Delete Folder') : tr('删除菜单', 'Delete Menu Item')} onClose={() => setDeleteTarget(null)} onConfirm={() => {
         setLastDelete(deleteMenu(deleteTarget)); setLastMove(null);
       }}>
-        <p>确认删除 <strong className="text-slate-900">{deleteTarget.title}</strong>？</p>
-        {deleteTarget.kind === 'folder' && <p>将同时删除其中的 {deleteTarget.pageCount} 个页面 / 文档，以及 {Math.max(0, deleteTarget.folderCount - 1)} 个子目录。</p>}
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs">同时清理 {deleteTarget.stickyCount} 条便签、{deleteTarget.bindingCount} 项菜单数据表关联，以及 {deleteTarget.linkCount} 处页面跳转。相关脑图关联也会清理，脑图内容、共用数据表及表内数据会保留。</p>
-        <p className="text-xs text-slate-500">删除后可立即撤销。保存项目后，删除结果会写入本地工程；已发布版本需重新发布才会更新。</p>
+        <p>{tr('确认删除 ', 'Delete ')}<strong className="text-slate-900">{deleteTarget.title}</strong>{tr('？', '?')}</p>
+        {deleteTarget.kind === 'folder' && <p>{tr(`将同时删除其中的 ${deleteTarget.pageCount} 个页面 / 文档，以及 ${Math.max(0, deleteTarget.folderCount - 1)} 个子目录。`, `This will also delete ${deleteTarget.pageCount} page(s)/doc(s) and ${Math.max(0, deleteTarget.folderCount - 1)} subfolder(s) inside.`)}</p>}
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs">{tr(`同时清理 ${deleteTarget.stickyCount} 条便签、${deleteTarget.bindingCount} 项菜单数据表关联，以及 ${deleteTarget.linkCount} 处页面跳转。相关脑图关联也会清理，脑图内容、共用数据表及表内数据会保留。`, `Also removes ${deleteTarget.stickyCount} spec pin(s), ${deleteTarget.bindingCount} table binding(s), and ${deleteTarget.linkCount} page link(s). Mindmap links are cleaned up while mindmap content, shared tables, and table rows are preserved.`)}</p>
+        <p className="text-xs text-slate-500">{tr('删除后可立即撤销。保存项目后，删除结果会写入本地工程；已发布版本需重新发布才会更新。', 'You can undo immediately after deleting. Changes persist once saved; published shares update on next republish.')}</p>
       </DeleteConfirmation>}
       {folderDraft && <NewFolderModal folders={folders} initialParentId={folderDraft.parentId} onClose={() => setFolderDraft(null)} onCreate={(title, parentId) => {
         const folder = createDesignerFolder(title, parentId);
@@ -629,18 +653,18 @@ const ProjectSitemap: React.FC = () => {
       {/* Modal: Create New Prototype Page */}
       {showNewPageModal && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div role="dialog" aria-modal="true" aria-label="新建页面" className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+          <div role="dialog" aria-modal="true" aria-label={tr('新建页面', 'New Page')} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold text-slate-900">
-                  新建页面
+                  {tr('新建页面', 'New Page')}
                 </span>
               </div>
               <button
                 type="button"
                 disabled={creatingPage}
-                aria-label="关闭新建页面"
+                aria-label={tr('关闭新建页面', 'Close new page dialog')}
                 onClick={() => setShowNewPageModal(false)}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
@@ -651,10 +675,10 @@ const ProjectSitemap: React.FC = () => {
             <form onSubmit={handleCreateDesignerPage} className="p-4 space-y-3.5 text-xs">
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  所属模块菜单目录
+                  {tr('所属模块菜单目录', 'Parent Folder')}
                 </label>
                 <select
-                  aria-label="所属模块菜单目录"
+                  aria-label={tr('所属模块菜单目录', 'Parent Folder')}
                   value={newPageFolderId === null ? '' : newPageFolderId}
                   onChange={(e) => setNewPageFolderId(e.target.value)}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
@@ -665,7 +689,7 @@ const ProjectSitemap: React.FC = () => {
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  页面终端形态 (不同终端自动隔离物料库与画布视口)
+                  {tr('页面终端形态 (不同终端自动隔离物料库与画布视口)', 'Target Platform (isolates component palette and viewport)')}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -674,16 +698,16 @@ const ProjectSitemap: React.FC = () => {
                       setNewPagePlatform('desktop');
                       setNewPageTemplate(dbTables.length ? 'list' : 'blank');
                     }}
-                    className={`px-3 py-2 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition ${
+                    className={`px-3 py-2 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition min-w-0 ${
                       newPagePlatform === 'desktop'
                         ? 'bg-blue-50/80 border-blue-600 text-blue-800 font-semibold'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
                     <Monitor className="w-4 h-4 shrink-0" />
-                    <div>
-                      <div>PC 管理端页面</div>
-                      <div className="text-[10px] font-normal opacity-75">宽屏栅格 · 查询与表格</div>
+                    <div className="min-w-0">
+                      <div className="truncate">{tr('PC 管理端页面', 'Desktop Page')}</div>
+                      <div className="text-[10px] font-normal opacity-75 truncate">{tr('宽屏栅格 · 查询与表格', 'Widescreen · Filters & Tables')}</div>
                     </div>
                   </button>
                   <button
@@ -692,16 +716,16 @@ const ProjectSitemap: React.FC = () => {
                       setNewPagePlatform('mobile');
                       setNewPageTemplate('mobile_explore');
                     }}
-                    className={`px-3 py-2 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition ${
+                    className={`px-3 py-2 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition min-w-0 ${
                       newPagePlatform === 'mobile'
                         ? 'bg-violet-50/80 border-violet-600 text-violet-800 font-semibold'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
                     <Smartphone className="w-4 h-4 shrink-0" />
-                    <div>
-                      <div>移动端页面</div>
-                      <div className="text-[10px] font-normal opacity-75">Gemini 现代风 · iPhone 视口</div>
+                    <div className="min-w-0">
+                      <div className="truncate">{tr('移动端页面', 'Mobile Page')}</div>
+                      <div className="text-[10px] font-normal opacity-75 truncate">{tr('Gemini 现代风 · iPhone 视口', 'Modern UI · iPhone Viewport')}</div>
                     </div>
                   </button>
                 </div>
@@ -709,44 +733,49 @@ const ProjectSitemap: React.FC = () => {
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  页面菜单名称
+                  {tr('页面菜单名称', 'Page Title')}
                 </label>
                 <input
-                  aria-label="页面菜单名称"
+                  aria-label={tr('页面菜单名称', 'Page Title')}
                   type="text"
                   required
                   value={newPageTitle}
                   onChange={(e) => setNewPageTitle(e.target.value)}
-                  placeholder={newPagePlatform === 'mobile' ? '例如：商品探索首页 / 移动采购审批' : '例如：采购退货单管理 / 供应商绩效考评'}
+                  placeholder={newPagePlatform === 'mobile' ? tr('例如：商品探索首页 / 移动采购审批', 'e.g., Product Explore / Mobile Approval') : tr('例如：采购退货单管理 / 供应商绩效考评', 'e.g., Purchase Returns / Supplier Review')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
                 />
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  选择页面交互模板
+                  {tr('选择页面交互模板', 'Page Template')}
                 </label>
                 <select
-                  aria-label="页面交互模板"
+                  aria-label={tr('页面交互模板', 'Page Template')}
                   value={newPageTemplate}
                   onChange={(e) => setNewPageTemplate(e.target.value as PageTemplateKind)}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
                 >
-                  {(newPagePlatform === 'mobile' ? MOBILE_PAGE_TEMPLATES : PAGE_TEMPLATES).map((tpl) => (
-                    <option key={tpl.kind} value={tpl.kind}>
-                      {tpl.title} — {tpl.description}
-                    </option>
-                  ))}
+                  {(newPagePlatform === 'mobile' ? MOBILE_PAGE_TEMPLATES : PAGE_TEMPLATES).map((tpl) => {
+                    const tplAny = tpl as { kind: string; title: string; description: string; titleEn?: string; descriptionEn?: string };
+                    const tplTitle = isEn ? (tplAny.titleEn || TEMPLATE_EN_FALLBACK[tpl.kind]?.title || td(tpl.title)) : tpl.title;
+                    const tplDesc = isEn ? (tplAny.descriptionEn || TEMPLATE_EN_FALLBACK[tpl.kind]?.description || td(tpl.description)) : tpl.description;
+                    return (
+                      <option key={tpl.kind} value={tpl.kind}>
+                        {tplTitle} — {tplDesc}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
               {newPageTemplate !== 'blank' && dbTables.length > 0 && (
                 <div>
                   <label className="block text-slate-700 font-medium mb-1">
-                    绑定驱动物理表 (自动生成查询条件、表格列与弹框表单)
+                    {tr('绑定驱动物理表 (自动生成查询条件、表格列与弹框表单)', 'Bound Database Table (auto-generates filters, columns & modal form)')}
                   </label>
                   <select
-                    aria-label="页面数据表"
+                    aria-label={tr('页面数据表', 'Page Database Table')}
                     value={newPageTableId}
                     onChange={(e) => setNewPageTableId(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 font-mono focus:outline-none focus:border-blue-600"
@@ -761,9 +790,9 @@ const ProjectSitemap: React.FC = () => {
               )}
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-700 font-medium">
-                    附加 AI 定制指令 (可选 · 自动拼装业务块或弹层)
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="block text-slate-700 font-medium min-w-0 truncate">
+                    {tr('附加 AI 定制指令 (可选 · 自动拼装业务块或弹层)', 'Custom AI Prompt (optional · assembles blocks or modals)')}
                   </label>
                   <button
                     type="button"
@@ -771,7 +800,7 @@ const ProjectSitemap: React.FC = () => {
                       setShowNewPageModal(false);
                       setHermesModalOpen(true, 'overview');
                     }}
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border cursor-pointer flex items-center gap-1 ${
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border cursor-pointer flex items-center gap-1 shrink-0 whitespace-nowrap ${
                       hermesStatus === 'running'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-blue-300'
@@ -780,8 +809,8 @@ const ProjectSitemap: React.FC = () => {
                     <Bot className="w-3 h-3" />
                     <span>
                       {hermesStatus === 'running'
-                        ? `Hermes ${hermesVer} 已接管`
-                        : '连接 Hermes 后启用 AI'}
+                        ? tr(`Hermes ${hermesVer} 已接管`, `Hermes ${hermesVer} Ready`)
+                        : tr('连接 Hermes 后启用 AI', 'Connect Hermes for AI')}
                     </span>
                   </button>
                 </div>
@@ -789,7 +818,7 @@ const ProjectSitemap: React.FC = () => {
                   type="text"
                   value={newPageAiPrompt}
                   onChange={(e) => setNewPageAiPrompt(e.target.value)}
-                  placeholder="如：插入单据标准三栏表头，或增加Excel批量导入弹框与异常抽屉..."
+                  placeholder={tr('如：插入单据标准三栏表头，或增加Excel批量导入弹框与异常抽屉...', 'e.g., Add a 3-column order header, or include an Excel import modal...')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -802,14 +831,14 @@ const ProjectSitemap: React.FC = () => {
                   onClick={() => setShowNewPageModal(false)}
                   className="px-4 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
-                  取消
+                  {tr('取消', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={creatingPage}
                   className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium cursor-pointer"
                 >
-                  {creatingPage ? '正在创建…' : '创建并打开页面'}
+                  {creatingPage ? tr('正在创建…', 'Creating…') : tr('创建并打开页面', 'Create & Open Page')}
                 </button>
               </div>
             </form>
@@ -820,16 +849,17 @@ const ProjectSitemap: React.FC = () => {
       {/* Modal: Create Global Table from Left Sidebar */}
       {showNewTableModal && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+          <div role="dialog" aria-modal="true" aria-label={tr('新建全局数据库物理表', 'New Global Database Table')} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Database className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold text-slate-900">
-                  新建全局数据库物理表
+                  {tr('新建全局数据库物理表', 'New Global Database Table')}
                 </span>
               </div>
               <button
                 type="button"
+                aria-label={tr('关闭新建物理表窗口', 'Close new table dialog')}
                 onClick={() => setShowNewTableModal(false)}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
@@ -840,38 +870,40 @@ const ProjectSitemap: React.FC = () => {
             <form onSubmit={handleCreateGlobalTable} className="p-4 space-y-3.5 text-xs">
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  所属业务域 (Domain)
+                  {tr('所属业务域 (Domain)', 'Business Domain')}
                 </label>
-                <input aria-label="所属业务域" list="table-domains-global" required maxLength={80} value={newDomain}
-                  onChange={e => setNewDomain(e.target.value)} placeholder="选择现有业务域或输入名称"
+                <input aria-label={tr('所属业务域', 'Business Domain')} list="table-domains-global" required maxLength={80} value={newDomain}
+                  onChange={e => setNewDomain(e.target.value)} placeholder={tr('选择现有业务域或输入名称', 'Choose an existing domain or enter a name')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600" />
                 <datalist id="table-domains-global">{domains.map(domain => <option key={domain} value={domain} />)}</datalist>
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  物理表名 (英文)
+                  {tr('物理表名 (英文)', 'Physical Table Name')}
                 </label>
                 <input
+                  aria-label={tr('物理表名 (英文)', 'Physical Table Name')}
                   type="text"
                   required
                   value={newTableName}
                   onChange={(e) => setNewTableName(e.target.value)}
-                  placeholder="例如：t_base_warehouse"
+                  placeholder={tr('例如：t_base_warehouse', 'e.g., t_base_warehouse')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 font-mono focus:outline-none focus:border-blue-600"
                 />
               </div>
 
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  表中文注释
+                  {tr('表中文注释', 'Table Display Name / Comment')}
                 </label>
                 <input
+                  aria-label={tr('表中文注释', 'Table Display Name / Comment')}
                   type="text"
                   required
                   value={newCnName}
                   onChange={(e) => setNewCnName(e.target.value)}
-                  placeholder="例如：电商云仓主数据表"
+                  placeholder={tr('例如：电商云仓主数据表', 'e.g., Cloud Warehouse Master')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -882,13 +914,13 @@ const ProjectSitemap: React.FC = () => {
                   onClick={() => setShowNewTableModal(false)}
                   className="px-4 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
-                  取消
+                  {tr('取消', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium cursor-pointer"
                 >
-                  创建并打开表设计器
+                  {tr('创建并打开表设计器', 'Create & Open Schema Designer')}
                 </button>
               </div>
             </form>

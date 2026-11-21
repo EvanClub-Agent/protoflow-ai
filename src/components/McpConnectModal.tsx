@@ -27,6 +27,7 @@ import {
   type Publication,
 } from '../services/publishingClient';
 import { useProtoStore } from '../store/useProtoStore';
+import { useI18n, tr as syncTr } from '../i18n';
 
 interface DesktopMcpRuntimeInfo {
   execPath: string;
@@ -48,84 +49,83 @@ interface ClientTargetSpec {
   languageLabel: string;
 }
 
-const CLIENT_TARGETS: readonly ClientTargetSpec[] = [
-  {
-    id: 'json_ide',
-    label: 'Cursor / Antigravity / Windsurf',
-    shortHint: 'mcpServers JSON',
-    remoteHttpFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
-    stdioFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
-    languageLabel: 'JSON',
-  },
-  {
-    id: 'vscode_ide',
-    label: 'VS Code',
-    shortHint: '.vscode/mcp.json',
-    remoteHttpFileHint: '.vscode/mcp.json (GitHub Copilot Agent)',
-    stdioFileHint: '.vscode/mcp.json (GitHub Copilot Agent)',
-    languageLabel: 'JSON',
-  },
-  {
-    id: 'claude_cli',
-    label: 'Claude Code',
-    shortHint: 'CLI 一键命令',
-    remoteHttpFileHint: '在项目终端直接执行注册命令',
-    stdioFileHint: '在项目终端直接执行注册命令',
-    languageLabel: 'Shell',
-  },
-  {
-    id: 'codex_cli',
-    label: 'Codex',
-    shortHint: 'config.toml',
-    remoteHttpFileHint: '~/.codex/config.toml',
-    stdioFileHint: '~/.codex/config.toml',
-    languageLabel: 'TOML',
-  },
-];
+function getClientTargets(t: (zh: string, en: string) => string): readonly ClientTargetSpec[] {
+  return [
+    {
+      id: 'json_ide',
+      label: 'Cursor / Antigravity / Windsurf',
+      shortHint: 'mcpServers JSON',
+      remoteHttpFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
+      stdioFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
+      languageLabel: 'JSON',
+    },
+    {
+      id: 'vscode_ide',
+      label: 'VS Code',
+      shortHint: '.vscode/mcp.json',
+      remoteHttpFileHint: '.vscode/mcp.json (GitHub Copilot Agent)',
+      stdioFileHint: '.vscode/mcp.json (GitHub Copilot Agent)',
+      languageLabel: 'JSON',
+    },
+    {
+      id: 'claude_cli',
+      label: 'Claude Code',
+      shortHint: t('CLI 一键命令', 'CLI one-liner'),
+      remoteHttpFileHint: t('在项目终端直接执行注册命令', 'Run registration command directly in project terminal'),
+      stdioFileHint: t('在项目终端直接执行注册命令', 'Run registration command directly in project terminal'),
+      languageLabel: 'Shell',
+    },
+    {
+      id: 'codex_cli',
+      label: 'Codex',
+      shortHint: 'config.toml',
+      remoteHttpFileHint: '~/.codex/config.toml',
+      stdioFileHint: '~/.codex/config.toml',
+      languageLabel: 'TOML',
+    },
+  ];
+}
 
-const EXPOSED_MCP_TOOLS: readonly {
-  step: string;
-  name: string;
-  badge: string;
-  desc: string;
-}[] = [
-  {
-    step: '01',
-    name: 'protoflow_get_project_overview',
-    badge: '架构入口',
-    desc: '全局菜单路由树、页面目录（含 RP 原稿/优化稿血缘）、共表摘要与静态体检',
-  },
-  {
-    step: '02',
-    name: 'protoflow_get_database_schema',
-    badge: 'ER / DDL',
-    desc: '物理表字段、主外键与组合唯一约束、PostgreSQL / MySQL 建表 DDL 及种子数据',
-  },
-  {
-    step: '03',
-    name: 'protoflow_get_page_spec',
-    badge: '单页契约',
-    desc: '页面大纲（含表格列与控件文案）、TSX 源码、交互动作链与挂载的产品便签',
-  },
-  {
-    step: '04',
-    name: 'protoflow_get_docs_and_flows',
-    badge: '需求导图',
-    desc: '关联产品需求笔记（自动转净版 Markdown）与 Mermaid 业务脑图 / 流程图',
-  },
-  {
-    step: '05',
-    name: 'protoflow_search_spec',
-    badge: '跨层检索',
-    desc: '按关键词跨物理表、字段注释、页面组件、产品便签与需求文档毫秒级定位',
-  },
-  {
-    step: '06',
-    name: 'protoflow_get_implementation_checklist',
-    badge: '全栈核销',
-    desc: '按模块推导建表任务、CRUD / 状态流转接口清单与便签业务规则核销表',
-  },
-];
+function getExposedMcpTools(t: (zh: string, en: string) => string) {
+  return [
+    {
+      step: '01',
+      name: 'protoflow_get_project_overview',
+      badge: t('架构入口', 'Overview'),
+      desc: t('全局菜单路由树、页面目录（含 RP 原稿/优化稿血缘）、共表摘要与静态体检', 'Global menu routing tree, page directory (with RP lineage), shared table summary & audit'),
+    },
+    {
+      step: '02',
+      name: 'protoflow_get_database_schema',
+      badge: 'ER / DDL',
+      desc: t('物理表字段、主外键与组合唯一约束、PostgreSQL / MySQL 建表 DDL 及种子数据', 'Physical columns, PK/FK & unique constraints, PostgreSQL / MySQL DDL, and seed rows'),
+    },
+    {
+      step: '03',
+      name: 'protoflow_get_page_spec',
+      badge: t('单页契约', 'Page Spec'),
+      desc: t('页面大纲（含表格列与控件文案）、TSX 源码、交互动作链与挂载的产品便签', 'Page outline (table columns & widget copy), TSX source, action chains, and spec pins'),
+    },
+    {
+      step: '04',
+      name: 'protoflow_get_docs_and_flows',
+      badge: t('需求导图', 'Docs & Flows'),
+      desc: t('关联产品需求笔记（自动转净版 Markdown）与 Mermaid 业务脑图 / 流程图', 'Linked PRD notes (clean Markdown) and Mermaid business mindmaps / flowcharts'),
+    },
+    {
+      step: '05',
+      name: 'protoflow_search_spec',
+      badge: t('跨层检索', 'Search'),
+      desc: t('按关键词跨物理表、字段注释、页面组件、产品便签与需求文档毫秒级定位', 'Instant keyword search across tables, column comments, widgets, spec pins, and docs'),
+    },
+    {
+      step: '06',
+      name: 'protoflow_get_implementation_checklist',
+      badge: t('全栈核销', 'Checklist'),
+      desc: t('按模块推导建表任务、CRUD / 状态流转接口清单与便签业务规则核销表', 'Per-module DDL tasks, CRUD / state-transition API endpoints, and spec pin checklist'),
+    },
+  ] as const;
+}
 
 let lastAnnouncedCopyMessage = '';
 
@@ -180,7 +180,7 @@ const McpCopyButton: React.FC<CopyButtonProps> = ({
     setStatusState('idle');
     setLiveMessage('');
 
-    let message = ok ? '已复制' : '复制失败';
+    let message = ok ? syncTr('已复制', 'Copied') : syncTr('复制失败', 'Copy failed');
     if (message === lastAnnouncedCopyMessage) {
       message += '\u00A0';
     }
@@ -300,12 +300,15 @@ export function shareUrlToMcpHttpUrl(rawUrl: string): {
   try {
     u = new URL(trimmed);
   } catch {
-    return { valid: false, error: '请输入格式完整的在线分享链接', shareUrl: '', mcpHttpUrl: '' };
+    return { valid: false, error: syncTr('请输入格式完整的在线分享链接', 'Please enter a valid full share URL'), shareUrl: '', mcpHttpUrl: '' };
   }
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalNetworkHost(u.hostname))) {
     return {
       valid: false,
-      error: '公网分享地址必须使用 HTTPS（仅 localhost 与局域网 IP 允许 HTTP），已阻止生成明文配置与密码传输',
+      error: syncTr(
+        '公网分享地址必须使用 HTTPS（仅 localhost 与局域网 IP 允许 HTTP），已阻止生成明文配置与密码传输',
+        'Public share URLs must use HTTPS (HTTP is allowed only for localhost and LAN IPs). Plaintext config generation blocked.'
+      ),
       shareUrl: '',
       mcpHttpUrl: '',
     };
@@ -313,7 +316,10 @@ export function shareUrlToMcpHttpUrl(rawUrl: string): {
   if (u.username || u.password) {
     return {
       valid: false,
-      error: '链接中请勿内嵌账号或密码，请使用下方独立的访问密码输入框',
+      error: syncTr(
+        '链接中请勿内嵌账号或密码，请使用下方独立的访问密码输入框',
+        'Do not embed credentials in the URL — use the dedicated Access Password field below'
+      ),
       shareUrl: '',
       mcpHttpUrl: '',
     };
@@ -324,7 +330,10 @@ export function shareUrlToMcpHttpUrl(rawUrl: string): {
   if (!id) {
     return {
       valid: false,
-      error: '链接路径须为 /p/<shareId> 或 /api/v1/mcp/<shareId>',
+      error: syncTr(
+        '链接路径须为 /p/<shareId> 或 /api/v1/mcp/<shareId>',
+        'URL path must be /p/<shareId> or /api/v1/mcp/<shareId>'
+      ),
       shareUrl: '',
       mcpHttpUrl: '',
     };
@@ -381,6 +390,9 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   viewerShareContext,
   onOpenPublishModal,
 }) => {
+  const { locale, tr } = useI18n();
+  const CLIENT_TARGETS = useMemo(() => getClientTargets(tr), [locale, tr]);
+  const EXPOSED_MCP_TOOLS = useMemo(() => getExposedMcpTools(tr), [locale, tr]);
   const titleId = useId();
   const baseId = useId().replace(/:/g, '_');
   const snippetCodeId = `${baseId}_snippet`;
@@ -563,7 +575,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
     desktopInfo,
   ]);
 
-  const parsedRemote = useMemo(() => shareUrlToMcpHttpUrl(customShareUrl), [customShareUrl]);
+  const parsedRemote = useMemo(() => shareUrlToMcpHttpUrl(customShareUrl), [customShareUrl, locale]);
   const selectedPub = useMemo(
     () => publications.find((p) => p.shareUrl === parsedRemote.shareUrl),
     [publications, parsedRemote.shareUrl]
@@ -583,7 +595,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
 
   const activeClientSpec = useMemo(
     () => CLIENT_TARGETS.find((item) => item.id === clientTarget) ?? CLIENT_TARGETS[0],
-    [clientTarget]
+    [CLIENT_TARGETS, clientTarget]
   );
 
   const usingHttpTransport = tab === 'remote' && remoteTransport === 'http';
@@ -754,7 +766,10 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   };
 
   const projectDisplayName = viewerShareContext?.title || currentProjectMeta.projectName;
-  const starterAgentPrompt = `请通过已连接的 protoflow MCP 工具读取原型工程「${projectDisplayName}」：先调用 protoflow_get_project_overview 和 protoflow_get_database_schema 对齐全局路由与数据库表结构，再逐页调用 protoflow_get_page_spec 还原前端交互、后端接口与组件便签规则，最后用 protoflow_get_implementation_checklist 逐项自检。`;
+  const starterAgentPrompt = tr(
+    `请通过已连接的 protoflow MCP 工具读取原型工程「${projectDisplayName}」：先调用 protoflow_get_project_overview 和 protoflow_get_database_schema 对齐全局路由与数据库表结构，再逐页调用 protoflow_get_page_spec 还原前端交互、后端接口与组件便签规则，最后用 protoflow_get_implementation_checklist 逐项自检。`,
+    `Read the prototype project "${projectDisplayName}" using the connected protoflow MCP tools: first call protoflow_get_project_overview and protoflow_get_database_schema to align global routes and database schemas, then call protoflow_get_page_spec per page to implement UI interactions, backend APIs, and spec pin rules, and finally verify everything against protoflow_get_implementation_checklist.`
+  );
 
   const urlDescribedBy = parsedRemote.error
     ? urlAlertId
@@ -781,19 +796,19 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 id={titleId} className="text-[15px] font-bold tracking-tight text-slate-900 truncate">
-                  MCP 开发接入中心
+                  {tr('MCP 开发接入中心', 'MCP Developer Integration')}
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[10px] font-semibold text-emerald-700 shrink-0">
                   <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-                  Read-Only 安全只读
+                  {tr('Read-Only 安全只读', 'Read-Only Safe')}
                 </span>
                 <span className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-mono font-medium text-slate-600 shrink-0">
                   MCP 2025-06-18
                 </span>
               </div>
               <p className="mt-0.5 text-[11px] text-slate-500 truncate">
-                当前工程：<span className="font-medium text-slate-700">{projectDisplayName}</span>
-                {' · '}供 Coding Agent 按需读取 ER 物理表、页面契约与产品便签
+                {tr('当前工程：', 'Project: ')}<span className="font-medium text-slate-700">{projectDisplayName}</span>
+                {' · '}{tr('供 Coding Agent 按需读取 ER 物理表、页面契约与产品便签', 'Lets Coding Agents query ER schemas, page specs, and product pins on demand')}
               </p>
             </div>
           </div>
@@ -801,7 +816,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
           <button
             type="button"
             autoFocus
-            aria-label="关闭 MCP 接入窗口"
+            aria-label={tr('关闭 MCP 接入窗口', 'Close MCP integration dialog')}
             onClick={onClose}
             className="min-w-8 min-h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-800 hover:bg-slate-200/70 cursor-pointer transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
@@ -812,20 +827,20 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
         {/* Scrollable Workspace Body */}
         <div className="px-6 py-5 overflow-y-auto space-y-5 text-xs">
           {/* Section 1: Source & Transport */}
-          <section className="space-y-3" aria-label="数据源与传输方式">
+          <section className="space-y-3" aria-label={tr('数据源与传输方式', 'Spec Data Source & Transport')}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
                   1
                 </span>
-                <span className="text-xs font-bold text-slate-900">选择规格数据源</span>
+                <span className="text-xs font-bold text-slate-900">{tr('选择规格数据源', 'Select Spec Data Source')}</span>
               </div>
               <span className="text-[11px] text-slate-500">
                 {tab === 'remote'
                   ? usingHttpTransport
-                    ? '云端无状态 Streamable HTTP · 零本地依赖'
-                    : '本机进程桥接在线分享 · Stdio'
-                  : '本机文件监听直读 · 保存 .pflow 毫秒级热生效'}
+                    ? tr('云端无状态 Streamable HTTP · 零本地依赖', 'Stateless Streamable HTTP · Zero local setup')
+                    : tr('本机进程桥接在线分享 · Stdio', 'Local process bridging online share · Stdio')
+                  : tr('本机文件监听直读 · 保存 .pflow 毫秒级热生效', 'Direct local file watch · Live updates on .pflow save')}
               </span>
             </div>
 
@@ -836,16 +851,16 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                   type="button"
                   onClick={() => setTab('remote')}
                   aria-pressed={tab === 'remote'}
-                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
                     tab === 'remote'
                       ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-900 flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
                       <span
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center border ${
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
                           tab === 'remote'
                             ? 'bg-blue-600 border-blue-600 text-white'
                             : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -853,14 +868,14 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       >
                         <Radio className="w-3.5 h-3.5" aria-hidden="true" />
                       </span>
-                      <span>远程在线链接直连</span>
+                      <span className="truncate">{tr('远程在线链接直连', 'Remote Share URL')}</span>
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-100/80 border border-blue-200/70 text-blue-700 text-[10px] font-semibold">
-                      团队协作推荐
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100/80 border border-blue-200/70 text-blue-700 text-[10px] font-semibold shrink-0">
+                      {tr('团队协作推荐', 'Recommended')}
                     </span>
                   </div>
                   <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                    研发免装客户端与 Node 环境，凭已发布的在线链接直接挂载 HTTP MCP 服务
+                    {tr('研发免装客户端与 Node 环境，凭已发布的在线链接直接挂载 HTTP MCP 服务', 'Mount HTTP MCP directly from a published share URL — no desktop app or Node required')}
                   </p>
                 </button>
 
@@ -868,16 +883,16 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                   type="button"
                   onClick={() => setTab('local')}
                   aria-pressed={tab === 'local'}
-                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
                     tab === 'local'
                       ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-900 flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
                       <span
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center border ${
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
                           tab === 'local'
                             ? 'bg-blue-600 border-blue-600 text-white'
                             : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -885,14 +900,14 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       >
                         <HardDrive className="w-3.5 h-3.5" aria-hidden="true" />
                       </span>
-                      <span>本地 .pflow 工程直连</span>
+                      <span className="truncate">{tr('本地 .pflow 工程直连', 'Local .pflow File')}</span>
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold">
-                      离线实时热读
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold shrink-0">
+                      {tr('离线实时热读', 'Offline Live')}
                     </span>
                   </div>
                   <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                    单机边改原型边写代码，自动检测磁盘 .pflow 修改时间并即时返回最新规格
+                    {tr('单机边改原型边写代码，自动检测磁盘 .pflow 修改时间并即时返回最新规格', 'Edit prototypes and code side-by-side on one machine with automatic .pflow hot-reload')}
                   </p>
                 </button>
               </div>
@@ -904,13 +919,13 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <label htmlFor="mcp-share-url-input" className="font-semibold text-slate-800 flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    <span>{isViewerOnly ? '当前在线原型分享地址' : '在线分享链接 (/p/<shareId>)'}</span>
+                    <span>{isViewerOnly ? tr('当前在线原型分享地址', 'Current Online Share URL') : tr('在线分享链接 (/p/<shareId>)', 'Online Share URL (/p/<shareId>)')}</span>
                   </label>
                   {!isViewerOnly && publications.length > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-slate-500">快速载入已发布版本：</span>
+                      <span className="text-[11px] text-slate-500">{tr('快速载入已发布版本：', 'Load published share:')}</span>
                       <select
-                        aria-label="选择已发布的分享链接"
+                        aria-label={tr('选择已发布的分享链接', 'Select published share link')}
                         value={selectedPub?.shareUrl ?? ''}
                         onChange={(e) => {
                           if (e.target.value) {
@@ -921,10 +936,10 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                         }}
                         className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-2xs cursor-pointer focus:border-blue-600 outline-none"
                       >
-                        {!selectedPub && <option value="">-- 选择分享记录 ({publications.length}) --</option>}
+                        {!selectedPub && <option value="">{tr(`-- 选择分享记录 (${publications.length}) --`, `-- Select share (${publications.length}) --`)}</option>}
                         {publications.map((pub) => (
                           <option key={pub.id} value={pub.shareUrl}>
-                            {pub.title} (V{pub.version}){pub.passwordProtected ? ' · 含密码' : ''}
+                            {pub.title} (V{pub.version}){pub.passwordProtected ? tr(' · 含密码', ' · Password') : ''}
                           </option>
                         ))}
                       </select>
@@ -945,7 +960,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       setCustomShareUrl(e.target.value);
                       setScopedPassword({ targetShareUrl: '', value: '' });
                     }}
-                    placeholder="粘贴已发布的在线链接，例如 https://proto.team.com/p/abc123..."
+                    placeholder={tr('粘贴已发布的在线链接，例如 https://proto.team.com/p/abc123...', 'Paste a published share link, e.g. https://proto.team.com/p/abc123...')}
                     className={`w-full rounded-lg border bg-white px-3 py-2 font-mono text-xs text-slate-800 shadow-2xs outline-none transition ${
                       parsedRemote.error
                         ? 'border-rose-300 focus:border-rose-500'
@@ -975,14 +990,14 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                         <span className="truncate font-mono">{parsedRemote.mcpHttpUrl}</span>
                       </span>
                       <span className="text-[10px] font-medium text-emerald-700 shrink-0">
-                        已解析标准端点
+                        {tr('已解析标准端点', 'Resolved MCP Endpoint')}
                       </span>
                     </div>
                   )}
 
                   {!isViewerOnly && !customShareUrl.trim() && onOpenPublishModal && (
                     <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800">
-                      <span>当前尚未填写在线分享链接，可先发布工程生成专属链接。</span>
+                      <span>{tr('当前尚未填写在线分享链接，可先发布工程生成专属链接。', 'No share URL entered yet — publish your project first to generate a link.')}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -991,7 +1006,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                         }}
                         className="shrink-0 px-2.5 py-1 rounded-md bg-white border border-amber-300 font-semibold text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1 cursor-pointer transition"
                       >
-                        <span>去发布生成链接</span>
+                        <span>{tr('去发布生成链接', 'Publish & Get Link')}</span>
                         <ExternalLink className="w-3 h-3" aria-hidden="true" />
                       </button>
                     </div>
@@ -1004,12 +1019,12 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       <label htmlFor="mcp-share-pw-input" className="text-[11px] font-medium text-slate-700 flex items-center gap-1">
                         <LockKeyhole className="w-3 h-3 text-slate-400" aria-hidden="true" />
                         <span>
-                          访问密码{needsPasswordHint ? '（受密码保护）' : '（公开链接留空）'}
+                          {tr('访问密码', 'Access Password')}{needsPasswordHint ? tr('（受密码保护）', ' (password-protected)') : tr('（公开链接留空）', ' (leave blank if public)')}
                         </span>
                       </label>
                       {passwordHeaderInfo?.isBase64 && (
                         <span className="text-[10px] font-medium text-blue-700">
-                          UTF-8 Base64 编码保真
+                          {tr('UTF-8 Base64 编码保真', 'UTF-8 Base64 encoded')}
                         </span>
                       )}
                     </div>
@@ -1028,17 +1043,17 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                         }}
                         placeholder={
                           !parsedRemote.valid
-                            ? '请先输入有效的分享链接'
+                            ? tr('请先输入有效的分享链接', 'Enter a valid share URL first')
                             : needsPasswordHint
-                              ? '输入分享密码自动注入鉴权头'
-                              : '无密码留空即可'
+                              ? tr('输入分享密码自动注入鉴权头', 'Enter password to inject auth header')
+                              : tr('无密码留空即可', 'Leave blank if unprotected')
                         }
                         className="w-full rounded-lg border border-slate-200 bg-white pl-3 pr-9 py-1.5 text-xs text-slate-800 shadow-2xs outline-none focus:border-blue-600 disabled:bg-slate-100 disabled:text-slate-400"
                       />
                       {parsedRemote.valid && activePasswordValue.length > 0 && (
                         <button
                           type="button"
-                          aria-label={showPassword ? '隐藏访问密码' : '显示访问密码'}
+                          aria-label={showPassword ? tr('隐藏访问密码', 'Hide access password') : tr('显示访问密码', 'Show access password')}
                           onClick={() => setShowPassword((prev) => !prev)}
                           className="absolute right-1 min-w-7 min-h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer"
                         >
@@ -1054,7 +1069,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
 
                   <div>
                     <span className="block text-[11px] font-medium text-slate-700 mb-1">
-                      连接传输协议
+                      {tr('连接传输协议', 'Transport Protocol')}
                     </span>
                     <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5 w-full">
                       <button
@@ -1066,7 +1081,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        Streamable HTTP（推荐）
+                        {tr('Streamable HTTP（推荐）', 'Streamable HTTP (Recommended)')}
                       </button>
                       {desktopInfo && (
                         <button
@@ -1078,7 +1093,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                               : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          客户端内置 Stdio
+                          {tr('客户端内置 Stdio', 'Built-in Stdio')}
                         </button>
                       )}
                     </div>
@@ -1090,7 +1105,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                     <FolderGit2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    <span>当前工程本地路径</span>
+                    <span>{tr('当前工程本地路径', 'Local Project File Path')}</span>
                   </span>
                   {desktopInfo ? (
                     <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5">
@@ -1103,7 +1118,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        Alex 内置运行时（免装 Node）
+                        {tr('Alex 内置运行时（免装 Node）', 'Alex Built-in Runtime (No Node needed)')}
                       </button>
                       <button
                         type="button"
@@ -1114,12 +1129,12 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        本机 Node 直连脚本
+                        {tr('本机 Node 直连脚本', 'Local Node Script')}
                       </button>
                     </div>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
-                      开发态源码 CLI（已随 build:contracts 生成）
+                      {tr('开发态源码 CLI（已随 build:contracts 生成）', 'Dev CLI (built via build:contracts)')}
                     </span>
                   )}
                 </div>
@@ -1131,23 +1146,23 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                   >
                     {resolvedLocalProjectPath}
                   </span>
-                  <McpCopyButton targetElementId={localPathCodeId} label="复制路径" />
+                  <McpCopyButton targetElementId={localPathCodeId} label={tr('复制路径', 'Copy Path')} />
                 </div>
               </div>
             )}
           </section>
 
           {/* Section 2: Target Client Tabs & Dark Studio Code Snippet */}
-          <section className="space-y-2.5" aria-label="客户端接入配置">
+          <section className="space-y-2.5" aria-label={tr('客户端接入配置', 'Client Configuration')}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
                   2
                 </span>
-                <span className="text-xs font-bold text-slate-900">选择客户端并复制接入配置</span>
+                <span className="text-xs font-bold text-slate-900">{tr('选择客户端并复制接入配置', 'Choose Client & Copy Config')}</span>
               </div>
               <span className="text-[11px] text-slate-500 hidden sm:inline">
-                服务标识：<code className="font-mono text-slate-700">protoflow</code>
+                {tr('服务标识：', 'Server ID: ')}<code className="font-mono text-slate-700">protoflow</code>
               </span>
             </div>
 
@@ -1155,7 +1170,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
               {/* Accessible Single-Row Tablist with Non-Color Underline Indicator */}
               <div
                 role="tablist"
-                aria-label="目标 Coding Agent 客户端"
+                aria-label={tr('目标 Coding Agent 客户端', 'Target Coding Agent Clients')}
                 className="flex items-center overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-2 pt-1 gap-1"
               >
                 {CLIENT_TARGETS.map((spec, idx) => {
@@ -1210,7 +1225,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
 
                   <McpCopyButton
                     targetElementId={snippetCodeId}
-                    label="复制配置"
+                    label={tr('复制配置', 'Copy Config')}
                     variant="dark"
                   />
                 </div>
@@ -1223,7 +1238,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
           </section>
 
           {/* Section 3: Recommended Starter Prompt */}
-          <section className="space-y-2" aria-label="推荐首句开发提示词">
+          <section className="space-y-2" aria-label={tr('推荐首句开发提示词', 'Recommended Starter Prompt')}>
             <div className="rounded-xl border border-blue-200/80 bg-blue-50/40 p-3.5 space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -1232,10 +1247,10 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                   </span>
                   <span className="font-bold text-slate-900 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    连接成功后发给 Coding Agent 的推荐首句指令
+                    {tr('连接成功后发给 Coding Agent 的推荐首句指令', 'Recommended Starter Prompt for Your Coding Agent')}
                   </span>
                 </div>
-                <McpCopyButton targetElementId={promptCodeId} label="复制提示词" />
+                <McpCopyButton targetElementId={promptCodeId} label={tr('复制提示词', 'Copy Prompt')} />
               </div>
               <p
                 id={promptCodeId}
@@ -1256,13 +1271,13 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
             >
               <span className="font-semibold text-slate-800 flex items-center gap-2">
                 <Terminal className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                <span>渐进式规格能力清单</span>
+                <span>{tr('渐进式规格能力清单', 'Progressive Spec Capabilities')}</span>
                 <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200/80 text-[10px] font-medium text-blue-700">
                   6 Tools · 2 Prompts · 3 Resources
                 </span>
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                <span>按需分片读取，不撑爆上下文</span>
+                <span>{tr('按需分片读取，不撑爆上下文', 'On-demand slices — keeps context lean')}</span>
                 <ChevronDown
                   className={`w-3.5 h-3.5 transition-transform ${
                     capabilitiesExpanded ? 'rotate-180' : ''
@@ -1304,7 +1319,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     <Workflow className="w-3.5 h-3.5 text-violet-600 mt-0.5 shrink-0" aria-hidden="true" />
                     <div className="min-w-0">
                       <span className="text-[11px] font-semibold text-slate-800 block">
-                        内置研发工作流 Prompts (2)
+                        {tr('内置研发工作流 Prompts (2)', 'Built-in Dev Workflow Prompts (2)')}
                       </span>
                       <span className="text-[10px] font-mono text-slate-500 block mt-0.5">
                         /implement-module · /generate-db-layer
@@ -1315,7 +1330,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     <Database className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" aria-hidden="true" />
                     <div className="min-w-0">
                       <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
-                        <span>直读规格与 DDL Resources (3)</span>
+                        <span>{tr('直读规格与 DDL Resources (3)', 'Direct Spec & DDL Resources (3)')}</span>
                         <BookOpen className="w-3 h-3 text-slate-400" aria-hidden="true" />
                       </span>
                       <span className="text-[10px] font-mono text-slate-500 block mt-0.5 truncate">
@@ -1334,7 +1349,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
           <span className="text-[11px] text-slate-500 inline-flex items-center gap-1.5 min-w-0">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
             <span className="truncate">
-              严格只读隔离：外部 Agent 仅可读取原型规格与 DDL 草稿，无法修改工程数据
+              {tr('严格只读隔离：外部 Agent 仅可读取原型规格与 DDL 草稿，无法修改工程数据', 'Strict read-only isolation: external agents can read specs and DDL drafts without modifying project data')}
             </span>
           </span>
           <button
@@ -1342,7 +1357,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
             onClick={onClose}
             className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer transition shadow-2xs shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
-            完成
+            {tr('完成', 'Done')}
           </button>
         </footer>
       </div>

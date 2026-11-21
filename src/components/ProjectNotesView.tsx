@@ -106,6 +106,49 @@ import { NotesLedger, useNotesOverviewMode } from './NotesLedgerView';
 import { StickySummaryModal } from './StickySummaryModal';
 import { NoteAssistantModal } from './NoteAssistantModal';
 import type { NoteAssistantSelection, NoteAssistantTab } from '../services/hermesNoteAssistant';
+import { useI18n, tr } from '../i18n';
+
+const NOTE_STATUS_EN: Record<NoteRequirementStatus, string> = {
+  draft: 'Draft',
+  pending_confirm: 'Pending',
+  confirmed: 'Confirmed',
+  implemented: 'Implemented',
+};
+
+const NOTE_PRIORITY_EN: Record<NotePriority, string> = {
+  P0: 'P0 · Critical',
+  P1: 'P1 · High',
+  P2: 'P2 · Normal',
+};
+
+const NOTE_COVER_EN: Record<string, string> = {
+  none: 'None',
+  ocean: 'Ocean',
+  indigo: 'Indigo',
+  amber: 'Amber',
+  emerald: 'Emerald',
+  rose: 'Rose',
+  slate: 'Slate',
+};
+
+const NOTE_TPL_EN: Record<string, { title: string; desc: string }> = {
+  'customer-discovery': {
+    title: 'Customer Discovery Notes',
+    desc: 'Capture interview background, pain points, key decisions, and open questions.',
+  },
+  'review-minutes': {
+    title: 'Prototype Review Minutes',
+    desc: 'Record review feedback, UI adjustments, and action items by module.',
+  },
+  'business-rules': {
+    title: 'Business Rules & Specs',
+    desc: 'Document validation formulas, status flows, permissions, and field constraints.',
+  },
+  'blank-note': {
+    title: 'Blank Requirement Note',
+    desc: 'Start from a clean block document with slash commands and @mentions.',
+  },
+};
 
 /** Resolves `pf-asset:<id>` to a displayable data URL; other sources are shown as-is. */
 function resolveNoteImageSrc(src: string | null | undefined): string {
@@ -149,7 +192,7 @@ const NoteImageExtension = TiptapNode.create({
         const resolved = resolveNoteImageSrc(attrs.src as string | null);
         img.src = resolved;
         img.alt = String(attrs.alt ?? '');
-        img.title = resolved ? String(attrs.alt ?? '') : '图片数据缺失';
+        img.title = resolved ? String(attrs.alt ?? '') : tr('图片数据缺失', 'Image data missing');
       };
       apply(node.attrs);
       return {
@@ -168,7 +211,7 @@ function readFileAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('读取图片失败'));
+    reader.onerror = () => reject(new Error(tr('读取图片失败', 'Failed to read image')));
     reader.readAsDataURL(file);
   });
 }
@@ -181,7 +224,7 @@ const IMAGE_COMPRESS_FROM_BYTES = 400 * 1024;
  * WebP. Small screenshots and GIFs (possibly animated) are kept byte-for-byte.
  */
 async function prepareNoteImage(file: File): Promise<string> {
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error('仅支持 PNG、JPG、WebP 或 GIF 图片');
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error(tr('仅支持 PNG、JPG、WebP 或 GIF 图片', 'Only PNG, JPG, WebP, or GIF images are supported'));
   const original = await readFileAsDataUrl(file);
   if (file.type === 'image/gif' || file.size <= IMAGE_COMPRESS_FROM_BYTES) return original;
   if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return original;
@@ -214,165 +257,175 @@ interface SlashCommandItem {
   ) => void;
 }
 
-const SLASH_COMMANDS: SlashCommandItem[] = [
-  {
-    id: 'aiWrite',
-    label: 'AI 代写',
-    desc: '描述写作要求，起草正文、续写内容或生成提纲',
-    keywords: ['ai', '代写', '写作', '续写', '提纲', 'write'],
-    icon: <Sparkles size={14} />,
-    run: (_editor, helpers) => helpers?.openAssistant('write'),
-  },
-  {
-    id: 'aiPolish',
-    label: 'AI 润色改写',
-    desc: '保留原意，优化表达、精简内容或梳理结构',
-    keywords: ['ai', '润色', '改写', '精简', 'polish'],
-    icon: <Wand2 size={14} />,
-    run: (_editor, helpers) => helpers?.openAssistant('polish'),
-  },
-  {
-    id: 'aiOrganize',
-    label: 'AI 整理成纪要',
-    desc: '把速记 / 语音转写整理为结论、需求表格与待办（预览后再写入）',
-    keywords: ['ai', '整理', '纪要', '转写', '总结', 'summary'],
-    icon: <Sparkles size={14} />,
-    run: (_editor, helpers) => helpers?.openAssistant('organize'),
-  },
-  {
-    id: 'aiActions',
-    label: 'AI 提取待办',
-    desc: '扫描口头承诺，生成“负责人｜截止时间｜事项”待办',
-    keywords: ['ai', '待办', 'action', 'todo', '提取'],
-    icon: <ListTodo size={14} />,
-    run: (_editor, helpers) => helpers?.openAssistant('actions'),
-  },
-  {
-    id: 'paragraph',
-    label: '正文段落',
-    desc: '普通文本段落',
-    keywords: ['text', 'p', '正文', '段落'],
-    icon: <AlignLeft size={14} />,
-    run: (editor) => editor.chain().focus().setParagraph().run(),
-  },
-  {
-    id: 'h1',
-    label: '一级标题 (H1)',
-    desc: '核心章节大标题',
-    keywords: ['h1', 'heading1', '标题1', '一级标题'],
-    icon: <Heading1 size={14} />,
-    run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
-  },
-  {
-    id: 'h2',
-    label: '二级标题 (H2)',
-    desc: '模块或小节中标题',
-    keywords: ['h2', 'heading2', '标题2', '二级标题'],
-    icon: <Heading2 size={14} />,
-    run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-  },
-  {
-    id: 'h3',
-    label: '三级标题 (H3)',
-    desc: '细分要点小标题',
-    keywords: ['h3', 'heading3', '标题3', '三级标题'],
-    icon: <Heading3 size={14} />,
-    run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
-  },
-  {
-    id: 'taskList',
-    label: '待办清单 (To-do)',
-    desc: '跟踪客户待确认问题与跟进事项（自动汇总到全局待办）',
-    keywords: ['todo', 'task', 'checkbox', '待办', '任务', '清单'],
-    icon: <CheckSquare size={14} />,
-    run: (editor) => editor.chain().focus().toggleTaskList().run(),
-  },
-  {
-    id: 'bulletList',
-    label: '无序列表',
-    desc: '创建项目符号列表',
-    keywords: ['ul', 'bullet', 'list', '无序', '列表'],
-    icon: <List size={14} />,
-    run: (editor) => editor.chain().focus().toggleBulletList().run(),
-  },
-  {
-    id: 'orderedList',
-    label: '有序列表',
-    desc: '创建带编号的步骤列表',
-    keywords: ['ol', 'number', 'ordered', '有序', '编号'],
-    icon: <ListOrdered size={14} />,
-    run: (editor) => editor.chain().focus().toggleOrderedList().run(),
-  },
-  {
-    id: 'callout',
-    label: '高亮结论框 (Callout)',
-    desc: '突出记录客户拍板结论或核心业务注意项',
-    keywords: ['quote', 'callout', '引用', '提示', '结论', '重点'],
-    icon: <Quote size={14} />,
-    run: (editor) =>
-      editor
-        .chain()
-        .focus()
-        .insertContent('<blockquote><p>💡 <strong>核心结论 / 重点说明</strong>：</p></blockquote>')
-        .run(),
-  },
-  {
-    id: 'table',
-    label: '需求对比表格 (3×3)',
-    desc: '插入结构化业务字段或诉求对比表',
-    keywords: ['table', 'grid', '表格', '字段表'],
-    icon: <TableIcon size={14} />,
-    run: (editor) =>
-      editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
-  },
-  {
-    id: 'image',
-    label: '插入需求参考图片 / 截图',
-    desc: '上传本地截图，或直接在编辑器按 Cmd/Ctrl+V 粘贴截图',
-    keywords: ['image', 'img', 'pic', '图片', '截图'],
-    icon: <ImageIcon size={14} />,
-    run: (_editor, helpers) => helpers?.uploadImage(),
-  },
-  {
-    id: 'stickySummary',
-    label: '汇总画布批注',
-    desc: '把关联页面上的组件便签按页面/组件汇总成表格与待办',
-    keywords: ['sticky', 'pin', '批注', '便签', '评审', '汇总'],
-    icon: <Pin size={14} />,
-    run: (_editor, helpers) => helpers?.summarizeStickies(),
-  },
-  {
-    id: 'codeBlock',
-    label: '代码块 / 校验规则',
-    desc: '记录计算公式、SQL 片段或伪代码逻辑',
-    keywords: ['code', 'sql', '代码', '公式', '规则'],
-    icon: <Code2 size={14} />,
-    run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
-  },
-  {
-    id: 'hr',
-    label: '分割线',
-    desc: '在视觉上分隔不同模块内容',
-    keywords: ['hr', 'divider', 'line', '分割线'],
-    icon: <Minus size={14} />,
-    run: (editor) => editor.chain().focus().setHorizontalRule().run(),
-  },
-  {
-    id: 'reqSnippet',
-    label: '客户需求沟通小节模板',
-    desc: '一键插入诉求描述 + 待确认清单组合块',
-    keywords: ['template', 'req', '需求', '客户', '模板'],
-    icon: <Sparkles size={14} />,
-    run: (editor) =>
-      editor
-        .chain()
-        .focus()
-        .insertContent(
-          `<h3>📌 业务模块诉求小结</h3><ul><li><strong>业务场景</strong>：描述客户在什么场景下触发该操作</li><li><strong>核心诉求</strong>：描述期望的页面展示与交互行为</li><li><strong>涉及字段</strong>：列出新增或必改字段</li></ul>`
-        )
-        .run(),
-  },
-];
+function getSlashCommands(t: <T extends string>(zh: T, en: string) => string): SlashCommandItem[] {
+  return [
+    {
+      id: 'aiWrite',
+      label: t('AI 代写', 'AI Draft'),
+      desc: t('描述写作要求，起草正文、续写内容或生成提纲', 'Describe what to write — draft sections, continue writing, or generate an outline'),
+      keywords: ['ai', '代写', '写作', '续写', '提纲', 'write', 'draft'],
+      icon: <Sparkles size={14} />,
+      run: (_editor, helpers) => helpers?.openAssistant('write'),
+    },
+    {
+      id: 'aiPolish',
+      label: t('AI 润色改写', 'AI Polish & Rewrite'),
+      desc: t('保留原意，优化表达、精简内容或梳理结构', 'Preserve meaning while improving clarity, conciseness, or structure'),
+      keywords: ['ai', '润色', '改写', '精简', 'polish', 'rewrite'],
+      icon: <Wand2 size={14} />,
+      run: (_editor, helpers) => helpers?.openAssistant('polish'),
+    },
+    {
+      id: 'aiOrganize',
+      label: t('AI 整理成纪要', 'AI Organize Minutes'),
+      desc: t('把速记 / 语音转写整理为结论、需求表格与待办（预览后再写入）', 'Turn raw notes or transcripts into decisions, requirement tables, and to-dos'),
+      keywords: ['ai', '整理', '纪要', '转写', '总结', 'summary', 'minutes'],
+      icon: <Sparkles size={14} />,
+      run: (_editor, helpers) => helpers?.openAssistant('organize'),
+    },
+    {
+      id: 'aiActions',
+      label: t('AI 提取待办', 'AI Extract To-Dos'),
+      desc: t('扫描口头承诺，生成“负责人｜截止时间｜事项”待办', 'Scan commitments and generate "Owner | Due | Action" checkable to-dos'),
+      keywords: ['ai', '待办', 'action', 'todo', '提取', 'extract'],
+      icon: <ListTodo size={14} />,
+      run: (_editor, helpers) => helpers?.openAssistant('actions'),
+    },
+    {
+      id: 'paragraph',
+      label: t('正文段落', 'Paragraph'),
+      desc: t('普通文本段落', 'Plain text paragraph'),
+      keywords: ['text', 'p', '正文', '段落', 'paragraph'],
+      icon: <AlignLeft size={14} />,
+      run: (editor) => editor.chain().focus().setParagraph().run(),
+    },
+    {
+      id: 'h1',
+      label: t('一级标题 (H1)', 'Heading 1 (H1)'),
+      desc: t('核心章节大标题', 'Top-level section heading'),
+      keywords: ['h1', 'heading1', '标题1', '一级标题'],
+      icon: <Heading1 size={14} />,
+      run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
+    },
+    {
+      id: 'h2',
+      label: t('二级标题 (H2)', 'Heading 2 (H2)'),
+      desc: t('模块或小节中标题', 'Module or subsection heading'),
+      keywords: ['h2', 'heading2', '标题2', '二级标题'],
+      icon: <Heading2 size={14} />,
+      run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+    },
+    {
+      id: 'h3',
+      label: t('三级标题 (H3)', 'Heading 3 (H3)'),
+      desc: t('细分要点小标题', 'Detailed sub-point heading'),
+      keywords: ['h3', 'heading3', '标题3', '三级标题'],
+      icon: <Heading3 size={14} />,
+      run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+    },
+    {
+      id: 'taskList',
+      label: t('待办清单 (To-do)', 'To-Do List'),
+      desc: t('跟踪客户待确认问题与跟进事项（自动汇总到全局待办）', 'Track open client questions and follow-ups (auto-synced to Global To-Dos)'),
+      keywords: ['todo', 'task', 'checkbox', '待办', '任务', '清单'],
+      icon: <CheckSquare size={14} />,
+      run: (editor) => editor.chain().focus().toggleTaskList().run(),
+    },
+    {
+      id: 'bulletList',
+      label: t('无序列表', 'Bulleted List'),
+      desc: t('创建项目符号列表', 'Create a bulleted list'),
+      keywords: ['ul', 'bullet', 'list', '无序', '列表'],
+      icon: <List size={14} />,
+      run: (editor) => editor.chain().focus().toggleBulletList().run(),
+    },
+    {
+      id: 'orderedList',
+      label: t('有序列表', 'Numbered List'),
+      desc: t('创建带编号的步骤列表', 'Create a numbered step list'),
+      keywords: ['ol', 'number', 'ordered', '有序', '编号'],
+      icon: <ListOrdered size={14} />,
+      run: (editor) => editor.chain().focus().toggleOrderedList().run(),
+    },
+    {
+      id: 'callout',
+      label: t('高亮结论框 (Callout)', 'Callout Block'),
+      desc: t('突出记录客户拍板结论或核心业务注意项', 'Highlight key client decisions or critical business notes'),
+      keywords: ['quote', 'callout', '引用', '提示', '结论', '重点'],
+      icon: <Quote size={14} />,
+      run: (editor) =>
+        editor
+          .chain()
+          .focus()
+          .insertContent(
+            t(
+              '<blockquote><p>💡 <strong>核心结论 / 重点说明</strong>：</p></blockquote>',
+              '<blockquote><p>💡 <strong>Key Decision / Note</strong>: </p></blockquote>'
+            )
+          )
+          .run(),
+    },
+    {
+      id: 'table',
+      label: t('需求对比表格 (3×3)', 'Table (3×3)'),
+      desc: t('插入结构化业务字段或诉求对比表', 'Insert a structured 3×3 field or requirement comparison table'),
+      keywords: ['table', 'grid', '表格', '字段表'],
+      icon: <TableIcon size={14} />,
+      run: (editor) =>
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    },
+    {
+      id: 'image',
+      label: t('插入需求参考图片 / 截图', 'Insert Image / Screenshot'),
+      desc: t('上传本地截图，或直接在编辑器按 Cmd/Ctrl+V 粘贴截图', 'Upload a local image or press Cmd/Ctrl+V to paste a screenshot'),
+      keywords: ['image', 'img', 'pic', '图片', '截图', 'screenshot'],
+      icon: <ImageIcon size={14} />,
+      run: (_editor, helpers) => helpers?.uploadImage(),
+    },
+    {
+      id: 'stickySummary',
+      label: t('汇总画布批注', 'Summarize Canvas Annotations'),
+      desc: t('把关联页面上的组件便签按页面/组件汇总成表格与待办', 'Aggregate component sticky notes from linked pages into tables and to-dos'),
+      keywords: ['sticky', 'pin', '批注', '便签', '评审', '汇总', 'annotations'],
+      icon: <Pin size={14} />,
+      run: (_editor, helpers) => helpers?.summarizeStickies(),
+    },
+    {
+      id: 'codeBlock',
+      label: t('代码块 / 校验规则', 'Code / Formula Block'),
+      desc: t('记录计算公式、SQL 片段或伪代码逻辑', 'Document formulas, SQL snippets, or validation pseudocode'),
+      keywords: ['code', 'sql', '代码', '公式', '规则'],
+      icon: <Code2 size={14} />,
+      run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
+    },
+    {
+      id: 'hr',
+      label: t('分割线', 'Divider'),
+      desc: t('在视觉上分隔不同模块内容', 'Visually separate sections'),
+      keywords: ['hr', 'divider', 'line', '分割线'],
+      icon: <Minus size={14} />,
+      run: (editor) => editor.chain().focus().setHorizontalRule().run(),
+    },
+    {
+      id: 'reqSnippet',
+      label: t('客户需求沟通小节模板', 'Requirement Section Snippet'),
+      desc: t('一键插入诉求描述 + 待确认清单组合块', 'Insert a structured scenario, goal, and fields block'),
+      keywords: ['template', 'req', '需求', '客户', '模板', 'snippet'],
+      icon: <Sparkles size={14} />,
+      run: (editor) =>
+        editor
+          .chain()
+          .focus()
+          .insertContent(
+            t(
+              `<h3>📌 业务模块诉求小结</h3><ul><li><strong>业务场景</strong>：描述客户在什么场景下触发该操作</li><li><strong>核心诉求</strong>：描述期望的页面展示与交互行为</li><li><strong>涉及字段</strong>：列出新增或必改字段</li></ul>`,
+              `<h3>📌 Module Requirement Summary</h3><ul><li><strong>Scenario</strong>: Describe when users trigger this workflow</li><li><strong>Core Goal</strong>: Describe expected UI presentation and interactions</li><li><strong>Fields</strong>: List new or modified fields</li></ul>`
+            )
+          )
+          .run(),
+    },
+  ];
+}
 
 export interface MentionCandidate {
   id: string;
@@ -383,6 +436,7 @@ export interface MentionCandidate {
 }
 
 function useProjectMentionCandidates(): MentionCandidate[] {
+  const { tr, td } = useI18n();
   const dbTables = useProtoStore((s) => s.dbTables);
   const layout = usePageStore();
   return useMemo(() => {
@@ -401,7 +455,7 @@ function useProjectMentionCandidates(): MentionCandidate[] {
           id: `page:${node.pageId}`,
           kind: 'page',
           label: node.title,
-          subLabel: `页面 · ${node.pageId}`,
+          subLabel: tr(`页面 · ${node.pageId}`, `Page · ${node.pageId}`),
           href: `#pf-page:${node.pageId}`,
         });
       }
@@ -411,15 +465,16 @@ function useProjectMentionCandidates(): MentionCandidate[] {
         id: `table:${tbl.id}`,
         kind: 'table',
         label: `${tbl.tableName} (${tbl.cnName})`,
-        subLabel: `数据表 · ${tbl.domain}`,
+        subLabel: tr(`数据表 · ${tbl.domain}`, `Table · ${td(tbl.domain)}`),
         href: `#pf-table:${tbl.id}`,
       });
     }
     return items;
-  }, [dbTables, layout.designerFolders, layout.designerPages, layout.sitemapOverrides, layout.sitemapBase]);
+  }, [dbTables, layout.designerFolders, layout.designerPages, layout.sitemapOverrides, layout.sitemapBase, tr, td]);
 }
 
 export function ProjectNotesView({ projectId }: { projectId: string }) {
+  const { isEn, tr, td } = useI18n();
   const data = useProtoStore((state) => state.projectNotes);
   const selectedId = useProtoStore((state) => state.selectedNoteNodeId);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -439,10 +494,11 @@ export function ProjectNotesView({ projectId }: { projectId: string }) {
 
   const handleQuickCreateFromTemplate = (templateId: string, parentId: string | null = null) => {
     const tpl = NOTE_TEMPLATES.find((t) => t.id === templateId) ?? NOTE_TEMPLATES[0];
+    const tplTitle = isEn ? NOTE_TPL_EN[tpl.id]?.title ?? td(tpl.title) : tpl.title;
     const title = uniqueNoteTitle(
       data,
       parentId,
-      tpl.id === 'blank-note' ? '未命名需求笔记' : tpl.title
+      tpl.id === 'blank-note' ? tr('未命名需求笔记', 'Untitled Requirement Note') : tplTitle
     );
     const id = createNoteNode(projectId, 'note', title, parentId, {
       icon: tpl.icon,
@@ -502,6 +558,7 @@ function NotesOverviewHome({
   onToggleSidebar: () => void;
   onCreateFromTemplate: (templateId: string, parentId: string | null) => void;
 }) {
+  const { isEn, tr, td } = useI18n();
   const data = useProtoStore((state) => state.projectNotes);
   const parentId = folderNode ? folderNode.id : null;
   const [overviewMode, setOverviewMode] = useNotesOverviewMode(projectId);
@@ -514,45 +571,45 @@ function NotesOverviewHome({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-white">
-      <header className="h-11 shrink-0 border-b border-slate-200 px-4 flex items-center justify-between bg-white">
-        <div className="flex items-center gap-2">
+      <header className="h-11 shrink-0 border-b border-slate-200 px-4 flex items-center justify-between gap-2 bg-white">
+        <div className="flex items-center gap-2 min-w-0">
           {sidebarCollapsed && (
             <button
               type="button"
               onClick={onToggleSidebar}
-              aria-label="展开笔记目录"
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer"
+              aria-label={tr('展开笔记目录', 'Expand notes directory')}
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0 cursor-pointer"
             >
               <PanelLeftOpen size={15} />
             </button>
           )}
-          <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-            <BookOpenText size={14} className="text-blue-600" />
-            <span>
-              {folderNode ? `${notePath(data, folderNode.id)}` : '项目笔记工作台'}
+          <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5 min-w-0">
+            <BookOpenText size={14} className="text-blue-600 shrink-0" />
+            <span className="truncate">
+              {folderNode ? `${notePath(data, folderNode.id)}` : tr('项目笔记工作台', 'Project Notes Workspace')}
             </span>
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
         <button
           type="button"
           onClick={() => setShowReviewFromStickies(true)}
-          title="把画布上的组件批注汇总成一篇评审修改清单"
-          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100 cursor-pointer"
+          title={tr('把画布上的组件批注汇总成一篇评审修改清单', 'Compile canvas component annotations into a review checklist note')}
+          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          <Pin size={12} />
-          从画布批注生成评审清单
+          <Pin size={12} className="shrink-0" />
+          {tr('从画布批注生成评审清单', 'Checklist from Annotations')}
         </button>
         <div
           role="group"
-          aria-label="笔记总览视图"
+          aria-label={tr('笔记总览视图', 'Notes overview mode')}
           className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px]"
         >
           {(
             [
-              { id: 'cards', label: '卡片', icon: <LayoutGrid size={12} /> },
-              { id: 'table', label: '台账表格', icon: <TableIcon size={12} /> },
-              { id: 'kanban', label: '状态看板', icon: <Columns size={12} /> },
+              { id: 'cards', label: tr('卡片', 'Cards'), icon: <LayoutGrid size={12} /> },
+              { id: 'table', label: tr('台账表格', 'Ledger'), icon: <TableIcon size={12} /> },
+              { id: 'kanban', label: tr('状态看板', 'Kanban'), icon: <Columns size={12} /> },
             ] as const
           ).map((item) => (
             <button
@@ -560,7 +617,7 @@ function NotesOverviewHome({
               type="button"
               aria-pressed={overviewMode === item.id}
               onClick={() => setOverviewMode(item.id)}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium cursor-pointer transition ${
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium whitespace-nowrap shrink-0 cursor-pointer transition ${
                 overviewMode === item.id
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-500 hover:text-slate-800'
@@ -576,7 +633,7 @@ function NotesOverviewHome({
 
       {overviewError && (
         <div role="alert" className="mx-6 mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
-          {overviewError}
+          {td(overviewError)}
         </div>
       )}
       {showReviewFromStickies && (
@@ -590,7 +647,7 @@ function NotesOverviewHome({
               setOverviewError('');
               openNoteNode(projectId, id);
             } catch (err) {
-              setOverviewError(err instanceof Error ? err.message : '生成评审清单失败');
+              setOverviewError(err instanceof Error ? err.message : tr('生成评审清单失败', 'Failed to generate review checklist'));
             }
           }}
         />
@@ -605,23 +662,30 @@ function NotesOverviewHome({
       {overviewMode !== 'cards' ? (
         <div className="w-full max-w-7xl mx-auto px-6 py-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <span>{folderNode ? folderNode.icon : '📊'}</span>
-              <span>{folderNode ? `${folderNode.title} · 需求台账` : '项目需求台账'}</span>
+            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2 min-w-0">
+              <span className="shrink-0">{folderNode ? folderNode.icon : '📊'}</span>
+              <span className="truncate">
+                {folderNode
+                  ? tr(`${folderNode.title} · 需求台账`, `${folderNode.title} · Requirement Ledger`)
+                  : tr('项目需求台账', 'Project Requirement Ledger')}
+              </span>
             </h1>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]" aria-label="从模板新建笔记">
-              <span className="text-slate-400">新建：</span>
-              {NOTE_TEMPLATES.map((tpl) => (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => onCreateFromTemplate(tpl.id, parentId)}
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:border-blue-300 hover:text-blue-600 cursor-pointer"
-                >
-                  <span>{tpl.icon}</span>
-                  {tpl.title}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]" aria-label={tr('从模板新建笔记', 'Create note from template')}>
+              <span className="text-slate-400">{tr('新建：', 'New:')}</span>
+              {NOTE_TEMPLATES.map((tpl) => {
+                const tplTitle = isEn ? NOTE_TPL_EN[tpl.id]?.title ?? td(tpl.title) : tpl.title;
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => onCreateFromTemplate(tpl.id, parentId)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:border-blue-300 hover:text-blue-600 whitespace-nowrap cursor-pointer"
+                  >
+                    <span>{tpl.icon}</span>
+                    {tplTitle}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <NotesLedger projectId={projectId} folderId={parentId} mode={overviewMode} />
@@ -630,63 +694,86 @@ function NotesOverviewHome({
       <div className="max-w-4xl w-full mx-auto px-8 py-10 space-y-8">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-[11px] font-medium">
-            <Sparkles size={12} />
-            <span>块级文档 · 支持画布分屏伴随、@引用页面/表、直接粘贴截图与全局待办追踪</span>
+            <Sparkles size={12} className="shrink-0" />
+            <span>
+              {tr(
+                '块级文档 · 支持画布分屏伴随、@引用页面/表、直接粘贴截图与全局待办追踪',
+                'Block Editor · Split-screen canvas sidecar, @page/@table mentions, screenshot paste & global to-do tracking'
+              )}
+            </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
             <span>{folderNode ? folderNode.icon : '📓'}</span>
-            <span>{folderNode ? folderNode.title : '记录客户沟通需求、评审纪要与业务规则'}</span>
+            <span>
+              {folderNode
+                ? folderNode.title
+                : tr('记录客户沟通需求、评审纪要与业务规则', 'Capture Discovery Notes, Review Minutes & Business Rules')}
+            </span>
           </h1>
           <p className="text-xs text-slate-500 leading-5 max-w-2xl">
-            支持多层级目录管理、输入 <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">/</code> 唤起块级命令、输入 <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">@</code> 引用原型页面或数据表、直接粘贴客户截图，并可点击右上角「分屏对照原型」边看笔记边改画布。
+            {isEn ? (
+              <>
+                Organize nested folders, type <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">/</code> for block commands, type <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">@</code> to mention prototype pages or tables, paste screenshots directly, and dock notes beside the canvas.
+              </>
+            ) : (
+              <>
+                支持多层级目录管理、输入 <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">/</code> 唤起块级命令、输入 <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">@</code> 引用原型页面或数据表、直接粘贴客户截图，并可点击右上角「分屏对照原型」边看笔记边改画布。
+              </>
+            )}
           </p>
         </div>
 
         {/* Quick Start Templates */}
         <div className="space-y-3">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            从精选模板快速新建笔记
+            {tr('从精选模板快速新建笔记', 'Quick-Start Note Templates')}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {NOTE_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => onCreateFromTemplate(tpl.id, parentId)}
-                className="group p-4 rounded-2xl border border-slate-200/90 bg-white hover:border-blue-400 hover:shadow-md text-left transition cursor-pointer flex flex-col justify-between space-y-3"
-              >
-                <div className="space-y-2">
-                  <div className="w-9 h-9 rounded-xl bg-slate-50 group-hover:bg-blue-50 border border-slate-200/70 flex items-center justify-center text-lg transition">
-                    {tpl.icon}
+            {NOTE_TEMPLATES.map((tpl) => {
+              const tplTitle = isEn ? NOTE_TPL_EN[tpl.id]?.title ?? td(tpl.title) : tpl.title;
+              const tplDesc = isEn ? NOTE_TPL_EN[tpl.id]?.desc ?? td(tpl.desc) : tpl.desc;
+              return (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => onCreateFromTemplate(tpl.id, parentId)}
+                  className="group min-w-0 p-4 rounded-2xl border border-slate-200/90 bg-white hover:border-blue-400 hover:shadow-md text-left transition cursor-pointer flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-2 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-slate-50 group-hover:bg-blue-50 border border-slate-200/70 flex items-center justify-center text-lg transition">
+                      {tpl.icon}
+                    </div>
+                    <div className="font-semibold text-xs text-slate-900 group-hover:text-blue-600 transition break-words">
+                      {tplTitle}
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-4 line-clamp-2">
+                      {tplDesc}
+                    </p>
                   </div>
-                  <div className="font-semibold text-xs text-slate-900 group-hover:text-blue-600 transition">
-                    {tpl.title}
+                  <div className="flex items-center gap-1 text-[11px] font-medium text-blue-600 pt-1">
+                    <Plus size={12} />
+                    <span>{tr('立即创建', 'Create Note')}</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-4 line-clamp-2">
-                    {tpl.desc}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-medium text-blue-600 pt-1">
-                  <Plus size={12} />
-                  <span>立即创建</span>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Child Notes & Folders in Current Directory */}
         {childNodes.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {folderNode ? `「${folderNode.title}」下的内容 (${childNodes.length})` : `根目录下的笔记与目录 (${childNodes.length})`}
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider tabular-nums">
+              {folderNode
+                ? tr(`「${folderNode.title}」下的内容 (${childNodes.length})`, `Items in "${folderNode.title}" (${childNodes.length})`)
+                : tr(`根目录下的笔记与目录 (${childNodes.length})`, `Root Notes & Folders (${childNodes.length})`)}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {childNodes.map((child) => {
                 const snippet =
                   child.kind === 'note'
                     ? noteHtmlToPlainText(child.content).slice(0, 80)
-                    : '分类目录';
+                    : tr('分类目录', 'Folder');
                 const statusMeta =
                   child.kind === 'note' && child.status
                     ? NOTE_STATUS_OPTIONS.find((s) => s.id === child.status)
@@ -696,7 +783,7 @@ function NotesOverviewHome({
                     key={child.id}
                     type="button"
                     onClick={() => openNoteNode(projectId, child.id)}
-                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-white hover:border-blue-300 hover:shadow-xs text-left transition cursor-pointer space-y-2"
+                    className="min-w-0 p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-white hover:border-blue-300 hover:shadow-xs text-left transition cursor-pointer space-y-2"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
@@ -708,18 +795,18 @@ function NotesOverviewHome({
                       <div className="flex items-center gap-1.5 shrink-0">
                         {statusMeta && (
                           <span
-                            className={`px-1.5 py-0.2 rounded border text-[10px] font-medium ${statusMeta.badgeClass}`}
+                            className={`px-1.5 py-0.2 rounded border text-[10px] font-medium whitespace-nowrap ${statusMeta.badgeClass}`}
                           >
-                            {statusMeta.label}
+                            {isEn ? NOTE_STATUS_EN[statusMeta.id] ?? td(statusMeta.label) : statusMeta.label}
                           </span>
                         )}
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-400 tabular-nums">
                           {child.updatedAt.slice(0, 10)}
                         </span>
                       </div>
                     </div>
                     <p className="text-[11px] text-slate-500 line-clamp-2 leading-4">
-                      {snippet || '空白笔记，点击开始录入内容...'}
+                      {snippet || tr('空白笔记，点击开始录入内容...', 'Blank note — click to start writing...')}
                     </p>
                     {child.kind === 'note' && child.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 pt-0.5">
@@ -730,7 +817,7 @@ function NotesOverviewHome({
                               t
                             )}`}
                           >
-                            {t}
+                            {td(t)}
                           </span>
                         ))}
                       </div>
@@ -760,6 +847,8 @@ function NoteDocumentEditor({
   onToggleSidebar: () => void;
   onCreateFromTemplate: (templateId: string) => void;
 }) {
+  const { isEn, tr, td } = useI18n();
+  const slashCommands = useMemo(() => getSlashCommands(tr), [tr]);
   const data = useProtoStore((state) => state.projectNotes);
   const {
     activePageId,
@@ -851,24 +940,24 @@ function NoteDocumentEditor({
         editor
           .chain()
           .focus()
-          .insertContent({ type: 'image', attrs: { src, alt: file.name || '需求参考图片' } })
+          .insertContent({ type: 'image', attrs: { src, alt: file.name || tr('需求参考图片', 'Reference image') } })
           .run();
       } catch (err) {
-        showNotice(`图片未插入：${err instanceof Error ? err.message : '读取失败'}`);
+        showNotice(tr(`图片未插入：${err instanceof Error ? td(err.message) : '读取失败'}`, `Image not inserted: ${err instanceof Error ? td(err.message) : 'Failed to read'}`));
       }
     }
   };
 
   const filteredSlashCommands = useMemo(() => {
     const q = slashQuery.trim().toLowerCase();
-    if (!q) return SLASH_COMMANDS;
-    return SLASH_COMMANDS.filter(
+    if (!q) return slashCommands;
+    return slashCommands.filter(
       (cmd) =>
         cmd.label.toLowerCase().includes(q) ||
         cmd.desc.toLowerCase().includes(q) ||
         cmd.keywords.some((k) => k.toLowerCase().includes(q))
     );
-  }, [slashQuery]);
+  }, [slashQuery, slashCommands]);
 
   const filteredMentions = useMemo(() => {
     const q = mentionQuery.trim().toLowerCase();
@@ -1060,7 +1149,7 @@ function NoteDocumentEditor({
         updateNoteMeta(projectId, node.id, { title: trimmed });
       } catch (err) {
         setTitleDraft(node.title);
-        showNotice(`标题未保存：${err instanceof Error ? err.message : '名称无效'}`);
+        showNotice(tr(`标题未保存：${err instanceof Error ? td(err.message) : '名称无效'}`, `Title not saved: ${err instanceof Error ? td(err.message) : 'Invalid name'}`));
       }
     }
   };
@@ -1071,7 +1160,7 @@ function NoteDocumentEditor({
       try {
         updateNoteMeta(projectId, node.id, { stakeholder: trimmed });
       } catch (err) {
-        showNotice(`对接人未保存：${err instanceof Error ? err.message : '内容无效'}`);
+        showNotice(tr(`对接人未保存：${err instanceof Error ? td(err.message) : '内容无效'}`, `Stakeholder not saved: ${err instanceof Error ? td(err.message) : 'Invalid value'}`));
       }
     }
   };
@@ -1163,18 +1252,33 @@ function NoteDocumentEditor({
         ? { total: 0, attachments: [] }
         : noteAiImageAttachments(node.content, data.assets);
       const imageHint = imagePick.attachments.length
-        ? `\n\n随附 ${imagePick.attachments.length} 张图片，依次对应正文中的 ${imagePick.attachments
-            .map((a) => `[图片 ${a.index}]`)
-            .join('、')}${imagePick.total > imagePick.attachments.length ? `（笔记共 ${imagePick.total} 张，其余未附带）` : ''}。`
+        ? tr(
+            `\n\n随附 ${imagePick.attachments.length} 张图片，依次对应正文中的 ${imagePick.attachments
+              .map((a) => `[图片 ${a.index}]`)
+              .join('、')}${imagePick.total > imagePick.attachments.length ? `（笔记共 ${imagePick.total} 张，其余未附带）` : ''}。`,
+            `\n\nAttached ${imagePick.attachments.length} image(s) corresponding to ${imagePick.attachments
+              .map((a) => `[Image ${a.index}]`)
+              .join(', ')}${imagePick.total > imagePick.attachments.length ? ` (${imagePick.total} total in note; remaining omitted)` : ''}.`
+          )
         : '';
       const contentBody = customExcerpt?.trim()
-        ? `【摘自笔记《${ctx.title}》的重点需求片段】：\n${customExcerpt.trim()}`
+        ? tr(
+            `【摘自笔记《${ctx.title}》的重点需求片段】：\n${customExcerpt.trim()}`,
+            `[Requirement Excerpt from Note "${ctx.title}"]:\n${customExcerpt.trim()}`
+          )
         : noteHtmlToMarkdown(node);
-      const prompt = `请根据以下项目笔记需求，协助我规划或更新对应的原型页面与数据表：\n\n${
-        ctx.relatedPageIds.length
-          ? `关联页面 ID：${ctx.relatedPageIds.join(', ')}\n\n`
-          : ''
-      }${contentBody}${imageHint}`;
+      const prompt = tr(
+        `请根据以下项目笔记需求，协助我规划或更新对应的原型页面与数据表：\n\n${
+          ctx.relatedPageIds.length
+            ? `关联页面 ID：${ctx.relatedPageIds.join(', ')}\n\n`
+            : ''
+        }${contentBody}${imageHint}`,
+        `Please help me plan or update the corresponding prototype pages and database tables based on the following requirement note:\n\n${
+          ctx.relatedPageIds.length
+            ? `Linked Page IDs: ${ctx.relatedPageIds.join(', ')}\n\n`
+            : ''
+        }${contentBody}${imageHint}`
+      );
 
       if (hermesStatus !== 'running') {
         try {
@@ -1182,7 +1286,7 @@ function NoteDocumentEditor({
         } catch {
           /* ignore */
         }
-        showNotice('已复制需求指令，请先连接 Hermes 引擎后在项目 AI 中粘贴执行');
+        showNotice(tr('已复制需求指令，请先连接 Hermes 引擎后在项目 AI 中粘贴执行', 'Prompt copied — connect Hermes first, then paste in Project AI'));
         setHermesModalOpen(true, 'overview');
         return;
       }
@@ -1199,7 +1303,7 @@ function NoteDocumentEditor({
         projectId,
         prompt,
         imagePick.attachments.map(({ index, asset }) => ({
-          name: asset.name?.trim() || `笔记图片-${index}.${noteAssetExtension(asset)}`,
+          name: asset.name?.trim() || `${tr('笔记图片', 'note-image')}-${index}.${noteAssetExtension(asset)}`,
           mimeType: asset.mime as 'image/png' | 'image/jpeg' | 'image/webp',
           data: asset.data,
           preview: noteAssetDataUrl(asset),
@@ -1207,7 +1311,7 @@ function NoteDocumentEditor({
         }))
       );
     } catch (err) {
-      showNotice(`发送给项目 AI 失败：${err instanceof Error ? err.message : '未知错误'}`, 6000);
+      showNotice(tr(`发送给项目 AI 失败：${err instanceof Error ? td(err.message) : '未知错误'}`, `Failed to send to Project AI: ${err instanceof Error ? td(err.message) : 'Unknown error'}`), 6000);
     }
   };
 
@@ -1264,15 +1368,15 @@ function NoteDocumentEditor({
           <button
             type="button"
             onClick={onToggleSidebar}
-            aria-label={sidebarCollapsed ? '展开笔记目录' : '收起笔记目录'}
-            title={sidebarCollapsed ? '展开笔记目录' : '收起笔记目录'}
-            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer transition"
+            aria-label={sidebarCollapsed ? tr('展开笔记目录', 'Expand notes directory') : tr('收起笔记目录', 'Collapse notes directory')}
+            title={sidebarCollapsed ? tr('展开笔记目录', 'Expand notes directory') : tr('收起笔记目录', 'Collapse notes directory')}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 shrink-0 cursor-pointer transition"
           >
             {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           </button>
 
-          <div className="flex items-center gap-1.5 text-xs text-slate-600 truncate">
-            <span>{node.icon}</span>
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 min-w-0 truncate">
+            <span className="shrink-0">{node.icon}</span>
             <span className="font-medium text-slate-800 truncate">
               {notePath(data, node.id)}
             </span>
@@ -1281,9 +1385,9 @@ function NoteDocumentEditor({
           <button
             type="button"
             onClick={() => updateNoteMeta(projectId, node.id, { pinned: !node.pinned })}
-            aria-label={node.pinned ? '取消置顶笔记' : '置顶当前笔记'}
-            title={node.pinned ? '已置顶，点击取消' : '置顶到左侧顶部'}
-            className={`p-1 rounded-md cursor-pointer transition ${
+            aria-label={node.pinned ? tr('取消置顶笔记', 'Unpin note') : tr('置顶当前笔记', 'Pin current note')}
+            title={node.pinned ? tr('已置顶，点击取消', 'Pinned — click to unpin') : tr('置顶到左侧顶部', 'Pin to top of sidebar')}
+            className={`p-1 rounded-md shrink-0 cursor-pointer transition ${
               node.pinned
                 ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
                 : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
@@ -1295,13 +1399,13 @@ function NoteDocumentEditor({
 
         {/* Right Actions */}
         <div className="flex items-center gap-1.5 shrink-0 text-xs">
-          <span className="hidden xl:inline-flex items-center gap-2 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500">
-            <span>{charCount} 字</span>
+          <span className="hidden xl:inline-flex items-center gap-2 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+            <span>{tr(`${charCount} 字`, `${charCount} chars`)}</span>
             {taskStats.total > 0 && (
               <>
                 <span>·</span>
                 <span className="text-emerald-700 font-medium">
-                  待办 {taskStats.done}/{taskStats.total}
+                  {tr(`待办 ${taskStats.done}/${taskStats.total}`, `To-Dos ${taskStats.done}/${taskStats.total}`)}
                 </span>
               </>
             )}
@@ -1311,11 +1415,11 @@ function NoteDocumentEditor({
           <button
             type="button"
             onClick={handleDockToSidecar}
-            title="将此笔记固定到原型画布右侧分屏，边看需求边改原型"
-            className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition"
+            title={tr('将此笔记固定到原型画布右侧分屏，边看需求边改原型', 'Dock this note beside the prototype canvas for side-by-side editing')}
+            className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition"
           >
-            <Columns size={12} />
-            <span>分屏对照原型</span>
+            <Columns size={12} className="shrink-0" />
+            <span>{tr('分屏对照原型', 'Split w/ Canvas')}</span>
           </button>
 
           {/* Template Picker Dropdown */}
@@ -1323,16 +1427,16 @@ function NoteDocumentEditor({
             <button
               type="button"
               onClick={() => setShowTemplateMenu((v) => !v)}
-              className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition"
+              className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition"
             >
-              <LayoutTemplate size={12} className="text-slate-500" />
-              <span>套用模板</span>
-              <ChevronDown size={11} className="text-slate-400" />
+              <LayoutTemplate size={12} className="text-slate-500 shrink-0" />
+              <span>{tr('套用模板', 'Templates')}</span>
+              <ChevronDown size={11} className="text-slate-400 shrink-0" />
             </button>
             {showTemplateMenu && (
               <div className="absolute right-0 top-full mt-1.5 w-72 rounded-xl border border-slate-200 bg-white shadow-xl p-2 z-50 space-y-1">
                 <div className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase flex items-center justify-between">
-                  <span>插入或套用结构化模板</span>
+                  <span>{tr('插入或套用结构化模板', 'Insert or Apply Template')}</span>
                   <button
                     type="button"
                     onClick={() => setShowTemplateMenu(false)}
@@ -1341,44 +1445,48 @@ function NoteDocumentEditor({
                     <X size={12} />
                   </button>
                 </div>
-                {NOTE_TEMPLATES.filter((t) => t.id !== 'blank-note').map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    className="p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200/80 space-y-1.5 transition"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                      <span>{tpl.icon}</span>
-                      <span>{tpl.title}</span>
+                {NOTE_TEMPLATES.filter((t) => t.id !== 'blank-note').map((tpl) => {
+                  const tplTitle = isEn ? NOTE_TPL_EN[tpl.id]?.title ?? td(tpl.title) : tpl.title;
+                  const tplDesc = isEn ? NOTE_TPL_EN[tpl.id]?.desc ?? td(tpl.desc) : tpl.desc;
+                  return (
+                    <div
+                      key={tpl.id}
+                      className="p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200/80 space-y-1.5 transition"
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                        <span>{tpl.icon}</span>
+                        <span>{tplTitle}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-4">{tplDesc}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyTemplateContent(tpl.id, 'append')}
+                          className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium cursor-pointer"
+                        >
+                          {tr('追加到文末', 'Append')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyTemplateContent(tpl.id, 'replace')}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] cursor-pointer"
+                        >
+                          {tr('覆盖当前页', 'Replace')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowTemplateMenu(false);
+                            onCreateFromTemplate(tpl.id);
+                          }}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-[10px] cursor-pointer"
+                        >
+                          {tr('新建此模板页', 'New Note')}
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-4">{tpl.desc}</p>
-                    <div className="flex items-center gap-1.5 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleApplyTemplateContent(tpl.id, 'append')}
-                        className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium cursor-pointer"
-                      >
-                        追加到文末
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleApplyTemplateContent(tpl.id, 'replace')}
-                        className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] cursor-pointer"
-                      >
-                        覆盖当前页
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowTemplateMenu(false);
-                          onCreateFromTemplate(tpl.id);
-                        }}
-                        className="px-2 py-0.5 rounded bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-[10px] cursor-pointer"
-                      >
-                        新建此模板页
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1386,18 +1494,18 @@ function NoteDocumentEditor({
           <button
             type="button"
             onClick={handleCopyMarkdown}
-            title="复制为 Markdown 文本"
-            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition"
+            title={tr('复制为 Markdown 文本', 'Copy as Markdown')}
+            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition"
           >
             {copiedMd ? (
               <>
-                <Check size={12} className="text-emerald-600" />
-                <span className="text-emerald-700">已复制</span>
+                <Check size={12} className="text-emerald-600 shrink-0" />
+                <span className="text-emerald-700">{tr('已复制', 'Copied')}</span>
               </>
             ) : (
               <>
-                <Copy size={12} className="text-slate-500" />
-                <span>复制 MD</span>
+                <Copy size={12} className="text-slate-500 shrink-0" />
+                <span>{tr('复制 MD', 'Copy MD')}</span>
               </>
             )}
           </button>
@@ -1405,29 +1513,29 @@ function NoteDocumentEditor({
           <button
             type="button"
             onClick={handleExportMarkdownFile}
-            title="导出为 .md 文件"
-            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition"
+            title={tr('导出为 .md 文件', 'Export as .md file')}
+            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition"
           >
-            <Download size={12} className="text-slate-500" />
-            <span>导出 .md</span>
+            <Download size={12} className="text-slate-500 shrink-0" />
+            <span>{tr('导出 .md', 'Export .md')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleSendToProjectAi()}
-            title="将当前客户需求笔记发送给项目 AI，自动生成或修改原型与数据库"
-            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer shadow-2xs transition"
+            title={tr('将当前客户需求笔记发送给项目 AI，自动生成或修改原型与数据库', 'Send this requirement note to Project AI to generate or update prototypes and tables')}
+            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer shadow-2xs transition"
           >
-            <Sparkles size={12} />
-            <span>发给项目 AI</span>
+            <Sparkles size={12} className="shrink-0" />
+            <span>{tr('发给项目 AI', 'Send to AI')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowOutline((v) => !v)}
-            aria-label={showOutline ? '收起文档大纲' : '展开文档大纲'}
-            title={showOutline ? '收起右侧大纲' : '展开右侧大纲'}
-            className={`p-1.5 rounded-lg border cursor-pointer transition ${
+            aria-label={showOutline ? tr('收起文档大纲', 'Collapse document outline') : tr('展开文档大纲', 'Expand document outline')}
+            title={showOutline ? tr('收起右侧大纲', 'Collapse outline') : tr('展开右侧大纲', 'Expand outline')}
+            className={`p-1.5 rounded-lg border shrink-0 cursor-pointer transition ${
               showOutline
                 ? 'bg-slate-100 border-slate-300 text-slate-800'
                 : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
@@ -1441,15 +1549,15 @@ function NoteDocumentEditor({
       {aiStatusMsg && (
         <div
           role="status"
-          className="px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between"
+          className="px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2"
         >
-          <span>{aiStatusMsg}</span>
+          <span className="min-w-0 break-words">{td(aiStatusMsg)}</span>
           <button
             type="button"
             onClick={() => setAiStatusMsg('')}
-            className="text-amber-700 hover:underline cursor-pointer"
+            className="text-amber-700 hover:underline whitespace-nowrap shrink-0 cursor-pointer"
           >
-            知道了
+            {tr('知道了', 'Got it')}
           </button>
         </div>
       )}
@@ -1467,11 +1575,11 @@ function NoteDocumentEditor({
                 setSlashSelectedIndex(0);
                 editor.commands.focus();
               }}
-              className="px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-              title="打开 / 斜杠块级命令菜单"
+              className="px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              title={tr('打开 / 斜杠块级命令菜单', 'Open / slash block command menu')}
             >
-              <Plus size={12} />
-              <span>/ 插入块</span>
+              <Plus size={12} className="shrink-0" />
+              <span>{tr('/ 插入块', '/ Insert')}</span>
             </button>
 
             <button
@@ -1483,146 +1591,146 @@ function NoteDocumentEditor({
                 setMentionSelectedIndex(0);
                 editor.commands.focus();
               }}
-              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-              title="输入 @ 引用工程中的原型页面或数据库物理表"
+              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              title={tr('输入 @ 引用工程中的原型页面或数据库物理表', 'Type @ to mention prototype pages or database tables')}
             >
-              <AtSign size={12} className="text-blue-600" />
-              <span>引用页面/表</span>
+              <AtSign size={12} className="text-blue-600 shrink-0" />
+              <span>{tr('引用页面/表', 'Mention')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => imageInputRef.current?.click()}
-              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer mr-1"
-              title="上传参考图片，或直接按 Ctrl/Cmd+V 粘贴截图"
+              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer mr-1"
+              title={tr('上传参考图片，或直接按 Ctrl/Cmd+V 粘贴截图', 'Upload image or press Ctrl/Cmd+V to paste screenshot')}
             >
-              <ImageIcon size={12} className="text-emerald-600" />
-              <span>贴图</span>
+              <ImageIcon size={12} className="text-emerald-600 shrink-0" />
+              <span>{tr('贴图', 'Image')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => openAssistant(selectedExcerpt.trim() ? 'polish' : 'write')}
-              className="px-2 py-1 rounded-md bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-              title="AI 代写、润色改写、整理纪要、提取待办"
+              className="px-2 py-1 rounded-md bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90 text-white text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              title={tr('AI 代写、润色改写、整理纪要、提取待办', 'AI Draft, Polish, Organize Minutes & Extract To-Dos')}
             >
-              <Sparkles size={12} />
-              <span>AI 助手</span>
+              <Sparkles size={12} className="shrink-0" />
+              <span>{tr('AI 助手', 'AI Assist')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowStickySummary(true)}
-              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 cursor-pointer mr-1"
-              title="把关联页面上的画布组件批注汇总到本笔记"
+              className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer mr-1"
+              title={tr('把关联页面上的画布组件批注汇总到本笔记', 'Summarize canvas component annotations from linked pages into this note')}
             >
-              <Pin size={12} className="text-amber-500" />
-              <span>汇总批注</span>
+              <Pin size={12} className="text-amber-500 shrink-0" />
+              <span>{tr('汇总批注', 'Annotations')}</span>
             </button>
 
-            <div className="h-4 w-px bg-slate-200 mx-0.5" />
+            <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
 
             <ToolbarButton
               active={editor.isActive('heading', { level: 1 })}
               onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-              title="一级标题 (H1)"
+              title={tr('一级标题 (H1)', 'Heading 1 (H1)')}
             >
               <Heading1 size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('heading', { level: 2 })}
               onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              title="二级标题 (H2)"
+              title={tr('二级标题 (H2)', 'Heading 2 (H2)')}
             >
               <Heading2 size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('heading', { level: 3 })}
               onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-              title="三级标题 (H3)"
+              title={tr('三级标题 (H3)', 'Heading 3 (H3)')}
             >
               <Heading3 size={14} />
             </ToolbarButton>
 
-            <div className="h-4 w-px bg-slate-200 mx-0.5" />
+            <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
 
             <ToolbarButton
               active={editor.isActive('bold')}
               onClick={() => editor.chain().focus().toggleBold().run()}
-              title="加粗 (Cmd+B)"
+              title={tr('加粗 (Cmd+B)', 'Bold (Cmd+B)')}
             >
               <Bold size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('italic')}
               onClick={() => editor.chain().focus().toggleItalic().run()}
-              title="斜体 (Cmd+I)"
+              title={tr('斜体 (Cmd+I)', 'Italic (Cmd+I)')}
             >
               <Italic size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('underline')}
               onClick={() => editor.chain().focus().toggleUnderline().run()}
-              title="下划线 (Cmd+U)"
+              title={tr('下划线 (Cmd+U)', 'Underline (Cmd+U)')}
             >
               <UnderlineIcon size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('strike')}
               onClick={() => editor.chain().focus().toggleStrike().run()}
-              title="删除线"
+              title={tr('删除线', 'Strikethrough')}
             >
               <Strikethrough size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('highlight')}
               onClick={() => editor.chain().focus().toggleHighlight().run()}
-              title="荧光笔高亮重点"
+              title={tr('荧光笔高亮重点', 'Highlight')}
             >
               <Highlighter size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('code')}
               onClick={() => editor.chain().focus().toggleCode().run()}
-              title="行内代码"
+              title={tr('行内代码', 'Inline code')}
             >
               <Code size={14} />
             </ToolbarButton>
 
-            <div className="h-4 w-px bg-slate-200 mx-0.5" />
+            <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
 
             <ToolbarButton
               active={editor.isActive('taskList')}
               onClick={() => editor.chain().focus().toggleTaskList().run()}
-              title="待办任务清单 (Checkbox)"
+              title={tr('待办任务清单 (Checkbox)', 'To-do task list')}
             >
               <ListTodo size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('bulletList')}
               onClick={() => editor.chain().focus().toggleBulletList().run()}
-              title="无序列表"
+              title={tr('无序列表', 'Bulleted list')}
             >
               <List size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('orderedList')}
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              title="有序列表"
+              title={tr('有序列表', 'Numbered list')}
             >
               <ListOrdered size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('blockquote')}
               onClick={() => editor.chain().focus().toggleBlockquote().run()}
-              title="引用 / 高亮提示框 (Callout)"
+              title={tr('引用 / 高亮提示框 (Callout)', 'Blockquote / Callout')}
             >
               <Quote size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={editor.isActive('codeBlock')}
               onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-              title="代码块"
+              title={tr('代码块', 'Code block')}
             >
               <Code2 size={14} />
             </ToolbarButton>
@@ -1635,14 +1743,14 @@ function NoteDocumentEditor({
                   .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
                   .run()
               }
-              title="插入 3×3 表格"
+              title={tr('插入 3×3 表格', 'Insert 3×3 table')}
             >
               <TableIcon size={14} />
             </ToolbarButton>
             <ToolbarButton
               active={false}
               onClick={() => editor.chain().focus().setHorizontalRule().run()}
-              title="插入分割线"
+              title={tr('插入分割线', 'Insert horizontal divider')}
             >
               <Minus size={14} />
             </ToolbarButton>
@@ -1650,45 +1758,45 @@ function NoteDocumentEditor({
             {/* Contextual Table Controls when inside a table */}
             {editor.isActive('table') && (
               <>
-                <div className="h-4 w-px bg-slate-200 mx-0.5" />
+                <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
                 <div className="flex items-center gap-1 bg-blue-50/80 border border-blue-200/80 rounded-lg px-1.5 py-0.5 text-[11px]">
-                  <span className="text-blue-700 font-medium px-1">表格:</span>
+                  <span className="text-blue-700 font-medium px-1">{tr('表格:', 'Table:')}</span>
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().addRowAfter().run()}
-                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 cursor-pointer flex items-center gap-0.5"
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
                   >
                     <Rows size={11} />
-                    <span>+行</span>
+                    <span>{tr('+行', '+Row')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().deleteRow().run()}
-                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-600 cursor-pointer"
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-600 whitespace-nowrap cursor-pointer"
                   >
-                    -删行
+                    {tr('-删行', '-Row')}
                   </button>
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().addColumnAfter().run()}
-                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 cursor-pointer flex items-center gap-0.5"
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
                   >
                     <Columns size={11} />
-                    <span>+列</span>
+                    <span>{tr('+列', '+Col')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().deleteColumn().run()}
-                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-600 cursor-pointer"
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-600 whitespace-nowrap cursor-pointer"
                   >
-                    -删列
+                    {tr('-删列', '-Col')}
                   </button>
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().deleteTable().run()}
-                    className="px-1.5 py-0.5 rounded hover:bg-rose-100 text-rose-600 cursor-pointer"
+                    className="px-1.5 py-0.5 rounded hover:bg-rose-100 text-rose-600 whitespace-nowrap cursor-pointer"
                   >
-                    删表
+                    {tr('删表', 'Del Table')}
                   </button>
                 </div>
               </>
@@ -1697,33 +1805,33 @@ function NoteDocumentEditor({
 
           {/* Selection Precision Action Pill (Convert selected text to Sticky Note or send excerpt to AI) */}
           {selectedExcerpt.trim().length > 0 && (
-            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200/90 rounded-lg px-2.5 py-1 text-[11px] shadow-2xs">
-              <span className="text-amber-900 font-medium">
-                已选中 {selectedExcerpt.trim().length} 字:
+            <div className="flex flex-wrap items-center gap-1.5 bg-amber-50 border border-amber-200/90 rounded-lg px-2.5 py-1 text-[11px] shadow-2xs">
+              <span className="text-amber-900 font-medium tabular-nums">
+                {tr(`已选中 ${selectedExcerpt.trim().length} 字:`, `Selected ${selectedExcerpt.trim().length} chars:`)}
               </span>
               <button
                 type="button"
                 onClick={() => setShowStickyConvertModal(true)}
-                className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white font-medium flex items-center gap-1 cursor-pointer transition"
+                className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white font-medium flex items-center gap-1 whitespace-nowrap cursor-pointer transition"
               >
                 <Pin size={11} />
-                <span>转为页面需求便签</span>
+                <span>{tr('转为页面需求便签', 'To Sticky Pin')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleSendToProjectAi(selectedExcerpt)}
-                className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center gap-1 cursor-pointer transition"
+                className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center gap-1 whitespace-nowrap cursor-pointer transition"
               >
                 <Sparkles size={11} />
-                <span>仅将选中段发给 AI</span>
+                <span>{tr('仅将选中段发给 AI', 'Send Selection to AI')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => openAssistant('polish')}
-                className="px-2 py-0.5 rounded bg-violet-600 hover:bg-violet-700 text-white font-medium flex items-center gap-1 cursor-pointer transition"
+                className="px-2 py-0.5 rounded bg-violet-600 hover:bg-violet-700 text-white font-medium flex items-center gap-1 whitespace-nowrap cursor-pointer transition"
               >
                 <Wand2 size={11} />
-                <span>AI 润色选中段</span>
+                <span>{tr('AI 润色选中段', 'AI Polish')}</span>
               </button>
             </div>
           )}
@@ -1746,14 +1854,14 @@ function NoteDocumentEditor({
                   onClick={() => setShowCoverPicker((v) => !v)}
                   className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-slate-800 text-[11px] font-medium shadow-sm cursor-pointer"
                 >
-                  更换封面
+                  {tr('更换封面', 'Change Cover')}
                 </button>
                 <button
                   type="button"
                   onClick={() => updateNoteMeta(projectId, node.id, { cover: 'none' })}
                   className="px-2 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-900/80 text-white text-[11px] cursor-pointer"
                 >
-                  移除
+                  {tr('移除', 'Remove')}
                 </button>
               </div>
             </div>
@@ -1765,7 +1873,7 @@ function NoteDocumentEditor({
             {showCoverPicker && (
               <div className="rounded-xl border border-slate-200 bg-white shadow-xl p-3 space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                  <span>选择笔记顶部封面</span>
+                  <span>{tr('选择笔记顶部封面', 'Select Note Cover')}</span>
                   <button
                     type="button"
                     onClick={() => setShowCoverPicker(false)}
@@ -1789,7 +1897,7 @@ function NoteDocumentEditor({
                           : `${c.className} text-white border-transparent`
                       } ${node.cover === c.id ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
                     >
-                      {c.label.replace('渐变', '')}
+                      {isEn ? NOTE_COVER_EN[c.id] ?? td(c.label) : c.label.replace('渐变', '')}
                     </button>
                   ))}
                 </div>
@@ -1805,7 +1913,7 @@ function NoteDocumentEditor({
                   className="hover:text-slate-700 hover:bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition"
                 >
                   <ImageIcon size={12} />
-                  <span>添加封面</span>
+                  <span>{tr('添加封面', 'Add Cover')}</span>
                 </button>
               </div>
             )}
@@ -1816,8 +1924,8 @@ function NoteDocumentEditor({
                 <div className="relative">
                   <button
                     type="button"
-                    aria-label="更换笔记图标"
-                    title="点击更换笔记 Emoji 图标"
+                    aria-label={tr('更换笔记图标', 'Change note icon')}
+                    title={tr('点击更换笔记 Emoji 图标', 'Click to change note emoji icon')}
                     onClick={() => setShowEmojiPicker((v) => !v)}
                     className={`w-12 h-12 rounded-2xl border border-slate-200/80 bg-slate-50/80 hover:bg-slate-100 flex items-center justify-center text-2xl cursor-pointer transition shadow-2xs ${
                       node.cover !== 'none' ? '-mt-10 bg-white shadow-md' : ''
@@ -1829,7 +1937,7 @@ function NoteDocumentEditor({
                   {showEmojiPicker && (
                     <div className="absolute left-0 top-full mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3 z-50 space-y-2.5">
                       <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
-                        <span>选择笔记图标</span>
+                        <span>{tr('选择笔记图标', 'Select Note Icon')}</span>
                         <button
                           type="button"
                           onClick={() => setShowEmojiPicker(false)}
@@ -1841,7 +1949,7 @@ function NoteDocumentEditor({
                       {NOTE_EMOJI_CATALOG.map((cat) => (
                         <div key={cat.category} className="space-y-1">
                           <div className="text-[10px] font-medium text-slate-400">
-                            {cat.category}
+                            {td(cat.category)}
                           </div>
                           <div className="grid grid-cols-10 gap-1">
                             {cat.emojis.map((em) => (
@@ -1868,7 +1976,7 @@ function NoteDocumentEditor({
 
                 <input
                   type="text"
-                  aria-label="笔记标题"
+                  aria-label={tr('笔记标题', 'Note title')}
                   value={titleDraft}
                   onChange={(e) => setTitleDraft(e.target.value)}
                   onBlur={handleTitleBlur}
@@ -1878,8 +1986,8 @@ function NoteDocumentEditor({
                       editor?.commands.focus('start');
                     }
                   }}
-                  placeholder="无标题笔记..."
-                  className="flex-1 w-full text-2xl sm:text-3xl font-bold text-slate-900 bg-transparent border-none focus:outline-none placeholder:text-slate-300 tracking-tight"
+                  placeholder={tr('无标题笔记...', 'Untitled note...')}
+                  className="flex-1 min-w-0 w-full text-2xl sm:text-3xl font-bold text-slate-900 bg-transparent border-none focus:outline-none placeholder:text-slate-300 tracking-tight"
                 />
               </div>
 
@@ -1888,9 +1996,9 @@ function NoteDocumentEditor({
                 {/* PM Requirement Status + Priority + Stakeholder + Date Row */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pb-1.5 border-b border-slate-200/60">
                   {/* Status */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-400 font-medium">需求状态</span>
-                    <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-slate-400 font-medium">{tr('需求状态', 'Status')}</span>
+                    <div className="flex flex-wrap items-center gap-1">
                       {NOTE_STATUS_OPTIONS.map((opt) => {
                         const isCurrent = (node.status || 'draft') === opt.id;
                         return (
@@ -1898,14 +2006,14 @@ function NoteDocumentEditor({
                             key={opt.id}
                             type="button"
                             onClick={() => updateNoteMeta(projectId, node.id, { status: opt.id })}
-                            className={`px-2 py-0.5 rounded-md border text-[11px] font-medium flex items-center gap-1 cursor-pointer transition ${
+                            className={`px-2 py-0.5 rounded-md border text-[11px] font-medium flex items-center gap-1 whitespace-nowrap cursor-pointer transition ${
                               isCurrent
                                 ? `${opt.badgeClass} ring-1 ring-current/20`
                                 : 'bg-white text-slate-500 border-slate-200/80 hover:bg-slate-100'
                             }`}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${opt.dotClass}`} />
-                            <span>{opt.label}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${opt.dotClass}`} />
+                            <span>{isEn ? NOTE_STATUS_EN[opt.id] ?? td(opt.label) : opt.label}</span>
                           </button>
                         );
                       })}
@@ -1914,9 +2022,9 @@ function NoteDocumentEditor({
 
                   {/* Priority */}
                   <div className="flex items-center gap-1.5">
-                    <span className="text-slate-400 font-medium">优先级</span>
+                    <span className="text-slate-400 font-medium">{tr('优先级', 'Priority')}</span>
                     <select
-                      aria-label="需求优先级"
+                      aria-label={tr('需求优先级', 'Requirement priority')}
                       value={node.priority || ''}
                       onChange={(e) =>
                         updateNoteMeta(projectId, node.id, {
@@ -1925,10 +2033,10 @@ function NoteDocumentEditor({
                       }
                       className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700"
                     >
-                      <option value="">未设优先级</option>
+                      <option value="">{tr('未设优先级', 'No priority')}</option>
                       {NOTE_PRIORITY_OPTIONS.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.label}
+                          {isEn ? NOTE_PRIORITY_EN[p.id] ?? td(p.label) : p.label}
                         </option>
                       ))}
                     </select>
@@ -1938,15 +2046,15 @@ function NoteDocumentEditor({
                   <div className="flex items-center gap-1.5">
                     <span className="text-slate-400 font-medium flex items-center gap-1">
                       <User size={11} />
-                      <span>客户对接人</span>
+                      <span>{tr('客户对接人', 'Stakeholder')}</span>
                     </span>
                     <input
                       type="text"
-                      aria-label="客户对接人"
+                      aria-label={tr('客户对接人', 'Stakeholder')}
                       value={stakeholderDraft}
                       onChange={(e) => setStakeholderDraft(e.target.value)}
                       onBlur={handleStakeholderBlur}
-                      placeholder="如：采购部王总"
+                      placeholder={tr('如：采购部王总', 'e.g. Procurement Lead')}
                       className="w-28 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-600"
                     />
                   </div>
@@ -1955,11 +2063,11 @@ function NoteDocumentEditor({
                   <div className="flex items-center gap-1.5">
                     <span className="text-slate-400 font-medium flex items-center gap-1">
                       <Calendar size={11} />
-                      <span>沟通日期</span>
+                      <span>{tr('沟通日期', 'Meeting Date')}</span>
                     </span>
                     <input
                       type="date"
-                      aria-label="沟通日期"
+                      aria-label={tr('沟通日期', 'Meeting date')}
                       value={node.meetingDate || node.updatedAt.slice(0, 10)}
                       onChange={(e) =>
                         updateNoteMeta(projectId, node.id, { meetingDate: e.target.value })
@@ -1971,21 +2079,24 @@ function NoteDocumentEditor({
                   {/* Opt-in sharing to viewer links */}
                   <label
                     className="flex items-center gap-1.5 cursor-pointer"
-                    title="开启后，发布在线演示时本笔记会以只读形式出现在演示端（关联页面的「需求说明」中）。默认不外发。"
+                    title={tr(
+                      '开启后，发布在线演示时本笔记会以只读形式出现在演示端（关联页面的「需求说明」中）。默认不外发。',
+                      'When enabled, this note is included read-only in published viewer links under linked pages. Private by default.'
+                    )}
                   >
                     <input
                       type="checkbox"
-                      aria-label="允许外发到演示端"
+                      aria-label={tr('允许外发到演示端', 'Share in published viewer')}
                       checked={node.shareable === true}
                       onChange={(e) => updateNoteMeta(projectId, node.id, { shareable: e.target.checked })}
                     />
-                    <span className="text-slate-400 font-medium">外发到演示端</span>
+                    <span className="text-slate-400 font-medium">{tr('外发到演示端', 'Share in Viewer')}</span>
                     {node.shareable ? (
-                      <span className="px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-medium">
-                        客户可见
+                      <span className="px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-medium whitespace-nowrap">
+                        {tr('客户可见', 'Client visible')}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-slate-400">仅内部</span>
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap">{tr('仅内部', 'Internal only')}</span>
                     )}
                   </label>
                 </div>
@@ -1994,7 +2105,7 @@ function NoteDocumentEditor({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-slate-400 font-medium min-w-[64px] flex items-center gap-1">
                     <Tag size={11} />
-                    <span>分类标签</span>
+                    <span>{tr('分类标签', 'Tags')}</span>
                   </span>
                   {node.tags.map((tag) => (
                     <span
@@ -2003,10 +2114,10 @@ function NoteDocumentEditor({
                         tag
                       )}`}
                     >
-                      <span>{tag}</span>
+                      <span>{td(tag)}</span>
                       <button
                         type="button"
-                        aria-label={`移除标签${tag}`}
+                        aria-label={tr(`移除标签${tag}`, `Remove tag ${tag}`)}
                         onClick={() => handleToggleTag(tag)}
                         className="opacity-60 hover:opacity-100 cursor-pointer"
                       >
@@ -2022,13 +2133,13 @@ function NoteDocumentEditor({
                       className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-600 hover:border-blue-400 hover:text-blue-600 cursor-pointer transition"
                     >
                       <Plus size={10} />
-                      <span>添加标签</span>
+                      <span>{tr('添加标签', 'Add Tag')}</span>
                     </button>
 
                     {showTagPopover && (
                       <div className="absolute left-0 top-full mt-1.5 w-64 rounded-xl border border-slate-200 bg-white shadow-xl p-2.5 z-50 space-y-2">
                         <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                          <span>选择或新建标签</span>
+                          <span>{tr('选择或新建标签', 'Select or Create Tag')}</span>
                           <button
                             type="button"
                             onClick={() => setShowTagPopover(false)}
@@ -2040,6 +2151,7 @@ function NoteDocumentEditor({
                         <div className="flex flex-wrap gap-1">
                           {NOTE_PRESET_TAGS.map((preset) => {
                             const active = node.tags.includes(preset.label);
+                            const displayTag = td(preset.label);
                             return (
                               <button
                                 key={preset.label}
@@ -2051,7 +2163,7 @@ function NoteDocumentEditor({
                                     : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                                 }`}
                               >
-                                {active ? `✓ ${preset.label}` : preset.label}
+                                {active ? `✓ ${displayTag}` : displayTag}
                               </button>
                             );
                           })}
@@ -2061,15 +2173,15 @@ function NoteDocumentEditor({
                             type="text"
                             value={customTagInput}
                             onChange={(e) => setCustomTagInput(e.target.value)}
-                            placeholder="输入自定义标签回车..."
+                            placeholder={tr('输入自定义标签回车...', 'Custom tag + Enter...')}
                             maxLength={24}
-                            className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] focus:outline-none focus:border-blue-600"
+                            className="flex-1 min-w-0 rounded-lg border border-slate-200 px-2 py-1 text-[11px] focus:outline-none focus:border-blue-600"
                           />
                           <button
                             type="submit"
-                            className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-medium cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-medium whitespace-nowrap cursor-pointer"
                           >
-                            添加
+                            {tr('添加', 'Add')}
                           </button>
                         </form>
                       </div>
@@ -2086,17 +2198,19 @@ function NoteDocumentEditor({
             {slashOpen && (
               <div
                 role="listbox"
-                aria-label="斜杠块级命令菜单"
+                aria-label={tr('斜杠块级命令菜单', 'Slash block command menu')}
                 style={floatingMenuStyle()}
                 onMouseDown={(e) => e.preventDefault()}
                 className="rounded-2xl border border-slate-200 bg-white shadow-2xl p-2 w-80 max-w-full z-40 space-y-1"
               >
                 <div className="px-2.5 py-1 flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase">
-                  <span>选择要插入的内容块 {slashQuery && `· "${slashQuery}"`}</span>
+                  <span className="truncate">
+                    {tr('选择要插入的内容块', 'Insert Block')} {slashQuery && `· "${slashQuery}"`}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setSlashOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="text-slate-400 hover:text-slate-600 shrink-0 cursor-pointer"
                   >
                     <X size={12} />
                   </button>
@@ -2104,7 +2218,7 @@ function NoteDocumentEditor({
                 <div className="max-h-64 overflow-y-auto space-y-0.5">
                   {filteredSlashCommands.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs text-slate-400">
-                      无匹配的块级命令
+                      {tr('无匹配的块级命令', 'No matching block commands')}
                     </p>
                   ) : (
                     filteredSlashCommands.map((item, idx) => {
@@ -2148,17 +2262,19 @@ function NoteDocumentEditor({
             {mentionOpen && (
               <div
                 role="listbox"
-                aria-label="引用工程页面与数据表菜单"
+                aria-label={tr('引用工程页面与数据表菜单', 'Mention project pages and database tables')}
                 style={floatingMenuStyle()}
                 onMouseDown={(e) => e.preventDefault()}
                 className="rounded-2xl border border-slate-200 bg-white shadow-2xl p-2 w-80 max-w-full z-40 space-y-1"
               >
                 <div className="px-2.5 py-1 flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase">
-                  <span>@ 引用工程页面或物理表 {mentionQuery && `· "${mentionQuery}"`}</span>
+                  <span className="truncate">
+                    {tr('@ 引用工程页面或物理表', '@ Mention Page or Table')} {mentionQuery && `· "${mentionQuery}"`}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setMentionOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="text-slate-400 hover:text-slate-600 shrink-0 cursor-pointer"
                   >
                     <X size={12} />
                   </button>
@@ -2166,7 +2282,7 @@ function NoteDocumentEditor({
                 <div className="max-h-60 overflow-y-auto space-y-0.5">
                   {filteredMentions.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs text-slate-400">
-                      未找到匹配的页面或数据表
+                      {tr('未找到匹配的页面或数据表', 'No matching pages or tables found')}
                     </p>
                   ) : (
                     filteredMentions.map((item, idx) => {
@@ -2239,7 +2355,7 @@ function NoteDocumentEditor({
                 />
               ) : (
                 <textarea
-                  aria-label="笔记正文编辑器"
+                  aria-label={tr('笔记正文编辑器', 'Note body editor')}
                   value={node.content}
                   onChange={(e) => updateNoteContent(projectId, node.id, e.target.value)}
                   className="w-full min-h-[360px] rounded-xl border border-slate-200 p-4 text-sm text-slate-800 focus:outline-none focus:border-blue-600"
@@ -2252,30 +2368,33 @@ function NoteDocumentEditor({
         {/* Right Collapsible Document Outline (TOC) — hidden when AI Assistant panel is docked */}
         {showOutline && !assistant && (
           <aside
-            aria-label="笔记大纲目录"
+            aria-label={tr('笔记大纲目录', 'Note table of contents')}
             className="w-56 shrink-0 border-l border-slate-200 bg-slate-50/40 p-3 overflow-y-auto hidden lg:flex flex-col justify-between select-none"
           >
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-1">
-                <span>文档大纲 (TOC)</span>
-                <span className="font-mono text-[10px] text-slate-400">
+            <div className="space-y-2.5 min-w-0">
+              <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-1 min-w-0">
+                <span className="truncate">{tr('文档大纲 (TOC)', 'Outline (TOC)')}</span>
+                <span className="font-mono text-[10px] text-slate-400 tabular-nums shrink-0">
                   {headings.length}
                 </span>
               </div>
 
               {headings.length === 0 ? (
-                <p className="px-1 py-4 text-[11px] leading-5 text-slate-400">
-                  在文档中使用 H1 / H2 / H3 标题，此处将自动生成结构化章节导航。
+                <p className="px-1 py-4 text-[11px] leading-5 text-slate-400 break-words">
+                  {tr(
+                    '在文档中使用 H1 / H2 / H3 标题，此处将自动生成结构化章节导航。',
+                    'Use H1 / H2 / H3 headings in the note to auto-generate a section outline here.'
+                  )}
                 </p>
               ) : (
-                <nav className="space-y-0.5">
+                <nav className="space-y-0.5 min-w-0">
                   {headings.map((h) => (
                     <button
                       key={`${h.index}-${h.text}`}
                       type="button"
                       onClick={() => scrollToHeading(h.index)}
                       style={{ paddingLeft: `${(h.level - 1) * 10 + 8}px` }}
-                      className="w-full text-left py-1 pr-2 rounded-md text-xs text-slate-600 hover:bg-slate-200/60 hover:text-blue-600 truncate cursor-pointer transition block"
+                      className="w-full min-w-0 text-left py-1 pr-2 rounded-md text-xs text-slate-600 hover:bg-slate-200/60 hover:text-blue-600 truncate cursor-pointer transition block"
                       title={h.text}
                     >
                       {h.text}
@@ -2285,15 +2404,26 @@ function NoteDocumentEditor({
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white p-2.5 space-y-1 text-[11px] text-slate-500">
-              <div className="font-semibold text-slate-700 flex items-center gap-1">
-                <BookOpen size={12} className="text-blue-600" />
-                <span>实战效率技巧</span>
+            <div className="rounded-xl border border-slate-200/80 bg-white p-2.5 space-y-1 text-[11px] text-slate-500 min-w-0 break-words">
+              <div className="font-semibold text-slate-700 flex items-center gap-1 min-w-0">
+                <BookOpen size={12} className="text-blue-600 shrink-0" />
+                <span className="truncate">{tr('实战效率技巧', 'Quick Shortcuts')}</span>
               </div>
-              <p>· 输入 <code className="px-1 rounded bg-slate-100">/</code> 唤起块级命令</p>
-              <p>· 输入 <code className="px-1 rounded bg-slate-100">@</code> 引用页面或数据表</p>
-              <p>· 按 <code className="px-1 rounded bg-slate-100">Cmd/Ctrl+V</code> 直接粘贴截图</p>
-              <p>· 划词选中段落可一键转为页面需求便签</p>
+              {isEn ? (
+                <>
+                  <p>· Type <code className="px-1 rounded bg-slate-100">/</code> for block commands</p>
+                  <p>· Type <code className="px-1 rounded bg-slate-100">@</code> to mention pages/tables</p>
+                  <p>· Press <code className="px-1 rounded bg-slate-100">Cmd/Ctrl+V</code> to paste screenshots</p>
+                  <p>· Select text to convert into a page sticky pin</p>
+                </>
+              ) : (
+                <>
+                  <p>· 输入 <code className="px-1 rounded bg-slate-100">/</code> 唤起块级命令</p>
+                  <p>· 输入 <code className="px-1 rounded bg-slate-100">@</code> 引用页面或数据表</p>
+                  <p>· 按 <code className="px-1 rounded bg-slate-100">Cmd/Ctrl+V</code> 直接粘贴截图</p>
+                  <p>· 划词选中段落可一键转为页面需求便签</p>
+                </>
+              )}
             </div>
           </aside>
         )}
@@ -2323,7 +2453,7 @@ function NoteDocumentEditor({
             setShowStickySummary(false);
             if (!editor) return;
             editor.chain().focus().insertContent(html).run();
-            showNotice(`已插入 ${count} 条画布批注，启用中的批注已生成待办。`, 3000);
+            showNotice(tr(`已插入 ${count} 条画布批注，启用中的批注已生成待办。`, `Inserted ${count} canvas annotation(s); active items added as to-dos.`), 3000);
           }}
         />
       )}
@@ -2338,7 +2468,7 @@ function NoteDocumentEditor({
           onConverted={(targetPageId) => {
             setShowStickyConvertModal(false);
             setSelectedExcerpt('');
-            showNotice('已将该段需求添加为原型页面便签！', 3000);
+            showNotice(tr('已将该段需求添加为原型页面便签！', 'Added excerpt as a prototype page sticky note!'), 3000);
             if (targetPageId) {
               // Ensure the page is also linked to this note if not already
               try {
@@ -2375,6 +2505,7 @@ function ConvertExcerptToStickyModal({
     targetWidgetName?: string
   ) => void;
 }) {
+  const { tr } = useI18n();
   const data = useProtoStore((s) => s.projectNotes);
   const activePageId = useProtoStore((s) => s.activePageId);
   const layout = usePageStore();
@@ -2399,7 +2530,7 @@ function ConvertExcerptToStickyModal({
   const [targetPageId, setTargetPageId] = useState<string>(
     relatedPageIds[0] || activePageId || (pages[0]?.pageId ?? '')
   );
-  const [targetRegionName, setTargetRegionName] = useState('客户沟通需求便签');
+  const [targetRegionName, setTargetRegionName] = useState(() => tr('客户沟通需求便签', 'Requirement Note Pin'));
   const [textDraft, setTextDraft] = useState(excerpt.trim());
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -2408,8 +2539,8 @@ function ConvertExcerptToStickyModal({
     addStickyRuleToWidget(
       targetPageId,
       'root',
-      `【来自笔记《${note.title}》】${textDraft.trim()}`,
-      targetRegionName.trim() || '页面全局区域'
+      tr(`【来自笔记《${note.title}》】${textDraft.trim()}`, `[From Note "${note.title}"] ${textDraft.trim()}`),
+      targetRegionName.trim() || tr('页面全局区域', 'Page Global Area')
     );
     onConverted(targetPageId);
   };
@@ -2419,25 +2550,25 @@ function ConvertExcerptToStickyModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="将选中段落转为页面需求便签"
+        aria-label={tr('将选中段落转为页面需求便签', 'Convert selected excerpt into page sticky note')}
         className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden text-xs"
       >
         <header className="px-4 py-3 bg-amber-50/90 border-b border-amber-200/80 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-semibold text-amber-950">
-            <Pin size={15} className="text-amber-600" />
-            <span>将笔记段落转为原型页面便签</span>
+          <div className="flex items-center gap-2 font-semibold text-amber-950 min-w-0">
+            <Pin size={15} className="text-amber-600 shrink-0" />
+            <span className="truncate">{tr('将笔记段落转为原型页面便签', 'Convert Excerpt to Page Sticky Pin')}</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 cursor-pointer"
+            className="text-slate-400 hover:text-slate-700 shrink-0 cursor-pointer"
           >
             <X size={15} />
           </button>
         </header>
         <form onSubmit={handleSubmit} className="p-4 space-y-3.5">
           <label className="block font-medium text-slate-700">
-            目标原型页面
+            {tr('目标原型页面', 'Target Prototype Page')}
             <select
               value={targetPageId}
               onChange={(e) => setTargetPageId(e.target.value)}
@@ -2451,17 +2582,17 @@ function ConvertExcerptToStickyModal({
             </select>
           </label>
           <label className="block font-medium text-slate-700">
-            便签挂载位置 / 模块说明
+            {tr('便签挂载位置 / 模块说明', 'Target Region / Section Label')}
             <input
               type="text"
               value={targetRegionName}
               onChange={(e) => setTargetRegionName(e.target.value)}
-              placeholder="例如：主表工具栏 / 审批弹框"
+              placeholder={tr('例如：主表工具栏 / 审批弹框', 'e.g. Main Table Toolbar / Approval Modal')}
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-800"
             />
           </label>
           <label className="block font-medium text-slate-700">
-            便签需求内容
+            {tr('便签需求内容', 'Sticky Rule Content')}
             <textarea
               rows={4}
               required
@@ -2476,14 +2607,14 @@ function ConvertExcerptToStickyModal({
               onClick={onClose}
               className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
-              取消
+              {tr('取消', 'Cancel')}
             </button>
             <button
               type="submit"
               disabled={!targetPageId}
               className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold cursor-pointer disabled:opacity-40"
             >
-              生成页面需求便签
+              {tr('生成页面需求便签', 'Create Page Sticky Pin')}
             </button>
           </div>
         </form>
@@ -2503,8 +2634,9 @@ export function DockedNoteSidecar({
   projectId: string;
   noteId: string;
 }) {
+  const { isEn, tr, td } = useI18n();
   const data = useProtoStore((s) => s.projectNotes);
-  const { activePageId, setDockedNoteId, setViewMode } = useProtoStore();
+  const { activePageId, setDockedNoteId } = useProtoStore();
   const layout = usePageStore();
 
   const allNotes = useMemo(
@@ -2557,7 +2689,7 @@ export function DockedNoteSidecar({
       const title = uniqueNoteTitle(
         data,
         null,
-        `${pageTitle ? `${pageTitle} · ` : ''}客户沟通速记`
+        tr(`${pageTitle ? `${pageTitle} · ` : ''}客户沟通速记`, `${pageTitle ? `${pageTitle} · ` : ''}Quick Discovery Notes`)
       );
       const id = createNoteNode(projectId, 'note', title, null, {
         icon: '🤝',
@@ -2576,13 +2708,13 @@ export function DockedNoteSidecar({
       setSidecarError('');
       setDockedNoteId(id);
     } catch (err) {
-      setSidecarError(err instanceof Error ? err.message : '新建速记失败');
+      setSidecarError(err instanceof Error ? err.message : tr('新建速记失败', 'Failed to create quick note'));
     }
   };
 
   return (
     <aside
-      aria-label="画布分屏伴随笔记"
+      aria-label={tr('画布分屏伴随笔记', 'Docked companion note')}
       className="pf-notes-surface w-[360px] shrink-0 border-l border-slate-200 bg-white flex flex-col h-full z-30 shadow-lg select-none"
     >
       {/* Sidecar Header */}
@@ -2591,14 +2723,14 @@ export function DockedNoteSidecar({
           <div className="flex items-center gap-1.5 min-w-0">
             <BookOpenText size={14} className="text-blue-600 shrink-0" />
             <span className="text-xs font-semibold text-slate-900 truncate">
-              伴随需求笔记 (分屏对照)
+              {tr('伴随需求笔记 (分屏对照)', 'Companion Note (Split View)')}
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {currentNote && (
               <button
                 type="button"
-                title="切换到全屏笔记工作台"
+                title={tr('切换到全屏笔记工作台', 'Switch to full-screen Notes workspace')}
                 onClick={() => {
                   openNoteNode(projectId, currentNote.id);
                 }}
@@ -2609,8 +2741,8 @@ export function DockedNoteSidecar({
             )}
             <button
               type="button"
-              aria-label="关闭分屏伴随笔记"
-              title="关闭分屏笔记"
+              aria-label={tr('关闭分屏伴随笔记', 'Close docked companion note')}
+              title={tr('关闭分屏笔记', 'Close split note')}
               onClick={() => setDockedNoteId(null)}
               className="p-1 rounded-md text-slate-400 hover:bg-white hover:text-slate-700 cursor-pointer transition"
             >
@@ -2622,14 +2754,14 @@ export function DockedNoteSidecar({
         {/* Note Switcher + New Quick Note */}
         <div className="flex items-center gap-1.5">
           <select
-            aria-label="选择伴随笔记"
+            aria-label={tr('选择伴随笔记', 'Select companion note')}
             value={currentNote?.id || ''}
             onChange={(e) => setDockedNoteId(e.target.value)}
             className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
           >
-            {!allNotes.length && <option value="">暂无笔记</option>}
+            {!allNotes.length && <option value="">{tr('暂无笔记', 'No notes yet')}</option>}
             {pageLinkedNotes.length > 0 && (
-              <optgroup label="📌 当前页面关联笔记">
+              <optgroup label={tr('📌 当前页面关联笔记', '📌 Linked to Current Page')}>
                 {pageLinkedNotes.map((n) => (
                   <option key={`linked-${n.id}`} value={n.id}>
                     {n.icon} {n.title}
@@ -2637,7 +2769,7 @@ export function DockedNoteSidecar({
                 ))}
               </optgroup>
             )}
-            <optgroup label="📓 全部项目笔记">
+            <optgroup label={tr('📓 全部项目笔记', '📓 All Project Notes')}>
               {allNotes.map((n) => (
                 <option key={n.id} value={n.id}>
                   {n.icon} {n.title}
@@ -2648,11 +2780,11 @@ export function DockedNoteSidecar({
           <button
             type="button"
             onClick={handleQuickCreateForActivePage}
-            title="为当前页面新建速记笔记"
-            className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 shrink-0 cursor-pointer"
+            title={tr('为当前页面新建速记笔记', 'Create a quick note linked to the current page')}
+            className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus size={12} />
-            <span>速记</span>
+            <span>{tr('速记', 'Quick Note')}</span>
           </button>
         </div>
         {sidecarError && (
@@ -2660,10 +2792,10 @@ export function DockedNoteSidecar({
             role="alert"
             className="flex items-center justify-between gap-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-700"
           >
-            <span className="min-w-0 truncate" title={sidecarError}>{sidecarError}</span>
+            <span className="min-w-0 truncate" title={td(sidecarError)}>{td(sidecarError)}</span>
             <button
               type="button"
-              aria-label="关闭提示"
+              aria-label={tr('关闭提示', 'Dismiss alert')}
               onClick={() => setSidecarError('')}
               className="shrink-0 cursor-pointer text-rose-500 hover:text-rose-700"
             >
@@ -2677,21 +2809,24 @@ export function DockedNoteSidecar({
       {!currentNote ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
           <p className="text-xs text-slate-500">
-            当前工程还没有笔记，点击下方按钮立即边看原型边记客户需求。
+            {tr(
+              '当前工程还没有笔记，点击下方按钮立即边看原型边记客户需求。',
+              'No notes in this project yet — click below to start capturing requirements beside the canvas.'
+            )}
           </p>
           <button
             type="button"
             onClick={handleQuickCreateForActivePage}
             className="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium cursor-pointer"
           >
-            + 新建当前页伴随笔记
+            {tr('+ 新建当前页伴随笔记', '+ New Note for Current Page')}
           </button>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-3 select-text">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-base">{currentNote.icon}</span>
+              <span className="text-base shrink-0">{currentNote.icon}</span>
               <SidecarTitleInput
                 key={currentNote.id}
                 projectId={projectId}
@@ -2701,7 +2836,7 @@ export function DockedNoteSidecar({
               />
             </div>
             <select
-              aria-label="需求状态"
+              aria-label={tr('需求状态', 'Requirement status')}
               value={currentNote.status || 'draft'}
               onChange={(e) => {
                 try {
@@ -2709,14 +2844,14 @@ export function DockedNoteSidecar({
                     status: e.target.value as NoteRequirementStatus,
                   });
                 } catch (err) {
-                  setSidecarError(err instanceof Error ? err.message : '状态未保存');
+                  setSidecarError(err instanceof Error ? err.message : tr('状态未保存', 'Failed to save status'));
                 }
               }}
               className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 shrink-0"
             >
               {NOTE_STATUS_OPTIONS.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.label}
+                  {isEn ? NOTE_STATUS_EN[s.id] ?? td(s.label) : s.label}
                 </option>
               ))}
             </select>
@@ -2764,6 +2899,7 @@ function SidecarTitleInput({
   title: string;
   onError: (message: string) => void;
 }) {
+  const { tr, td } = useI18n();
   const [draft, setDraft] = useState(title);
   const committedRef = useRef(title);
   useEffect(() => {
@@ -2783,14 +2919,14 @@ function SidecarTitleInput({
       onError('');
     } catch (err) {
       setDraft(committedRef.current);
-      onError(`标题未保存：${err instanceof Error ? err.message : '名称无效'}`);
+      onError(tr(`标题未保存：${err instanceof Error ? td(err.message) : '名称无效'}`, `Title not saved: ${err instanceof Error ? td(err.message) : 'Invalid name'}`));
     }
   };
 
   return (
     <input
       type="text"
-      aria-label="伴随笔记标题"
+      aria-label={tr('伴随笔记标题', 'Companion note title')}
       value={draft}
       maxLength={100}
       onChange={(e) => setDraft(e.target.value)}
@@ -2802,7 +2938,7 @@ function SidecarTitleInput({
           e.currentTarget.blur();
         }
       }}
-      className="text-sm font-bold text-slate-900 bg-transparent border-none focus:outline-none truncate"
+      className="min-w-0 text-sm font-bold text-slate-900 bg-transparent border-none focus:outline-none truncate"
     />
   );
 }
@@ -2826,6 +2962,7 @@ function RichTiptapMount({
   onMentionTrigger: (open: boolean, query: string) => void;
   onSaveError?: (message: string) => void;
 }) {
+  const { locale, td } = useI18n();
   // The last HTML this editor wrote to (or loaded from) the store. Any other store value
   // for this note is an external change (global to-do toggle, template, AI…) to pull in.
   const lastSyncedRef = useRef(initialContent);
@@ -2842,15 +2979,15 @@ function RichTiptapMount({
     for (const file of files) {
       try {
         const src = registerNoteImage(projectId, await prepareNoteImage(file), file.name);
-        const node = view.state.schema.nodes.image?.create({ src, alt: alt ?? (file.name || '需求参考图片') });
+        const node = view.state.schema.nodes.image?.create({ src, alt: alt ?? (file.name || tr('需求参考图片', 'Reference image')) });
         if (!node || view.isDestroyed) continue;
-        const tr =
+        const pmTr =
           pos !== undefined && pos <= view.state.doc.content.size
             ? view.state.tr.insert(pos, node)
             : view.state.tr.replaceSelectionWith(node);
-        view.dispatch(tr);
+        view.dispatch(pmTr);
       } catch (err) {
-        onSaveErrorRef.current?.(`图片未插入：${err instanceof Error ? err.message : '读取失败'}`);
+        onSaveErrorRef.current?.(tr(`图片未插入：${err instanceof Error ? td(err.message) : '读取失败'}`, `Image not inserted: ${err instanceof Error ? td(err.message) : 'Failed to read'}`));
       }
     }
   };
@@ -2866,8 +3003,11 @@ function RichTiptapMount({
           heading: { levels: [1, 2, 3] },
         }),
         Placeholder.configure({
-          placeholder:
-            '输入内容，输入 "/" 唤起块级命令，输入 "@" 引用页面或物理表，按 Cmd/Ctrl+V 直接粘贴截图...',
+          placeholder: () =>
+            tr(
+              '输入内容，输入 "/" 唤起块级命令，输入 "@" 引用页面或物理表，按 Cmd/Ctrl+V 直接粘贴截图...',
+              'Type "/" for block commands, "@" to mention pages or tables, or Cmd/Ctrl+V to paste screenshots...'
+            ),
         }),
         TaskList,
         TaskItem.configure({
@@ -2891,7 +3031,7 @@ function RichTiptapMount({
           const files = Array.from(event.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'));
           if (!files.length) return false;
           event.preventDefault();
-          void insertImageFiles(view, files, '粘贴的需求截图');
+          void insertImageFiles(view, files, tr('粘贴的需求截图', 'Pasted screenshot'));
           return true;
         },
         handleDrop: (view, event) => {
@@ -2919,7 +3059,7 @@ function RichTiptapMount({
         try {
           updateNoteContent(projectId, noteId, html);
         } catch (err) {
-          onSaveError?.(err instanceof Error ? err.message : '笔记保存失败');
+          onSaveError?.(err instanceof Error ? err.message : tr('笔记保存失败', 'Failed to save note'));
         }
 
         const { selection } = ed.state;
@@ -2941,6 +3081,12 @@ function RichTiptapMount({
     },
     [projectId, noteId]
   );
+
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      editor.view.dispatch(editor.state.tr);
+    }
+  }, [editor, locale]);
 
   useEffect(() => {
     onEditorReady(editor);

@@ -4,11 +4,13 @@ import { ArrowLeft, ArrowRight, BookmarkPlus, Copy, CornerLeftUp, Trash2 } from 
 import type { PropValue, ProtoNode } from '../types';
 import { isActionChain, isNode, isRawExpr } from '../types';
 import { COMPONENT_MAP, OVERLAY_TYPES, FIELD_TYPES, PAGE_ROOT_TYPES } from '../registry/meta';
+import { localizeComponentMeta } from '../registry/localizeMeta';
 import { isChartType } from '../charts/model';
 import { REGISTRY, type CompProps, type RootAttrs } from '../registry/components';
 import { interpolate, usesLiteralLayoutContent, useRuntime, type Scope } from '../runtime/runtime';
 import type { ComponentStickyPinProps } from '../../components/ComponentStickyPin';
 import { FLOW_GRID_CONTAINERS, flowGridSpan, columnSpan, columnWidthLabel, trailingColumnSpace } from './gridLayout';
+import { useI18n } from '../../i18n';
 
 // The editor injects its editable pins. Public rendering has no AI/editor imports.
 const StickyPinContext = createContext<React.ComponentType<ComponentStickyPinProps>>(() => null);
@@ -69,6 +71,7 @@ export interface RenderOptions {
 }
 
 export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live?: boolean }> = ({ node, options, live }) => {
+  const { locale, tr } = useI18n();
   const ComponentStickyPin = useContext(StickyPinContext);
   const renderAnnotation = useContext(NodeAnnotationContext);
   const rt = useRuntime();
@@ -109,7 +112,8 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   if (OVERLAY_TYPES.has(node.type) && !live && !options?.staticOverlay) return null;
 
   const Impl = REGISTRY[node.type];
-  const meta = COMPONENT_MAP[node.type];
+  const rawMeta = COMPONENT_MAP[node.type];
+  const meta = rawMeta ? localizeComponentMeta(rawMeta, locale) : undefined;
   const literalText = node.children
       .filter((c) => !isNode(c))
       .map((c) => (c as { value: string }).value)
@@ -226,7 +230,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   if (!Impl) {
     return (
       <div {...root} className="my-1 p-2 rounded border border-dashed border-rose-300 bg-rose-50 text-[11px] text-rose-600 col-span-12">
-        未知组件 &lt;{node.type}&gt;：组件库中没有该组件
+        {tr(`未知组件 <${node.type}>：组件库中没有该组件`, `Unknown component <${node.type}>: not found in registry`)}
       </div>
     );
   }
@@ -315,6 +319,10 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
       parentNode?.props.align === 'end'
   );
 
+  const parentTitle = parentNode
+    ? (COMPONENT_MAP[parentNode.type] ? localizeComponentMeta(COMPONENT_MAP[parentNode.type], locale).title : parentNode.type)
+    : '';
+
   return (
     <div {...root} className={wrapperCls} style={wrapperStyle}>
       {renderAnnotation?.(node, rt.pageId)}
@@ -337,10 +345,10 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
               type="button"
               onClick={() => design.onSelectParent?.(node.pfId)}
               className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-slate-300 hover:text-white hover:bg-slate-700/80 transition cursor-pointer"
-              title={`选中父容器 (${COMPONENT_MAP[parentNode.type]?.title ?? parentNode.type})`}
+              title={tr(`选中父容器 (${parentTitle})`, `Select parent (${parentTitle})`)}
             >
               <CornerLeftUp className="w-2.5 h-2.5" />
-              <span>{parentNode.type === 'Col' ? `所在列 ${columnWidthLabel(columnSpan(parentNode))}` : '父级'}</span>
+              <span>{parentNode.type === 'Col' ? tr(`所在列 ${columnWidthLabel(columnSpan(parentNode))}`, `Col ${columnWidthLabel(columnSpan(parentNode))}`) : tr('父级', 'Parent')}</span>
             </button>
           )}
 
@@ -354,9 +362,9 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                 className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                   !node.props.alignRight ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                 }`}
-                title="紧挨左侧元素排列"
+                title={tr('紧挨左侧元素排列', 'Keep inline beside previous item')}
               >
-                ↔ 紧挨
+                ↔ {tr('紧挨', 'Inline')}
               </button>
               <button
                 type="button"
@@ -364,25 +372,25 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                 className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                   node.props.alignRight ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                 }`}
-                title="将此组件及后续组件推到工具栏最右侧"
+                title={tr('将此组件及后续组件推到工具栏最右侧', 'Push this and subsequent items to the right')}
               >
-                ⇥ 靠右推
+                ⇥ {tr('靠右推', 'Push Right')}
               </button>
               {FIELD_CONTROL_TYPES.has(node.type) && (
                 <>
                   <span className="w-px h-3 bg-slate-700 mx-0.5" />
                   {(
                     [
-                      { k: 'sm', label: '窄' },
-                      { k: '', label: '中' },
-                      { k: 'lg', label: '宽' },
+                      { k: 'sm', label: tr('窄', 'S') },
+                      { k: '', label: tr('中', 'M') },
+                      { k: 'lg', label: tr('宽', 'L') },
                     ] as const
                   ).map((cw) => {
                     const cur = String(node.props.controlWidth ?? '');
                     const active = cur === cw.k;
                     return (
                       <button
-                        key={cw.label}
+                        key={cw.k || 'md'}
                         type="button"
                         onClick={() =>
                           design.onUpdateProp?.(node.pfId, 'controlWidth', cw.k || undefined)
@@ -390,7 +398,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                         className={`px-1 py-0.5 rounded transition cursor-pointer ${
                           active ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                         }`}
-                        title={`输入框宽度：${cw.label}`}
+                        title={tr(`输入框宽度：${cw.label}`, `Input width: ${cw.label}`)}
                       >
                         {cw.label}
                       </button>
@@ -407,10 +415,10 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
               <span className="w-px h-3 bg-slate-700 mx-0.5" />
               {(
                 [
-                  { k: 'left', label: '靠左' },
-                  { k: 'center', label: '居中' },
-                  { k: 'right', label: '靠右' },
-                  { k: 'between', label: '两端' },
+                  { k: 'left', label: tr('靠左', 'Left') },
+                  { k: 'center', label: tr('居中', 'Center') },
+                  { k: 'right', label: tr('靠右', 'Right') },
+                  { k: 'between', label: tr('两端', 'Between') },
                 ] as const
               ).map((al) => {
                 const cur = String(node.props.align ?? 'left');
@@ -441,7 +449,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
           {(node.type === 'Card' || node.type === 'Form' || node.type === 'QueryForm') && (
             <>
               <span className="w-px h-3 bg-slate-700 mx-0.5" />
-              <span className="text-slate-400 px-0.5">内部列数:</span>
+              <span className="text-slate-400 px-0.5">{tr('内部列数:', 'Cols:')}</span>
               {[1, 2, 3, 4].map((c) => {
                 const curCols = Number(node.props.cols ?? (node.type === 'Card' ? 1 : node.type === 'Form' ? 2 : 3));
                 const active = curCols === c;
@@ -457,20 +465,20 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                     className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                       active ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                     }`}
-                    title={`将容器内元素按每行 ${c} 列整齐排布`}
+                    title={tr(`将容器内元素按每行 ${c} 列整齐排布`, `Arrange items in ${c} column(s) per row`)}
                   >
-                    {c}列
+                    {tr(`${c}列`, `${c}c`)}
                   </button>
                 );
               })}
               {(node.type === 'Form' || node.type === 'QueryForm') && (
                 <>
                   <span className="w-px h-3 bg-slate-700 mx-0.5" />
-                  <span className="text-slate-400 px-0.5">标签:</span>
+                  <span className="text-slate-400 px-0.5">{tr('标签:', 'Labels:')}</span>
                   {(
                     [
-                      { k: 'horizontal', label: '水平' },
-                      { k: 'vertical', label: '垂直' },
+                      { k: 'horizontal', label: tr('水平', 'Horiz') },
+                      { k: 'vertical', label: tr('垂直', 'Vert') },
                     ] as const
                   ).map((ly) => {
                     const cur =
@@ -488,7 +496,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                         className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                           cur === ly.k ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                         }`}
-                        title={`标签排列：${ly.label}`}
+                        title={tr(`标签排列：${ly.label}`, `Label layout: ${ly.label}`)}
                       >
                         {ly.label}
                       </button>
@@ -511,9 +519,9 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                 className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                   node.props.striped ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                 }`}
-                title="切换斑马纹隔行变色"
+                title={tr('切换斑马纹隔行变色', 'Toggle striped rows')}
               >
-                斑马纹
+                {tr('斑马纹', 'Striped')}
               </button>
               <button
                 type="button"
@@ -523,9 +531,9 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                 className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                   node.props.bordered ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                 }`}
-                title="切换单元格纵向网格边框"
+                title={tr('切换单元格纵向网格边框', 'Toggle vertical cell borders')}
               >
-                网格边框
+                {tr('网格边框', 'Bordered')}
               </button>
               <button
                 type="button"
@@ -539,9 +547,9 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                 className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                   node.props.showSummary ? 'bg-amber-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                 }`}
-                title="切换底部合计行"
+                title={tr('切换底部合计行', 'Toggle summary row')}
               >
-                合计行
+                {tr('合计行', 'Summary')}
               </button>
             </>
           )}
@@ -550,17 +558,17 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
           {inFlowGrid && (
             <>
               <span className="w-px h-3 bg-slate-700 mx-0.5" />
-              <span className="text-slate-400 px-0.5">{parentNode?.type === 'Col' ? '列内:' : '占宽:'}</span>
+              <span className="text-slate-400 px-0.5">{parentNode?.type === 'Col' ? tr('列内:', 'In Col:') : tr('占宽:', 'Width:')}</span>
               {(
                 [
                   ...(FIELD_CONTROL_TYPES.has(node.type) || meta?.inline
-                    ? ([{ k: 'auto', label: '紧凑', span: 0 }] as const)
+                    ? ([{ k: 'auto', label: tr('紧凑', 'Auto'), span: 0 }] as const)
                     : []),
                   { k: '1/4', label: '1/4', span: 3 },
                   { k: '1/3', label: '1/3', span: 4 },
                   { k: '1/2', label: '1/2', span: 6 },
                   { k: '2/3', label: '2/3', span: 8 },
-                  { k: 'full', label: '整行', span: 12 },
+                  { k: 'full', label: tr('整行', 'Full'), span: 12 },
                 ] as const
               ).map((opt) => {
                 const active =
@@ -575,9 +583,12 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                     className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                       active ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'
                     }`}
-                    title={`设置组件占${parentNode?.type === 'Col' ? '所在列' : '父容器'}的宽度：${opt.label}；不改变外层布局`}
+                    title={tr(
+                      `设置组件占${parentNode?.type === 'Col' ? '所在列' : '父容器'}的宽度：${opt.label}；不改变外层布局`,
+                      `Set width inside ${parentNode?.type === 'Col' ? 'column' : 'container'}: ${opt.label}`,
+                    )}
                   >
-                    {opt.k === 'full' && parentNode?.type === 'Col' ? '填满本列' : opt.label}
+                    {opt.k === 'full' && parentNode?.type === 'Col' ? tr('填满本列', 'Fill Col') : opt.label}
                   </button>
                 );
               })}
@@ -594,7 +605,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
                   { span: 8, label: '1/3' },
                   { span: 12, label: '1/2' },
                   { span: 16, label: '2/3' },
-                  { span: 24, label: '整行' },
+                  { span: 24, label: tr('整行', 'Full') },
                 ] as const
               ).map((opt) => {
                 const active = Number(node.props.span ?? 12) === opt.span;
@@ -620,15 +631,18 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
               type="button"
               onClick={() => design.onUpdateProp?.(owningColumn.pfId, 'span', columnSpace.nextSpan)}
               className="px-1.5 py-0.5 rounded text-blue-200 hover:bg-slate-700 cursor-pointer"
-              title={`扩展所在列，填满本行右侧空位；列宽调整为${columnWidthLabel(columnSpace.nextSpan)}，其他列保持不变`}
-            >填满右侧</button>
+              title={tr(
+                `扩展所在列，填满本行右侧空位；列宽调整为${columnWidthLabel(columnSpace.nextSpan)}，其他列保持不变`,
+                `Expand column to fill remaining row space (${columnWidthLabel(columnSpace.nextSpan)})`,
+              )}
+            >{tr('填满右侧', 'Fill Right')}</button>
           )}
           <span className="w-px h-3 bg-slate-700 mx-0.5" />
           <button
             type="button"
             onClick={() => design.onMoveStep?.(node.pfId, -1)}
             className="p-0.5 rounded text-slate-300 hover:text-white hover:bg-slate-700 cursor-pointer"
-            title="向前/向上移动"
+            title={tr('向前/向上移动', 'Move previous / up')}
           >
             <ArrowLeft className="w-3 h-3" />
           </button>
@@ -636,7 +650,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
             type="button"
             onClick={() => design.onMoveStep?.(node.pfId, 1)}
             className="p-0.5 rounded text-slate-300 hover:text-white hover:bg-slate-700 cursor-pointer"
-            title="向后/向下移动"
+            title={tr('向后/向下移动', 'Move next / down')}
           >
             <ArrowRight className="w-3 h-3" />
           </button>
@@ -644,7 +658,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
             type="button"
             onClick={() => design.onDuplicate?.(node.pfId)}
             className="p-0.5 rounded text-slate-300 hover:text-white hover:bg-slate-700 cursor-pointer"
-            title="复制组件"
+            title={tr('复制组件', 'Duplicate component')}
           >
             <Copy className="w-3 h-3" />
           </button>
@@ -652,16 +666,16 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
             type="button"
             onClick={() => design.onSaveAsComposite?.(node.pfId)}
             className="px-1.5 py-0.5 rounded bg-violet-600/90 hover:bg-violet-500 text-white font-medium flex items-center gap-0.5 cursor-pointer transition"
-            title="将当前组件/容器块沉淀为可复用的团队业务复合组件"
+            title={tr('将当前组件/容器块沉淀为可复用的团队业务复合组件', 'Save selected component/section as a reusable block')}
           >
             <BookmarkPlus className="w-3 h-3" />
-            <span>沉淀</span>
+            <span>{tr('沉淀', 'Save')}</span>
           </button>
           <button
             type="button"
             onClick={() => design.onDelete?.(node.pfId)}
             className="p-0.5 rounded text-rose-300 hover:text-rose-100 hover:bg-rose-600/80 cursor-pointer"
-            title="删除组件"
+            title={tr('删除组件', 'Delete component')}
           >
             <Trash2 className="w-3 h-3" />
           </button>

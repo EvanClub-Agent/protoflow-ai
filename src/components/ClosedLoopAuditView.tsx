@@ -19,6 +19,7 @@ import { useProjectAnalysis } from './useProjectAnalysis';
 import { isNavigablePage } from '../services/projectAnalysis';
 import { runProjectAi } from '../services/hermesBridge';
 import { useHermesStore } from '../store/useHermesStore';
+import { useI18n } from '../i18n';
 
 export const ClosedLoopAuditView: React.FC = () => {
   const projectId = useProtoStore(s => s.currentProjectMeta.projectId);
@@ -26,6 +27,7 @@ export const ClosedLoopAuditView: React.FC = () => {
 };
 
 function ProjectAudit() {
+  const { tr, td } = useI18n();
   const { project, analysis } = useProjectAnalysis();
   const activePageId = useProtoStore((s) => s.activePageId);
   const dbTables = useProtoStore((s) => s.dbTables);
@@ -91,10 +93,16 @@ function ProjectAudit() {
     setResult(null);
     try {
       const scope = scopeFilter === 'all'
-        ? '当前项目全部页面；请返回全项目完整问题列表'
-        : `仅页面 ${activePageId}；只返回该页面的问题，不返回其他页面的问题。应用时会保留其他页面已有记录`;
+        ? tr('当前项目全部页面；请返回全项目完整问题列表', 'all pages in the current project; return the complete issue list across the project')
+        : tr(
+            `仅页面 ${activePageId}；只返回该页面的问题，不返回其他页面的问题。应用时会保留其他页面已有记录`,
+            `only page ${activePageId}; return issues for this page only, not other pages. Existing records on other pages will be preserved`
+          );
       const response = await runProjectAi(
-        `请检查${scope}。依据实际源码、表结构与需求记录，调用 protoflow_run_closed_loop_audit 写入有证据的结果；该范围没有问题时返回空数组。此次只巡检，禁止修改源码、表或便签。`,
+        tr(
+          `请检查${scope}。依据实际源码、表结构与需求记录，调用 protoflow_run_closed_loop_audit 写入有证据的结果；该范围没有问题时返回空数组。此次只巡检，禁止修改源码、表或便签。`,
+          `Please inspect ${scope}. Based on actual page source, table schemas, and requirement notes, call protoflow_run_closed_loop_audit with evidence-backed findings; return an empty array if no issues exist in scope. Audit only — do not modify source code, tables, or sticky notes.`
+        ),
         { pageId: activePageId, audit: scopeFilter === 'all'
           ? { kind: 'scan', scope: 'project' }
           : { kind: 'scan', scope: 'page', pageId: activePageId } }
@@ -114,7 +122,10 @@ function ProjectAudit() {
     setResult(null);
     try {
       const response = await runProjectAi(
-        `修复巡检问题 ${active.id}「${active.title}」（页面 ${active.pageId}，组件 pfId ${active.targetWidgetId}，表 ID ${active.targetTableId || '无'}）。问题：${active.brokenChainDesc}。选择方案 ${selectedOption.id}：${selectedOption.label} - ${selectedOption.description}。方案需求记录：${selectedOption.stickyPatchText}；表结构说明：${selectedOption.dbPatchSummary}。补充要求：${customInstruction || '无'}。先修改真实关联源码、表结构或需求记录，再调用 protoflow_run_closed_loop_audit 更新该问题；结果数组仅包含 ID 为 ${active.id} 的问题，其他问题由应用保留。修复成功后在该问题记录的 resolvedByOptionId 中记录方案 ID ${selectedOption.id}，customUserAnswer 中保存补充要求。无法修复或没有实际变更时保持 open，不得仅修改状态冒充完成。`,
+        tr(
+          `修复巡检问题 ${active.id}「${active.title}」（页面 ${active.pageId}，组件 pfId ${active.targetWidgetId}，表 ID ${active.targetTableId || '无'}）。问题：${active.brokenChainDesc}。选择方案 ${selectedOption.id}：${selectedOption.label} - ${selectedOption.description}。方案需求记录：${selectedOption.stickyPatchText}；表结构说明：${selectedOption.dbPatchSummary}。补充要求：${customInstruction || '无'}。先修改真实关联源码、表结构或需求记录，再调用 protoflow_run_closed_loop_audit 更新该问题；结果数组仅包含 ID 为 ${active.id} 的问题，其他问题由应用保留。修复成功后在该问题记录的 resolvedByOptionId 中记录方案 ID ${selectedOption.id}，customUserAnswer 中保存补充要求。无法修复或没有实际变更时保持 open，不得仅修改状态冒充完成。`,
+          `Fix audit issue ${active.id} "${active.title}" (page ${active.pageId}, widget pfId ${active.targetWidgetId}, table ID ${active.targetTableId || 'none'}). Issue: ${active.brokenChainDesc}. Selected option ${selectedOption.id}: ${selectedOption.label} - ${selectedOption.description}. Sticky note update: ${selectedOption.stickyPatchText}; schema summary: ${selectedOption.dbPatchSummary}. Supplemental instructions: ${customInstruction || 'none'}. First update the actual linked source code, table schema, or sticky notes, then call protoflow_run_closed_loop_audit to update this issue; return only issue ID ${active.id} in the array while the app preserves other issues. On successful fix, record ${selectedOption.id} in resolvedByOptionId and save supplemental instructions in customUserAnswer. Keep status open if unfixed or unchanged — never mark resolved without real changes.`
+        ),
         { pageId: active.pageId, audit: { kind: 'repair', issueId: active.id } }
       );
       setResult(response.summary);
@@ -138,24 +149,27 @@ function ProjectAudit() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold tracking-tight text-slate-900">
-                  需求闭环巡检
+                  {tr('需求闭环巡检', 'Closed-Loop Requirement Audit')}
                 </h1>
                 <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium border whitespace-nowrap ${
                     hermesStatus === 'running'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
                       : 'bg-slate-100 text-slate-600 border-slate-200'
                   }`}
                 >
-                  <Sparkles className="h-3 w-3" />
-                  {hermesStatus === 'running' ? 'Hermes 在线核验' : '离线记录视图'}
+                  <Sparkles className="h-3 w-3 shrink-0" />
+                  {hermesStatus === 'running' ? tr('Hermes 在线核验', 'Hermes Live Audit') : tr('离线记录视图', 'Offline Records')}
                 </span>
               </div>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              <p className="mt-1 text-xs leading-relaxed text-slate-500 tabular-nums">
                 {hermesStatus === 'running'
-                  ? 'Hermes 已连接；只有运行巡检后返回的记录会带巡检时间。'
-                  : '未连接 Hermes；当前只展示工程内已保存的巡检记录。'}{' '}
-                · 需求记录 {stickyNotes.length} 条 · 数据表 {dbTables.length} 张
+                  ? tr('Hermes 已连接；只有运行巡检后返回的记录会带巡检时间。', 'Hermes connected; only records returned from an audit run carry a verification timestamp.')
+                  : tr('未连接 Hermes；当前只展示工程内已保存的巡检记录。', 'Hermes disconnected; showing saved audit records in this project.')}{' '}
+                {tr(
+                  `· 需求记录 ${stickyNotes.length} 条 · 数据表 ${dbTables.length} 张`,
+                  `· ${stickyNotes.length} sticky notes · ${dbTables.length} tables`
+                )}
               </p>
             </div>
           </div>
@@ -163,7 +177,7 @@ function ProjectAudit() {
           <div className="flex flex-wrap items-center gap-2.5 text-xs">
             {/* Progress Pill */}
             <span
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-medium ${
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-medium tabular-nums whitespace-nowrap ${
                 total > 0
                   ? resolved === total
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -177,35 +191,38 @@ function ProjectAudit() {
                 <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               )}
               {total
-                ? `范围记录处理率 ${progress}% (${resolved}/${total})`
-                : '暂无巡检记录'}
+                ? tr(`范围记录处理率 ${progress}% (${resolved}/${total})`, `Resolved ${progress}% (${resolved}/${total})`)
+                : tr('暂无巡检记录', 'No Audit Records')}
             </span>
 
             {/* Segmented Scope Filter */}
-            <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-100/80 p-0.5">
+            <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-100/80 p-0.5 tabular-nums">
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => setAuditScopeFilter('all')}
-                className={`rounded-lg px-3 py-1 text-xs font-medium transition cursor-pointer ${
+                className={`rounded-lg px-3 py-1 text-xs font-medium transition cursor-pointer whitespace-nowrap ${
                   scopeFilter === 'all'
                     ? 'bg-white text-blue-700 shadow-2xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                全部项目记录 ({issues.length})
+                {tr(`全部项目记录 (${issues.length})`, `All Project (${issues.length})`)}
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => setAuditScopeFilter('current_module')}
-                className={`rounded-lg px-3 py-1 text-xs font-medium transition cursor-pointer ${
+                className={`rounded-lg px-3 py-1 text-xs font-medium transition cursor-pointer whitespace-nowrap ${
                   scopeFilter === 'current_module'
                     ? 'bg-white text-blue-700 shadow-2xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                当前页面 ({issues.filter((i) => i.pageId === activePageId).length})
+                {tr(
+                  `当前页面 (${issues.filter((i) => i.pageId === activePageId).length})`,
+                  `Current Page (${issues.filter((i) => i.pageId === activePageId).length})`
+                )}
               </button>
             </div>
 
@@ -214,12 +231,12 @@ function ProjectAudit() {
               type="button"
               disabled={busy || (scopeFilter === 'current_module' && !isNavigablePage(analysis.pages, activePageId))}
               onClick={runScan}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 font-semibold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 font-semibold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer whitespace-nowrap shrink-0"
             >
               <RefreshCw
-                className={`h-3.5 w-3.5 ${scanning ? 'animate-spin' : ''}`}
+                className={`h-3.5 w-3.5 shrink-0 ${scanning ? 'animate-spin' : ''}`}
               />
-              {scanning ? 'Hermes 巡检中...' : '运行 Hermes 巡检'}
+              {scanning ? tr('Hermes 巡检中...', 'Running Hermes Audit...') : tr('运行 Hermes 巡检', 'Run Hermes Audit')}
             </button>
           </div>
         </div>
@@ -232,11 +249,11 @@ function ProjectAudit() {
           className="mx-6 mt-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 shadow-2xs"
         >
           <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
-          <span>{error}</span>
+          <span className="break-words min-w-0">{td(error)}</span>
         </div>
       )}
 
-      {result && <p role="status" className="mx-6 mt-4 whitespace-pre-wrap rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{result}</p>}
+      {result && <p role="status" className="mx-6 mt-4 whitespace-pre-wrap break-words rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{td(result)}</p>}
 
       {/* Body Content */}
       {visible.length === 0 ? (
@@ -245,14 +262,17 @@ function ProjectAudit() {
             <ShieldCheck className="h-6 w-6" />
           </div>
           <p className="max-w-lg text-sm font-medium text-slate-600 leading-relaxed">
-            当前没有巡检记录。可在连接 Hermes 后点击“运行 Hermes 巡检”，让模型根据真实页面源码、数据表和需求记录生成巡检结果。
+            {tr(
+              '当前没有巡检记录。可在连接 Hermes 后点击“运行 Hermes 巡检”，让模型根据真实页面源码、数据表和需求记录生成巡检结果。',
+              'No audit records yet. Connect Hermes and click "Run Hermes Audit" to inspect actual page source code, database schemas, and requirement notes.'
+            )}
           </p>
         </div>
       ) : (
         <div data-audit-layout className="mx-auto flex min-h-0 min-w-0 w-full max-w-7xl flex-1 flex-col gap-5 p-6 @min-[720px]:flex-row">
           {/* Left Issue Master List */}
           <aside
-            aria-label="巡检问题"
+            aria-label={tr('巡检问题', 'Audit Issues')}
             className="w-full min-w-0 shrink-0 space-y-2.5 overflow-y-auto pr-1 @min-[720px]:w-72"
           >
             {visible.map((issue) => {
@@ -273,7 +293,7 @@ function ProjectAudit() {
                 >
                   <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span
-                      className={`inline-flex items-center gap-1 font-semibold ${
+                      className={`inline-flex items-center gap-1 font-semibold min-w-0 truncate ${
                         isResolved ? 'text-emerald-700' : 'text-amber-700'
                       }`}
                     >
@@ -282,23 +302,25 @@ function ProjectAudit() {
                       ) : (
                         <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                       )}
-                      {isResolved ? '已处理' : '待处理'} · {issue.category}
+                      <span className="truncate">
+                        {isResolved ? tr('已处理', 'Resolved') : tr('待处理', 'Open')} · {td(issue.category)}
+                      </span>
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium border ${
+                      className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium border ${
                         isHermesVerified
                           ? 'bg-blue-50 text-blue-700 border-blue-200/70'
                           : 'bg-slate-100 text-slate-500 border-slate-200'
                       }`}
                     >
-                      {isHermesVerified ? 'Hermes 记录' : '历史未核验'}
+                      {isHermesVerified ? tr('Hermes 记录', 'Hermes') : tr('历史未核验', 'Unverified')}
                     </span>
                   </div>
-                  <div className="mt-2 font-bold text-slate-900 leading-snug">
+                  <div className="mt-2 font-bold text-slate-900 leading-snug break-words">
                     {issue.title}
                   </div>
-                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
-                    <span>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0">
+                    <span className="truncate">
                       {issue.moduleTitle} · {issue.targetWidgetName}
                     </span>
                   </div>
@@ -320,13 +342,13 @@ function ProjectAudit() {
                   }`}
                 >
                   {active.auditOrigin === 'hermes' && active.auditedAt ? (
-                    <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+                    <ShieldCheck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                   ) : (
-                    <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                    <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                   )}
                   {active.auditOrigin === 'hermes' && active.auditedAt
-                    ? `Hermes 巡检记录 · ${active.auditedAt}`
-                    : '历史记录未核验来源 · 请运行 Hermes 重新核对'}
+                    ? tr(`Hermes 巡检记录 · ${active.auditedAt}`, `Hermes Audit Record · ${active.auditedAt}`)
+                    : tr('历史记录未核验来源 · 请运行 Hermes 重新核对', 'Historical unverified record · Run Hermes Audit to re-verify')}
                 </span>
 
                 <div className="flex flex-wrap gap-2">
@@ -339,12 +361,12 @@ function ProjectAudit() {
                       setViewMode('single_page');
                       setActivePopoverWidgetId(active.targetWidgetId);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-1.5 font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-1.5 font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
                   >
-                    <LocateFixed className="h-3.5 w-3.5" />
+                    <LocateFixed className="h-3.5 w-3.5 shrink-0" />
                     {canLocateWidget
-                      ? `定位组件 ${active.targetWidgetName}`
-                      : '关联组件已不可用'}
+                      ? tr(`定位组件 ${active.targetWidgetName}`, `Locate Widget ${active.targetWidgetName}`)
+                      : tr('关联组件已不可用', 'Linked widget unavailable')}
                   </button>
                   <button
                     type="button"
@@ -355,28 +377,28 @@ function ProjectAudit() {
                         setViewMode('db_designer');
                       }
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-1.5 font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-1.5 font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
                   >
-                    <Database className="h-3.5 w-3.5" />
+                    <Database className="h-3.5 w-3.5 shrink-0" />
                     {canLocateTable
-                      ? `定位表 ${targetTable!.tableName}`
-                      : '关联表已不可用'}
+                      ? tr(`定位表 ${targetTable!.tableName}`, `Locate Table ${targetTable!.tableName}`)
+                      : tr('关联表已不可用', 'Linked table unavailable')}
                   </button>
                 </div>
               </div>
 
               {/* Diagnostic Details Card */}
               <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4">
-                <h2 className="text-base font-bold text-slate-900">
+                <h2 className="text-base font-bold text-slate-900 break-words">
                   {active.title}
                 </h2>
-                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">
+                <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-600">
                   {active.brokenChainDesc}
                 </p>
                 {active.aiQuestion && (
                   <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2 text-xs font-medium text-blue-900">
                     <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
-                    <span>{active.aiQuestion}</span>
+                    <span className="break-words min-w-0">{active.aiQuestion}</span>
                   </div>
                 )}
               </div>
@@ -385,8 +407,8 @@ function ProjectAudit() {
               {active.options.length > 0 && (
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <FileCheck2 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>候选闭环修复方案 ({active.options.length})</span>
+                    <FileCheck2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span>{tr(`候选闭环修复方案 (${active.options.length})`, `Candidate Resolution Options (${active.options.length})`)}</span>
                   </div>
                   {active.options.map((opt) => {
                     const isChecked = selectedOptionId === opt.id;
@@ -406,17 +428,20 @@ function ProjectAudit() {
                             disabled={busy}
                             checked={isChecked}
                             onChange={() => setSelectedOptionId(opt.id)}
-                            className="accent-blue-600"
+                            className="accent-blue-600 shrink-0"
                           />
-                          <span className="font-bold text-slate-900">
+                          <span className="font-bold text-slate-900 break-words">
                             {opt.label}
                           </span>
                         </div>
-                        <p className="mt-1.5 pl-5 text-slate-600 leading-relaxed">
+                        <p className="mt-1.5 pl-5 text-slate-600 leading-relaxed break-words">
                           {opt.description}
                         </p>
-                        <div className="mt-2 ml-5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-[11px] text-slate-500">
-                          需求记录：{opt.stickyPatchText} · 表结构：{opt.dbPatchSummary}
+                        <div className="mt-2 ml-5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-[11px] text-slate-500 break-words">
+                          {tr(
+                            `需求记录：${opt.stickyPatchText} · 表结构：${opt.dbPatchSummary}`,
+                            `Sticky Note: ${opt.stickyPatchText} · Schema: ${opt.dbPatchSummary}`
+                          )}
                         </div>
                       </label>
                     );
@@ -427,15 +452,15 @@ function ProjectAudit() {
               {/* Supplemental Custom Instruction */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700">
-                  补充修复说明
+                  {tr('补充修复说明', 'Supplemental Repair Notes')}
                 </label>
                 <textarea
-                  aria-label="补充修复说明"
+                  aria-label={tr('补充修复说明', 'Supplemental Repair Notes')}
                   disabled={busy}
                   value={customInstruction}
                   onChange={(e) => setCustomInstruction(e.target.value)}
                   rows={2}
-                  placeholder="补充业务约束，提交后由 Hermes 结合所选方案尝试修复。"
+                  placeholder={tr('补充业务约束，提交后由 Hermes 结合所选方案尝试修复。', 'Add extra business constraints for Hermes to apply along with the selected option.')}
                   className="w-full rounded-xl border border-slate-200/90 bg-slate-50/50 p-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/15"
                 />
               </div>
@@ -446,10 +471,10 @@ function ProjectAudit() {
                   type="button"
                   disabled={busy || !selectedOption || !canLocateWidget || !canApplyTable}
                   onClick={applyWithHermes}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 >
-                  <Wrench className="h-3.5 w-3.5" />
-                  {fixing ? 'Hermes 执行中...' : '应用所选方案并修复'}
+                  <Wrench className="h-3.5 w-3.5 shrink-0" />
+                  {fixing ? tr('Hermes 执行中...', 'Running Hermes...') : tr('应用所选方案并修复', 'Apply Option & Repair')}
                 </button>
               </div>
             </main>

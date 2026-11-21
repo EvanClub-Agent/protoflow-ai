@@ -30,7 +30,7 @@ import { useProtoStore } from '../../store/useProtoStore';
 import { useResolvedTheme } from '../registry/AntdSurface';
 import { MobileViewportShell } from '../mobile/MobileViewportShell';
 import { resolveMobileAppearance, ToastStatusIcon, type MobileAppearance } from '../mobile/components';
-import { MOBILE_DEVICE_LIST, resolvePagePlatform } from '../mobile/types';
+import { localizeMobileDeviceLabel, MOBILE_DEVICE_LIST, resolvePagePlatform } from '../mobile/types';
 import { useHermesStore } from '../../store/useHermesStore';
 import { runCanvasAiWithHermes, runScanStickiesAndAstToDbWithHermes, runProjectAi, reportAiError } from '../../services/hermesBridge';
 import {
@@ -57,7 +57,13 @@ import {
   walk,
 } from '../dsl/tree';
 import { COMPONENT_MAP, OVERLAY_TYPES, type ComponentMeta } from '../registry/meta';
-import { generateFromTemplate, type PageTemplateKind } from '../ai/templates';
+import {
+  localizeComponentMeta,
+  localizeCompositeBlock,
+  localizeCompositeCategoryLabel,
+} from '../registry/localizeMeta';
+import { useI18n } from '../../i18n';
+import { currentProjectDataContext, generateFromTemplate, type PageTemplateKind } from '../ai/templates';
 import {
   buildOverlayNode,
   collectActionCalls,
@@ -88,6 +94,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
   pageId,
   onSwitchToLegacySandbox,
 }) => {
+  const { locale, tr, td } = useI18n();
   const {
     dbTables,
     stickyNotes,
@@ -310,14 +317,15 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
   // Human readable label of the selected node (null = whole page) — used as AI chat context
   const selectedTargetLabel = useMemo(() => {
     if (!selectedNode || selectedNode.pfId === doc.root.pfId) return null;
-    const meta = COMPONENT_MAP[selectedNode.type];
+    const rawMeta = COMPONENT_MAP[selectedNode.type];
+    const meta = rawMeta ? localizeComponentMeta(rawMeta, locale) : undefined;
     const text =
       (typeof selectedNode.props.title === 'string' && selectedNode.props.title) ||
       (typeof selectedNode.props.label === 'string' && selectedNode.props.label) ||
       nodeText(selectedNode) ||
       '';
     return `<${selectedNode.type}> ${text || meta?.title || ''}`.trim();
-  }, [selectedNode, doc.root.pfId]);
+  }, [selectedNode, doc.root.pfId, locale]);
 
   // Validation diagnostics
   const validationIssues = useMemo(
@@ -343,24 +351,25 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
   // Create a new node from ComponentMeta
   const buildNodeFromMeta = (meta: ComponentMeta): ProtoNode => {
-    const parsed = parseSnippetNode(meta.snippet);
+    const localized = localizeComponentMeta(meta, locale);
+    const parsed = parseSnippetNode(localized.snippet);
     const suffix = Date.now().toString(36).slice(-4);
     if (parsed) {
       const clone: ProtoNode = {
         ...parsed,
-        pfId: `pf_${meta.name.toLowerCase()}_${suffix}`,
+        pfId: `pf_${localized.name.toLowerCase()}_${suffix}`,
         props: { ...parsed.props },
       };
-      if (OVERLAY_TYPES.has(meta.name)) {
-        const prefix = meta.name === 'Modal' ? 'm' : 'd';
+      if (OVERLAY_TYPES.has(localized.name)) {
+        const prefix = localized.name === 'Modal' ? 'm' : 'd';
         clone.props.id = `${prefix}-${suffix}`;
       }
       return clone;
     }
     return {
       kind: 'node',
-      pfId: `pf_${meta.name.toLowerCase()}_${suffix}`,
-      type: meta.name,
+      pfId: `pf_${localized.name.toLowerCase()}_${suffix}`,
+      type: localized.name,
       props: {},
       children: [],
     };
@@ -408,7 +417,8 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
   };
 
   const buildNodeFromComposite = (block: CustomCompositeBlock): ProtoNode | null => {
-    const parsed = parseSnippetNode(block.tsxSnippet);
+    const localized = localizeCompositeBlock(block, locale);
+    const parsed = parseSnippetNode(localized.tsxSnippet);
     if (!parsed) return null;
     const cloned = reassignIds(parsed);
     if (OVERLAY_TYPES.has(cloned.type)) {
@@ -420,7 +430,8 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
   };
 
   const handleInsertCompositeBlock = (block: CustomCompositeBlock) => {
-    const newNode = buildNodeFromComposite(block);
+    const localized = localizeCompositeBlock(block, locale);
+    const newNode = buildNodeFromComposite(localized);
     if (!newNode) return;
     if (OVERLAY_TYPES.has(newNode.type)) {
       const nextDoc = insertNode(doc, doc.root.pfId, -1, newNode);
@@ -428,7 +439,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
       const ovId = typeof newNode.props.id === 'string' ? newNode.props.id : null;
       if (ovId) setActiveOverlayId(ovId);
       setSelectedPfId(newNode.pfId);
-      setAiBannerMsg(`已从业务组件库插入弹层模板「${block.title}」`);
+      setAiBannerMsg(tr(`已从业务组件库插入弹层模板「${localized.title}」`, `Inserted overlay block "${localized.title}"`));
       return;
     }
 
@@ -445,7 +456,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
           const nextDoc = insertNode(doc, parentInfo.parent.pfId, parentInfo.index + 1, newNode);
           commitDoc(nextDoc);
           setSelectedPfId(newNode.pfId);
-          setAiBannerMsg(`已将业务复合组件「${block.title}」插入画布`);
+          setAiBannerMsg(tr(`已将业务复合组件「${localized.title}」插入画布`, `Inserted block "${localized.title}" onto canvas`));
           return;
         }
       }
@@ -457,7 +468,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
           const nextDoc = insertNode(doc, parentInfo.parent.pfId, parentInfo.index + 1, newNode);
           commitDoc(nextDoc);
           setSelectedPfId(newNode.pfId);
-          setAiBannerMsg(`已将业务复合组件「${block.title}」插入画布`);
+          setAiBannerMsg(tr(`已将业务复合组件「${localized.title}」插入画布`, `Inserted block "${localized.title}" onto canvas`));
           return;
         }
       }
@@ -466,13 +477,14 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
     const nextDoc = insertNode(doc, targetContainerId, -1, newNode);
     commitDoc(nextDoc);
     setSelectedPfId(newNode.pfId);
-    setAiBannerMsg(`已将业务复合组件「${block.title}」插入画布`);
+    setAiBannerMsg(tr(`已将业务复合组件「${localized.title}」插入画布`, `Inserted block "${localized.title}" onto canvas`));
   };
 
   const openSaveCompositeModal = (pfId: string) => {
     const target = findNode(doc.root, pfId);
     if (!target || target.pfId === doc.root.pfId) return;
-    const meta = COMPONENT_MAP[target.type];
+    const rawMeta = COMPONENT_MAP[target.type];
+    const meta = rawMeta ? localizeComponentMeta(rawMeta, locale) : undefined;
     const rawLabel =
       (typeof target.props.title === 'string' && target.props.title) ||
       (typeof target.props.label === 'string' && target.props.label) ||
@@ -485,7 +497,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
     else if (target.type === 'Table') defaultCat = 'table';
     else if (OVERLAY_TYPES.has(target.type)) defaultCat = 'overlay';
     else if (target.type === 'Form') defaultCat = 'form';
-    else if (String(rawLabel).includes('审') || String(rawLabel).includes('核')) defaultCat = 'approval';
+    else if (/审|核|approv|review|audit/i.test(String(rawLabel))) defaultCat = 'approval';
     else if (target.children.some((c) => typeof c === 'object' && c.kind === 'node' && c.type === 'Table')) {
       defaultCat = 'table';
     }
@@ -498,9 +510,12 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
     setSaveCompositeModal({
       pfId: target.pfId,
-      title: `${rawLabel}（复用业务块）`,
+      title: tr(`${rawLabel}（复用业务块）`, `${rawLabel} (Reusable Block)`),
       category: defaultCat,
-      description: `基于 <${target.type}> 封装的业务复合组件，内含 ${childCount} 个子控件，支持跨模块页面一键拖入复用`,
+      description: tr(
+        `基于 <${target.type}> 封装的业务复合组件，内含 ${childCount} 个子控件，支持跨模块页面一键拖入复用`,
+        `Reusable composite block based on <${target.type}> containing ${childCount} child node(s) for cross-page drag-and-drop reuse.`,
+      ),
     });
   };
 
@@ -600,8 +615,9 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
         const movePfId = e.dataTransfer.getData('application/x-pf-move');
 
         if (compositeId) {
-          const block = compositeBlocks.find((b) => b.id === compositeId);
-          if (!block) return;
+          const rawBlock = compositeBlocks.find((b) => b.id === compositeId);
+          if (!rawBlock) return;
+          const block = localizeCompositeBlock(rawBlock, locale);
           const newNode = buildNodeFromComposite(block);
           if (!newNode) return;
           if (OVERLAY_TYPES.has(newNode.type)) {
@@ -611,7 +627,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
               setActiveOverlayId(newNode.props.id);
             }
             setSelectedPfId(newNode.pfId);
-            setAiBannerMsg(`已拖入业务弹层模板「${block.title}」`);
+            setAiBannerMsg(tr(`已拖入业务弹层模板「${block.title}」`, `Dropped overlay block "${block.title}"`));
             return;
           }
           const { parentPfId, index } = resolveDropPlacement(targetPfId, pos);
@@ -619,7 +635,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
           nextDoc = applySmartSideBySideLayout(nextDoc, parentPfId, targetPfId, newNode.pfId, pos);
           commitDoc(nextDoc);
           setSelectedPfId(newNode.pfId);
-          setAiBannerMsg(`已将团队业务复合组件「${block.title}」拖入画布`);
+          setAiBannerMsg(tr(`已将团队业务复合组件「${block.title}」拖入画布`, `Dropped reusable block "${block.title}" onto canvas`));
           return;
         }
 
@@ -703,7 +719,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedPfId, hoveredPfId, dropTarget, stickyCountByPfId, doc, compositeBlocks]
+    [selectedPfId, hoveredPfId, dropTarget, stickyCountByPfId, doc, compositeBlocks, locale]
   );
 
   const handleCreateOverlay = (
@@ -722,12 +738,12 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
     const title =
       customTitle ||
       (actualType === 'MDialog'
-        ? `确认提示 (${id})`
+        ? tr(`确认提示 (${id})`, `Confirm (${id})`)
         : actualType === 'MBottomSheet'
-        ? `半屏详情面板 (${id})`
+        ? tr(`半屏详情面板 (${id})`, `Detail Sheet (${id})`)
         : type === 'Modal'
-        ? `新建业务弹框 (${id})`
-        : `新建业务抽屉 (${id})`);
+        ? tr(`新建业务弹框 (${id})`, `New Modal (${id})`)
+        : tr(`新建业务抽屉 (${id})`, `New Drawer (${id})`));
     const defaultTable = dbTables[0]?.id;
 
     const overlayNode = buildOverlayNode(actualType, id, title, defaultTable);
@@ -751,15 +767,21 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
   const handleApplyTemplate = (kind: PageTemplateKind, tableId: string) => {
     const tbl = dbTables.find((t) => t.id === tableId);
-    if (tableId && !tbl) { setAiBannerMsg('所选物理表已不存在，请重新选择'); return; }
+    if (tableId && !tbl) { setAiBannerMsg(tr('所选物理表已不存在，请重新选择', 'Selected table no longer exists; please choose another table')); return; }
     const nextSrc = generateFromTemplate(kind, tbl, dbTables, {
       pageId,
       title: typeof doc.root.props.title === 'string' ? doc.root.props.title : pageId,
       platform: isMobilePage ? 'mobile' : 'desktop',
+      data: currentProjectDataContext(dbTables),
     });
     setPageSource(pageId, nextSrc);
     setActiveOverlayId(null);
-    setAiBannerMsg(`已套用「${kind}」页面模板${tbl ? `并绑定物理表 ${tbl.tableName}` : ''}`);
+    setAiBannerMsg(
+      tr(
+        `已套用「${kind}」页面模板${tbl ? `并绑定物理表 ${tbl.tableName}` : ''}`,
+        `Applied "${kind}" page template${tbl ? ` bound to table ${tbl.tableName}` : ''}`,
+      ),
+    );
   };
 
   // Analyze incoming triggers & outgoing nested overlays for the currently active overlay
@@ -819,9 +841,12 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <div className="font-bold text-slate-900">页面源码缺失</div>
+            <div className="font-bold text-slate-900">{tr('页面源码缺失', 'Missing Page Source')}</div>
             <p className="mt-1 text-xs leading-relaxed text-amber-900">
-              页面 {pageId} 缺少源码。请恢复页面源码或重新导入完整工程。
+              {tr(
+                `页面 ${pageId} 缺少源码。请恢复页面源码或重新导入完整工程。`,
+                `Page ${pageId} has no source code. Please restore the page source or re-import the project.`,
+              )}
             </p>
           </div>
         </div>
@@ -863,10 +888,10 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
           {/* Center Column: Unified Canvas Header + Scrollable Canvas Viewport */}
           <div className="relative flex-1 flex flex-col min-w-[min(100%,22rem)] h-full overflow-hidden bg-slate-100/70">
-            {/* Unified IntelliJ IDEA-style Single-Line Canvas Toolbar */}
+            {/* Unified IntelliJ IDEA-style Responsive Canvas Toolbar */}
             <div className="bg-white border-b border-slate-200 shrink-0">
-              <div className="px-2.5 h-9 flex items-center justify-between gap-2 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <div className="px-2.5 min-h-9 py-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 min-w-0 flex-1">
                   {!isWebPlayerMode && (
                     <>
                       {/* 3-Mode Icon Segmented Switcher */}
@@ -875,13 +900,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                           [
                             {
                               id: 'design',
-                              label: '设计画布',
+                              label: tr('设计画布', 'Design'),
                               icon: MousePointerClick,
                               onClick: () => setMode('design'),
                             },
                             {
                               id: 'preview',
-                              label: '交互预览',
+                              label: tr('交互预览', 'Preview'),
                               icon: Play,
                               onClick: () => {
                                 if (activeOverlay) {
@@ -893,7 +918,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             },
                             {
                               id: 'code',
-                              label: 'TSX 源码',
+                              label: tr('TSX 源码', 'Code'),
                               icon: Code2,
                               onClick: () => setMode('code'),
                             },
@@ -936,7 +961,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <div className="relative group flex items-center">
                           <button
                             type="button"
-                            aria-label="撤销"
+                            aria-label={tr('撤销', 'Undo')}
                             onClick={() => undo(pageId)}
                             disabled={pageHistory.past.length === 0}
                             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-slate-800 disabled:opacity-30 cursor-pointer transition"
@@ -948,7 +973,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                           >
                             <span className="relative z-10 text-xs font-medium tracking-tight">
-                              撤销 ({pageHistory.past.length})
+                              {tr('撤销', 'Undo')} ({pageHistory.past.length})
                             </span>
                           </div>
                         </div>
@@ -956,7 +981,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <div className="relative group flex items-center">
                           <button
                             type="button"
-                            aria-label="重做"
+                            aria-label={tr('重做', 'Redo')}
                             onClick={() => redo(pageId)}
                             disabled={pageHistory.future.length === 0}
                             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-slate-800 disabled:opacity-30 cursor-pointer transition"
@@ -968,7 +993,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                           >
                             <span className="relative z-10 text-xs font-medium tracking-tight">
-                              重做 ({pageHistory.future.length})
+                              {tr('重做', 'Redo')} ({pageHistory.future.length})
                             </span>
                           </div>
                         </div>
@@ -979,7 +1004,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                   )}
 
                   {/* Sub-Page & Overlay Tabs + IDEA-style Add Overlay Icon Buttons */}
-                  <div className="flex items-center gap-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 min-w-0">
                     <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar whitespace-nowrap">
                       <button
                         type="button"
@@ -995,14 +1020,14 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         }`}
                       >
                         <Layers className="w-3 h-3 text-blue-600 shrink-0" />
-                        <span>主页面</span>
+                        <span>{tr('主页面', 'Main Page')}</span>
                       </button>
 
                       {overlays.map((ov) => {
                         const isSelectedOverlay = activeOverlayId === ov.overlayId;
                         const isOpenInPreview =
                           mode === 'preview' && runtime.overlays.some((s) => s.id === ov.overlayId);
-                        const isModal = ov.type === 'Modal';
+                        const isModal = ov.type === 'Modal' || ov.type === 'MDialog';
 
                         return (
                           <button
@@ -1020,7 +1045,10 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                 ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
                                 : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/80'
                             }`}
-                            title={`点击进入 ${ov.type}#${ov.overlayId}（${ov.title}）独立子画布设计`}
+                            title={tr(
+                              `点击进入 ${ov.type}#${ov.overlayId}（${ov.title}）独立子画布设计`,
+                              `Edit ${ov.type}#${ov.overlayId} (${ov.title}) sub-canvas`,
+                            )}
                           >
                             {isModal ? (
                               <AppWindow className="w-3 h-3 text-blue-600 shrink-0" />
@@ -1038,7 +1066,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <div className="relative group flex items-center">
                           <button
                             type="button"
-                            aria-label={isMobilePage ? '新建确认弹窗 (MDialog)' : '新建弹框子画布 (Modal)'}
+                            aria-label={isMobilePage ? tr('新建确认弹窗 (MDialog)', 'New Confirm Dialog (MDialog)') : tr('新建弹框子画布 (Modal)', 'New Modal Sub-Canvas')}
                             onClick={() => handleCreateOverlay('Modal')}
                             className="relative w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-blue-600 cursor-pointer transition"
                           >
@@ -1050,7 +1078,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                           >
                             <span className="relative z-10 text-xs font-medium tracking-tight">
-                              {isMobilePage ? '新建毛玻璃确认弹窗 (MDialog)' : '新建弹框子画布 (Modal)'}
+                              {isMobilePage ? tr('新建毛玻璃确认弹窗 (MDialog)', 'New Glass Dialog (MDialog)') : tr('新建弹框子画布 (Modal)', 'New Modal Sub-Canvas')}
                             </span>
                           </div>
                         </div>
@@ -1058,7 +1086,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <div className="relative group flex items-center">
                           <button
                             type="button"
-                            aria-label={isMobilePage ? '新建半屏抽屉 (MBottomSheet)' : '新建抽屉子画布 (Drawer)'}
+                            aria-label={isMobilePage ? tr('新建半屏抽屉 (MBottomSheet)', 'New Bottom Sheet (MBottomSheet)') : tr('新建抽屉子画布 (Drawer)', 'New Drawer Sub-Canvas')}
                             onClick={() => handleCreateOverlay('Drawer')}
                             className="relative w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-amber-600 cursor-pointer transition"
                           >
@@ -1070,7 +1098,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                           >
                             <span className="relative z-10 text-xs font-medium tracking-tight">
-                              {isMobilePage ? '新建丝滑半屏抽屉 (MBottomSheet)' : '新建抽屉子画布 (Drawer)'}
+                              {isMobilePage ? tr('新建丝滑半屏抽屉 (MBottomSheet)', 'New Bottom Sheet (MBottomSheet)') : tr('新建抽屉子画布 (Drawer)', 'New Drawer Sub-Canvas')}
                             </span>
                           </div>
                         </div>
@@ -1079,7 +1107,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
                     {/* Mobile Viewport Switcher (iPhone / Pro / Pro Max + Light/Dark + Shell Toggle) */}
                     {isMobilePage && (
-                      <div className="flex items-center gap-1.5 pl-1.5 ml-1 border-l border-slate-200 shrink-0">
+                      <div className="flex flex-wrap items-center gap-1.5 pl-1.5 ml-1 border-l border-slate-200 shrink-0">
                         <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80">
                           {MOBILE_DEVICE_LIST.map((spec) => {
                             const active = mobileDevice === spec.id;
@@ -1088,7 +1116,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                 key={spec.id}
                                 type="button"
                                 onClick={() => setMobileDevice(spec.id)}
-                                title={`${spec.label} (${spec.subtitle})`}
+                                title={`${localizeMobileDeviceLabel(spec, locale)} (${spec.subtitle})`}
                                 className={`px-2 py-0.5 rounded-md text-[10.5px] font-medium flex items-center gap-1 cursor-pointer transition ${
                                   active
                                     ? 'bg-white text-violet-700 font-semibold shadow-2xs'
@@ -1110,18 +1138,21 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                               effectiveMobileAppearance === 'dark' ? 'light' : 'dark',
                             )
                           }
-                          title="切换移动端屏幕预览外观（浅色雾白 / Gemini 曜石深色，默认自动跟随工作区明暗主题）"
+                          title={tr(
+                            '切换移动端屏幕预览外观（浅色雾白 / Gemini 曜石深色，默认自动跟随工作区明暗主题）',
+                            'Toggle mobile viewport appearance (Mist Light / Gemini Dark; follows workspace theme by default)',
+                          )}
                           className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[10.5px] font-medium text-slate-700 inline-flex items-center gap-1 cursor-pointer transition"
                         >
                           {effectiveMobileAppearance === 'dark' ? (
                             <>
                               <Moon className="w-3 h-3 text-violet-600" />
-                              <span>深色</span>
+                              <span>{tr('深色', 'Dark')}</span>
                             </>
                           ) : (
                             <>
                               <Sun className="w-3 h-3 text-amber-500" />
-                              <span>浅色</span>
+                              <span>{tr('浅色', 'Light')}</span>
                             </>
                           )}
                         </button>
@@ -1129,28 +1160,28 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <button
                           type="button"
                           onClick={() => setMobileFramed((v) => !v)}
-                          title="显示或隐藏 iPhone 真机钛金属外壳与灵动岛"
+                          title={tr('显示或隐藏 iPhone 真机钛金属外壳与灵动岛', 'Toggle iPhone titanium bezel and Dynamic Island')}
                           className={`px-2 py-1 rounded-lg border text-[10.5px] font-medium cursor-pointer transition ${
                             mobileFramed
                               ? 'bg-violet-50 text-violet-700 border-violet-200'
                               : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                           }`}
                         >
-                          {mobileFramed ? '真机壳' : '极简框'}
+                          {mobileFramed ? tr('真机壳', 'Frame') : tr('极简框', 'Minimal')}
                         </button>
 
                         {mode === 'design' && (
                           <button
                             type="button"
                             onClick={() => setMobileExpandHeight((v) => !v)}
-                            title="展开整页长图以便一览全部移动端内容，或恢复真机固定屏幕滚动"
+                            title={tr('展开整页长图以便一览全部移动端内容，或恢复真机固定屏幕滚动', 'Expand full mobile page height or scroll within fixed screen height')}
                             className={`px-2 py-1 rounded-lg border text-[10.5px] font-medium cursor-pointer transition ${
                               mobileExpandHeight
                                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                             }`}
                           >
-                            {mobileExpandHeight ? '长页展开' : '定高滚屏'}
+                            {mobileExpandHeight ? tr('长页展开', 'Full Height') : tr('定高滚屏', 'Scroll')}
                           </button>
                         )}
                       </div>
@@ -1160,10 +1191,10 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
                 {/* Right: Inline Database Binding Bar + AST Validation Icon */}
                 {!isWebPlayerMode && (
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 ml-auto">
                     <PageTableBindingBar
                       pageId={pageId}
-                      pageTitle={menuTitle ?? `页面 ID · ${pageId}`}
+                      pageTitle={menuTitle ?? tr(`页面 ID · ${pageId}`, `Page ID · ${pageId}`)}
                     />
 
                     <div className="h-3.5 w-px bg-slate-200 mx-0.5" />
@@ -1171,7 +1202,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     {validationIssues.length === 0 ? (
                       <div className="relative group flex items-center">
                         <span
-                          aria-label="静态校验通过"
+                          aria-label={tr('静态校验通过', 'Validation passed')}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-600"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1181,7 +1212,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                           className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                         >
                           <span className="relative z-10 text-xs font-medium tracking-tight">
-                            静态校验通过
+                            {tr('静态校验通过', 'Validation passed')}
                           </span>
                         </div>
                       </div>
@@ -1189,7 +1220,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       <div className="relative group flex items-center">
                         <button
                           type="button"
-                          aria-label={`${validationIssues.length} 处契约待修复`}
+                          aria-label={tr(`${validationIssues.length} 处契约待修复`, `${validationIssues.length} contract issue(s)`)}
                           onClick={() => {
                             void runProjectAi(`检查并修复当前页面的这些契约问题：${validationIssues.map(i=>i.message).join('；')}。查明真实表绑定与动作目标，不能用第一张表替换未知表。`,{pageId}).catch(reportAiError);
                           }}
@@ -1205,7 +1236,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                           className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
                         >
                           <span className="relative z-10 text-xs font-medium tracking-tight">
-                            {validationIssues.length} 处契约待修复（点击 AI 自动修复）
+                            {tr(`${validationIssues.length} 处契约待修复（点击 AI 自动修复）`, `${validationIssues.length} issue(s) to fix (click for AI auto-fix)`)}
                           </span>
                         </div>
                       </div>
@@ -1219,7 +1250,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                 <div className="mx-3 my-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>{aiBannerMsg}</span>
+                    <span>{td(aiBannerMsg)}</span>
                     {aiEngineBadge && (
                       <button
                         type="button"
@@ -1229,7 +1260,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
                             : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400 hover:text-blue-700'
                         }`}
-                        title="点击查看 Hermes Agent 实时 Tool Call 调用日志或管理引擎"
+                        title={tr('点击查看 Hermes Agent 实时 Tool Call 调用日志或管理引擎', 'Inspect Hermes Agent tool calls or manage engine')}
                       >
                         {aiEngineBadge}
                       </button>
@@ -1254,14 +1285,17 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
               <div className="px-3.5 py-2 bg-blue-50 border-b border-blue-200 flex items-center justify-between gap-2 flex-wrap text-xs shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-semibold text-[11px]">
-                    原型交互预览
+                    {tr('原型交互预览', 'Interactive Preview')}
                   </span>
                   <span className="text-blue-900">
-                    数据保存在工程内，可能包含示例记录；未连接业务数据库。
+                    {tr(
+                      '数据保存在工程内，可能包含示例记录；未连接业务数据库。',
+                      'Data is stored in this project and may include sample rows; not connected to a live database.',
+                    )}
                   </span>
                   {runtime.overlays.length > 0 && (
                     <span className="font-mono text-[11px] text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">
-                      当前弹层栈: 主页面 {runtime.overlays.map((o) => `→ #${o.id}`).join(' ')}
+                      {tr('当前弹层栈: 主页面', 'Overlay stack: Main')} {runtime.overlays.map((o) => `→ #${o.id}`).join(' ')}
                     </span>
                   )}
                 </div>
@@ -1275,7 +1309,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     className="px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[11px] flex items-center gap-1 cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    <span>重置测试数据</span>
+                    <span>{tr('重置测试数据', 'Reset Mock Data')}</span>
                   </button>
                   {!isWebPlayerMode && (
                     <button
@@ -1286,7 +1320,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       }}
                       className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-blue-700 border border-blue-200 text-[11px] font-medium cursor-pointer"
                     >
-                      返回设计画布
+                      {tr('返回设计画布', 'Back to Design')}
                     </button>
                   )}
                 </div>
@@ -1310,24 +1344,27 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
               ) : mode === 'code' ? (
                 <div className="flex-1 min-h-0 p-1 flex flex-col">
                   <div className="pf-ai-aura-surface w-full bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col flex-1 min-h-0">
-                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
-                      <div className="flex items-center gap-2">
-                        <Code2 className="w-4 h-4 text-blue-600" />
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Code2 className="w-4 h-4 text-blue-600 shrink-0" />
                         <span className="text-xs font-bold text-slate-900 font-mono">
                           pages/{pageId}.page.tsx
                         </span>
-                        <span className="text-[11px] text-slate-500">
-                          （代码为底，控件为表 — 直接修改下方受约束 TSX 代码将实时同步至可视化画布）
+                        <span className="text-[11px] text-slate-500 truncate">
+                          {tr(
+                            '（代码为底，控件为表 — 直接修改下方受约束 TSX 代码将实时同步至可视化画布）',
+                            '(Code-first DSL — edits below sync bidirectionally with the visual canvas)',
+                          )}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         {parsePageSource(codeDraft).issues.some((i) => i.level === 'error') ? (
                           <span className="text-[11px] text-red-600 font-mono">
-                            语法错误: {parsePageSource(codeDraft).issues[0]?.message}
+                            {tr('语法错误:', 'Syntax error:')} {td(parsePageSource(codeDraft).issues[0]?.message ?? '')}
                           </span>
                         ) : (
                           <span className="text-[11px] text-emerald-700 font-medium">
-                            ✓ Babel AST 解析正常
+                            {tr('✓ Babel AST 解析正常', '✓ Babel AST Valid')}
                           </span>
                         )}
                         <button
@@ -1343,7 +1380,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                           }}
                           className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
                         >
-                          格式化并返回画布
+                          {tr('格式化并返回画布', 'Format & Back to Design')}
                         </button>
                       </div>
                     </div>
@@ -1391,14 +1428,14 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                           className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1 cursor-pointer"
                         >
                           <Play className="w-3 h-3" />
-                          <span>在交互模式中试运行此弹层</span>
+                          <span>{tr('在交互模式中试运行此弹层', 'Preview Overlay')}</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setActiveOverlayId(null)}
                           className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs cursor-pointer"
                         >
-                          返回主页面画布
+                          {tr('返回主页面画布', 'Back to Main Page')}
                         </button>
                       </div>
                     </div>
@@ -1406,9 +1443,9 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     {/* Call chain visualization: Incoming -> Current Overlay -> Outgoing Nested Overlays */}
                     <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap text-[11px]">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-slate-400">调起入口：</span>
+                        <span className="text-slate-400">{tr('调起入口：', 'Triggered by:')}</span>
                         {overlayCallGraph.incoming.length === 0 ? (
-                          <span className="text-amber-600">暂未绑定触发按钮</span>
+                          <span className="text-amber-600">{tr('暂未绑定触发按钮', 'No trigger bound yet')}</span>
                         ) : (
                           overlayCallGraph.incoming.map((inc, i) => (
                             <span
@@ -1421,12 +1458,12 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         )}
                         <ArrowRight className="w-3 h-3 text-slate-400" />
                         <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
-                          当前 #{activeOverlay.overlayId}
+                          {tr(`当前 #${activeOverlay.overlayId}`, `Current #${activeOverlay.overlayId}`)}
                         </span>
                         {overlayCallGraph.outgoing.length > 0 && (
                           <>
                             <ArrowRight className="w-3 h-3 text-slate-400" />
-                            <span className="text-slate-400">可继续调起嵌套弹层：</span>
+                            <span className="text-slate-400">{tr('可继续调起嵌套弹层：', 'Opens nested overlays:')}</span>
                             {overlayCallGraph.outgoing.map((outId) => (
                               <button
                                 key={outId}
@@ -1535,16 +1572,19 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             type="button"
                             onClick={() => setStickyLedgerCollapsed((prev) => !prev)}
                             className="flex items-center gap-2 min-w-0 text-left cursor-pointer group"
-                            title={stickyLedgerCollapsed ? '点击展开本页需求便签' : '点击收起本页需求便签'}
+                            title={stickyLedgerCollapsed ? tr('点击展开本页需求便签', 'Expand page notes') : tr('点击收起本页需求便签', 'Collapse page notes')}
                           >
                             <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200/80 text-xs font-bold flex items-center gap-1.5 shrink-0">
                               <Pin className="w-3.5 h-3.5 text-amber-700" />
                               <span>
-                                本页需求便签 ({stickyNotes.filter((s) => s.pageId === pageId).length} 条)
+                                {tr(
+                                  `本页需求便签 (${stickyNotes.filter((s) => s.pageId === pageId).length} 条)`,
+                                  `Page Notes (${stickyNotes.filter((s) => s.pageId === pageId).length})`,
+                                )}
                               </span>
                             </span>
                             <span className="text-xs text-slate-600 truncate group-hover:text-slate-900">
-                              点击任意卡片可在画布上定位对应组件并查看或编辑需求
+                              {tr('点击任意卡片可在画布上定位对应组件并查看或编辑需求', 'Click any note to locate its target component on the canvas')}
                             </span>
                           </button>
 
@@ -1558,7 +1598,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                               className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                             >
                               <Sparkles className="w-3.5 h-3.5" />
-                              <span>AI 从便签推导数据表字段</span>
+                              <span>{tr('AI 从便签推导数据表字段', 'AI Derive Schema from Notes')}</span>
                             </button>
 
                             <button
@@ -1566,17 +1606,17 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                               aria-expanded={!stickyLedgerCollapsed}
                               onClick={() => setStickyLedgerCollapsed((prev) => !prev)}
                               className="px-2.5 py-1 rounded-lg border border-amber-200 bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                              title={stickyLedgerCollapsed ? '展开便签区域' : '收起便签区域以扩大画布空间'}
+                              title={stickyLedgerCollapsed ? tr('展开便签区域', 'Expand notes dock') : tr('收起便签区域以扩大画布空间', 'Collapse notes dock')}
                             >
                               {stickyLedgerCollapsed ? (
                                 <>
                                   <ChevronUp className="w-3.5 h-3.5" />
-                                  <span>展开便签</span>
+                                  <span>{tr('展开便签', 'Expand')}</span>
                                 </>
                               ) : (
                                 <>
                                   <ChevronDown className="w-3.5 h-3.5" />
-                                  <span>收起便签</span>
+                                  <span>{tr('收起便签', 'Collapse')}</span>
                                 </>
                               )}
                             </button>
@@ -1597,12 +1637,15 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                   }
                                   const n = findNode(doc.root, st.targetWidgetId);
                                   if (!n) return st.targetWidgetName || st.targetWidgetId;
-                                  const typeTitle = COMPONENT_MAP[n.type]?.title ?? n.type;
+                                  const rawMeta = COMPONENT_MAP[n.type];
+                                  const typeTitle = rawMeta
+                                    ? localizeComponentMeta(rawMeta, locale).title
+                                    : n.type;
                                   const label =
                                     nodeText(n).trim() ||
                                     (typeof n.props.label === 'string' ? n.props.label : '') ||
                                     (typeof n.props.title === 'string' ? n.props.title : '');
-                                  return label ? `${typeTitle}：${label}` : typeTitle;
+                                  return label ? `${typeTitle}${tr('：', ': ')}${label}` : typeTitle;
                                 })();
 
                                 return (
@@ -1625,7 +1668,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                       </div>
                                       <div className="flex items-center gap-2 shrink-0">
                                         <span className="text-xs text-blue-600 font-semibold">
-                                          定位组件 →
+                                          {tr('定位组件 →', 'Locate →')}
                                         </span>
                                         <button
                                           type="button"
@@ -1634,7 +1677,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                             deleteStickyRule(st.id);
                                           }}
                                           className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                                          title="删除此条便签"
+                                          title={tr('删除此条便签', 'Delete note')}
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -1681,7 +1724,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                       <div>
-                        <div className="text-sm font-bold text-slate-900">操作确认</div>
+                        <div className="text-sm font-bold text-slate-900">{tr('操作确认', 'Confirm Action')}</div>
                         <div className="text-xs text-slate-600 mt-1 leading-relaxed">
                           {runtime.confirmState.message}
                         </div>
@@ -1693,14 +1736,14 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         onClick={() => runtime.resolveConfirm(false)}
                         className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 cursor-pointer"
                       >
-                        取消
+                        {tr('取消', 'Cancel')}
                       </button>
                       <button
                         type="button"
                         onClick={() => runtime.resolveConfirm(true)}
                         className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
                       >
-                        确认执行
+                        {tr('确认执行', 'Confirm')}
                       </button>
                     </div>
                   </div>
@@ -1725,7 +1768,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
             {!isWebPlayerMode && mode !== 'code' && (
               <FloatingPageChat
                 pageId={pageId}
-                pageTitle={menuTitle ?? `页面 ID · ${pageId}`}
+                pageTitle={menuTitle ?? tr(`页面 ID · ${pageId}`, `Page ID · ${pageId}`)}
                 selectedLabel={selectedTargetLabel}
                 running={aiRunning || isPageAiRunning}
                 onSend={handleRunAiPrompt}
@@ -1808,10 +1851,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       </div>
                       <div>
                         <div className="text-sm font-bold text-slate-900">
-                          沉淀为团队业务复合组件
+                          {tr('沉淀为团队业务复合组件', 'Save as Reusable Composite Block')}
                         </div>
                         <div className="text-[11px] text-violet-700">
-                          将当前排好版的组件/容器块保存至左侧「业务块」库，支持跨页面拖拽复用
+                          {tr(
+                            '将当前排好版的组件/容器块保存至左侧「业务块」库，支持跨页面拖拽复用',
+                            'Save this arranged component/section to the Saved Blocks shelf for cross-page reuse',
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1831,23 +1877,25 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         <Boxes className="w-4 h-4 text-violet-600 shrink-0" />
                         <div className="min-w-0">
                           <div className="font-semibold text-slate-800 truncate">
-                            源根节点：&lt;{targetNode.type}&gt; ({targetNode.pfId})
+                            {tr('源根节点：', 'Root Node: ')}&lt;{targetNode.type}&gt; ({targetNode.pfId})
                           </div>
                           <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                            共包含 {subCount} 个子控件
-                            {childTypes.length > 0 ? `（含 ${childTypes.slice(0, 6).join(', ')}）` : ''}
+                            {tr(
+                              `共包含 ${subCount} 个子控件${childTypes.length > 0 ? `（含 ${childTypes.slice(0, 6).join(', ')}）` : ''}`,
+                              `Contains ${subCount} child node(s)${childTypes.length > 0 ? ` (${childTypes.slice(0, 6).join(', ')})` : ''}`,
+                            )}
                           </div>
                         </div>
                       </div>
                       <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[10px] shrink-0">
-                        AST 完整保留
+                        {tr('AST 完整保留', 'AST Preserved')}
                       </span>
                     </div>
 
                     {/* Title input */}
                     <div className="space-y-1">
                       <label className="font-semibold text-slate-700 block">
-                        复合组件名称 <span className="text-rose-500">*</span>
+                        {tr('复合组件名称', 'Block Name')} <span className="text-rose-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -1855,7 +1903,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         onChange={(e) =>
                           setSaveCompositeModal({ ...saveCompositeModal, title: e.target.value })
                         }
-                        placeholder="如：采购入库标准三栏表头、订单明细汇总表格区块..."
+                        placeholder={tr('如：采购入库标准三栏表头、订单明细汇总表格区块...', 'e.g. Standard 3-Column PO Header, Order Line Summary Table...')}
                         className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-violet-600"
                       />
                     </div>
@@ -1863,7 +1911,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     {/* Category pills */}
                     <div className="space-y-1.5">
                       <label className="font-semibold text-slate-700 block">
-                        归属业务分类
+                        {tr('归属业务分类', 'Category')}
                       </label>
                       <div className="grid grid-cols-3 gap-1.5">
                         {(Object.keys(COMPOSITE_CATEGORY_LABELS) as CompositeCategory[]).map((cat) => {
@@ -1875,13 +1923,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                               onClick={() =>
                                 setSaveCompositeModal({ ...saveCompositeModal, category: cat })
                               }
-                              className={`py-1.5 px-2.5 rounded-lg border text-xs font-medium cursor-pointer transition ${
+                              className={`py-1.5 px-2.5 rounded-lg border text-xs font-medium cursor-pointer transition truncate ${
                                 active
                                   ? 'bg-violet-600 text-white border-violet-600 font-semibold shadow-2xs'
                                   : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                               }`}
                             >
-                              {COMPOSITE_CATEGORY_LABELS[cat]}
+                              {localizeCompositeCategoryLabel(cat, locale)}
                             </button>
                           );
                         })}
@@ -1891,7 +1939,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     {/* Description textarea */}
                     <div className="space-y-1">
                       <label className="font-semibold text-slate-700 block">
-                        适用场景与复用说明
+                        {tr('适用场景与复用说明', 'Usage & Description')}
                       </label>
                       <textarea
                         rows={2}
@@ -1913,7 +1961,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       onClick={() => setSaveCompositeModal(null)}
                       className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs text-slate-700 cursor-pointer"
                     >
-                      取消
+                      {tr('取消', 'Cancel')}
                     </button>
                     <button
                       type="button"
@@ -1928,13 +1976,16 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         setRequestedLeftTab('composites');
                         setLeftActivityView('composites');
                         setAiBannerMsg(
-                          `★ 已将「${created.title}」沉淀至左侧【业务块】库（共 ${compositeBlocks.length + 1} 个可复用业务复合组件）`
+                          tr(
+                            `★ 已将「${created.title}」沉淀至左侧【业务块】库（共 ${compositeBlocks.length + 1} 个可复用业务复合组件）`,
+                            `★ Saved "${created.title}" to Saved Blocks (${compositeBlocks.length + 1} reusable blocks total)`,
+                          )
                         );
                       }}
                       className="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                     >
                       <BookmarkPlus className="w-3.5 h-3.5" />
-                      <span>确认沉淀至业务块库</span>
+                      <span>{tr('确认沉淀至业务块库', 'Save to Blocks')}</span>
                     </button>
                   </div>
                 </div>

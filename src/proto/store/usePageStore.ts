@@ -1,4 +1,4 @@
-import { valuesWithColumnDefaults } from '../database/columnDefault';
+import { validateColumnValues, valuesWithColumnDefaults } from '../database/columnDefault';
 import { seedRelatedTables } from '../database/previewRelations';
 import { create } from 'zustand';
 import { mapPurchaseOrderLines, purchaseTransferContractError } from '../runtime/purchaseTransfer';
@@ -6,7 +6,8 @@ import { newId } from '../../utils/identity';
 import { folderOptions, validateDesignerFolders, emptySitemapOverrides, prepareSitemapMove, type DesignerFolder, type SitemapOverrides, type SitemapMoveTarget } from '../sitemap';
 import { SITEMAP_TREE, useProtoStore, type SitemapItem, type DBTableSchema } from '../../store/useProtoStore';
 import { generateMockRows, generatePreviewRows, type Row } from '../runtime/mock';
-import { generateListPageSource, generateMasterDetailPageSource } from '../ai/templates';
+import { generateListPageSource, generateMasterDetailPageSource, projectBuiltinFixedRows, type TemplateDataContext } from '../ai/templates';
+import { isEnLocale, type Locale } from '../../i18n/runtime';
 import { printPageSource } from '../dsl/printer';
 import { walk } from '../dsl/tree';
 import type { ProtoNode } from '../types';
@@ -70,7 +71,7 @@ export const DEFAULT_COMPOSITE_BLOCKS: CustomCompositeBlock[] = [
     isBuiltin: true,
     tsxSnippet: `<QueryForm cols={3} labelAlign="right" colon={true}>
   <Input label="关键词检索" name="keyword" placeholder="输入单号 / 编码 / 名称模糊搜索" allowClear={true} />
-  <Select label="流转状态" name="status" options="全部,待审批,已通过,已驳回,已归档" allowClear={true} />
+  <Select label="流转状态" name="status" options={[{ label: '全部', value: '' }, { label: '待审批', value: '待审批' }, { label: '已通过', value: '已通过' }, { label: '已驳回', value: '已驳回' }, { label: '已归档', value: '已归档' }]} allowClear={true} />
   <DateRangePicker label="创建日期范围" name="date_range" />
 </QueryForm>`,
   },
@@ -263,7 +264,12 @@ interface PageStore {
 
 const HISTORY_LIMIT = 120;
 
-export const initialPages = (tables: DBTableSchema[]): { sources: Record<string, string>; pages: DesignerPage[] } => {
+export const initialPages = (
+  tables: DBTableSchema[],
+  locale: Locale = 'zh-CN',
+  data?: TemplateDataContext,
+): { sources: Record<string, string>; pages: DesignerPage[] } => {
+  const en = isEnLocale(locale);
   const byId = (id: string) => tables.find((t) => t.id === id);
   const supplier = byId('t_base_supplier');
   const material = byId('t_base_material');
@@ -275,59 +281,81 @@ export const initialPages = (tables: DBTableSchema[]): { sources: Record<string,
   const pages: DesignerPage[] = [];
 
   if (accOrder && accDetail) {
-    sources['acceptance-new'] = generateMasterDetailPageSource(accOrder, accDetail, po, supplier, {
-      pageId: 'acceptance-new',
-      title: '新增到货验收 (57 of 130)',
-      menuPath: ['验收入库管理', '新增到货验收'],
-    });
+    sources['acceptance-new'] = generateMasterDetailPageSource(
+      accOrder,
+      accDetail,
+      po,
+      supplier,
+      {
+        pageId: 'acceptance-new',
+        title: en ? 'New Receipt Inspection (57 of 130)' : '新增到货验收 (57 of 130)',
+        menuPath: en ? ['Receiving & Putaway', 'New Receipt Inspection'] : ['验收入库管理', '新增到货验收'],
+        locale,
+        data,
+      },
+      tables,
+    );
   }
   if (supplier) {
     sources['supplier-approval'] = generateListPageSource(supplier, tables, {
       pageId: 'supplier-approval',
-      title: '供应商准入与审批',
-      menuPath: ['基础资料管理', '供应商审批'],
+      title: en ? 'Supplier Approval' : '供应商准入与审批',
+      menuPath: en ? ['Master Data Management', 'Supplier Approval'] : ['基础资料管理', '供应商审批'],
       relatedTable: po,
       withStatusTabs: true,
+      locale,
+      data,
     });
     sources['qualified-suppliers'] = generateListPageSource(supplier, tables, {
       pageId: 'qualified-suppliers',
-      title: '合格供应商目录',
-      menuPath: ['基础资料管理', '合格供应商目录'],
+      title: en ? 'Qualified Suppliers' : '合格供应商目录',
+      menuPath: en ? ['Master Data Management', 'Qualified Suppliers'] : ['基础资料管理', '合格供应商目录'],
       relatedTable: po,
+      filter: { status: 'qualified' },
       withStatusTabs: false,
+      locale,
+      data,
     });
   }
   if (material) {
     sources['material-catalog'] = generateListPageSource(material, tables, {
       pageId: 'material-catalog',
-      title: '标准物料主数据目录',
-      menuPath: ['基础资料管理', '物料目录'],
+      title: en ? 'Item Catalog' : '标准物料主数据目录',
+      menuPath: en ? ['Master Data Management', 'Item Catalog'] : ['基础资料管理', '物料目录'],
       relatedTable: po,
       withStatusTabs: false,
+      locale,
+      data,
     });
   }
   if (po) {
     sources['purchase-order-confirm'] = generateListPageSource(po, tables, {
       pageId: 'purchase-order-confirm',
-      title: '采购订单确认与交期排程',
-      menuPath: ['采购与招标管理', '采购订单确认'],
+      title: en ? 'Purchase Order Review' : '采购订单确认与交期排程',
+      menuPath: en ? ['Procurement & Tendering', 'Purchase Order Review'] : ['采购与招标管理', '采购订单确认'],
       relatedTable: accDetail,
       withStatusTabs: true,
+      locale,
+      data,
     });
     sources['annual-plan'] = generateListPageSource(po, tables, {
       pageId: 'annual-plan',
-      title: '季度补货计划预算',
-      menuPath: ['年度计划-审批', '季度补货计划预算'],
+      title: en ? 'Quarterly Replenishment Plan' : '季度补货计划预算',
+      menuPath: en ? ['Annual Planning & Budget', 'Quarterly Replenishment Plan'] : ['年度计划-审批', '季度补货计划预算'],
       withStatusTabs: true,
+      locale,
+      data,
     });
   }
   if (accOrder) {
     sources['acceptance-list'] = generateListPageSource(accOrder, tables, {
       pageId: 'acceptance-list',
-      title: '到货验收单台账 (已入库)',
-      menuPath: ['验收入库管理', '到货验收单台账'],
+      title: en ? 'Receipt Inspection Ledger' : '到货验收单台账 (已入库)',
+      menuPath: en ? ['Receiving & Putaway', 'Receipt Inspection Ledger'] : ['验收入库管理', '到货验收单台账'],
       relatedTable: accDetail,
       withStatusTabs: true,
+      locale,
+      data,
     });
   }
 
@@ -349,24 +377,25 @@ export function tableRowsForProjectRevision(): PageStore['tableRows'] {
 }
 
 export const usePageStore = create<PageStore>((set, get) => {
-  const init = initialPages(useProtoStore.getState().dbTables);
+  const initProto = useProtoStore.getState();
+  const init = initialPages(initProto.dbTables, 'zh-CN', {
+    tables: initProto.dbTables,
+    tableRows: {},
+    suppliers: initProto.suppliers,
+    purchaseOrderItems: initProto.purchaseOrderItems,
+    acceptanceOrders: initProto.acceptanceOrders,
+    templateId: initProto.currentProjectMeta.templateId,
+    projectId: initProto.currentProjectMeta.projectId,
+  });
   let pendingRows: { projectId: string; generation: PageStore['tableRows']; schema: DBTableSchema[]; rows: PageStore['tableRows'] } | undefined;
   function previewInputs() {
     const project = useProtoStore.getState();
-    // The built-in template supplies PO lines and their supplier records through explicit contracts.
-    const isErpStarter = project.currentProjectMeta.templateId === 'saas_inventory' || project.currentProjectMeta.templateId === 'customs_erp';
-    const fixed: Record<string, Row[]> = !isErpStarter ? {} : {
-      t_base_supplier: project.suppliers.map(supplier => ({
-        id: supplier.id, supplier_code: supplier.code, supplier_name: supplier.name,
-        contact_person: supplier.contactPerson, contact_phone: supplier.phone,
-        tax_rate_default: supplier.taxRateDefault, status: supplier.status,
-      })),
-      t_pms_po_item: project.purchaseOrderItems.map(po => ({
-        id: po.id, po_number: po.poNumber, supplier_id: po.supplierId,
-        ordered_qty: po.orderedQty, delivered_qty: po.deliveredQty,
-        material_code: po.materialCode, unit_price_tax_included: po.unitPriceTaxIncluded,
-        tax_rate: po.taxRate, project_code: po.projectCode, status: po.status,
-      })) };
+    // Built-in and hybrid templates supply PO lines and supplier records through explicit contracts.
+    const fixed = projectBuiltinFixedRows({
+      templateId: project.currentProjectMeta.templateId,
+      suppliers: project.suppliers,
+      purchaseOrderItems: project.purchaseOrderItems,
+    });
     return {project, fixed};
   }
   function currentData() {
@@ -505,13 +534,18 @@ export const usePageStore = create<PageStore>((set, get) => {
     insertRow: (tableId, values) => {
       const table = useProtoStore.getState().dbTables.find(t => t.id === tableId);
       if (!table) throw new Error(`未知写入表 ${tableId}`);
-      const row: Row = { ...valuesWithColumnDefaults(table, values), id: newId(tableId) };
+      const effective = valuesWithColumnDefaults(table, values);
+      validateColumnValues(table, effective);
+      const row: Row = { ...effective, id: newId(tableId) };
       const rows = get().getRows(tableId);
       set((s) => ({ tableRows: { ...currentData(), [tableId]: [row, ...(s.tableRows[tableId] ?? rows)] } }));
       return row;
     },
 
     updateRow: (tableId, id, values) => {
+      const table = useProtoStore.getState().dbTables.find(t => t.id === tableId);
+      if (!table) throw new Error(`未知写入表 ${tableId}`);
+      validateColumnValues(table, values);
       const rows = get().getRows(tableId);
       set((s) => ({
         tableRows: {

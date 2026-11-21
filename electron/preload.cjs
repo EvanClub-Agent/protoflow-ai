@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
     ipcRenderer.invoke('pflow:save-file', bundleJsonString),
   setNativeTheme: (mode) => ipcRenderer.invoke('pflow:set-native-theme', mode),
   setWindowMode: (mode) => ipcRenderer.invoke('pflow:set-window-mode', mode),
+  getLocale: () => ipcRenderer.invoke('pflow:get-locale'),
+  setLocale: (locale) => ipcRenderer.invoke('pflow:set-locale', locale),
   publishing: {
     settings: () => publishingInvoke('settings'),
     accountSettings: () => publishingInvoke('accountSettings'),
@@ -96,16 +98,18 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
     setModel: async p => {
       try { return await ipcRenderer.invoke('pflow:hermes-model', p); }
       catch (error) {
+        const isEn = typeof document !== 'undefined' && document.documentElement?.dataset?.locale === 'en-US';
         const message = error.message.replace(/^Error invoking remote method 'pflow:hermes-model': Error: /, '');
-        throw new Error(message === 'model_switch_cancelled' ? '已取消切换模型' : message);
+        throw new Error(message === 'model_switch_cancelled' ? (isEn ? 'Model switch cancelled' : '已取消切换模型') : message);
       }
     },
     execute: async p => {
       try {
+        const isEn = typeof document !== 'undefined' && document.documentElement?.dataset?.locale === 'en-US';
         const res = await ipcRenderer.invoke('pflow:hermes-execute', p && typeof p === 'object' ? { ...p, __ipcEnvelope: true } : p);
         if (res && typeof res === 'object' && typeof res.__ok === 'boolean') {
           if (res.__ok) return res.value;
-          const err = new Error(String(res.error?.message || 'AI 执行失败'));
+          const err = new Error(String(res.error?.message || (isEn ? 'AI execution failed' : 'AI 执行失败')));
           if (res.error?.failureEnvelope && typeof res.error.failureEnvelope === 'object') {
             err.failureEnvelope = res.error.failureEnvelope;
           }

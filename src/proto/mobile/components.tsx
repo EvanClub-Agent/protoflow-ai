@@ -46,11 +46,14 @@ import { isActionChain, type PropValue, type ProtoNode } from '../types';
 import { useResolvedTheme } from '../registry/AntdSurface';
 import { PreviewDataContext, useMaterialTables } from '../runtime/PreviewData';
 import { usePageStore } from '../store/usePageStore';
+import { useProtoStore } from '../../store/useProtoStore';
 import { columnLabel, defaultDisplayColumns, type Row } from '../runtime/mock';
+import { resolveBoundForeignKeySpec } from '../ai/templates';
 import { mobileOptions } from './options';
 import { OVERLAY_TYPES } from '../registry/meta';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
 import { useSourceRow } from '../runtime/sourceRow';
+import { useI18n } from '../../i18n';
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 
@@ -296,6 +299,7 @@ export function MobilePageTheme({
   return <MobileThemeContext.Provider value={theme}>{children}</MobileThemeContext.Provider>;
 }
 const MobileFormIdContext = createContext<string | null>(null);
+const MobileFormTableContext = createContext<string | undefined>(undefined);
 
 const MOBILE_ICON_MAP: Record<string, LucideIcon> = {
   Sparkles,
@@ -332,11 +336,13 @@ function useTableDataRows(tableId?: string): Row[] {
   const preview = useContext(PreviewDataContext);
   const storeRows = usePageStore((s) => (tableId ? s.tableRows[tableId] : undefined));
   const getRows = usePageStore((s) => s.getRows);
+  const suppliers = useProtoStore((s) => s.suppliers);
+  const purchaseOrderItems = useProtoStore((s) => s.purchaseOrderItems);
   return useMemo(() => {
     if (!tableId) return [];
     if (preview) return preview.rows[tableId] ?? [];
     return storeRows ?? getRows(tableId);
-  }, [tableId, preview, storeRows, getRows]);
+  }, [tableId, preview, storeRows, getRows, suppliers, purchaseOrderItems]);
 }
 
 function matchesFilter(row: Row, staticFilter: unknown, runtimeFilter?: Record<string, unknown>): boolean {
@@ -364,6 +370,7 @@ function matchesFilter(row: Row, staticFilter: unknown, runtimeFilter?: Record<s
 // ───────────────────────── 1. Layout Containers ─────────────────────────
 
 const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNode }) => {
+  const { tr } = useI18n();
   const workspaceTheme = useResolvedTheme();
   const previewOverride = useContext(MobileAppearanceOverrideContext);
   const appearance = resolveMobileAppearance(p.appearance, workspaceTheme, previewOverride);
@@ -420,7 +427,9 @@ const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNo
             >
               <Sparkles className="w-6 h-6 mx-auto mb-2 opacity-60" aria-hidden="true" />
               <div className="text-[13px] font-medium">
-                {rt.isDesign ? '从左侧拖入 Gemini 现代移动物料开始设计' : '暂无页面内容'}
+                {rt.isDesign
+                  ? tr('从左侧拖入 Gemini 现代移动物料开始设计', 'Drop mobile materials from the left palette to start designing')
+                  : tr('暂无页面内容', 'No content')}
               </div>
             </div>
           )}
@@ -440,6 +449,7 @@ const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNo
 };
 
 const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const padCls = p.padding === 'sm' ? 'p-3' : p.padding === 'lg' ? 'p-5' : 'p-4';
   const tone = (p.tone as string) || 'card';
@@ -495,7 +505,7 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
       ) : (
         rt.isDesign && (
           <div className={cx('py-4 text-center text-[12px] rounded-2xl', theme.subtleBg, theme.textMuted)}>
-            拖入子组件至此卡片
+            {tr('拖入子组件至此卡片', 'Drop child components into this card')}
           </div>
         )
       )}
@@ -538,6 +548,7 @@ const BENTO_TONES_DARK: Record<string, string> = {
 };
 
 const MBentoGrid: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const cols = Math.max(1, Math.min(3, Number(p.cols ?? 2)));
   const gridCls = cols === 1 ? 'grid-cols-1' : cols === 3 ? 'grid-cols-3' : 'grid-cols-2';
@@ -594,7 +605,7 @@ const MBentoGrid: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
               )}
             </div>
             <div className="space-y-0.5 min-w-0 w-full">
-              <div className="text-[14px] font-semibold leading-snug truncate">{item.title || `模块 ${idx + 1}`}</div>
+              <div className="text-[14px] font-semibold leading-snug truncate">{item.title || tr(`模块 ${idx + 1}`, `Tile ${idx + 1}`)}</div>
               {item.subtitle && (
                 <div className="text-[11.5px] opacity-80 leading-snug line-clamp-2">{item.subtitle}</div>
               )}
@@ -608,6 +619,7 @@ const MBentoGrid: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
 };
 
 const MScrollRow: React.FC<CompProps> = ({ p, children, root, rt }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const gap = Math.max(4, Number(p.gap ?? 12));
   const peek = p.peek !== false;
@@ -647,7 +659,7 @@ const MScrollRow: React.FC<CompProps> = ({ p, children, root, rt }) => {
               theme.textMuted,
             )}
           >
-            拖入横向卡片或指标组件至此横滑容器
+            {tr('拖入横向卡片或指标组件至此横滑容器', 'Drop cards or metrics into this horizontal row')}
           </div>
         )
       )}
@@ -658,6 +670,7 @@ const MScrollRow: React.FC<CompProps> = ({ p, children, root, rt }) => {
 // ───────────────────────── 2. Glass Navigation ─────────────────────────
 
 const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const leftMode = (p.leftMode as string) || 'back';
   const rightIcon = (p.rightIcon as string) || 'avatar';
@@ -689,7 +702,7 @@ const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {leftMode !== 'none' && (
           <button
             type="button"
-            aria-label={leftMode === 'back' ? '返回' : leftMode === 'menu' ? '打开导航菜单' : '智能助手'}
+            aria-label={leftMode === 'back' ? tr('返回', 'Back') : leftMode === 'menu' ? tr('打开导航菜单', 'Open menu') : tr('智能助手', 'Assistant')}
             onClick={() => rt.run(p.onLeftClick as PropValue, scope)}
             className={cx(
               'w-11 h-11 rounded-full inline-flex items-center justify-center cursor-pointer transition-transform active:scale-95',
@@ -719,7 +732,7 @@ const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
           )}
         >
           <span className={cx('text-[15.5px] font-semibold tracking-tight truncate', theme.textPrimary)}>
-            {p.title || '页面标题'}
+            {p.title || tr('页面标题', 'Page Title')}
           </span>
           {p.titleDropdown && <ChevronDown className={cx('w-4 h-4 shrink-0', theme.textMuted)} aria-hidden="true" />}
         </button>
@@ -730,7 +743,7 @@ const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {rightIcon === 'avatar' && (
           <button
             type="button"
-            aria-label="个人账户"
+            aria-label={tr('个人账户', 'Account')}
             onClick={() => rt.run(p.onRightClick as PropValue, scope)}
             className="w-11 h-11 inline-flex items-center justify-center cursor-pointer"
           >
@@ -742,7 +755,7 @@ const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {RightLucide && (
           <button
             type="button"
-            aria-label="顶部操作"
+            aria-label={tr('顶部操作', 'Top action')}
             onClick={() => rt.run(p.onRightClick as PropValue, scope)}
             className={cx(
               'w-11 h-11 rounded-full inline-flex items-center justify-center cursor-pointer transition-transform active:scale-95',
@@ -759,6 +772,7 @@ const MTopBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { isEn, tr } = useI18n();
   const theme = useMobileTheme();
   const [localActive, setLocalActive] = useState<string | null>(null);
   useEffect(() => {
@@ -767,6 +781,12 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 
   const items = (Array.isArray(p.items) && p.items.length
     ? p.items
+    : isEn
+    ? [
+        { key: 'home', title: 'Explore', icon: 'Sparkles' },
+        { key: 'tasks', title: 'Tasks', icon: 'Layers' },
+        { key: 'mine', title: 'Profile', icon: 'User' },
+      ]
     : [
         { key: 'home', title: '探索', icon: 'Sparkles' },
         { key: 'tasks', title: '待办', icon: 'Layers' },
@@ -785,7 +805,7 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 
   return (
     <nav
-      aria-label="底部主导航"
+      aria-label={tr('底部主导航', 'Bottom navigation')}
       {...rootWith(root, {
         className: cx(
           floating ? 'px-4 pb-2 pt-1' : 'w-full',
@@ -851,7 +871,7 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
                   isActive ? cx('font-semibold', theme.textPrimary) : theme.textMuted,
                 )}
               >
-                {it.title || `导航${idx + 1}`}
+                {it.title || tr(`导航${idx + 1}`, `Tab ${idx + 1}`)}
               </span>
             </button>
           );
@@ -862,6 +882,7 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const MPillTabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const tabIdPrefix = useId();
   const activeIdx = rt.tabs[node.pfId] ?? 0;
@@ -877,12 +898,12 @@ const MPillTabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode })
   const entries =
     tabKids.length > 0
       ? tabKids.map((k, idx) => ({
-          label: String(k.props.title ?? `页签 ${idx + 1}`),
+          label: String(k.props.title ?? tr(`页签 ${idx + 1}`, `Tab ${idx + 1}`)),
           badge: k.props.badge !== undefined ? String(k.props.badge) : undefined,
           value: '',
         }))
       : itemList.map((it, idx) => ({
-          label: it.title || `选项 ${idx + 1}`,
+          label: it.title || tr(`选项 ${idx + 1}`, `Option ${idx + 1}`),
           badge: it.badge,
           value: it.value ?? '',
         }));
@@ -893,7 +914,7 @@ const MPillTabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode })
     <div {...rootWith(root, { className: 'space-y-3' })}>
       <div
         role="tablist"
-        aria-label="内容分类切换"
+        aria-label={tr('内容分类切换', 'Category tabs')}
         className={cx(
           'flex items-center overflow-x-auto no-scrollbar',
           variant === 'segmented'
@@ -978,6 +999,7 @@ const MTab: React.FC<CompProps> = ({ children, root }) => (
 );
 
 const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const [kw, setKw] = useState('');
 
@@ -1000,11 +1022,11 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         <Search className={cx('w-4 h-4 shrink-0', theme.textMuted)} aria-hidden="true" />
         <input
           type="search"
-          aria-label={(p.placeholder as string) || '搜索关键词'}
+          aria-label={(p.placeholder as string) || tr('搜索关键词', 'Search keywords')}
           value={kw}
           readOnly={rt.isDesign}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder={(p.placeholder as string) || '搜索...'}
+          placeholder={(p.placeholder as string) || tr('搜索...', 'Search...')}
           className={cx(
             'flex-1 min-w-0 bg-transparent text-[13.5px] focus:outline-none',
             theme.textPrimary,
@@ -1014,7 +1036,7 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {kw && !rt.isDesign && (
           <button
             type="button"
-            aria-label="清空搜索"
+            aria-label={tr('清空搜索', 'Clear search')}
             onClick={() => handleChange('')}
             className={cx(
               "relative w-9 h-9 rounded-full inline-flex items-center justify-center opacity-80 hover:opacity-100 cursor-pointer shrink-0 after:content-[''] after:absolute after:-inset-1",
@@ -1027,12 +1049,12 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {p.showVoice && (
           <button
             type="button"
-            aria-label="语音搜索"
+            aria-label={tr('语音搜索', 'Voice search')}
             onClick={() => {
               if (p.onVoiceClick) {
                 void rt.run(p.onVoiceClick as PropValue, scope);
               } else if (!rt.isDesign) {
-                void rt.run({ $kind: 'actions', calls: [{ name: 'toast', args: ['请说出搜索关键词', 'info'] }] }, scope);
+                void rt.run({ $kind: 'actions', calls: [{ name: 'toast', args: [tr('请说出搜索关键词', 'Speak your search query'), 'info'] }] }, scope);
               }
             }}
             className={cx(
@@ -1048,7 +1070,7 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
       {p.showFilter && (
         <button
           type="button"
-          aria-label="打开筛选条件"
+          aria-label={tr('打开筛选条件', 'Open filters')}
           onClick={() => {
             if (typeof p.filterOverlay === 'string' && p.filterOverlay) {
               void rt.run({ $kind: 'actions', calls: [{ name: 'openDrawer', args: [p.filterOverlay] }] }, scope);
@@ -1071,6 +1093,7 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 // ───────────────────────── 3. Content, Business & AI Display ─────────────────────────
 
 const MHeroHeader: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const isBanner = p.mode === 'banner';
 
@@ -1097,7 +1120,7 @@ const MHeroHeader: React.FC<CompProps> = ({ p, root, rt, scope }) => {
             className="text-[21px] font-bold tracking-tight leading-snug"
             style={{ textWrap: 'balance' } as React.CSSProperties}
           >
-            {p.title || '焕新移动体验'}
+            {p.title || tr('焕新移动体验', 'Modern Mobile Experience')}
           </h2>
           {p.subtitle && <p className="text-[12.5px] text-white/85 leading-relaxed">{p.subtitle}</p>}
         </div>
@@ -1132,7 +1155,7 @@ const MHeroHeader: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         )}
         style={{ textWrap: 'balance' } as React.CSSProperties}
       >
-        {p.title || '你好，Alex'}
+        {p.title || tr('你好，Alex', 'Hello, Alex')}
       </h1>
       {p.subtitle && (
         <p className={cx('text-[15px] font-medium leading-snug', theme.textMuted)}>{p.subtitle}</p>
@@ -1170,6 +1193,7 @@ const FEED_GRADIENTS_DARK = [
 ];
 
 const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td } = useI18n();
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
@@ -1191,7 +1215,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         .map((r) => ({
           id: r.id,
           row: r,
-          title: cell(r, titleKey) || '未配置标题或暂无值',
+          title: cell(r, titleKey) || tr('未配置标题或暂无值', 'Untitled'),
           subtitle: cell(r, subKey),
           price: cell(r, priceKey),
           tag: cell(r, tagKey),
@@ -1214,20 +1238,20 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       .map((it, idx) => ({
         id: `item-${idx}`,
         row: { id: `item-${idx}`, ...it } as Row,
-        title: it.title || `精选内容 ${idx + 1}`,
+        title: it.title || tr(`精选内容 ${idx + 1}`, `Featured Item ${idx + 1}`),
         subtitle: it.subtitle || '',
         price: it.price || '',
         tag: it.tag || '',
       }));
-  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, priceKey, tagKey]);
+  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, priceKey, tagKey, tr]);
 
-  if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{bindingErrors[0]}</div>;
+  if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{td(bindingErrors[0])}</div>;
 
   if (cards.length === 0) {
     return (
       <div {...rootWith(root, { className: cx('rounded-[22px] py-10 text-center', theme.cardBg, theme.textMuted) })}>
         <Inbox className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden="true" />
-        <div className="text-[13px]">暂无匹配的内容</div>
+        <div className="text-[13px]">{tr('暂无匹配的内容', 'No matching items')}</div>
       </div>
     );
   }
@@ -1359,17 +1383,17 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 
 function statusToneCls(status: string, isDark: boolean): string {
   const s = status.toLowerCase();
-  if (/通过|完成|qualified|confirmed|completed|已入库|正常/.test(s)) {
+  if (/通过|完成|qualified|confirmed|completed|approved|enabled|active|normal|done|pass|已入库|正常/.test(s)) {
     return isDark
       ? 'bg-emerald-500/16 text-emerald-300 ring-1 ring-inset ring-emerald-400/25'
       : 'bg-emerald-100/90 text-emerald-800';
   }
-  if (/驳回|异常|rejected|超期|失败/.test(s)) {
+  if (/驳回|异常|rejected|disabled|failed|error|overdue|fail|超期|失败/.test(s)) {
     return isDark
       ? 'bg-rose-500/16 text-rose-300 ring-1 ring-inset ring-rose-400/25'
       : 'bg-rose-100/90 text-rose-800';
   }
-  if (/待|pending|unconfirmed|进行/.test(s)) {
+  if (/待|pending|unconfirmed|in progress|review|进行/.test(s)) {
     return isDark
       ? 'bg-amber-500/16 text-amber-300 ring-1 ring-inset ring-amber-400/25'
       : 'bg-amber-100/90 text-amber-900';
@@ -1378,6 +1402,7 @@ function statusToneCls(status: string, isDark: boolean): string {
 }
 
 const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { isEn, tr, td } = useI18n();
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
@@ -1408,12 +1433,27 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     onClick?: PropValue;
   }[];
 
-  if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{bindingErrors[0]}</div>;
+  if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{td(bindingErrors[0])}</div>;
 
   if (!tableId) {
     const demoItems = (
       Array.isArray(p.items)
         ? p.items
+        : isEn
+        ? [
+            {
+              title: 'Annual Cloud Capacity Expansion Request',
+              status: 'Pending',
+              summary: 'Dept: AI Platform R&D · Vendor: PrimeCloud Tech',
+              meta: '¥128,000 · 10m ago',
+            },
+            {
+              title: 'East Hub Smart Warehouse Receiving',
+              status: 'Approved',
+              summary: 'Inspector: Lin Feng · 12 standard hardware items',
+              meta: '¥64,500 · Today 09:30',
+            },
+          ]
         : [
             {
               title: '年度云资源扩容采购申请',
@@ -1445,7 +1485,7 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       return (
         <div {...rootWith(root, { className: cx('rounded-[22px] py-10 text-center', theme.cardBg, theme.textMuted) })}>
           <Inbox className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden="true" />
-          <div className="text-[13px]">当前筛选下暂无业务单据</div>
+          <div className="text-[13px]">{tr('当前筛选下暂无业务单据', 'No records match the current filter')}</div>
         </div>
       );
     }
@@ -1479,11 +1519,11 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                     }}
                     className={cx('text-left text-[14.5px] font-semibold leading-snug cursor-pointer', theme.textPrimary)}
                   >
-                    {it.title || `任务单据 #${idx + 1}`}
+                    {it.title || tr(`任务单据 #${idx + 1}`, `Task #${idx + 1}`)}
                   </button>
                 ) : (
                   <span className={cx('text-[14.5px] font-semibold leading-snug', theme.textPrimary)}>
-                    {it.title || `任务单据 #${idx + 1}`}
+                    {it.title || tr(`任务单据 #${idx + 1}`, `Task #${idx + 1}`)}
                   </span>
                 )}
                 {it.status && (
@@ -1533,7 +1573,7 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     return (
       <div {...rootWith(root, { className: cx('rounded-[22px] py-10 text-center', theme.cardBg, theme.textMuted) })}>
         <Inbox className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden="true" />
-        <div className="text-[13px]">当前筛选下暂无业务单据</div>
+        <div className="text-[13px]">{tr('当前筛选下暂无业务单据', 'No records match the current filter')}</div>
       </div>
     );
   }
@@ -1545,7 +1585,7 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         const statusVal = statusField && r[statusField] != null ? String(r[statusField]) : '';
         const activateCard = () => void rt.run(p.onCardClick as PropValue, rowScope);
         const hasCardClick = Boolean(p.onCardClick) && !rt.isDesign;
-        const cardTitle = titleField && r[titleField] != null ? String(r[titleField]) : '未配置标题或暂无值';
+        const cardTitle = titleField && r[titleField] != null ? String(r[titleField]) : tr('未配置标题或暂无值', 'Untitled');
         return (
           <div
             key={r.id}
@@ -1640,6 +1680,7 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 };
 
 const MListGroup: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableSchema = typeof p.table === 'string' ? tables.find((t) => t.id === p.table) : undefined;
@@ -1692,7 +1733,7 @@ const MListGroup: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
                 )}
                 <div className="min-w-0">
                   <div className={cx('text-[14px] font-medium truncate', theme.textPrimary)}>
-                    {it.title || `项目 ${idx + 1}`}
+                    {it.title || tr(`项目 ${idx + 1}`, `Item ${idx + 1}`)}
                   </div>
                   {it.description && (
                     <div className={cx('text-[11.5px] truncate mt-0.5', theme.textMuted)}>{it.description}</div>
@@ -1713,6 +1754,7 @@ const MListGroup: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
 };
 
 const MListItem: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const Icon = p.icon ? resolveMobileIcon(p.icon as string, FileText) : null;
   return (
@@ -1731,7 +1773,7 @@ const MListItem: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         )}
         <div className="min-w-0">
           <div className={cx('text-[14px] font-medium truncate', p.danger ? theme.dangerText : theme.textPrimary)}>
-            {p.title || '列表项'}
+            {p.title || tr('列表项', 'List Item')}
           </div>
           {p.description && <div className={cx('text-[11.5px] truncate mt-0.5', theme.textMuted)}>{p.description}</div>}
         </div>
@@ -1745,6 +1787,7 @@ const MListItem: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const gradId = useId();
   const tone = (p.trendTone as string) || 'up';
@@ -1769,7 +1812,7 @@ const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
       {...interactiveBoxProps(Boolean(p.onClick) && !rt.isDesign, activate)}
     >
       <div className="space-y-1.5 min-w-0">
-        <div className={cx('text-[12.5px] font-medium', theme.textMuted)}>{p.title || '核心指标'}</div>
+        <div className={cx('text-[12.5px] font-medium', theme.textMuted)}>{p.title || tr('核心指标', 'Key Metric')}</div>
         <div className="flex items-baseline gap-1">
           <span className={cx('text-[24px] font-bold tracking-tight tabular-nums', theme.textPrimary)}>
             {p.value ?? '0'}
@@ -1806,9 +1849,19 @@ const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const MChatStream: React.FC<CompProps> = ({ p, root }) => {
+  const { isEn } = useI18n();
   const theme = useMobileTheme();
   const messages = (Array.isArray(p.messages) && p.messages.length
     ? p.messages
+    : isEn
+    ? [
+        { role: 'user', title: 'Help me prioritize key tasks for today' },
+        {
+          role: 'assistant',
+          title: 'I summarized your schedule and operational data: 3 high-priority approvals and 1 quarterly brief await review.',
+          highlight: 'Top priority: East Hub replenishment order (est. 14% faster fulfillment)',
+        },
+      ]
     : [
         { role: 'user', title: '帮我梳理今天的重点优先事项' },
         { role: 'assistant', title: '已为你整合日程与业务数据：当前有 3 项高优审批与 1 份季度简报待确认。', highlight: '优先处理：华东区智能仓补货单（预计节省 14% 调拨时效）' },
@@ -1858,6 +1911,7 @@ const MChatStream: React.FC<CompProps> = ({ p, root }) => {
 };
 
 const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const [text, setText] = useState('');
   const chips = typeof p.suggestions === 'string'
@@ -1914,7 +1968,7 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {p.showMedia !== false && (
           <button
             type="button"
-            aria-label="添加图片或附件"
+            aria-label={tr('添加图片或附件', 'Add image or attachment')}
             onClick={() => rt.run(p.onPlusClick as PropValue, scope)}
             className={cx('w-11 h-11 rounded-full inline-flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95', theme.subtleBg, theme.textSecondary)}
           >
@@ -1923,7 +1977,7 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         )}
         <input
           type="text"
-          aria-label={(p.placeholder as string) || '输入问题或指令'}
+          aria-label={(p.placeholder as string) || tr('输入问题或指令', 'Ask a question or enter a command')}
           value={text}
           readOnly={rt.isDesign}
           onChange={(e) => setText(e.target.value)}
@@ -1933,7 +1987,7 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
               handleSend();
             }
           }}
-          placeholder={(p.placeholder as string) || '输入问题或指令...'}
+          placeholder={(p.placeholder as string) || tr('输入问题或指令...', 'Ask a question or enter a command...')}
           className={cx(
             'flex-1 min-w-0 bg-transparent text-[13.5px] px-1.5 focus:outline-none',
             theme.textPrimary,
@@ -1943,12 +1997,12 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         {p.showMedia !== false && !text && (
           <button
             type="button"
-            aria-label="语音输入"
+            aria-label={tr('语音输入', 'Voice input')}
             onClick={() => {
               if (p.onVoiceClick) {
                 void rt.run(p.onVoiceClick as PropValue, scope);
               } else if (!rt.isDesign) {
-                void rt.run({ $kind: 'actions', calls: [{ name: 'toast', args: ['正在聆听语音指令...', 'info'] }] }, scope);
+                void rt.run({ $kind: 'actions', calls: [{ name: 'toast', args: [tr('正在聆听语音指令...', 'Listening for voice command...'), 'info'] }] }, scope);
               }
             }}
             className={cx('w-11 h-11 rounded-full inline-flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95', theme.textSecondary)}
@@ -1958,7 +2012,7 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         )}
         <button
           type="button"
-          aria-label="发送"
+          aria-label={tr('发送', 'Send')}
           onClick={handleSend}
           className={cx(
             'w-11 h-11 rounded-full inline-flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95',
@@ -1994,26 +2048,31 @@ const MForm: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
 
   return (
     <MobileFormIdContext.Provider value={node.pfId}>
-      <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3.5', theme.cardBg) })}>
-        {p.title && <div className={cx('text-[14.5px] font-semibold', theme.textPrimary)}>{p.title}</div>}
-        <div className="space-y-3">{children}</div>
-      </div>
+      <MobileFormTableContext.Provider value={typeof p.table === 'string' && p.table ? p.table : undefined}>
+        <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3.5', theme.cardBg) })}>
+          {p.title && <div className={cx('text-[14.5px] font-semibold', theme.textPrimary)}>{p.title}</div>}
+          <div className="space-y-3">{children}</div>
+        </div>
+      </MobileFormTableContext.Provider>
     </MobileFormIdContext.Provider>
   );
 };
 
 function useMobileFieldBinding(node: ProtoNode, nameProp: unknown, rt: CompProps['rt']) {
+  const { tr, td } = useI18n();
   const parentForm = useContext(MobileFormIdContext);
   const formId = parentForm ?? node.pfId;
   // Standalone controls keep local runtime state. A form must use an explicit business field.
   const fieldName = typeof nameProp === 'string' && nameProp.trim() ? nameProp : parentForm ? undefined : node.pfId;
   const value = fieldName ? rt.formValues[formId]?.[fieldName] : undefined;
-  const error = fieldName ? rt.formErrors[formId]?.[fieldName] : '请配置表单字段名';
+  const rawErr = fieldName ? rt.formErrors[formId]?.[fieldName] : tr('请配置表单字段名', 'Please configure field name');
+  const error = rawErr ? td(rawErr) : undefined;
   const setValue = (next: unknown) => { if (fieldName) rt.setFormValue(formId, fieldName, next); };
   return { value, error, setValue, fieldName, formId };
 }
 
 const MField: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const inputId = useId();
   const descId = useId();
@@ -2026,7 +2085,7 @@ const MField: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     const parsed =
       inputType === 'number' || inputType === 'amount'
         ? raw === ''
-          ? ''
+          ? null
           : Number(raw)
         : raw;
     setValue(parsed);
@@ -2051,7 +2110,7 @@ const MField: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           aria-describedby={hasDesc ? descId : undefined}
           readOnly={rt.isDesign || Boolean(p.readOnly)}
           onChange={(e) => onChangeVal(e.target.value)}
-          placeholder={(p.placeholder as string) || '请输入...'}
+          placeholder={(p.placeholder as string) || tr('请输入...', 'Enter...')}
           className={cx(
             'w-full rounded-2xl px-4 py-3 text-[14px] focus:outline-none focus:ring-2 focus:ring-[#4285F4]/40',
             theme.inputBg,
@@ -2077,7 +2136,7 @@ const MField: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             aria-describedby={hasDesc ? descId : undefined}
             readOnly={rt.isDesign || Boolean(p.readOnly)}
             onChange={(e) => onChangeVal(e.target.value)}
-            placeholder={(p.placeholder as string) || '请输入...'}
+            placeholder={(p.placeholder as string) || tr('请输入...', 'Enter...')}
             className={cx(
               'flex-1 min-w-0 bg-transparent focus:outline-none',
               theme.placeholderCls,
@@ -2105,19 +2164,31 @@ function offsetDateIso(days: number): string {
 }
 
 const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td } = useI18n();
   const theme = useMobileTheme();
   const portalEl = useContext(MobileScreenPortalContext);
   const controlId = useId();
   const descId = useId();
   const { value, error, setValue } = useMobileFieldBinding(node, p.name, rt);
   const [open, setOpen] = useState(false);
+  const formTableId = useContext(MobileFormTableContext);
   const fkRows = useTableDataRows(typeof p.table === 'string' ? p.table : undefined);
   const tables = useMaterialTables();
   const fkSchema = typeof p.table === 'string' ? tables.find((t) => t.id === p.table) : undefined;
+  const fkSpec = useMemo(
+    () =>
+      formTableId && typeof p.name === 'string' && p.name
+        ? resolveBoundForeignKeySpec(formTableId, p.name, tables)
+        : null,
+    [formTableId, p.name, tables],
+  );
+  const qualifiedOnly = Boolean(
+    fkSpec?.qualifiedOnly && (!fkSchema || fkSpec.refTable.id === fkSchema.id),
+  );
 
   const { options, issue } = useMemo(() => mobileOptions(p.options, p.table === undefined ? undefined : {
-    table: fkSchema, rows: fkRows, labelField: p.labelField, valueField: p.valueField,
-  }), [fkSchema, fkRows, p.table, p.labelField, p.valueField, p.options]);
+    table: fkSchema, rows: fkRows, labelField: p.labelField, valueField: p.valueField, qualifiedOnly,
+  }), [fkSchema, fkRows, p.table, p.labelField, p.valueField, p.options, qualifiedOnly]);
   const mode = (p.mode as string) ?? 'single';
   const isDateOrTime = mode === 'date' || mode === 'time';
   const readOnly = rt.isDesign || Boolean(p.readOnly);
@@ -2132,12 +2203,12 @@ const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     void rt.run(p.onChange as PropValue, scope);
   };
 
-  const sheetTitle = String(p.label || (mode === 'date' ? '选择日期' : mode === 'time' ? '选择时间' : '请选择'));
+  const sheetTitle = String(p.label || (mode === 'date' ? tr('选择日期', 'Select Date') : mode === 'time' ? tr('选择时间', 'Select Time') : tr('请选择', 'Select')));
   const datePresets = [
-    { label: '今天', val: offsetDateIso(0) },
-    { label: '明天', val: offsetDateIso(1) },
-    { label: '3 天后', val: offsetDateIso(3) },
-    { label: '7 天后', val: offsetDateIso(7) },
+    { label: tr('今天', 'Today'), val: offsetDateIso(0) },
+    { label: tr('明天', 'Tomorrow'), val: offsetDateIso(1) },
+    { label: tr('3 天后', 'In 3 days'), val: offsetDateIso(3) },
+    { label: tr('7 天后', 'In 7 days'), val: offsetDateIso(7) },
   ];
   const timePresets = ['09:00', '12:00', '14:30', '18:00'];
 
@@ -2162,7 +2233,7 @@ const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         <div className={cx('text-[15.5px] font-semibold truncate', theme.textPrimary)}>{sheetTitle}</div>
         <button
           type="button"
-          aria-label="关闭选择面板"
+          aria-label={tr('关闭选择面板', 'Close picker')}
           onClick={() => setOpen(false)}
           className={cx('w-11 h-11 rounded-full inline-flex items-center justify-center cursor-pointer shrink-0', theme.subtleBg, theme.textSecondary)}
         >
@@ -2207,7 +2278,7 @@ const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               onClick={() => setOpen(false)}
               className={cx('w-full min-h-[46px] rounded-full text-[14px] font-semibold cursor-pointer', theme.accentSolidBg)}
             >
-              完成
+              {tr('完成', 'Done')}
             </button>
           </div>
         ) : (
@@ -2253,7 +2324,7 @@ const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 
   const TriggerRightIcon = mode === 'date' ? Calendar : mode === 'time' ? Clock : ChevronDown;
   const fallbackPlaceholder =
-    (p.placeholder as string) || (mode === 'date' ? '点击选择日期' : mode === 'time' ? '点击选择时间' : '点击选择');
+    (p.placeholder as string) || (mode === 'date' ? tr('点击选择日期', 'Tap to select date') : mode === 'time' ? tr('点击选择时间', 'Tap to select time') : tr('点击选择', 'Tap to select'));
 
   return (
     <div {...rootWith(root, { className: 'space-y-1.5' })}>
@@ -2280,19 +2351,20 @@ const MSheetPicker: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         )}
       >
         <span className={cx('text-[14px] truncate', isDateOrTime && 'tabular-nums', !selectedLabel && theme.textMuted)}>
-          {selectedLabel || (isDateOrTime || options.length ? fallbackPlaceholder : '暂无可选项')}
+          {selectedLabel || (isDateOrTime || options.length ? fallbackPlaceholder : tr('暂无可选项', 'No options available'))}
         </span>
         <TriggerRightIcon className={cx('w-4 h-4 shrink-0', theme.textMuted)} aria-hidden="true" />
       </button>
 
       {sheetOverlay}
-      {issue && <p id={descId} role="alert" className={cx('text-xs', theme.dangerText)}>{issue}</p>}
+      {issue && <p id={descId} role="alert" className={cx('text-xs', theme.dangerText)}>{td(issue)}</p>}
       {!issue && error && <p id={descId} role="alert" className={cx('text-[11.5px] px-1', theme.dangerText)}>{error}</p>}
     </div>
   );
 };
 
 const MChipSelect: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { td } = useI18n();
   const theme = useMobileTheme();
   const { value, error, setValue } = useMobileFieldBinding(node, p.name, rt);
   const { options, issue } = useMemo(() => mobileOptions(p.options), [p.options]);
@@ -2341,13 +2413,14 @@ const MChipSelect: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           );
         })}
       </div>
-      {issue && <p role="alert" className={cx('text-xs', theme.dangerText)}>{issue}</p>}
+      {issue && <p role="alert" className={cx('text-xs', theme.dangerText)}>{td(issue)}</p>}
       {error && <p className={cx('text-[11.5px] px-1', theme.dangerText)}>{error}</p>}
     </div>
   );
 };
 
 const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const scanInputId = useId();
   const { value, error, setValue, fieldName } = useMobileFieldBinding(node, p.name, rt);
@@ -2385,7 +2458,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               {!rt.isDesign && (
                 <button
                   type="button"
-                  aria-label={`移除 ${label}`}
+                  aria-label={tr(`移除 ${label}`, `Remove ${label}`)}
                   onClick={() => {
                     const next = imgs.filter((_, i) => i !== idx);
                     setValue(next.length > 0 ? next : undefined);
@@ -2405,7 +2478,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             type="button"
             onClick={() => {
               if (!rt.isDesign) {
-                setValue([...imgs, `照片_${imgs.length + 1}.jpg`]);
+                setValue([...imgs, tr(`照片_${imgs.length + 1}.jpg`, `Photo_${imgs.length + 1}.jpg`)]);
                 void rt.run(p.onChange as PropValue, scope);
               }
             }}
@@ -2416,7 +2489,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             style={{ aspectRatio: '1 / 1' }}
           >
             <Camera className={cx('w-5 h-5', theme.textSecondary)} aria-hidden="true" />
-            <span className={cx('text-[11px]', theme.textMuted)}>拍照 / 上传</span>
+            <span className={cx('text-[11px]', theme.textMuted)}>{tr('拍照 / 上传', 'Photo / Upload')}</span>
           </button>
         </div>
         {errorNode}
@@ -2446,12 +2519,12 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               setValue(e.target.value);
               void rt.run(p.onChange as PropValue, scope);
             }}
-            placeholder="扫描或输入条码/单号..."
+            placeholder={tr('扫描或输入条码/单号...', 'Scan or enter barcode / ID...')}
             className={cx('flex-1 min-w-0 bg-transparent text-[14px] font-mono focus:outline-none', theme.placeholderCls)}
           />
           <button
             type="button"
-            aria-label="模拟扫码"
+            aria-label={tr('模拟扫码', 'Simulate scan')}
             onClick={() => {
               if (!rt.isDesign) {
                 setValue(`SN-${Math.floor(100000 + Math.random() * 900000)}`);
@@ -2464,7 +2537,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             )}
           >
             <ScanLine className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>扫码</span>
+            <span>{tr('扫码', 'Scan')}</span>
           </button>
         </div>
         {errorNode}
@@ -2479,7 +2552,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         <div className={cx('min-h-[54px] rounded-2xl px-4 py-2 flex items-center justify-between gap-3', theme.inputBg)}>
           <div className="min-w-0">
             <div className={cx('text-[14px] font-medium', theme.textPrimary)}>
-              <span>{p.label || '数量'}</span>
+              <span>{p.label || tr('数量', 'Quantity')}</span>
               {requiredBadge}
             </div>
             {p.description && <div className={cx('text-[11.5px]', theme.textMuted)}>{p.description}</div>}
@@ -2487,7 +2560,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           <div className="inline-flex items-center gap-2 shrink-0">
             <button
               type="button"
-              aria-label={`减少${p.label || '数量'}`}
+              aria-label={tr(`减少${p.label || '数量'}`, `Decrease ${p.label || 'Quantity'}`)}
               onClick={() => {
                 if (!rt.isDesign) {
                   setValue(Math.max(min, num - 1));
@@ -2501,7 +2574,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             <span className={cx('min-w-[28px] text-center text-[15px] font-semibold tabular-nums', theme.textPrimary)}>{num}</span>
             <button
               type="button"
-              aria-label={`增加${p.label || '数量'}`}
+              aria-label={tr(`增加${p.label || '数量'}`, `Increase ${p.label || 'Quantity'}`)}
               onClick={() => {
                 if (!rt.isDesign) {
                   setValue(Math.min(max, num + 1));
@@ -2525,7 +2598,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       <div className={cx('min-h-[52px] rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3', theme.inputBg)}>
         <div className="min-w-0">
           <div className={cx('text-[14px] font-medium', theme.textPrimary)}>
-            <span>{p.label || '开关选项'}</span>
+            <span>{p.label || tr('开关选项', 'Toggle Option')}</span>
             {requiredBadge}
           </div>
           {p.description && <div className={cx('text-[11.5px]', theme.textMuted)}>{p.description}</div>}
@@ -2534,7 +2607,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           type="button"
           role="switch"
           aria-checked={checked}
-          aria-label={String(p.label || '开关')}
+          aria-label={String(p.label || tr('开关', 'Toggle'))}
           onClick={() => {
             if (!rt.isDesign) {
               setValue(!checked);
@@ -2568,6 +2641,7 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 // ───────────────────────── 5. Pill Actions & Bottom Dock ─────────────────────────
 
 const MButton: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const variant = (p.variant as string) || 'primary';
   const size = (p.size as string) || 'md';
@@ -2606,12 +2680,13 @@ const MButton: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
       })}
     >
       {Icon && <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />}
-      <span>{text || '继续'}</span>
+      <span>{text || tr('继续', 'Continue')}</span>
     </button>
   );
 };
 
 const MBottomDock: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const isCommerce = p.mode === 'commerce';
 
@@ -2627,7 +2702,7 @@ const MBottomDock: React.FC<CompProps> = ({ p, root, rt, scope }) => {
     >
       {isCommerce && (
         <div className="min-w-0 shrink-0">
-          <div className={cx('text-[11px]', theme.textMuted)}>{p.summaryLabel || '合计'}</div>
+          <div className={cx('text-[11px]', theme.textMuted)}>{p.summaryLabel || tr('合计', 'Total')}</div>
           <div className={cx('text-[19px] font-bold tabular-nums leading-tight', theme.accentText)}>
             {p.price || '—'}
           </div>
@@ -2657,7 +2732,7 @@ const MBottomDock: React.FC<CompProps> = ({ p, root, rt, scope }) => {
             p.danger ? 'bg-rose-600 text-white' : theme.accentSolidBg,
           )}
         >
-          {p.primaryText || '确认提交'}
+          {p.primaryText || tr('确认提交', 'Submit')}
         </button>
       </div>
     </div>
@@ -2667,6 +2742,7 @@ const MBottomDock: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 // ───────────────────────── 6. In-Viewport Touch Overlays ─────────────────────────
 
 const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope, live, staticOverlay, renderNode }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
   const maxHeightCls =
@@ -2692,7 +2768,7 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
       data-mobile-appearance={theme.appearance}
       role="dialog"
       aria-modal="true"
-      aria-label={String(p.title ?? '底部面板')}
+      aria-label={String(p.title ?? tr('底部面板', 'Bottom sheet'))}
     >
       {leadingAnnotation}
       {/* Grabber Handle */}
@@ -2701,12 +2777,12 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
       </div>
       <div className="px-5 py-2 flex items-center justify-between gap-2 shrink-0">
         <div className="min-w-0">
-          <div className={cx('text-[16px] font-semibold truncate', theme.textPrimary)}>{p.title || '详情面板'}</div>
+          <div className={cx('text-[16px] font-semibold truncate', theme.textPrimary)}>{p.title || tr('详情面板', 'Details')}</div>
           {p.subtitle && <div className={cx('text-[12px] truncate', theme.textMuted)}>{p.subtitle}</div>}
         </div>
         <button
           type="button"
-          aria-label="关闭抽屉"
+          aria-label={tr('关闭抽屉', 'Close sheet')}
           onClick={close}
           className={cx('w-11 h-11 rounded-full inline-flex items-center justify-center cursor-pointer shrink-0', theme.subtleBg, theme.textSecondary)}
         >
@@ -2732,14 +2808,14 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
               bodyNodes.map((n) => renderNode(n))
             ) : dockNodes.length === 0 ? (
               <div className={cx('rounded-2xl py-8 text-center text-[12.5px]', theme.subtleBg, theme.textMuted)}>
-                拖入表单、列表或操作栏至此半屏抽屉
+                {tr('拖入表单、列表或操作栏至此半屏抽屉', 'Drop forms, lists, or actions into this bottom sheet')}
               </div>
             ) : null
           ) : children.length > 0 ? (
             children
           ) : (
             <div className={cx('rounded-2xl py-8 text-center text-[12.5px]', theme.subtleBg, theme.textMuted)}>
-              拖入表单、列表或操作栏至此半屏抽屉
+              {tr('拖入表单、列表或操作栏至此半屏抽屉', 'Drop forms, lists, or actions into this bottom sheet')}
             </div>
           )}
         </div>
@@ -2784,6 +2860,7 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
 };
 
 const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, staticOverlay }) => {
+  const { tr } = useI18n();
   const theme = useMobileTheme();
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
 
@@ -2802,7 +2879,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
       data-mobile-appearance={theme.appearance}
       role="dialog"
       aria-modal="true"
-      aria-label={String(p.title ?? '确认弹窗')}
+      aria-label={String(p.title ?? tr('确认弹窗', 'Confirm dialog'))}
     >
       <div
         className={cx(
@@ -2812,7 +2889,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
         style={{ overscrollBehavior: 'contain' }}
       >
         <div className="space-y-1.5 text-center">
-          <div className={cx('text-[16.5px] font-semibold', theme.textPrimary)}>{p.title || '确认操作'}</div>
+          <div className={cx('text-[16.5px] font-semibold', theme.textPrimary)}>{p.title || tr('确认操作', 'Confirm Action')}</div>
           {p.description && <p className={cx('text-[13px] leading-relaxed', theme.textMuted)}>{p.description}</p>}
         </div>
         {children.length > 0 && (
@@ -2832,7 +2909,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
           onClick={close}
           className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer', theme.subtleBg, theme.textPrimary)}
         >
-          {(p.cancelText as string) || '取消'}
+          {(p.cancelText as string) || tr('取消', 'Cancel')}
         </button>
         <button
           type="button"
@@ -2842,7 +2919,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
             p.danger ? 'bg-rose-600 text-white' : theme.accentSolidBg,
           )}
         >
-          {(p.confirmText as string) || '确定'}
+          {(p.confirmText as string) || tr('确定', 'OK')}
         </button>
       </div>
     </div>
@@ -2902,6 +2979,7 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
   onResolveConfirm,
   topOffset = 12,
 }) => {
+  const { tr, td } = useI18n();
   const theme = useMobileTheme();
   return (
     <>
@@ -2909,7 +2987,7 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
         <div
           role="alertdialog"
           aria-modal="true"
-          aria-label="操作确认"
+          aria-label={tr('操作确认', 'Confirm action')}
           className="absolute inset-0 z-[85] flex items-center justify-center p-5 overflow-hidden"
           style={{ overscrollBehavior: 'contain' }}
         >
@@ -2929,8 +3007,8 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
             )}
           >
             <div className="space-y-1.5 text-center">
-              <div className={cx('text-[16px] font-semibold', theme.textPrimary)}>操作确认</div>
-              <p className={cx('text-[13px] leading-relaxed', theme.textMuted)}>{confirmState.message}</p>
+              <div className={cx('text-[16px] font-semibold', theme.textPrimary)}>{tr('操作确认', 'Confirm Action')}</div>
+              <p className={cx('text-[13px] leading-relaxed', theme.textMuted)}>{td(confirmState.message)}</p>
             </div>
             <div className="flex items-center gap-2.5 pt-1">
               <button
@@ -2938,14 +3016,14 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
                 onClick={() => onResolveConfirm(false)}
                 className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer', theme.subtleBg, theme.textPrimary)}
               >
-                取消
+                {tr('取消', 'Cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => onResolveConfirm(true)}
                 className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer', theme.accentSolidBg)}
               >
-                确认
+                {tr('确认', 'Confirm')}
               </button>
             </div>
           </div>
@@ -2970,7 +3048,7 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
               )}
             >
               <ToastStatusIcon type={t.type} size={15} />
-              <span className="truncate">{t.message}</span>
+              <span className="truncate">{td(t.message)}</span>
             </div>
           ))}
         </div>

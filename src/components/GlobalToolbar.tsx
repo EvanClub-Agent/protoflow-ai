@@ -29,6 +29,8 @@ import { usePageStore } from '../proto/store/usePageStore';
 import { ProjectSaveStatus } from './ProjectSaveStatus';
 import { AlexLogo } from './AlexLogo';
 import { ThemeSwitch, useThemePreference } from './ThemeSwitch';
+import { LanguageSwitch } from './LanguageSwitch';
+import { useI18n } from '../i18n';
 
 export type { ThemeMode } from './ThemeSwitch';
 
@@ -77,18 +79,19 @@ export const GlobalToolbar: React.FC = () => {
   const openLoopGapCount = closedLoopIssues.filter((i) => i.status === 'open').length;
   const activeDesignerPage = usePageStore(state => state.designerPages.find(page => page.pageId === activePageId));
 
+  const { tr } = useI18n();
   const theme = useThemePreference();
 
   const pageTitleMap: Record<string, string> = {
-    'acceptance-new': '新增到货验收 (57/130)',
-    'supplier-approval': '供应商审批 (18/130)',
-    'qualified-suppliers': '合格供应商目录 (19/130)',
-    'purchase-order-confirm': '采购订单确认 (34/130)',
-    'acceptance-list': '到货验收单台账 (58/130)',
-    'doc-overview': '系统总体要求 (1/130)',
-    'doc-changelog': '设计变更记录 (2/130)',
-    'material-catalog': '商品物料目录 (15/130)',
-    'annual-plan': '季度补货计划预算 (42/130)',
+    'acceptance-new': tr('新增到货验收 (57/130)', 'New Delivery Acceptance (57/130)'),
+    'supplier-approval': tr('供应商审批 (18/130)', 'Supplier Approval (18/130)'),
+    'qualified-suppliers': tr('合格供应商目录 (19/130)', 'Qualified Suppliers (19/130)'),
+    'purchase-order-confirm': tr('采购订单确认 (34/130)', 'PO Confirmation (34/130)'),
+    'acceptance-list': tr('到货验收单台账 (58/130)', 'Acceptance Ledger (58/130)'),
+    'doc-overview': tr('系统总体要求 (1/130)', 'System Overview (1/130)'),
+    'doc-changelog': tr('设计变更记录 (2/130)', 'Design Changelog (2/130)'),
+    'material-catalog': tr('商品物料目录 (15/130)', 'Material Catalog (15/130)'),
+    'annual-plan': tr('季度补货计划预算 (42/130)', 'Quarterly Replenishment Plan (42/130)'),
   };
   const activePageTitle = activeDesignerPage ? activeDesignerPage.title : pageTitleMap[activePageId];
 
@@ -109,23 +112,23 @@ export const GlobalToolbar: React.FC = () => {
         style={dragRegionStyle}
         className={`h-10 ${headerLeftPadding} pr-3 border-b border-slate-200 bg-white flex items-center justify-between gap-2 z-30 select-none shrink-0`}
       >
-        <div style={noDragStyle} className="flex items-center gap-2.5 min-w-0">
-          <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1 shrink-0">
+        <div style={noDragStyle} className="flex flex-1 items-center gap-2.5 min-w-0">
+          <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1 shrink-0 whitespace-nowrap">
             <Globe className="w-3 h-3" />
-            <span>Web 交互预览态</span>
+            <span>{tr('Web 交互预览态', 'Web Preview')}</span>
           </span>
           <span className="text-xs font-semibold text-slate-900 truncate">
-            {currentProjectMeta.projectName}{activePageId !== '' && ` — ${activePageTitle === undefined ? '页面信息缺失' : activePageTitle}`}
+            {currentProjectMeta.projectName}{activePageId !== '' && ` — ${activePageTitle === undefined ? tr('页面信息缺失', 'Page unavailable') : activePageTitle}`}
           </span>
         </div>
 
         <div style={noDragStyle} className="flex items-center gap-2 text-xs shrink-0">
-          <AccountButton /><ThemeSwitch {...theme} />
+          <AccountButton /><LanguageSwitch tooltipAlign="right" /><ThemeSwitch {...theme} />
 
           <button
             type="button"
             onClick={() => setShowAllComponentPins(!showAllComponentPins)}
-            className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 text-[11px] border cursor-pointer transition ${
+            className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 text-[11px] border cursor-pointer transition shrink-0 whitespace-nowrap tabular-nums ${
               showAllComponentPins
                 ? 'bg-amber-50 text-amber-800 border-amber-300'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -134,36 +137,36 @@ export const GlobalToolbar: React.FC = () => {
             <Pin className="w-3 h-3 text-amber-600" />
             <span>
               {showAllComponentPins
-                ? `便签已开启 (${stickyNotes.length})`
-                : '显示需求便签'}
+                ? tr(`便签已开启 (${stickyNotes.length})`, `Pins (${stickyNotes.length})`)
+                : tr('显示需求便签', 'Show Pins')}
             </span>
           </button>
 
           <button
             type="button"
             onClick={() => setMcpModalOpen(true)}
-            className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1 text-[11px] border border-slate-200 cursor-pointer"
+            className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1 text-[11px] border border-slate-200 cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Blocks className="w-3 h-3 text-blue-600" />
-            <span>MCP 接入</span>
+            <span>{tr('MCP 接入', 'MCP')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setWebPublishModalOpen(true)}
-            className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1 text-[11px] border border-slate-200 cursor-pointer"
+            className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1 text-[11px] border border-slate-200 cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Globe className="w-3 h-3 text-slate-500" />
-            <span>发布与分享</span>
+            <span>{tr('发布与分享', 'Share')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setWebPlayerMode(false)}
-            className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 text-[11px] cursor-pointer"
+            className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 text-[11px] cursor-pointer shrink-0 whitespace-nowrap"
           >
             <LogOut className="w-3 h-3" />
-            <span>返回设计器</span>
+            <span>{tr('返回设计器', 'Back to Editor')}</span>
           </button>
         </div>
       </header>
@@ -181,7 +184,7 @@ export const GlobalToolbar: React.FC = () => {
           <button
             type="button"
             onClick={toggleLeftSidebar}
-            aria-label={leftSidebarCollapsed ? '展开左侧目录树' : '收起左侧目录树'}
+            aria-label={leftSidebarCollapsed ? tr('展开左侧目录树', 'Expand left sitemap') : tr('收起左侧目录树', 'Collapse left sitemap')}
             className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
               !leftSidebarCollapsed
                 ? 'text-slate-800 bg-slate-100 hover:bg-slate-200/70'
@@ -195,7 +198,7 @@ export const GlobalToolbar: React.FC = () => {
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              {leftSidebarCollapsed ? '展开左侧面板' : '收起左侧面板'}
+              {leftSidebarCollapsed ? tr('展开左侧面板', 'Expand Left Panel') : tr('收起左侧面板', 'Collapse Left Panel')}
             </span>
           </div>
         </div>
@@ -204,7 +207,10 @@ export const GlobalToolbar: React.FC = () => {
           type="button"
           onClick={() => setWelcomeScreenOpen(true)}
           className="flex items-center gap-1.5 min-w-0 max-w-[260px] px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] cursor-pointer transition"
-          title={`工程目录: ${currentProjectMeta.storageDir}/${currentProjectMeta.fileName} (点击切换/新建项目)`}
+          title={tr(
+            `工程目录: ${currentProjectMeta.storageDir}/${currentProjectMeta.fileName} (点击切换/新建项目)`,
+            `Project path: ${currentProjectMeta.storageDir}/${currentProjectMeta.fileName} (Click to switch or create project)`
+          )}
         >
           <AlexLogo size={16} className="rounded-xs shrink-0" />
           <span className="font-semibold text-slate-800 truncate">{currentProjectMeta.projectName}</span>
@@ -215,7 +221,7 @@ export const GlobalToolbar: React.FC = () => {
         <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
 
         <span className="text-[11px] font-medium text-slate-600 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200/80 truncate max-w-[200px]">
-          {viewMode === 'mindmap' ? '项目脑图' : viewMode === 'notes' ? '项目笔记' : viewMode === 'project_ai' ? '项目 AI' : activePageTitle === undefined ? '页面信息缺失' : activePageTitle}
+          {viewMode === 'mindmap' ? tr('项目脑图', 'Mindmaps') : viewMode === 'notes' ? tr('项目笔记', 'Project Notes') : viewMode === 'project_ai' ? tr('项目 AI', 'Project AI') : activePageTitle === undefined ? tr('页面信息缺失', 'Page unavailable') : activePageTitle}
         </span>
         </>}
       </div>
@@ -229,7 +235,7 @@ export const GlobalToolbar: React.FC = () => {
           [
             {
               id: 'single_page',
-              label: '原型画布',
+              label: tr('原型画布', 'Prototype Canvas'),
               icon: Eye,
               onClick: () => {
                 setViewMode('single_page');
@@ -238,13 +244,13 @@ export const GlobalToolbar: React.FC = () => {
             },
             {
               id: 'flow_canvas',
-              label: '跨模块流转',
+              label: tr('跨模块流转', 'Cross-Module Flow'),
               icon: GitBranch,
               onClick: () => setViewMode('flow_canvas'),
             },
             {
               id: 'db_designer',
-              label: `数据库设计 (${dbTables.length})`,
+              label: tr(`数据库设计 (${dbTables.length})`, `Database (${dbTables.length})`),
               icon: Database,
               onClick: () => {
                 setViewMode('db_designer');
@@ -253,13 +259,13 @@ export const GlobalToolbar: React.FC = () => {
             },
             {
               id: 'knowledge_impact',
-              label: '变更影响域',
+              label: tr('变更影响域', 'Impact Analysis'),
               icon: BrainCircuit,
               onClick: () => setViewMode('knowledge_impact'),
             },
             {
               id: 'closed_loop_audit',
-              label: openLoopGapCount > 0 ? `闭环巡检 (${openLoopGapCount})` : '闭环巡检',
+              label: openLoopGapCount > 0 ? tr(`闭环巡检 (${openLoopGapCount})`, `Audit (${openLoopGapCount})`) : tr('闭环巡检', 'Audit'),
               icon: ShieldCheck,
               badge: openLoopGapCount > 0 ? openLoopGapCount : undefined,
               onClick: () => {
@@ -286,7 +292,7 @@ export const GlobalToolbar: React.FC = () => {
               >
                 <Icon className="w-3.5 h-3.5" />
                 {'badge' in item && item.badge ? (
-                  <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold leading-tight">
+                  <span className="px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold leading-tight tabular-nums">
                     {item.badge}
                   </span>
                 ) : null}
@@ -295,7 +301,7 @@ export const GlobalToolbar: React.FC = () => {
                 role="tooltip"
                 className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
               >
-                <span className="relative z-10 text-xs font-medium tracking-tight">
+                <span className="relative z-10 text-xs font-medium tracking-tight tabular-nums">
                   {item.label}
                 </span>
               </div>
@@ -312,7 +318,7 @@ export const GlobalToolbar: React.FC = () => {
           <div className="relative group flex items-center">
             <button
               type="button"
-              aria-label={`需求便签 (${stickyNotes.length})`}
+              aria-label={tr(`需求便签 (${stickyNotes.length})`, `Spec Pins (${stickyNotes.length})`)}
               aria-pressed={showAllComponentPins}
               onClick={() => setShowAllComponentPins(!showAllComponentPins)}
               className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
@@ -323,7 +329,7 @@ export const GlobalToolbar: React.FC = () => {
             >
               <Pin className="w-3.5 h-3.5" />
               {stickyNotes.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none tabular-nums">
                   {stickyNotes.length}
                 </span>
               )}
@@ -332,10 +338,10 @@ export const GlobalToolbar: React.FC = () => {
               role="tooltip"
               className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
             >
-              <span className="relative z-10 text-xs font-medium tracking-tight">
+              <span className="relative z-10 text-xs font-medium tracking-tight tabular-nums">
                 {showAllComponentPins
-                  ? `隐藏组件便签 (${stickyNotes.length})`
-                  : `显示组件便签 (${stickyNotes.length})`}
+                  ? tr(`隐藏组件便签 (${stickyNotes.length})`, `Hide Spec Pins (${stickyNotes.length})`)
+                  : tr(`显示组件便签 (${stickyNotes.length})`, `Show Spec Pins (${stickyNotes.length})`)}
               </span>
             </div>
           </div>
@@ -345,7 +351,7 @@ export const GlobalToolbar: React.FC = () => {
           <div className="relative group flex items-center">
             <button
               type="button"
-              aria-label="分屏伴随笔记"
+              aria-label={tr('分屏伴随笔记', 'Split-Screen Note')}
               aria-pressed={dockedNoteId !== null}
               onClick={() => {
                 if (dockedNoteId !== null) {
@@ -370,7 +376,7 @@ export const GlobalToolbar: React.FC = () => {
               className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
             >
               <span className="relative z-10 text-xs font-medium tracking-tight">
-                {dockedNoteId !== null ? '关闭右侧伴随笔记' : '开启右侧分屏伴随笔记'}
+                {dockedNoteId !== null ? tr('关闭右侧伴随笔记', 'Close Split-Screen Note') : tr('开启右侧分屏伴随笔记', 'Open Split-Screen Note')}
               </span>
             </div>
           </div>
@@ -379,7 +385,7 @@ export const GlobalToolbar: React.FC = () => {
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="AI 管理中心"
+            aria-label={tr('AI 管理中心', 'AI Center')}
             onClick={() => setHermesModalOpen(true)}
             className="relative w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
           >
@@ -395,8 +401,8 @@ export const GlobalToolbar: React.FC = () => {
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              AI 管理中心{hermesVer ? ` · Hermes ${hermesVer}` : ''}
-              {hermesStatus === 'running' && hermesUpdate ? ' (可升级)' : ''}
+              {tr('AI 管理中心', 'AI Center')}{hermesVer ? ` · Hermes ${hermesVer}` : ''}
+              {hermesStatus === 'running' && hermesUpdate ? tr(' (可升级)', ' (Update available)') : ''}
             </span>
           </div>
         </div>
@@ -404,7 +410,7 @@ export const GlobalToolbar: React.FC = () => {
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="版本更新"
+            aria-label={tr('版本更新', 'App Updates')}
             onClick={() => setUpdateModalOpen(true)}
             className={`relative w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition ${
               appHasUpdate
@@ -421,21 +427,24 @@ export const GlobalToolbar: React.FC = () => {
             role="tooltip"
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
-            <span className="relative z-10 text-xs font-medium tracking-tight">
+            <span className="relative z-10 text-xs font-medium tracking-tight tabular-nums">
               {appHasUpdate && appLatestRelease
-                ? `发现新版本 v${appLatestRelease.version}${appUpdateStatus === 'downloaded' ? ' (已下载待安装)' : ' (点击升级)'}`
-                : `桌面版本更新 · v${appVersion}`}
+                ? tr(
+                    `发现新版本 v${appLatestRelease.version}${appUpdateStatus === 'downloaded' ? ' (已下载待安装)' : ' (点击升级)'}`,
+                    `New version v${appLatestRelease.version}${appUpdateStatus === 'downloaded' ? ' (Ready to install)' : ' (Click to update)'}`
+                  )
+                : tr(`桌面版本更新 · v${appVersion}`, `App Updates · v${appVersion}`)}
             </span>
           </div>
         </div>
 
         <AiBackgroundControl />
-        <button type="button" aria-label="运行诊断" title="运行诊断" onClick={openRuntimeDiagnostics} className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><Bug className="w-3.5 h-3.5" /></button>
+        <button type="button" aria-label={tr('运行诊断', 'Runtime Diagnostics')} title={tr('运行诊断', 'Runtime Diagnostics')} onClick={openRuntimeDiagnostics} className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><Bug className="w-3.5 h-3.5" /></button>
 
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="MCP 接入配置"
+            aria-label={tr('MCP 接入配置', 'MCP Integration')}
             onClick={() => setMcpModalOpen(true)}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
           >
@@ -446,7 +455,7 @@ export const GlobalToolbar: React.FC = () => {
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              MCP 接入 (Coding Agent)
+              {tr('MCP 接入 (Coding Agent)', 'MCP Integration (Coding Agent)')}
             </span>
           </div>
         </div>
@@ -454,7 +463,7 @@ export const GlobalToolbar: React.FC = () => {
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="工程文件与导出"
+            aria-label={tr('工程文件与导出', 'Project Files & Export')}
             onClick={() => setBundleModalOpen(true)}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
           >
@@ -465,7 +474,7 @@ export const GlobalToolbar: React.FC = () => {
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              工程文件与导出 (.pflow)
+              {tr('工程文件与导出 (.pflow)', 'Project Files & Export (.pflow)')}
             </span>
           </div>
         </div>
@@ -473,7 +482,7 @@ export const GlobalToolbar: React.FC = () => {
         <div className="relative group flex items-center">
           <button
             type="button"
-            aria-label="发布预览"
+            aria-label={tr('发布预览', 'Publish & Share')}
             onClick={() => setWebPublishModalOpen(true)}
             className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white shadow-2xs cursor-pointer transition"
           >
@@ -484,20 +493,20 @@ export const GlobalToolbar: React.FC = () => {
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              发布预览与在线分享
+              {tr('发布预览与在线分享', 'Publish Preview & Share')}
             </span>
           </div>
         </div>
 
         <div className="h-3.5 w-px bg-slate-200 mx-0.5" />
 
-        <AccountButton /><ThemeSwitch {...theme} />
+        <AccountButton /><LanguageSwitch tooltipAlign="right" /><ThemeSwitch {...theme} />
 
         {viewMode !== 'db_designer' && (
           <div className="relative group flex items-center">
             <button
               type="button"
-              aria-label={rightSidebarCollapsed ? '展开右侧属性检视面板' : '收起右侧属性检视面板'}
+              aria-label={rightSidebarCollapsed ? tr('展开右侧属性检视面板', 'Expand right inspector') : tr('收起右侧属性检视面板', 'Collapse right inspector')}
               onClick={toggleRightSidebar}
               className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
                 !rightSidebarCollapsed
@@ -512,7 +521,7 @@ export const GlobalToolbar: React.FC = () => {
               className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
             >
               <span className="relative z-10 text-xs font-medium tracking-tight">
-                {rightSidebarCollapsed ? '展开右侧属性面板' : '收起右侧属性面板'}
+                {rightSidebarCollapsed ? tr('展开右侧属性面板', 'Expand Inspector') : tr('收起右侧属性面板', 'Collapse Inspector')}
               </span>
             </div>
           </div>

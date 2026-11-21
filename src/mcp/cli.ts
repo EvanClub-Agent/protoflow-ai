@@ -1,4 +1,5 @@
 import { isLosslessNumber, parse, stringify, type LosslessNumber } from 'lossless-json';
+import { tr } from '../i18n/runtime';
 import {
   handleSpecMcpPayload,
   SPEC_MCP_SERVER_NAME,
@@ -73,7 +74,12 @@ function usageText(): string {
 
 export function buildWorkspaceLoaderFromCli(opts: CliOptions): WorkspaceLoader {
   if (opts.projectPath && opts.shareUrl) {
-    throw new Error('请勿同时指定 --project 与 --share，每次连接请选择单一数据源');
+    throw new Error(
+      tr(
+        '请勿同时指定 --project 与 --share，每次连接请选择单一数据源',
+        'Do not specify both --project and --share; connect to a single data source per instance'
+      )
+    );
   }
   if (opts.projectPath) {
     return createLocalWorkspaceLoader(opts.projectPath);
@@ -84,7 +90,12 @@ export function buildWorkspaceLoaderFromCli(opts: CliOptions): WorkspaceLoader {
       password: opts.password,
     });
   }
-  throw new Error('缺少数据源参数：请传入 --project <path.pflow> 或 --share <https://.../p/id>');
+  throw new Error(
+    tr(
+      '缺少数据源参数：请传入 --project <path.pflow> 或 --share <https://.../p/id>',
+      'Missing data source: pass --project <path.pflow> or --share <https://.../p/id>'
+    )
+  );
 }
 
 function parseStdioPayload(text: string): unknown {

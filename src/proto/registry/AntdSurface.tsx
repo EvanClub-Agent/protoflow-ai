@@ -1,8 +1,13 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useSyncExternalStore } from 'react';
 import ConfigProvider from 'antd/es/config-provider';
 import antdTheme from 'antd/es/theme';
 import zhCN from 'antd/es/locale/zh_CN';
+import enUS from 'antd/es/locale/en_US';
+import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
+import 'dayjs/locale/en';
 import type { ThemeConfig } from 'antd/es/config-provider/context';
+import { useLocale } from '../../i18n';
 
 function getThemeSnapshot(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light';
@@ -46,8 +51,15 @@ const darkTheme: ThemeConfig = {
 /** Shared locale/theme for both the editor canvas and the published viewer. */
 export const AntdSurface: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const mode = useResolvedTheme();
+  const locale = useLocale();
+  const isEn = locale === 'en-US';
+
+  useEffect(() => {
+    dayjs.locale(isEn ? 'en' : 'zh-cn');
+  }, [isEn]);
+
   return (
-    <ConfigProvider locale={zhCN} theme={mode === 'dark' ? darkTheme : lightTheme}>
+    <ConfigProvider locale={isEn ? enUS : zhCN} theme={mode === 'dark' ? darkTheme : lightTheme}>
       {children}
     </ConfigProvider>
   );

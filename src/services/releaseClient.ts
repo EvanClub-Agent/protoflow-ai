@@ -1,5 +1,6 @@
 import { publishingOrigin } from './publishingClient';
 import type { DiagnosticReport } from './runtimeDiagnostics';
+import { getAcceptLanguageHeader, td, tr } from '../i18n/runtime';
 
 export type StoredDiagnostic = DiagnosticReport & {installationId:string;receivedAt:string};
 export function fetchRuntimeDiagnostics(token:string, query:{id:string;category:string;version:string;offset:number;account?:string;device?:string;runId?:string}, signal?:AbortSignal) {
@@ -219,38 +220,59 @@ export const PLATFORM_LABELS: Record<ReleaseOS, {
   installSummary: string;
 }> = {
   windows: {
-    name: 'Windows 桌面端',
+    get name() { return tr('Windows 桌面端', 'Windows Desktop'); },
     shortName: 'Windows',
     badge: 'Windows 10 / 11 (64-bit)',
     packages: ['exe', 'zip'],
-    packageLabels: {
-      exe: 'NSIS 安装向导 (.exe)',
-      zip: '免安装压缩包 (.zip)',
+    get packageLabels(): Partial<Record<ReleasePackageType, string>> {
+      return {
+        exe: tr('NSIS 安装向导 (.exe)', 'NSIS Installer (.exe)'),
+        zip: tr('免安装压缩包 (.zip)', 'Portable Archive (.zip)'),
+      };
     },
-    installSummary: '下载 .exe 安装程序后一键启动 NSIS 向导，支持自定义安装目录与原位覆盖升级，自动保留本地工程数据。',
+    get installSummary() {
+      return tr(
+        '下载 .exe 安装程序后一键启动 NSIS 向导，支持自定义安装目录与原位覆盖升级，自动保留本地工程数据。',
+        'Run the .exe installer to launch the NSIS wizard with custom directory and in-place upgrade support while preserving local project data.',
+      );
+    },
   },
   macos: {
-    name: 'macOS 桌面端',
+    get name() { return tr('macOS 桌面端', 'macOS Desktop'); },
     shortName: 'macOS',
-    badge: 'Apple Silicon (M系列) / Intel',
+    get badge() { return tr('Apple Silicon (M系列) / Intel', 'Apple Silicon (M-series) / Intel'); },
     packages: ['dmg', 'zip'],
-    packageLabels: {
-      dmg: '磁盘映像安装器 (.dmg)',
-      zip: '应用归档压缩包 (.zip)',
+    get packageLabels(): Partial<Record<ReleasePackageType, string>> {
+      return {
+        dmg: tr('磁盘映像安装器 (.dmg)', 'Disk Image Installer (.dmg)'),
+        zip: tr('应用归档压缩包 (.zip)', 'App Archive (.zip)'),
+      };
     },
-    installSummary: '下载并挂载 .dmg 镜像后，将 Alex 拖入 Applications 文件夹替换旧版即可完成升级。',
+    get installSummary() {
+      return tr(
+        '下载并挂载 .dmg 镜像后，将 Alex 拖入 Applications 文件夹替换旧版即可完成升级。',
+        'Download and mount the .dmg image, then drag Alex into Applications to install or upgrade.',
+      );
+    },
   },
   linux: {
-    name: 'Linux 桌面端',
+    get name() { return tr('Linux 桌面端', 'Linux Desktop'); },
     shortName: 'Linux',
     badge: 'Debian / Ubuntu / AppImage',
     packages: ['deb', 'AppImage', 'tar.gz'],
-    packageLabels: {
-      deb: 'Debian / Ubuntu 软件包 (.deb)',
-      AppImage: '便携式单文件 (.AppImage)',
-      'tar.gz': '通用二进制归档 (.tar.gz)',
+    get packageLabels(): Partial<Record<ReleasePackageType, string>> {
+      return {
+        deb: tr('Debian / Ubuntu 软件包 (.deb)', 'Debian / Ubuntu Package (.deb)'),
+        AppImage: tr('便携式单文件 (.AppImage)', 'Portable Single-File (.AppImage)'),
+        'tar.gz': tr('通用二进制归档 (.tar.gz)', 'Generic Binary Archive (.tar.gz)'),
+      };
     },
-    installSummary: 'Debian/Ubuntu 推荐使用 sudo apt install ./Alex-*.deb 自动配置系统依赖与图标；其他发行版可直接运行 .AppImage。',
+    get installSummary() {
+      return tr(
+        'Debian/Ubuntu 推荐使用 sudo apt install ./Alex-*.deb 自动配置系统依赖与图标；其他发行版可直接运行 .AppImage。',
+        'On Debian/Ubuntu, run sudo apt install ./Alex-*.deb to configure system dependencies and icons; on other distributions, run the .AppImage directly.',
+      );
+    },
   },
 };
 
@@ -264,7 +286,9 @@ async function apiJson<T>(
   options: { method?: string; token?: string; body?: unknown; baseUrl?: string; signal?: AbortSignal } = {}
 ): Promise<T> {
   const base = normalizeBaseUrl(options.baseUrl);
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    'Accept-Language': getAcceptLanguageHeader(),
+  };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
   }
@@ -281,10 +305,10 @@ async function apiJson<T>(
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(typeof data?.error === 'string' ? data.error : `请求版本服务失败 (${response.status})`);
+    throw new Error(typeof data?.error === 'string' ? td(data.error) : tr(`请求版本服务失败 (${response.status})`, `Release service request failed (${response.status})`));
   }
   if (!data) {
-    throw new Error('版本服务返回了空响应');
+    throw new Error(tr('版本服务返回了空响应', 'Release service returned an empty response'));
   }
   return data as T;
 }
@@ -394,7 +418,7 @@ export async function fetchAdminStatus(
   const status = await apiJson<{ initialized: boolean; hasAdmin?: boolean; bootstrapAllowed?: boolean }>('/api/v1/admin/status', {
     baseUrl,
   });
-  if (typeof status?.initialized !== 'boolean') throw new Error('管理员状态响应无效，请检查服务地址');
+  if (typeof status?.initialized !== 'boolean') throw new Error(tr('管理员状态响应无效，请检查服务地址', 'Invalid admin status response. Please verify the server URL.'));
   return status;
 }
 
@@ -422,7 +446,7 @@ export async function logoutPlatformAdmin(token: string, baseUrl = ''): Promise<
 
 export async function verifyPublisherToken(token: string, baseUrl = ''): Promise<{ name: string }> {
   const trimmed = token.trim();
-  if (!trimmed) throw new Error('请输入有效的发布者凭证 Token');
+  if (!trimmed) throw new Error(tr('请输入有效的发布者凭证 Token', 'Please enter a valid publisher token'));
   return apiJson<{ name: string }>('/api/v1/publisher', { token: trimmed, baseUrl });
 }
 
@@ -540,6 +564,7 @@ export async function uploadReleaseAsset(
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Authorization', `Bearer ${token.trim()}`);
+    xhr.setRequestHeader('Accept-Language', getAcceptLanguageHeader());
     if (onProgress) {
       xhr.upload.onprogress = event => {
         if (event.lengthComputable && event.total > 0) {
@@ -558,11 +583,11 @@ export async function uploadReleaseAsset(
       if (xhr.status >= 200 && xhr.status < 300 && data) {
         resolve(data as DesktopReleaseAsset);
       } else {
-        reject(new Error(typeof data?.error === 'string' ? data.error : `上传安装包失败 (${xhr.status})`));
+        reject(new Error(typeof data?.error === 'string' ? td(data.error) : tr(`上传安装包失败 (${xhr.status})`, `Installer upload failed (${xhr.status})`)));
       }
     };
-    xhr.onerror = () => reject(new Error('网络异常，上传安装包失败'));
-    xhr.onabort = () => reject(new Error('已取消上传'));
+    xhr.onerror = () => reject(new Error(tr('网络异常，上传安装包失败', 'Network error while uploading installer')));
+    xhr.onabort = () => reject(new Error(tr('已取消上传', 'Upload cancelled')));
     xhr.send(form);
   });
 }

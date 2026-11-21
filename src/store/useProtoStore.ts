@@ -7,6 +7,7 @@ import { emptyProjectNotes, type NoteWorkspace } from '../proto/notes';
 import { create } from 'zustand';
 import type { PflowProjectMetadata } from '../utils/pflowBinaryCodec';
 import { newId as createIdentity } from '../utils/identity';
+import { tr } from '../i18n/runtime';
 
 export type UIStateMatrix = 'normal' | 'loading' | 'empty' | 'error';
 export type WorkspaceViewMode =
@@ -1329,9 +1330,9 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
   setMindmapSource: (projectId, mindmapId, source) => {
     const state = get();
     if (state.isProjectClosed || state.currentProjectMeta.projectId !== projectId) {
-      throw new Error('当前项目已变化，无法修改该项目的脑图');
+      throw new Error(tr('当前项目已变化，无法修改该项目的脑图', 'Current project changed; cannot modify its mindmap'));
     }
-    if (!state.mindmaps.nodes.some(node => node.id === mindmapId && node.kind === 'mindmap')) throw new Error('脑图菜单不存在');
+    if (!state.mindmaps.nodes.some(node => node.id === mindmapId && node.kind === 'mindmap')) throw new Error(tr('脑图菜单不存在', 'Mindmap node does not exist'));
     set({ mindmaps: { ...state.mindmaps, nodes: state.mindmaps.nodes.map(node => node.id === mindmapId ? { ...node, kind: 'mindmap' as const, source } : node) } });
   },
   setAuditScopeFilter: (auditScopeFilter) => set({ auditScopeFilter }),
@@ -1442,15 +1443,18 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
         cnName: cnName.trim(),
         domain,
         description: bindToMenu
-          ? `由菜单【${bindToMenu.menuTitle}】就地创建并自动纳入项目全局表目录，可供其他模块菜单勾选共用。`
-          : `在左侧全局数据库表目录中创建的物理表。`,
+          ? tr(
+              `由菜单【${bindToMenu.menuTitle}】就地创建并自动纳入项目全局表目录，可供其他模块菜单勾选共用。`,
+              `Created from menu [${bindToMenu.menuTitle}] and registered in the shared project table catalog.`
+            )
+          : tr(`在左侧全局数据库表目录中创建的物理表。`, `Physical table created in the global database catalog.`),
         sharedByMenus: bindToMenu
           ? [
               {
                 pageId: bindToMenu.pageId,
                 menuTitle: bindToMenu.menuTitle,
                 accessMode: 'CRUD 读写',
-                fieldMappingNote: '创建该表的源头模块菜单',
+                fieldMappingNote: tr('创建该表的源头模块菜单', 'Originating menu that created this table'),
               },
             ]
           : [],
@@ -1461,16 +1465,16 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
             dataType: 'VARCHAR(32)',
             nullable: false,
             isPrimaryKey: true,
-            comment: `${cnName}主键 ID`,
-            sourceWidgetOrSticky: '系统默认主键',
+            comment: tr(`${cnName}主键 ID`, `${cnName} Primary Key ID`),
+            sourceWidgetOrSticky: tr('系统默认主键', 'System primary key'),
           },
           {
             id: `col-${Date.now()}-2`,
             name: 'AcceptanceNew' in (bindToMenu || {}) ? 'acceptance_id' : 'biz_no',
             dataType: 'VARCHAR(64)',
             nullable: false,
-            comment: '业务单据编号',
-            sourceWidgetOrSticky: bindToMenu ? `${bindToMenu.menuTitle}-单号字段` : '默认字段',
+            comment: tr('业务单据编号', 'Document No.'),
+            sourceWidgetOrSticky: bindToMenu ? tr(`${bindToMenu.menuTitle}-单号字段`, `${bindToMenu.menuTitle} - No. field`) : tr('默认字段', 'Default column'),
           },
           {
             id: `col-${Date.now()}-3`,
@@ -1478,16 +1482,16 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
             dataType: 'VARCHAR(24)',
             nullable: false,
             defaultValue: "'draft'",
-            comment: '状态标识',
-            sourceWidgetOrSticky: '状态机字段',
+            comment: tr('状态标识', 'Status'),
+            sourceWidgetOrSticky: tr('状态机字段', 'State column'),
           },
           {
             id: `col-${Date.now()}-4`,
             name: 'created_at',
             dataType: 'DATETIME',
             nullable: false,
-            comment: '创建时间',
-            sourceWidgetOrSticky: '审计字段',
+            comment: tr('创建时间', 'Created At'),
+            sourceWidgetOrSticky: tr('审计字段', 'Audit column'),
           },
         ],
       };
@@ -1564,7 +1568,7 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
 
   setUniqueConstraints: (tableId, constraints) => set(s => {
     const table = s.dbTables.find(t => t.id === tableId);
-    if (!table) throw new Error('唯一约束所属的表不存在');
+    if (!table) throw new Error(tr('唯一约束所属的表不存在', 'Table for unique constraint does not exist'));
     const next = { ...table, uniqueConstraints: constraints };
     resolveUniqueConstraints(next);
     return { dbTables: s.dbTables.map(t => t.id === tableId ? next : t) };
@@ -1574,7 +1578,7 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
     const table = s.dbTables.find(t => t.id === tableId);
     if (!table) return s;
     const key = table.uniqueConstraints?.find(k => k.columnIds.includes(colId));
-    if (key) throw new Error(`请先修改或删除引用该字段的唯一约束 ${key.name}`);
+    if (key) throw new Error(tr(`请先修改或删除引用该字段的唯一约束 ${key.name}`, `Please update or delete unique constraint ${key.name} referencing this column first`));
     return { dbTables: s.dbTables.map(t => t.id === tableId ? { ...t, columns: t.columns.filter(c => c.id !== colId) } : t) };
   }),
 
@@ -1623,7 +1627,7 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
       ...src,
       id: newId,
       tableName: newId,
-      cnName: `${src.cnName} (副本)`,
+      cnName: tr(`${src.cnName} (副本)`, `${src.cnName} (Copy)`),
       columns: src.columns.map(c => ({ ...c, id: columnIds.get(c.id)! })),
       ...(src.uniqueConstraints && { uniqueConstraints: copiedKeys.map(k => ({
         name: k.name, columnIds: k.columns.map(c => columnIds.get(c.id)!),

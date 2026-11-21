@@ -9,6 +9,7 @@ import {
 import { publishingOrigin, publishingSettings } from '../services/publishingClient';
 import { flushProjectChanges } from '../services/projectStorage';
 import packageMeta from '../../package.json';
+import { td, tr } from '../i18n/runtime';
 
 export interface UpdateStore extends DesktopUpdaterState {
   isModalOpen: boolean;
@@ -30,8 +31,8 @@ export interface UpdateStore extends DesktopUpdaterState {
 const browserPlatform = detectBrowserPlatform();
 let subscribed = false;
 let webCheckAbort: AbortController | null = null;
-const updateErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
-  .replace(/^Error invoking remote method 'pflow:updater-[^']+':\s*(?:Error:\s*)?/, '');
+const updateErrorMessage = (error: unknown) => td((error instanceof Error ? error.message : String(error))
+  .replace(/^Error invoking remote method 'pflow:updater-[^']+':\s*(?:Error:\s*)?/, ''));
 
 export const useUpdateStore = create<UpdateStore>((set, get) => ({
   isModalOpen: false,
@@ -75,6 +76,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
         : state.downloadedAssetId ?? state.recommendedAsset?.id ?? state.platformAssets[0]?.id ?? null;
     set({
       ...state,
+      error: state.error ? td(state.error) : state.error,
       configEpoch: typeof state.configEpoch === 'number' ? state.configEpoch : currentEpoch,
       selectedAssetId: validSelected,
     });
@@ -132,7 +134,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
       if ((get().configEpoch ?? 0) !== requestEpoch) return;
       set({
         status: 'idle',
-        error: options.silent ? null : '请在 Alex 桌面应用中检查更新。',
+        error: options.silent ? null : tr('请在 Alex 桌面应用中检查更新。', 'Please check for updates inside the Alex desktop app.'),
       });
       return;
     }
@@ -173,7 +175,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
         return;
       }
       if (res.hasUpdate && res.latestRelease && channel === 'stable' && res.latestRelease.channel !== 'stable') {
-        throw new Error('当前客户端处于正式版 (stable) 通道，已拒绝非正式版通道的更新响应');
+        throw new Error(tr('当前客户端处于正式版 (stable) 通道，已拒绝非正式版通道的更新响应', 'Client is on the stable channel; rejected non-stable update response'));
       }
       const platformAssets: DesktopReleaseAsset[] = Array.isArray(res.platformAssets) ? res.platformAssets : [];
       const recommendedAsset = platformAssets.find((asset) => asset.id === res.recommendedAsset?.id) ?? platformAssets[0] ?? null;
@@ -226,7 +228,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
     const allAssets = release?.assets ?? get().platformAssets;
     const asset = allAssets.find((a) => a.id === targetId) ?? get().recommendedAsset;
     if (!asset?.downloadUrl) {
-      set({ status: 'error', error: '未找到可用的安装包下载链接' });
+      set({ status: 'error', error: tr('未找到可用的安装包下载链接', 'No installer download URL available') });
       return;
     }
     window.open(asset.downloadUrl, '_blank', 'noopener,noreferrer');
@@ -243,17 +245,17 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
       if (checked.error) throw new Error(checked.error);
       if (!checked.hasUpdate) return;
       const asset = checked.recommendedAsset;
-      if (!asset) throw new Error('该版本暂未提供适合此电脑的安装包，请联系管理员。');
+      if (!asset) throw new Error(tr('该版本暂未提供适合此电脑的安装包，请联系管理员。', 'No installer is available for this machine in this release.'));
       const downloaded = await bridge.download({ assetId: asset.id });
       get().syncFromNativeState(downloaded);
       if (downloaded.error) throw new Error(downloaded.error);
       // Cancellation or switching sources must never install another task's file.
       if (downloaded.status !== 'downloaded') return;
       if (downloaded.configEpoch !== checked.configEpoch || downloaded.downloadedAssetId !== asset.id) {
-        throw new Error('更新内容已改变，请重新检查更新。');
+        throw new Error(tr('更新内容已改变，请重新检查更新。', 'Update metadata changed; please check for updates again.'));
       }
       try { await flushProjectChanges(); }
-      catch (error) { throw new Error(`保存当前工程失败，更新已停止：${error instanceof Error ? error.message : String(error)}`); }
+      catch (error) { throw new Error(tr(`保存当前工程失败，更新已停止：${error instanceof Error ? error.message : String(error)}`, `Failed to save current project; update aborted: ${error instanceof Error ? error.message : String(error)}`)); }
       const guide = await bridge.apply({ expectedAssetId: asset.id, expectedConfigEpoch: checked.configEpoch });
       set({ installGuide: guide, error: null });
     } catch (error) {
@@ -279,7 +281,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       set({
-        error: `保存当前工程失败，已停止启动安装器：${msg}`,
+        error: tr(`保存当前工程失败，已停止启动安装器：${msg}`, `Failed to save current project; installer launch aborted: ${msg}`),
       });
       return;
     }
@@ -289,7 +291,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
     } catch (e) {
       set({
         status: 'error',
-        error: e instanceof Error ? e.message : String(e),
+        error: updateErrorMessage(e),
       });
     }
   },

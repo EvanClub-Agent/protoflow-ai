@@ -1,4 +1,5 @@
 import type { HermesModel } from './hermesClient';
+import { tr } from '../i18n/runtime';
 
 export type ModelBrand = 'openai' | 'anthropic' | 'github' | 'google' | 'deepseek' | 'qwen' | 'minimax' | 'xai' | 'openrouter' | 'ollama' | 'mistral' | 'moonshot' | 'zai' | 'nous' | 'custom' | 'unknown';
 export interface ModelChoice {
@@ -18,7 +19,7 @@ export interface ModelGroup {
 
 // Group by the service provider encoded by Hermes. A model publisher name
 // does not identify its serving endpoint. Keep the exact ACP modelId for selection.
-const PROVIDERS: Readonly<Record<string, { group: ModelBrand; name: string }>> = {
+const PROVIDERS: Readonly<Record<string, { group: ModelBrand; name: string; nameEn?: string }>> = {
   'openai-api': { group: 'openai', name: 'OpenAI' },
   'openai-codex': { group: 'openai', name: 'OpenAI' },
   anthropic: { group: 'anthropic', name: 'Anthropic' },
@@ -28,9 +29,9 @@ const PROVIDERS: Readonly<Record<string, { group: ModelBrand; name: string }>> =
   google: { group: 'google', name: 'Google' },
   gemini: { group: 'google', name: 'Google' },
   deepseek: { group: 'deepseek', name: 'DeepSeek' },
-  'qwen-oauth': { group: 'qwen', name: '通义千问' },
-  alibaba: { group: 'qwen', name: '通义千问' },
-  'alibaba-coding-plan': { group: 'qwen', name: '通义千问' },
+  'qwen-oauth': { group: 'qwen', name: '通义千问', nameEn: 'Qwen' },
+  alibaba: { group: 'qwen', name: '通义千问', nameEn: 'Qwen' },
+  'alibaba-coding-plan': { group: 'qwen', name: '通义千问', nameEn: 'Qwen' },
   minimax: { group: 'minimax', name: 'MiniMax' },
   'minimax-cn': { group: 'minimax', name: 'MiniMax' },
   'minimax-oauth': { group: 'minimax', name: 'MiniMax' },
@@ -40,12 +41,12 @@ const PROVIDERS: Readonly<Record<string, { group: ModelBrand; name: string }>> =
   ollama: { group: 'ollama', name: 'Ollama' },
   'ollama-cloud': { group: 'ollama', name: 'Ollama' },
   mistral: { group: 'mistral', name: 'Mistral' },
-  kimi: { group: 'moonshot', name: 'Kimi · 月之暗面' },
-  moonshot: { group: 'moonshot', name: 'Kimi · 月之暗面' },
-  'kimi-coding': { group: 'moonshot', name: 'Kimi · 月之暗面' },
-  'kimi-coding-cn': { group: 'moonshot', name: 'Kimi · 月之暗面' },
-  zai: { group: 'zai', name: '智谱' },
-  glm: { group: 'zai', name: '智谱' },
+  kimi: { group: 'moonshot', name: 'Kimi · 月之暗面', nameEn: 'Kimi · Moonshot' },
+  moonshot: { group: 'moonshot', name: 'Kimi · 月之暗面', nameEn: 'Kimi · Moonshot' },
+  'kimi-coding': { group: 'moonshot', name: 'Kimi · 月之暗面', nameEn: 'Kimi · Moonshot' },
+  'kimi-coding-cn': { group: 'moonshot', name: 'Kimi · 月之暗面', nameEn: 'Kimi · Moonshot' },
+  zai: { group: 'zai', name: '智谱', nameEn: 'Zhipu AI' },
+  glm: { group: 'zai', name: '智谱', nameEn: 'Zhipu AI' },
   nous: { group: 'nous', name: 'Nous Research' },
 };
 
@@ -58,13 +59,13 @@ export function presentHermesModel(model: HermesModel): ModelChoice {
   const providerId = separator > 0 ? model.modelId.slice(0, separator) : null;
   const known = providerId !== null && Object.prototype.hasOwnProperty.call(PROVIDERS, providerId) ? PROVIDERS[providerId] : undefined;
   const isCustom = providerId === 'custom';
-  const source = providerLabel ?? (providerId === null ? 'Hermes 未提供服务来源' : providerId);
+  const source = providerLabel ?? (providerId === null ? tr('Hermes 未提供服务来源', 'Provider not specified by Hermes') : providerId);
   const prefix = providerLabel === undefined ? null : `${providerLabel} · `;
   const title = prefix && model.name.startsWith(prefix) ? model.name.slice(prefix.length) : model.name;
   return {
     model, title, source,
     groupId: known ? known.group : isCustom ? 'custom' : providerId === null ? 'unknown' : `other:${providerId}`,
-    groupName: known ? known.name : isCustom ? '自定义服务' : providerLabel ?? '其他来源',
+    groupName: known ? tr(known.name, known.nameEn ?? known.name) : isCustom ? tr('自定义服务', 'Custom Provider') : providerLabel ?? tr('其他来源', 'Other Providers'),
     brand: known ? known.group : isCustom ? 'custom' : 'unknown',
   };
 }

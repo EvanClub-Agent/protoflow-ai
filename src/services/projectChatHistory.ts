@@ -1,4 +1,5 @@
 import { newId } from '../utils/identity';
+import { tr } from '../i18n/runtime';
 import { conversationKey, type HermesChatConversation, type HermesProjectConversation } from './hermesConversation';
 
 // null denotes exactly the original project chat, whose transcript and Hermes
@@ -72,7 +73,7 @@ export function readProjectChatIndex(projectId: string): ProjectChatIndex {
   if (raw === null) {
     const transcript = window.localStorage.getItem(chatStorageKey(projectChatScope(projectId, null)));
     const history = transcript === null ? [] : JSON.parse(transcript);
-    if (!Array.isArray(history)) throw new Error('原项目对话记录格式无效');
+    if (!Array.isArray(history)) throw new Error(tr('原项目对话记录格式无效', 'Legacy project chat transcript format is invalid'));
     const first = history.find(m => m?.projectId === projectId && m.kind === 'project' && m.threadId === undefined && m.role === 'user' && typeof m.text === 'string');
     return {projectId, activeId:null, entries:[{id:null, title:first ? chatTitle(first.text) : '', updatedAt:null}]};
   }
@@ -80,7 +81,7 @@ export function readProjectChatIndex(projectId: string): ProjectChatIndex {
   if (!saved || saved.projectId !== projectId || !Array.isArray(saved.entries) || !saved.entries.length ||
     saved.entries.some(e => !e || (e.id !== null && (typeof e.id !== 'string' || !e.id.trim())) || typeof e.title !== 'string' || (e.updatedAt !== null && !Number.isFinite(e.updatedAt))) ||
     new Set(saved.entries.map(e => e.id)).size !== saved.entries.length || !saved.entries.some(e => e.id === saved.activeId))
-    throw new Error('项目会话列表损坏，无法读取');
+    throw new Error(tr('项目会话列表损坏，无法读取', 'Project chat index is corrupted and cannot be read'));
   return saved;
 }
 export function writeProjectChatIndex(index: ProjectChatIndex) {

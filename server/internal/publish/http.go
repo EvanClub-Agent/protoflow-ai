@@ -52,12 +52,12 @@ func Handler(store Store, options Options) *gin.Engine {
 		origin := c.GetHeader("Origin")
 		if origin != "" && origin != options.PublicOrigin && !isSameLoopbackOrigin(origin, c.Request.Host) {
 			if !allowed[origin] {
-				fail(c, 403, "不允许的请求来源")
+				fail(c, 403, msg(c, "不允许的请求来源", "Origin not allowed"))
 				return
 			}
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Protoflow-Password, X-Protoflow-Password-Base64, MCP-Protocol-Version, Mcp-Session-Id")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept-Language, X-Protoflow-Password, X-Protoflow-Password-Base64, MCP-Protocol-Version, Mcp-Session-Id")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if c.Request.Method == "OPTIONS" {
@@ -77,7 +77,7 @@ func Handler(store Store, options Options) *gin.Engine {
 	management.Use(func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") || len(header) > 256 {
-			fail(c, 401, "请先登录账号后再发布")
+			fail(c, 401, msg(c, "请先登录账号后再发布", "Please sign in before publishing"))
 			return
 		}
 		token := strings.TrimPrefix(header, "Bearer ")
@@ -94,11 +94,11 @@ func Handler(store Store, options Options) *gin.Engine {
 			id, name, e = store.Publisher(c.Request.Context(), TokenHash(token))
 		}
 		if errors.Is(e, ErrNotFound) || errors.Is(e, ErrInvalidAuth) || (e == nil && id == "") {
-			fail(c, 401, "发布登录已失效，请重新登录账号")
+			fail(c, 401, msg(c, "发布登录已失效，请重新登录账号", "Publishing session expired. Please sign in again"))
 			return
 		}
 		if e != nil {
-			fail(c, 503, "发布授权服务暂时不可用，请稍后重试")
+			fail(c, 503, msg(c, "发布授权服务暂时不可用，请稍后重试", "Publishing authorization service is temporarily unavailable. Please try again later"))
 			return
 		}
 		c.Set("publisher", id)
@@ -112,12 +112,12 @@ func Handler(store Store, options Options) *gin.Engine {
 	management.GET("/publications", func(c *gin.Context) {
 		project := c.Query("projectId")
 		if strings.TrimSpace(project) == "" {
-			fail(c, 400, "缺少项目 ID")
+			fail(c, 400, msg(c, "缺少项目 ID", "Missing project ID"))
 			return
 		}
 		items, e := store.List(c.Request.Context(), c.GetString("publisher"), project)
 		if e != nil {
-			fail(c, 500, "读取发布记录失败")
+			fail(c, 500, msg(c, "读取发布记录失败", "Failed to load publications"))
 			return
 		}
 		for i := range items {
@@ -144,42 +144,42 @@ func Handler(store Store, options Options) *gin.Engine {
 				return
 			}
 			if p.ProjectID != snapshot.ProjectID {
-				fail(c, 400, "发布记录不属于当前项目")
+				fail(c, 400, msg(c, "发布记录不属于当前项目", "Publication does not belong to the current project"))
 				return
 			}
 			if input.ExpectedVersion != p.Version || p.RevokedAt != nil {
-				fail(c, 409, "发布记录已变化，请刷新后重试")
+				fail(c, 409, msg(c, "发布记录已变化，请刷新后重试", "Publication has changed. Please refresh and try again"))
 				return
 			}
 		}
 		if input.Access.ExpiresAt != nil && !input.Access.ExpiresAt.After(time.Now()) {
-			fail(c, 400, "过期时间必须晚于当前时间")
+			fail(c, 400, msg(c, "过期时间必须晚于当前时间", "Expiration time must be in the future"))
 			return
 		}
 		switch input.Access.PasswordAction {
 		case "keep":
 			if input.Access.Password != "" {
-				fail(c, 400, "保留密码时不能提交新密码")
+				fail(c, 400, msg(c, "保留密码时不能提交新密码", "Cannot submit a new password when keeping the existing password"))
 				return
 			}
 		case "remove":
 			if input.Access.Password != "" {
-				fail(c, 400, "取消密码时不能提交新密码")
+				fail(c, 400, msg(c, "取消密码时不能提交新密码", "Cannot submit a new password when removing password protection"))
 				return
 			}
 			p.PasswordHash = ""
 		case "set":
 			if len(input.Access.Password) < 6 || len(input.Access.Password) > 128 {
-				fail(c, 400, "访问密码需为 6–128 个字节")
+				fail(c, 400, msg(c, "访问密码需为 6–128 个字节", "Access password must be 6–128 bytes"))
 				return
 			}
 			p.PasswordHash, e = HashPassword(input.Access.Password)
 			if e != nil {
-				fail(c, 500, "设置密码失败")
+				fail(c, 500, msg(c, "设置密码失败", "Failed to set access password"))
 				return
 			}
 		default:
-			fail(c, 400, "访问密码设置无效")
+			fail(c, 400, msg(c, "访问密码设置无效", "Invalid access password action"))
 			return
 		}
 		p.Title = snapshot.Title
@@ -206,7 +206,7 @@ func Handler(store Store, options Options) *gin.Engine {
 			return
 		}
 		if input.ExpectedVersion < 1 {
-			fail(c, 400, "缺少有效的发布版本")
+			fail(c, 400, msg(c, "缺少有效的发布版本", "Missing valid expected publication version"))
 			return
 		}
 		_, e := store.Get(c.Request.Context(), c.Param("id"), c.GetString("publisher"))
@@ -246,7 +246,7 @@ func Handler(store Store, options Options) *gin.Engine {
 		mu.Unlock()
 		if limited {
 			c.Header("Retry-After", "60")
-			fail(c, 429, "访问过于频繁，请稍后再试")
+			fail(c, 429, msg(c, "访问过于频繁，请稍后再试", "Too many requests. Please try again later"))
 			return
 		}
 		c.Next()
@@ -263,7 +263,7 @@ func Handler(store Store, options Options) *gin.Engine {
 			return p, false
 		}
 		if p.RevokedAt != nil || p.ExpiresAt != nil && !p.ExpiresAt.After(time.Now()) {
-			fail(c, 410, "此分享已撤回或过期，请联系发布者")
+			fail(c, 410, msg(c, "此分享已撤回或过期，请联系发布者", "This share link has been revoked or has expired. Please contact the publisher"))
 			return p, false
 		}
 		return decorate(p), true
@@ -282,7 +282,7 @@ func Handler(store Store, options Options) *gin.Engine {
 			return
 		}
 		if len(input.Password) > 128 {
-			fail(c, 400, "密码长度无效")
+			fail(c, 400, msg(c, "密码长度无效", "Invalid password length"))
 			return
 		}
 		p, ok := load(c)
@@ -290,7 +290,7 @@ func Handler(store Store, options Options) *gin.Engine {
 			return
 		}
 		if p.PasswordHash != "" && !CheckPassword(input.Password, p.PasswordHash) {
-			fail(c, 401, "访问密码不正确")
+			fail(c, 401, msg(c, "访问密码不正确", "Incorrect access password"))
 			return
 		}
 		c.JSON(200, gin.H{"publication": p, "snapshot": p.Snapshot})
@@ -298,20 +298,23 @@ func Handler(store Store, options Options) *gin.Engine {
 	return r
 }
 func fail(c *gin.Context, status int, message string) {
+	if isEnRequest(c) {
+		message = translateZhMessage(message)
+	}
 	c.AbortWithStatusJSON(status, gin.H{"error": message})
 }
 func storeError(c *gin.Context, e error) {
 	if errors.Is(e, ErrNotFound) {
-		fail(c, 404, "分享不存在或无权访问")
+		fail(c, 404, msg(c, "分享不存在或无权访问", "Share not found or access denied"))
 	} else if errors.Is(e, ErrConflict) {
-		fail(c, 409, "发布记录已变化，请刷新后重试")
+		fail(c, 409, msg(c, "发布记录已变化，请刷新后重试", "Publication has changed. Please refresh and try again"))
 	} else {
-		fail(c, 500, "发布服务暂时不可用")
+		fail(c, 500, msg(c, "发布服务暂时不可用", "Publishing service is temporarily unavailable"))
 	}
 }
 func decode(c *gin.Context, out any) bool {
 	if c.ContentType() != "application/json" {
-		fail(c, 415, "请使用 JSON 请求")
+		fail(c, 415, msg(c, "请使用 JSON 请求", "Content-Type must be application/json"))
 		return false
 	}
 	d := json.NewDecoder(c.Request.Body)
@@ -319,14 +322,14 @@ func decode(c *gin.Context, out any) bool {
 	if e := d.Decode(out); e != nil {
 		var limit *http.MaxBytesError
 		if errors.As(e, &limit) {
-			fail(c, 413, "发布内容超过 20 MB 限制")
+			fail(c, 413, msg(c, "发布内容超过 20 MB 限制", "Request payload exceeds the 20 MB limit"))
 		} else {
-			fail(c, 400, "请求格式错误")
+			fail(c, 400, msg(c, "请求格式错误", "Malformed JSON request"))
 		}
 		return false
 	}
 	if e := d.Decode(&struct{}{}); e != io.EOF {
-		fail(c, 400, "请求只能包含一个 JSON 对象")
+		fail(c, 400, msg(c, "请求只能包含一个 JSON 对象", "Request body must contain a single JSON object"))
 		return false
 	}
 	return true

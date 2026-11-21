@@ -32,17 +32,21 @@ def identify():
         return None
 
 
+def _tr(zh, en):
+    return en if os.environ.get('PROTOFLOW_LOCALE', '').lower().startswith('en') else zh
+
+
 try:
     owner = identify()
     if owner and (owner.get('alex_recovery_policy') != policy or owner.get('alex_recovery_channel') != channel):
         if Path(owner['hermes_home']).resolve() != home or owner.get('supervisor') not in (None, 'none'):
-            raise RuntimeError('当前 Hermes 由独立服务管理，请在维护窗口部署对应的限流适配，未修改该服务')
+            raise RuntimeError(_tr('当前 Hermes 由独立服务管理，请在维护窗口部署对应的限流适配，未修改该服务', 'Hermes is managed by an external service; deploy rate-limit recovery in your maintenance window. Service was not modified.'))
         work = live_work(home)
         if work is None or work.get('active_agents') != 0 or work.get('active_work'):
-            raise RuntimeError('Hermes 仍有任务运行或无法确认空闲，未重启；任务结束后重新连接以启用限流恢复')
+            raise RuntimeError(_tr('Hermes 仍有任务运行或无法确认空闲，未重启；任务结束后重新连接以启用限流恢复', 'Hermes still has active tasks or idle state could not be confirmed; reconnect after tasks finish to enable rate-limit recovery.'))
         marker = drain_request_path(home)
         if marker.exists():
-            raise RuntimeError('Hermes 已处于其他维护流程，未覆盖现有维护状态')
+            raise RuntimeError(_tr('Hermes 已处于其他维护流程，未覆盖现有维护状态', 'Hermes is already in another maintenance workflow; existing state preserved.'))
         principal = 'alex-recovery-' + uuid.uuid4().hex
         write_drain_request(home=home, principal=principal, suppress_notification=True)
         try:
@@ -52,7 +56,7 @@ try:
             while time.monotonic() < deadline:
                 current = identify()
                 if not current or current.get('pid') != owner.get('pid'):
-                    raise RuntimeError('Hermes 运行进程已变化，取消本次适配切换')
+                    raise RuntimeError(_tr('Hermes 运行进程已变化，取消本次适配切换', 'Hermes process changed; cancelled recovery adapter switch.'))
                 # identify.state describes the session runtime and does not
                 # reflect this version's reversible external drain. The live
                 # status verb returns the drain state and its answering PID.
@@ -61,26 +65,26 @@ try:
                     break
                 time.sleep(.1)
             else:
-                raise RuntimeError('Hermes 未确认暂停接收新任务，未重启')
+                raise RuntimeError(_tr('Hermes 未确认暂停接收新任务，未重启', 'Hermes did not confirm draining new tasks; not restarted.'))
             work = live_work(home)
             if work is None or work.get('active_agents') != 0 or work.get('active_work'):
-                raise RuntimeError('Hermes 有任务进入执行，取消本次适配切换，现有任务继续运行')
+                raise RuntimeError(_tr('Hermes 有任务进入执行，取消本次适配切换，现有任务继续运行', 'A task entered execution; cancelled switch so active work continues.'))
             script = 'import sys, runpy; sys.path.insert(0, sys.argv.pop(1)); sys._hermes_pin_default_home=True; import hermes_bootstrap; sys.argv[0]="hermes"; runpy.run_module("hermes_cli.main", run_name="__main__", alter_sys=True)'
             result = subprocess.run([sys.executable, '-I', '-c', script, str(root), 'gateway', 'stop'],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
             if result.returncode:
-                raise RuntimeError('Hermes 未同意空闲切换，原任务和环境保持原状')
+                raise RuntimeError(_tr('Hermes 未同意空闲切换，原任务和环境保持原状', 'Hermes declined idle switch; active tasks and environment remain unchanged.'))
         finally:
             if marker.exists() and json.loads(marker.read_text()).get('principal') == principal:
                 clear_drain_request(home=home)
     result = ensure_gateway_runtime(home, timeout=60, idle_exit=True)
     if result.state != 'ready':
-        raise RuntimeError('Hermes 恢复运行时尚未就绪，请稍后重新连接')
+        raise RuntimeError(_tr('Hermes 恢复运行时尚未就绪，请稍后重新连接', 'Hermes recovery runtime is not ready yet; please reconnect shortly.'))
     owner = identify()
     if not owner or owner.get('alex_recovery_policy') != policy or owner.get('alex_recovery_channel') != channel:
-        raise RuntimeError('当前 Gateway 未加载限流恢复适配，已停止连接，避免误报修复生效')
+        raise RuntimeError(_tr('当前 Gateway 未加载限流恢复适配，已停止连接，避免误报修复生效', 'Current Gateway did not load rate-limit recovery adapter; connection stopped to avoid false readiness.'))
     print(json.dumps({'ready': True}))
 except Exception as error:
     # No raw subprocess stderr, credentials, or provider payloads leave this boundary.
-    print(json.dumps({'ready': False, 'error': str(error) if isinstance(error, RuntimeError) else 'Hermes 恢复运行时启动失败'}))
+    print(json.dumps({'ready': False, 'error': str(error) if isinstance(error, RuntimeError) else _tr('Hermes 恢复运行时启动失败', 'Failed to start Hermes recovery runtime')}))
     sys.exit(1)

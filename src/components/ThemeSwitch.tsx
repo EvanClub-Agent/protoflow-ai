@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -50,9 +51,13 @@ export function useThemePreference() {
 }
 
 export function ThemeSwitch({ mode, resolved, cycle }: ReturnType<typeof useThemePreference>) {
+  const { tr } = useI18n();
   const Icon = icons[mode];
-  const appearance = resolved === 'dark' ? '深色' : '浅色';
-  const label = `切换主题（当前：${mode === 'system' ? '跟随系统·' : ''}${appearance}）`;
+  const appearance = resolved === 'dark' ? tr('深色', 'Dark') : tr('浅色', 'Light');
+  const label = tr(
+    `切换主题（当前：${mode === 'system' ? '跟随系统·' : ''}${appearance}）`,
+    `Switch theme (Current: ${mode === 'system' ? 'System · ' : ''}${appearance})`
+  );
   return (
     <div className="relative group flex items-center">
       <button type="button" onClick={cycle} aria-label={label}

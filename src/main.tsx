@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { syncDesktopBootLocale, type DesktopLocaleBridge } from './i18n';
 import { AccountGate } from './components/AccountGate';
 import { startProjectPersistence } from './services/projectStorage';
 import { ProjectSaveNotice } from './components/ProjectSaveStatus';
@@ -15,6 +16,9 @@ const stopDiagnostics = installRuntimeDiagnostics(() => {
   return state.isProjectClosed || state.isWelcomeScreenOpen ? {} : {projectId:state.currentProjectMeta.projectId,pageId:state.activePageId};
 });
 if (import.meta.hot) import.meta.hot.dispose(stopDiagnostics);
+void syncDesktopBootLocale(
+  (window as unknown as { protoflowDesktop?: DesktopLocaleBridge }).protoflowDesktop,
+);
 startProjectPersistence();
 
 createRoot(document.getElementById('root')!).render(

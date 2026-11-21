@@ -1,4 +1,5 @@
 import { SITEMAP_TREE, type SitemapItem } from '../store/useProtoStore';
+import { tr } from '../i18n/runtime';
 import { folderOptions, sitemapCatalog } from '../proto/sitemap';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 
@@ -18,7 +19,7 @@ export function legacyBlankSitemap(state: ProjectStateSnapshot): SitemapItem[] {
     while (id !== null && !neededFolders.has(id)) {
       neededFolders.add(id);
       const folder = folders.get(id);
-      if (!folder) throw new Error('旧版工程引用不存在的菜单目录');
+      if (!folder) throw new Error(tr('旧版工程引用不存在的菜单目录', 'Legacy project references a non-existent sitemap folder'));
       id = folder.parentFolderId;
     }
   };

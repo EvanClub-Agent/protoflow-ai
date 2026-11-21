@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { tr } from '../i18n/runtime';
 import { captureRuntimeError } from './runtimeDiagnostics';
 import { encodePflowBinary, type PflowBinaryPayload, type PflowProjectMetadata } from '../utils/pflowBinaryCodec';
 import { validateProjectPayload } from './projectValidation';
@@ -33,7 +34,7 @@ export class ProjectAutosave {
   get projectId() { return this.meta?.projectId; }
 
   assertCanReplace() {
-    if (this.dirty || this.writing || this.suspended) throw new Error('当前项目尚未保存完成，请先保存后再切换项目');
+    if (this.dirty || this.writing || this.suspended) throw new Error(tr('当前项目尚未保存完成，请先保存后再切换项目', 'Current project has unsaved changes in progress; save before switching projects'));
   }
 
   opened(payload: PflowBinaryPayload) {
@@ -57,7 +58,7 @@ export class ProjectAutosave {
   async flush(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
-    if (this.suspended) throw new Error('项目正在删除，请等待操作完成');
+    if (this.suspended) throw new Error(tr('项目正在删除，请等待操作完成', 'Project is being deleted; please wait'));
     if (this.writing) {
       await this.writing;
       return this.flush();
@@ -74,12 +75,12 @@ export class ProjectAutosave {
         const revision = this.revision;
         const payload = this.options.capture();
         if (!this.meta || payload.meta.projectId !== this.meta.projectId || payload.meta.storageDir !== this.meta.storageDir || payload.meta.fileName !== this.meta.fileName) {
-          throw new Error('当前项目与保存目标不一致，已停止写入');
+          throw new Error(tr('当前项目与保存目标不一致，已停止写入', 'Current project mismatches save target; write aborted'));
         }
         validateProjectPayload(payload);
         useProjectSaveStore.setState({ status: 'saving' });
         const result = await this.options.write({ projectId: payload.meta.projectId, dirPath: payload.meta.storageDir, fileName: payload.meta.fileName, binaryBytes: encodePflowBinary(payload) });
-        if (result.saved !== true) throw new Error('工程未保存成功');
+        if (result.saved !== true) throw new Error(tr('工程未保存成功', 'Failed to save project'));
         this.savedRevision = revision;
         this.options.onSaved(payload);
         useProjectSaveStore.setState({ status: this.dirty ? 'pending' : 'saved', error: '', savedAt: payload.meta.updatedAt });

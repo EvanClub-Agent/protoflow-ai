@@ -11,6 +11,7 @@ import {
   Square,
   Terminal,
 } from 'lucide-react';
+import { useI18n, tr } from '../i18n';
 
 interface ChatMarkdownProps {
   content: string;
@@ -34,34 +35,39 @@ type MarkdownBlock =
 
 const ALERT_META: Record<
   AlertKind,
-  { label: string; icon: React.FC<{ className?: string }>; boxCls: string; titleCls: string }
+  { zhLabel: string; enLabel: string; icon: React.FC<{ className?: string }>; boxCls: string; titleCls: string }
 > = {
   NOTE: {
-    label: '说明',
+    zhLabel: '说明',
+    enLabel: 'Note',
     icon: Info,
     boxCls: 'border-blue-200/90 bg-blue-50/70 text-slate-700',
     titleCls: 'text-blue-700',
   },
   TIP: {
-    label: '建议',
+    zhLabel: '建议',
+    enLabel: 'Tip',
     icon: Lightbulb,
     boxCls: 'border-emerald-200/90 bg-emerald-50/70 text-slate-700',
     titleCls: 'text-emerald-700',
   },
   IMPORTANT: {
-    label: '重要',
+    zhLabel: '重要',
+    enLabel: 'Important',
     icon: Sparkles,
     boxCls: 'border-indigo-200/90 bg-indigo-50/70 text-slate-700',
     titleCls: 'text-indigo-700',
   },
   WARNING: {
-    label: '注意',
+    zhLabel: '注意',
+    enLabel: 'Warning',
     icon: AlertTriangle,
     boxCls: 'border-amber-200/90 bg-amber-50/75 text-slate-700',
     titleCls: 'text-amber-800',
   },
   CAUTION: {
-    label: '警告',
+    zhLabel: '警告',
+    enLabel: 'Caution',
     icon: AlertCircle,
     boxCls: 'border-rose-200/90 bg-rose-50/75 text-slate-700',
     titleCls: 'text-rose-700',
@@ -154,7 +160,7 @@ export function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
         blocks.push({
           type: 'alert',
           kind,
-          title: customTitle || ALERT_META[kind].label,
+          title: customTitle || tr(ALERT_META[kind].zhLabel, ALERT_META[kind].enLabel),
           lines: bodyLines,
         });
       } else {
@@ -357,6 +363,7 @@ const CodeBlockCard: React.FC<{ lang: string; code: string; closed: boolean }> =
   code,
   closed,
 }) => {
+  const { tr } = useI18n();
   const [copied, setCopied] = useState(false);
   const lineCount = code ? code.split('\n').length : 1;
 
@@ -374,24 +381,24 @@ const CodeBlockCard: React.FC<{ lang: string; code: string; closed: boolean }> =
         <span className="inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider text-slate-300">
           <Terminal className="h-3 w-3 text-blue-400" />
           <span>{lang || 'code'}</span>
-          <span className="font-normal text-slate-500">· {lineCount} 行</span>
-          {!closed && <span className="text-blue-400 animate-pulse">· 编写中</span>}
+          <span className="font-normal text-slate-500 normal-case tabular-nums">{tr(`· ${lineCount} 行`, `· ${lineCount} lines`)}</span>
+          {!closed && <span className="text-blue-400 animate-pulse normal-case">{tr('· 编写中', '· writing')}</span>}
         </span>
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer transition"
-          title="复制代码"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap shrink-0 cursor-pointer transition"
+          title={tr('复制代码', 'Copy code')}
         >
           {copied ? (
             <>
               <Check className="h-3 w-3 text-emerald-400" />
-              <span className="text-emerald-400">已复制</span>
+              <span className="text-emerald-400">{tr('已复制', 'Copied')}</span>
             </>
           ) : (
             <>
               <Copy className="h-3 w-3" />
-              <span>复制</span>
+              <span>{tr('复制', 'Copy')}</span>
             </>
           )}
         </button>
@@ -408,12 +415,13 @@ export const ChatMarkdown: React.FC<ChatMarkdownProps> = React.memo(function Cha
   streaming = false,
   tone = 'assistant',
 }) {
+  const { tr } = useI18n();
   const blocks = parseMarkdownBlocks(content);
 
   if (blocks.length === 0) {
     return streaming ? (
       <span className="inline-flex items-center gap-1.5 text-slate-500">
-        <span>正在思考…</span>
+        <span>{tr('正在思考…', 'Thinking…')}</span>
       </span>
     ) : null;
   }

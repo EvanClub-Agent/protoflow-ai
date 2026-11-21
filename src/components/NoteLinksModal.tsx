@@ -6,6 +6,7 @@ import { buildSitemap } from '../proto/sitemap';
 import { pageRefKey } from '../proto/mindmaps';
 import { notePath, type NotePageRef } from '../proto/notes';
 import { openNoteNode, setNoteTargetLinks, setPageNoteLinks } from '../services/notesWorkspace';
+import { useI18n } from '../i18n';
 
 export function NoteLinksModal({
   projectId,
@@ -18,6 +19,7 @@ export function NoteLinksModal({
   targetNodeId?: string;
   onClose: () => void;
 }) {
+  const { tr, td } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const data = useProtoStore((state) => state.projectNotes);
   const { setActivePage, setViewMode } = useProtoStore();
@@ -90,12 +92,12 @@ export function NoteLinksModal({
         setNoteTargetLinks(projectId, targetNodeId, chosenRefs);
         onClose();
       } else {
-        if (!source) throw new Error('请选择页面或页面目录');
+        if (!source) throw new Error(tr('请选择页面或页面目录', 'Please select a page or folder'));
         setPageNoteLinks(projectId, source.ref, selectedNoteIds);
         onClose();
       }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(td(failure instanceof Error ? failure.message : String(failure)));
     }
   };
 
@@ -103,24 +105,24 @@ export function NoteLinksModal({
     <dialog
       ref={dialog}
       onCancel={onClose}
-      aria-label="关联页面与项目笔记"
+      aria-label={tr('关联页面与项目笔记', 'Link Pages & Project Notes')}
       className="pf-notes-surface m-auto w-[560px] max-w-[94vw] rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-900/40"
     >
       <form onSubmit={handleSubmit}>
         <header className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 bg-slate-50/70">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <Link2 size={16} className="text-blue-600" />
-            <span>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800 min-w-0">
+            <Link2 size={16} className="text-blue-600 shrink-0" />
+            <span className="truncate">
               {isNoteToPagesMode
-                ? `关联原型页面 · ${targetNode?.icon || '📝'} ${targetNode?.title || ''}`
-                : '关联页面与项目笔记'}
+                ? tr(`关联原型页面 · ${targetNode?.icon || '📝'} ${targetNode?.title || ''}`, `Link Prototype Pages · ${targetNode?.icon || '📝'} ${targetNode?.title || ''}`)
+                : tr('关联页面与项目笔记', 'Link Pages & Project Notes')}
             </span>
           </h2>
           <button
             type="button"
-            aria-label="关闭关联设置"
+            aria-label={tr('关闭关联设置', 'Close link settings')}
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 cursor-pointer"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 cursor-pointer shrink-0"
           >
             <X size={16} />
           </button>
@@ -130,14 +132,14 @@ export function NoteLinksModal({
           {isNoteToPagesMode ? (
             <>
               <p className="leading-5 text-slate-500">
-                勾选与当前笔记相关的原型页面或模块目录（支持多选）。关联后，不仅可以在笔记顶部一键跳转到对应原型页面，还能在将笔记发送给项目 AI 时自动附带关联页面上下文。
+                {tr('勾选与当前笔记相关的原型页面或模块目录（支持多选）。关联后，不仅可以在笔记顶部一键跳转到对应原型页面，还能在将笔记发送给项目 AI 时自动附带关联页面上下文。', 'Select prototype pages or folders related to this note (multi-select). Linked pages appear as quick-jump links at the top of the note and provide automatic context when sending the note to Project AI.')}
               </p>
               <div
                 className="max-h-64 space-y-1 overflow-auto rounded-xl border border-slate-200 p-2 bg-slate-50/40"
-                aria-label="原型页面关联列表"
+                aria-label={tr('原型页面关联列表', 'Prototype pages to link')}
               >
                 {!sources.length && (
-                  <p className="p-3 text-slate-500">当前工程还没有可关联的页面或目录。</p>
+                  <p className="p-3 text-slate-500">{tr('当前工程还没有可关联的页面或目录。', 'No pages or folders available to link in this project.')}</p>
                 )}
                 {sources.map((item) => {
                   const key = pageRefKey(item.ref);
@@ -162,7 +164,7 @@ export function NoteLinksModal({
                         />
                         <span className="truncate">
                           <span className="text-slate-400 font-medium">
-                            {item.ref.kind === 'folder' ? '📁 目录 · ' : '📄 页面 · '}
+                            {item.ref.kind === 'folder' ? tr('📁 目录 · ', '📁 Folder · ') : tr('📄 页面 · ', '📄 Page · ')}
                           </span>
                           <span className="text-slate-800 font-medium">{item.path}</span>
                         </span>
@@ -179,7 +181,7 @@ export function NoteLinksModal({
                           }}
                           className="shrink-0 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline cursor-pointer"
                         >
-                          <span>打开页面</span>
+                          <span>{tr('打开页面', 'Open Page')}</span>
                           <ExternalLink size={11} />
                         </button>
                       )}
@@ -191,34 +193,34 @@ export function NoteLinksModal({
           ) : (
             <>
               <label className="block font-medium text-slate-700">
-                页面或页面目录
+                {tr('页面或页面目录', 'Page or Folder')}
                 <select
-                  aria-label="关联的页面或目录"
+                  aria-label={tr('关联的页面或目录', 'Linked page or folder')}
                   value={sourceKey}
                   disabled={page !== undefined}
                   onChange={(event) => setSourceKey(event.target.value)}
                   className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-2 text-slate-800"
                 >
-                  <option value="">请选择</option>
+                  <option value="">{tr('请选择', 'Select...')}</option>
                   {sources.map((item) => (
                     <option key={pageRefKey(item.ref)} value={pageRefKey(item.ref)}>
-                      {item.ref.kind === 'folder' ? '目录 · ' : '页面 · '}
+                      {item.ref.kind === 'folder' ? tr('目录 · ', 'Folder · ') : tr('页面 · ', 'Page · ')}
                       {item.path}
                     </option>
                   ))}
                 </select>
               </label>
               <p className="leading-5 text-slate-500">
-                选择要关联的需求笔记或笔记目录，可多选。关联后可在左侧页面目录快速查看或打开对应的客户需求笔记。
+                {tr('选择要关联的需求笔记或笔记目录，可多选。关联后可在左侧页面目录快速查看或打开对应的客户需求笔记。', 'Select requirement notes or note folders to link (multi-select). Linked notes can be viewed and opened directly from the left page tree.')}
               </p>
               <div
                 className="max-h-64 space-y-1 overflow-auto rounded-xl border border-slate-200 p-2 bg-slate-50/40"
-                aria-label="笔记关联目标"
+                aria-label={tr('笔记关联目标', 'Note link targets')}
               >
                 {!data.nodes.length && (
                   <p className="p-3 text-slate-500 flex items-center gap-1.5">
-                    <BookOpenText size={14} className="text-slate-400" />
-                    <span>请先到左侧「项目笔记」中新建客户需求笔记或目录。</span>
+                    <BookOpenText size={14} className="text-slate-400 shrink-0" />
+                    <span>{tr('请先到左侧「项目笔记」中新建客户需求笔记或目录。', 'Create a requirement note or folder in "Project Notes" on the left first.')}</span>
                   </p>
                 )}
                 {data.nodes.map((node) => (
@@ -239,7 +241,7 @@ export function NoteLinksModal({
                         }
                       />
                       <span className="truncate">
-                        {node.icon} {node.kind === 'folder' ? '目录 · ' : '笔记 · '}
+                        {node.icon} {node.kind === 'folder' ? tr('目录 · ', 'Folder · ') : tr('笔记 · ', 'Note · ')}
                         {notePath(data, node.id)}
                       </span>
                     </label>
@@ -251,7 +253,7 @@ export function NoteLinksModal({
                         onClose();
                       }}
                     >
-                      打开笔记
+                      {tr('打开笔记', 'Open Note')}
                     </button>
                   </div>
                 ))}
@@ -271,14 +273,14 @@ export function NoteLinksModal({
             onClick={onClose}
             className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-slate-700 hover:bg-slate-50 cursor-pointer"
           >
-            取消
+            {tr('取消', 'Cancel')}
           </button>
           <button
             disabled={!isNoteToPagesMode && !source}
             type="submit"
             className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-1.5 font-medium text-white disabled:opacity-40 cursor-pointer"
           >
-            保存关联
+            {tr('保存关联', 'Save Links')}
           </button>
         </footer>
       </form>

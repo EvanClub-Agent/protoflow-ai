@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { origin } = require('./publishing.cjs');
+const { isMainEn, tr } = require('./i18n.cjs');
 
 const SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const SHA256_REGEX = /^[a-fA-F0-9]{64}$/;
@@ -12,8 +13,11 @@ const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'he
 function describeUpdateCheckError(error, serverUrl, os, fixedSource = false) {
   const message = error instanceof Error ? error.message : String(error);
   if (error?.name === 'TimeoutError') {
-    if (fixedSource) return '连接更新服务超时，请检查网络连接后重试。';
-    return `连接更新服务器 ${serverUrl} 超时，请检查服务器是否运行以及当前网络能否访问该地址。`;
+    if (fixedSource) return tr('连接更新服务超时，请检查网络连接后重试。', 'Timed out connecting to the update service. Please check your network connection and try again.');
+    return tr(
+      `连接更新服务器 ${serverUrl} 超时，请检查服务器是否运行以及当前网络能否访问该地址。`,
+      `Timed out connecting to update server ${serverUrl}. Check whether the server is running and reachable from your network.`
+    );
   }
   // Node fetch hides socket errors in cause (sometimes an AggregateError).
   // Leave HTTP, manifest and signature validation errors unchanged.
@@ -31,26 +35,32 @@ function describeUpdateCheckError(error, serverUrl, os, fixedSource = false) {
   }
   if (fixedSource) {
     if (os === 'macos' && ['EHOSTUNREACH', 'ENETUNREACH', 'EACCES', 'EPERM'].some(code => codes.has(code))) {
-      return '无法连接更新服务，请检查网络连接，并在 macOS「系统设置 → 隐私与安全 → 本地网络」允许 Alex。';
+      return tr(
+        '无法连接更新服务，请检查网络连接，并在 macOS「系统设置 → 隐私与安全 → 本地网络」允许 Alex。',
+        'Unable to connect to the update service. Check your network connection and allow Alex under macOS System Settings → Privacy & Security → Local Network.'
+      );
     }
-    return '暂时无法连接更新服务，请检查网络连接后重试。';
+    return tr('暂时无法连接更新服务，请检查网络连接后重试。', 'Unable to reach the update service right now. Check your network connection and try again.');
   }
-  const detail = codes.size ? `（${[...codes].join('、')}）` : '';
-  let advice = '请检查更新源地址、服务器状态和当前网络连接。';
+  const detail = codes.size ? tr(`（${[...codes].join('、')}）`, ` (${[...codes].join(', ')})`) : '';
+  let advice = tr('请检查更新源地址、服务器状态和当前网络连接。', 'Check the update server URL, server status, and your network connection.');
   if (codes.has('ECONNREFUSED')) {
-    advice = '服务器拒绝连接，请确认更新服务已启动且端口允许访问。';
+    advice = tr('服务器拒绝连接，请确认更新服务已启动且端口允许访问。', 'Connection refused by server. Confirm the update service is running and its port is open.');
   } else if (codes.has('ENOTFOUND') || codes.has('EAI_AGAIN')) {
-    advice = '无法解析服务器域名，请检查地址和 DNS 设置。';
+    advice = tr('无法解析服务器域名，请检查地址和 DNS 设置。', 'Unable to resolve server hostname. Check the URL and DNS settings.');
   } else if (codes.has('ETIMEDOUT') || codes.has('UND_ERR_CONNECT_TIMEOUT')) {
-    advice = '连接超时，请检查服务器状态、网络路由和防火墙设置。';
+    advice = tr('连接超时，请检查服务器状态、网络路由和防火墙设置。', 'Connection timed out. Check server status, network routing, and firewall rules.');
   } else if (codes.has('EHOSTUNREACH') || codes.has('ENETUNREACH') || codes.has('EACCES') || codes.has('EPERM')) {
-    advice = '网络不可达或访问被阻止，请检查网络路由与访问权限。';
+    advice = tr('网络不可达或访问被阻止，请检查网络路由与访问权限。', 'Network is unreachable or access was blocked. Check network routing and permissions.');
     const host = new URL(serverUrl).hostname;
     if (os === 'macos' && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) {
-      advice += '在 macOS「系统设置 → 隐私与安全 → 本地网络」允许 Alex；若已开启仍失败，请检查安装包签名。';
+      advice += tr(
+        '在 macOS「系统设置 → 隐私与安全 → 本地网络」允许 Alex；若已开启仍失败，请检查安装包签名。',
+        ' Allow Alex under macOS System Settings → Privacy & Security → Local Network; if already enabled, verify the app signature.'
+      );
     }
   }
-  return `无法连接更新服务器 ${serverUrl}${detail}。${advice}`;
+  return tr(`无法连接更新服务器 ${serverUrl}${detail}。${advice}`, `Unable to connect to update server ${serverUrl}${detail}. ${advice}`);
 }
 
 function normalizePlatform(platform) {
@@ -271,7 +281,7 @@ class DesktopUpdater {
     openPath = async () => '',
     showItemInFolder = () => {},
     launchDetached = () => {},
-    installDeb = async () => { throw new Error('当前安装包未包含自动安装组件，请联系管理员获取新版安装包。'); },
+    installDeb = async () => { throw new Error(tr('当前安装包未包含自动安装组件，请联系管理员获取新版安装包。', 'This build does not include automatic package installation; please contact your administrator for a newer installer.')); },
     restartApp = () => {},
   }) {
     this.dataDir = dataDir;
@@ -396,17 +406,17 @@ class DesktopUpdater {
   resolveSafeUpdatePaths(version, fileName) {
     const cleanVersion = normalizeSemver(version);
     if (!cleanVersion) {
-      throw new Error('更新清单中的版本号格式非法，已拒绝写入本地路径');
+      throw new Error(tr('更新清单中的版本号格式非法，已拒绝写入本地路径', 'Invalid version format in update manifest; refused to write local path'));
     }
     const cleanFileName = sanitizeUpdateFileName(fileName);
     if (!cleanFileName) {
-      throw new Error('更新清单中的安装包文件名非法，已拒绝写入本地路径');
+      throw new Error(tr('更新清单中的安装包文件名非法，已拒绝写入本地路径', 'Invalid installer file name in update manifest; refused to write local path'));
     }
     const rootDir = path.resolve(this.updatesDir);
     const versionDir = path.resolve(rootDir, cleanVersion);
     const relVersion = path.relative(rootDir, versionDir);
     if (!relVersion || relVersion.startsWith('..') || path.isAbsolute(relVersion)) {
-      throw new Error('更新目录路径越界，已拒绝访问');
+      throw new Error(tr('更新目录路径越界，已拒绝访问', 'Update directory path is out of bounds; access denied'));
     }
     const finalPath = path.resolve(versionDir, cleanFileName);
     const relFile = path.relative(versionDir, finalPath);
@@ -419,14 +429,14 @@ class DesktopUpdater {
       relRoot.startsWith('..') ||
       path.isAbsolute(relRoot)
     ) {
-      throw new Error('安装包目标路径越界，已拒绝访问');
+      throw new Error(tr('安装包目标路径越界，已拒绝访问', 'Target installer path is out of bounds; access denied'));
     }
     return { rootDir, versionDir, finalPath, cleanVersion, cleanFileName };
   }
 
   validateTrustedAsset(releaseOrVersion, asset, expectedClientChannel) {
     if (!asset || typeof asset !== 'object') {
-      throw new Error('更新清单缺少有效的安装包信息');
+      throw new Error(tr('更新清单缺少有效的安装包信息', 'Update manifest is missing valid installer asset details'));
     }
     const rawVersion =
       releaseOrVersion && typeof releaseOrVersion === 'object' ? releaseOrVersion.version : releaseOrVersion;
@@ -434,41 +444,49 @@ class DesktopUpdater {
     const versionCmp = compareSemver(paths.cleanVersion, this.appVersion);
     if (!(versionCmp > 0)) {
       throw new Error(
-        `目标版本 (v${paths.cleanVersion}) 不高于当前客户端版本 (v${this.appVersion})，已拒绝降级或重放安装`
+        tr(
+          `目标版本 (v${paths.cleanVersion}) 不高于当前客户端版本 (v${this.appVersion})，已拒绝降级或重放安装`,
+          `Target version (v${paths.cleanVersion}) is not newer than current version (v${this.appVersion}); downgrade or replay blocked`
+        )
       );
     }
 
     const activeChannel = this.fixedUpdateConfig ? this.resolveChannel() : expectedClientChannel || this.resolveChannel();
     const manifestCtx = extractReleaseManifestContext(releaseOrVersion, asset);
     if (!manifestCtx) {
-      throw new Error('更新清单中的发布通道或强制更新标记不一致或无效，已阻止安装');
+      throw new Error(tr('更新清单中的发布通道或强制更新标记不一致或无效，已阻止安装', 'Inconsistent or invalid release channel or mandatory flag in update manifest; installation blocked'));
     }
     if (activeChannel === 'stable' && manifestCtx.cleanChannel !== 'stable') {
-      throw new Error('当前客户端处于正式版 (stable) 通道，已拒绝非正式版通道的安装包');
+      throw new Error(tr('当前客户端处于正式版 (stable) 通道，已拒绝非正式版通道的安装包', 'Client is on the stable channel; rejected non-stable installer package'));
     }
 
     if (!isAssetCompatible(asset, this.os, this.arch)) {
-      throw new Error(`安装包架构 (${asset.os}/${asset.arch}) 与当前设备 (${this.os}/${this.arch}) 不兼容，已阻止安装`);
+      throw new Error(
+        tr(
+          `安装包架构 (${asset.os}/${asset.arch}) 与当前设备 (${this.os}/${this.arch}) 不兼容，已阻止安装`,
+          `Installer architecture (${asset.os}/${asset.arch}) is incompatible with this device (${this.os}/${this.arch}); installation blocked`
+        )
+      );
     }
     const sizeBytes = Number(asset.sizeBytes);
     if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) {
-      throw new Error('更新清单缺少有效的文件大小声明 (sizeBytes)，已阻止安装');
+      throw new Error(tr('更新清单缺少有效的文件大小声明 (sizeBytes)，已阻止安装', 'Update manifest is missing a valid sizeBytes declaration; installation blocked'));
     }
     const expectedSha256 = String(asset.sha256 || '').trim().toLowerCase();
     if (!SHA256_REGEX.test(expectedSha256)) {
-      throw new Error('更新清单缺少可信的 64 位 SHA-256 校验值，已阻止安装');
+      throw new Error(tr('更新清单缺少可信的 64 位 SHA-256 校验值，已阻止安装', 'Update manifest is missing a trusted 64-character SHA-256 checksum; installation blocked'));
     }
 
     const trustedPub = this.resolveTrustedPublicKey();
 
     if (!trustedPub) {
-      throw new Error('客户端尚未配置可信更新签名公钥，已拒绝未经独立信任链验证的更新包');
+      throw new Error(tr('客户端尚未配置可信更新签名公钥，已拒绝未经独立信任链验证的更新包', 'No trusted update signing public key is configured; rejected unverified update package'));
     }
     if (!asset.signature) {
-      throw new Error('更新清单缺少可信的 Ed25519 数字签名，已阻止安装');
+      throw new Error(tr('更新清单缺少可信的 Ed25519 数字签名，已阻止安装', 'Update manifest is missing an Ed25519 digital signature; installation blocked'));
     }
     if (asset.signingPublicKey && asset.signingPublicKey.trim() !== trustedPub) {
-      throw new Error('更新清单签名公钥与已绑定的可信公钥不一致，已阻止安装');
+      throw new Error(tr('更新清单签名公钥与已绑定的可信公钥不一致，已阻止安装', 'Update manifest signing public key does not match the pinned trusted public key; installation blocked'));
     }
     if (
       !verifyAssetManifestSignature(
@@ -481,7 +499,7 @@ class DesktopUpdater {
         trustedPub
       )
     ) {
-      throw new Error('更新清单数字签名校验未通过，清单或发布通道可能已被篡改，已阻止安装');
+      throw new Error(tr('更新清单数字签名校验未通过，清单或发布通道可能已被篡改，已阻止安装', 'Update manifest Ed25519 signature verification failed; manifest or channel may have been tampered with'));
     }
 
     return {
@@ -517,8 +535,8 @@ class DesktopUpdater {
   }
 
   configure(input = {}) {
-    if (this.fixedUpdateConfig) throw new Error('更新服务由应用内置管理，不支持修改。');
-    if (this.installing) throw new Error('正在安装更新，请等待完成后再修改设置');
+    if (this.fixedUpdateConfig) throw new Error(tr('更新服务由应用内置管理，不支持修改。', 'Update service is managed by this distribution and cannot be modified.'));
+    if (this.installing) throw new Error(tr('正在安装更新，请等待完成后再修改设置', 'An update is currently being installed; please wait before changing settings'));
     const prevCfg = this.readConfig();
     const prevServerUrl = this.resolveServerUrl();
     const prevChannel = prevCfg.channel === 'beta' ? 'beta' : 'stable';
@@ -626,7 +644,7 @@ class DesktopUpdater {
       }
       return this.pushState({
         status: 'idle',
-        error: options.silent ? null : '当前为开源社区版本，请点击下方「GitHub Releases」前往下载最新安装包',
+        error: options.silent ? null : tr('当前为开源社区版本，请点击下方「GitHub Releases」前往下载最新安装包', 'This is an open-source community build; click "GitHub Releases" below to download the latest installer'),
       });
     }
 
@@ -658,6 +676,7 @@ class DesktopUpdater {
         method: 'GET',
         redirect: 'error',
         signal,
+        ...(isMainEn() ? { headers: { 'Accept-Language': 'en-US' } } : {}),
       });
       if (this.configEpoch !== requestEpoch || this.checkAbort !== checkAbort || checkAbort.signal.aborted) {
         return this.snapshot();
@@ -667,21 +686,21 @@ class DesktopUpdater {
         return this.snapshot();
       }
       if (!response.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `检查更新失败 (${response.status})`);
+        throw new Error(typeof data?.error === 'string' ? data.error : tr(`检查更新失败 (${response.status})`, `Update check failed (${response.status})`));
       }
       if (!data || typeof data.hasUpdate !== 'boolean') {
-        throw new Error('更新服务返回了无效的响应格式');
+        throw new Error(tr('更新服务返回了无效的响应格式', 'Update server returned an invalid response format'));
       }
 
       const latestRelease = data.latestRelease || null;
       if (latestRelease && !normalizeSemver(latestRelease.version)) {
-        throw new Error('更新服务返回了非法的版本号格式');
+        throw new Error(tr('更新服务返回了非法的版本号格式', 'Update server returned an invalid version format'));
       }
       if (latestRelease) {
         latestRelease.version = normalizeSemver(latestRelease.version);
         const relChannel = String(latestRelease.channel || 'stable').trim().toLowerCase();
         if (relChannel !== 'stable' && relChannel !== 'beta') {
-          throw new Error('更新服务返回了非法的发布通道格式');
+          throw new Error(tr('更新服务返回了非法的发布通道格式', 'Update server returned an invalid release channel'));
         }
         latestRelease.channel = relChannel;
         latestRelease.mandatory = Boolean(latestRelease.mandatory);
@@ -749,11 +768,11 @@ class DesktopUpdater {
   }
 
   async download({ assetId } = {}) {
-    if (this.installing) throw new Error('正在安装更新，请等待完成');
+    if (this.installing) throw new Error(tr('正在安装更新，请等待完成', 'An update is currently being installed; please wait'));
     const downloadEpoch = this.configEpoch;
     if (this.activeDownload) {
       if (!this.activeDownload.abortController.signal.aborted && this.activeDownload.epoch === downloadEpoch) {
-        throw new Error('已有正在进行的更新包下载任务');
+        throw new Error(tr('已有正在进行的更新包下载任务', 'An update download is already in progress'));
       }
       try {
         await this.activeDownload.promise;
@@ -767,7 +786,7 @@ class DesktopUpdater {
 
     const release = this.state.latestRelease;
     if (!release) {
-      throw new Error('请先检查新版本后再下载安装包');
+      throw new Error(tr('请先检查新版本后再下载安装包', 'Please check for updates before downloading an installer'));
     }
     const compatiblePool = [
       ...(Array.isArray(this.state.platformAssets) ? this.state.platformAssets : []),
@@ -782,7 +801,7 @@ class DesktopUpdater {
       ];
       const requested = allAssets.find((a) => a.id === assetId);
       if (!requested) {
-        throw new Error('未找到指定的安装包');
+        throw new Error(tr('未找到指定的安装包', 'Requested installer asset not found'));
       }
       if (!isAssetCompatible(requested, this.os, this.arch)) {
         return this.pushState({
@@ -791,7 +810,10 @@ class DesktopUpdater {
           downloadedFilePath: null,
           verifiedSha256: null,
           progress: null,
-          error: `安装包架构 (${requested.os}/${requested.arch}) 与当前设备 (${this.os}/${this.arch}) 不兼容，已阻止下载`,
+          error: tr(
+            `安装包架构 (${requested.os}/${requested.arch}) 与当前设备 (${this.os}/${this.arch}) 不兼容，已阻止下载`,
+            `Installer architecture (${requested.os}/${requested.arch}) is incompatible with this device (${this.os}/${this.arch}); download blocked`
+          ),
         });
       }
       asset = requested;
@@ -811,7 +833,10 @@ class DesktopUpdater {
         downloadedFilePath: null,
         verifiedSha256: null,
         progress: null,
-        error: `当前版本 v${release.version} 暂未提供兼容 ${this.os} (${this.arch}) 的安装包`,
+        error: tr(
+          `当前版本 v${release.version} 暂未提供兼容 ${this.os} (${this.arch}) 的安装包`,
+          `Release v${release.version} does not provide an installer compatible with ${this.os} (${this.arch})`
+        ),
       });
     }
 
@@ -853,7 +878,7 @@ class DesktopUpdater {
 
     const downloadUrl = asset.downloadUrl || (serverUrl ? `${serverUrl}/api/v1/updates/assets/${asset.id}/download` : '');
     if (!downloadUrl) {
-      throw new Error('安装包缺少有效的下载地址');
+      throw new Error(tr('安装包缺少有效的下载地址', 'Installer has no valid download URL'));
     }
 
     const { versionDir, finalPath, cleanFileName, sizeBytes: expectedSizeBytes, expectedSha256 } = validated;
@@ -903,9 +928,10 @@ class DesktopUpdater {
         const response = await this.fetch(downloadUrl, {
           method: 'GET',
           signal: abortController.signal,
+          ...(isMainEn() ? { headers: { 'Accept-Language': 'en-US' } } : {}),
         });
         if (!response.ok || !response.body) {
-          throw new Error(`下载安装包失败 (${response.status})`);
+          throw new Error(tr(`下载安装包失败 (${response.status})`, `Failed to download installer (${response.status})`));
         }
 
         const totalBytes = expectedSizeBytes;
@@ -936,7 +962,7 @@ class DesktopUpdater {
 
         for await (const chunk of response.body) {
           if (abortController.signal.aborted || this.configEpoch !== downloadEpoch || this.latestTaskId !== taskId) {
-            throw new Error('已取消下载');
+            throw new Error(tr('已取消下载', 'Download cancelled'));
           }
           if (streamError) {
             throw streamError;
@@ -946,7 +972,7 @@ class DesktopUpdater {
           transferredBytes += buf.length;
 
           if (transferredBytes > expectedSizeBytes) {
-            throw new Error('下载内容超出发布清单声明的大小，已终止下载');
+            throw new Error(tr('下载内容超出发布清单声明的大小，已终止下载', 'Downloaded bytes exceeded declared manifest size; download aborted'));
           }
 
           const canContinue = fileStream.write(buf);
@@ -985,7 +1011,7 @@ class DesktopUpdater {
         }
 
         if (abortController.signal.aborted || this.configEpoch !== downloadEpoch || this.latestTaskId !== taskId) {
-          throw new Error('已取消下载');
+          throw new Error(tr('已取消下载', 'Download cancelled'));
         }
         if (streamError) {
           throw streamError;
@@ -1001,17 +1027,20 @@ class DesktopUpdater {
 
         if (transferredBytes !== expectedSizeBytes) {
           throw new Error(
-            `安装包字节长度 (${transferredBytes}) 与发布清单声明 (${expectedSizeBytes}) 不符，已阻止安装`
+            tr(
+              `安装包字节长度 (${transferredBytes}) 与发布清单声明 (${expectedSizeBytes}) 不符，已阻止安装`,
+              `Downloaded file size (${transferredBytes}) does not match declared manifest size (${expectedSizeBytes}); installation blocked`
+            )
           );
         }
 
         const computedSha256 = hasher.digest('hex').toLowerCase();
         if (computedSha256 !== expectedSha256) {
-          throw new Error('安装包 SHA-256 校验不匹配，文件可能损坏或被篡改，请重试');
+          throw new Error(tr('安装包 SHA-256 校验不匹配，文件可能损坏或被篡改，请重试', 'Installer SHA-256 checksum mismatch; file may be corrupted or tampered with. Please retry'));
         }
 
         if (abortController.signal.aborted || this.configEpoch !== downloadEpoch || this.latestTaskId !== taskId) {
-          throw new Error('已取消下载');
+          throw new Error(tr('已取消下载', 'Download cancelled'));
         }
 
         await fs.promises.rename(partPath, finalPath);
@@ -1120,25 +1149,25 @@ class DesktopUpdater {
   reveal() {
     const filePath = this.state.downloadedFilePath;
     if (!filePath || !fs.existsSync(filePath)) {
-      throw new Error('未找到已下载的安装包文件');
+      throw new Error(tr('未找到已下载的安装包文件', 'Downloaded installer file not found'));
     }
     this.showItemInFolder(filePath);
     return { revealed: true, filePath };
   }
 
   async apply({ expectedAssetId, expectedConfigEpoch } = {}) {
-    if (this.installing) throw new Error('正在安装更新，请勿重复操作');
+    if (this.installing) throw new Error(tr('正在安装更新，请勿重复操作', 'Update installation is already in progress'));
     if ((expectedConfigEpoch !== undefined && expectedConfigEpoch !== this.configEpoch) ||
         (expectedAssetId !== undefined && expectedAssetId !== this.state.downloadedAssetId)) {
-      throw new Error('更新内容已改变，请重新检查更新');
+      throw new Error(tr('更新内容已改变，请重新检查更新', 'Update target has changed; please check for updates again'));
     }
     const filePath = this.state.downloadedFilePath;
     if (!filePath || !fs.existsSync(filePath)) {
-      throw new Error('请先下载新版本安装包');
+      throw new Error(tr('请先下载新版本安装包', 'Please download the new installer first'));
     }
     const release = this.state.latestRelease;
     if (!release) {
-      throw new Error('缺少版本发布清单信息，无法执行安装');
+      throw new Error(tr('缺少版本发布清单信息，无法执行安装', 'Missing release manifest metadata; cannot start installation'));
     }
     const allAssets = [
       ...(Array.isArray(this.state.platformAssets) ? this.state.platformAssets : []),
@@ -1146,20 +1175,21 @@ class DesktopUpdater {
     ];
     const asset = allAssets.find((a) => a.id === this.state.downloadedAssetId);
     if (!asset) {
-      throw new Error('未找到与已下载安装包匹配的发布清单条目');
+      throw new Error(tr('未找到与已下载安装包匹配的发布清单条目', 'No matching release manifest entry found for the downloaded installer'));
     }
 
     const activeChannel = this.resolveChannel();
     const verified = this.verifyExistingDownload(release, asset, activeChannel);
     if (!verified || path.resolve(verified.filePath) !== path.resolve(filePath)) {
+      const verifyMsg = tr('安装包完整性、大小、通道或签名校验未通过，已阻止启动安装器', 'Installer integrity, size, channel, or signature check failed; blocked launching installer');
       this.pushState({
         status: 'error',
         downloadedAssetId: null,
         downloadedFilePath: null,
         verifiedSha256: null,
-        error: '安装包完整性、大小、通道或签名校验未通过，已阻止启动安装器',
+        error: verifyMsg,
       });
-      throw new Error('安装包完整性、大小、通道或签名校验未通过，已阻止启动安装器');
+      throw new Error(verifyMsg);
     }
 
     const pkgType = asset.packageType;
@@ -1172,10 +1202,10 @@ class DesktopUpdater {
           platform: 'windows',
           packageType: 'exe',
           filePath,
-          title: '已启动 Windows 安装向导',
+          title: tr('已启动 Windows 安装向导', 'Windows Installer Launched'),
           steps: [
-            'Windows NSIS 安装向导已启动，正在准备退出当前应用以释放文件锁。',
-            '在安装向导中点击「下一步 / 安装」即可覆盖升级并保留全部本地工程与 AI 配置。',
+            tr('Windows NSIS 安装向导已启动，正在准备退出当前应用以释放文件锁。', 'The Windows NSIS setup wizard has started; Alex will close to release file locks.'),
+            tr('在安装向导中点击「下一步 / 安装」即可覆盖升级并保留全部本地工程与 AI 配置。', 'Follow the setup wizard to upgrade in place while keeping all local projects and AI settings.'),
           ],
         };
         this.pushState({ installGuide: guide });
@@ -1187,8 +1217,8 @@ class DesktopUpdater {
         platform: 'windows',
         packageType: pkgType,
         filePath,
-        title: '已在资源管理器定位更新压缩包',
-        steps: ['请解压该归档包并覆盖原程序目录，然后重新启动 Alex。'],
+        title: tr('已在资源管理器定位更新压缩包', 'Update Archive Revealed in Explorer'),
+        steps: [tr('请解压该归档包并覆盖原程序目录，然后重新启动 Alex。', 'Extract the archive over your existing installation directory, then restart Alex.')],
       };
       this.pushState({ installGuide: guide });
       return guide;
@@ -1205,10 +1235,10 @@ class DesktopUpdater {
           platform: 'macos',
           packageType: 'dmg',
           filePath,
-          title: '已打开 macOS 磁盘映像 (.dmg)',
+          title: tr('已打开 macOS 磁盘映像 (.dmg)', 'macOS Disk Image (.dmg) Opened'),
           steps: [
-            '在弹出的 Finder 窗口中，将「Alex.app」拖入「Applications (应用程序)」文件夹并选择「替换」。',
-            '退出当前旧版应用，再从「应用程序」打开 Alex。首次从旧名称升级时，请改用 Alex 启动。',
+            tr('在弹出的 Finder 窗口中，将「Alex.app」拖入「Applications (应用程序)」文件夹并选择「替换」。', 'In the Finder window, drag "Alex.app" into "Applications" and choose "Replace".'),
+            tr('退出当前旧版应用，再从「应用程序」打开 Alex。首次从旧名称升级时，请改用 Alex 启动。', 'Quit the current app and relaunch Alex from Applications.'),
           ],
         };
         this.pushState({ installGuide: guide });
@@ -1220,9 +1250,9 @@ class DesktopUpdater {
         platform: 'macos',
         packageType: 'zip',
         filePath,
-        title: '已在 Finder 中显示 macOS 压缩包 (.zip)',
+        title: tr('已在 Finder 中显示 macOS 压缩包 (.zip)', 'macOS Archive (.zip) Shown in Finder'),
         steps: [
-          '双击解压生成的「Alex.app」，将其拖入「Applications (应用程序)」替换旧版本。',
+          tr('双击解压生成的「Alex.app」，将其拖入「Applications (应用程序)」替换旧版本。', 'Double-click to extract "Alex.app" and drag it into "Applications" to replace the older version.'),
         ],
       };
       this.pushState({ installGuide: guide });
@@ -1232,7 +1262,12 @@ class DesktopUpdater {
     // Linux: AppImage, deb, tar.gz
     if (pkgType === 'AppImage') {
       if ( normalizeArch(asset.arch) !== this.arch ) {
-        throw new Error(`AppImage 目标架构 (${asset.arch}) 与当前运行架构 (${this.arch}) 不一致，已拒绝替换`);
+        throw new Error(
+          tr(
+            `AppImage 目标架构 (${asset.arch}) 与当前运行架构 (${this.arch}) 不一致，已拒绝替换`,
+            `AppImage target architecture (${asset.arch}) does not match current runtime architecture (${this.arch}); replacement refused`
+          )
+        );
       }
       // Verify ELF machine architecture if binary starts with \x7fELF
       try {
@@ -1241,7 +1276,12 @@ class DesktopUpdater {
           const eMachine = header.readUInt16LE(18);
           const expectedMachine = this.arch === 'arm64' ? 183 : 62; // EM_AARCH64 = 183, EM_X86_64 = 62
           if (eMachine !== expectedMachine) {
-            throw new Error(`AppImage ELF 机器架构与当前 ${this.arch} 进程不兼容，已拒绝替换`);
+            throw new Error(
+              tr(
+                `AppImage ELF 机器架构与当前 ${this.arch} 进程不兼容，已拒绝替换`,
+                `AppImage ELF machine architecture is incompatible with the current ${this.arch} process; replacement refused`
+              )
+            );
           }
         }
       } catch (elfErr) {
@@ -1266,8 +1306,8 @@ class DesktopUpdater {
             platform: 'linux',
             packageType: 'AppImage',
             filePath: currentAppImage,
-            title: '已原地更新 AppImage 并启动新版本',
-            steps: ['已自动赋予可执行权限并替换原 AppImage 文件，新版即将启动。'],
+            title: tr('已原地更新 AppImage 并启动新版本', 'AppImage Updated in Place & Relaunching'),
+            steps: [tr('已自动赋予可执行权限并替换原 AppImage 文件，新版即将启动。', 'Executable permissions set and existing AppImage replaced; the new version is starting.')],
           };
           this.pushState({ installGuide: guide });
           return guide;
@@ -1281,10 +1321,10 @@ class DesktopUpdater {
         platform: 'linux',
         packageType: 'AppImage',
         filePath,
-        title: 'AppImage 已就绪并赋予可执行权限',
+        title: tr('AppImage 已就绪并赋予可执行权限', 'AppImage Ready with Executable Permissions'),
         steps: [
-          '已自动设置 chmod +x 可执行权限，并在文件管理器中为您定位该文件。',
-          '您可以直接双击运行新版 AppImage，或在终端执行下方命令启动：',
+          tr('已自动设置 chmod +x 可执行权限，并在文件管理器中为您定位该文件。', 'Executable permission (chmod +x) has been set and the file has been revealed in your file manager.'),
+          tr('您可以直接双击运行新版 AppImage，或在终端执行下方命令启动：', 'Double-click the new AppImage or run the command below in your terminal:'),
         ],
         command: `"${filePath}"`,
       };
@@ -1299,8 +1339,8 @@ class DesktopUpdater {
         await this.installDeb(filePath);
         const guide = {
           action: 'deb-installed', platform: 'linux', packageType: 'deb', filePath,
-          title: '更新已安装，即将重新启动',
-          steps: ['工程已保存，应用将自动重新启动以使用新版本。'],
+          title: tr('更新已安装，即将重新启动', 'Update Installed — Restarting'),
+          steps: [tr('工程已保存，应用将自动重新启动以使用新版本。', 'Your project has been saved and Alex will restart automatically.')],
         };
         this.pushState({ installGuide: guide });
         this.restartApp();
@@ -1318,8 +1358,8 @@ class DesktopUpdater {
       platform: 'linux',
       packageType: 'tar.gz',
       filePath,
-      title: 'Linux 归档包 (.tar.gz) 已下载完成',
-      steps: ['已在文件管理器中定位该压缩包，您可解压后运行其中的 protoflow-ai 可执行文件：'],
+      title: tr('Linux 归档包 (.tar.gz) 已下载完成', 'Linux Archive (.tar.gz) Downloaded'),
+      steps: [tr('已在文件管理器中定位该压缩包，您可解压后运行其中的 protoflow-ai 可执行文件：', 'The archive has been revealed in your file manager. Extract it and run the protoflow-ai executable:')],
       command: `tar -xzf "${filePath}"`,
     };
     this.pushState({ installGuide: guide });

@@ -3,6 +3,7 @@ import { AlertCircle, ArrowRight, Bot, CheckCircle2, Loader2, Power, Save, X } f
 import { useProtoStore } from '../store/useProtoStore';
 import { useHermesStore } from '../store/useHermesStore';
 import { AlexLogo } from './AlexLogo';
+import { useI18n } from '../i18n';
 
 type CloseState = { requestId: string; state: 'confirming' | 'saving' | 'error'; error?: string };
 export interface CloseConfirmationBridge {
@@ -16,6 +17,7 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
   state: CloseState; projectName: string | null; aiRunning: boolean;
   onCancel(): void; onConfirm(): void;
 }) {
+  const { tr, td } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null), cancel = useRef<HTMLButtonElement>(null);
   const saving = state.state === 'saving';
   useEffect(() => {
@@ -45,16 +47,16 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
           </div>
           <div className="min-w-0">
             <h2 id="exit-title" className="text-sm font-bold tracking-tight text-slate-900">
-              退出 Alex？
+              {tr('退出 Alex？', 'Quit Alex?')}
             </h2>
             <p id="exit-description" className="mt-0.5 text-[11px] text-slate-500 truncate">
-              结束本次工作，退出前会保存当前项目。
+              {tr('结束本次工作，退出前会保存当前项目。', 'Your current project will be saved before quitting.')}
             </p>
           </div>
         </div>
         <button
           type="button"
-          aria-label="取消退出"
+          aria-label={tr('取消退出', 'Cancel quit')}
           onClick={onCancel}
           disabled={saving}
           className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-slate-400 transition hover:bg-slate-200/60 hover:text-slate-700 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-40"
@@ -72,21 +74,21 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
                 <Save size={15} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">当前项目</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{tr('当前项目', 'Current Project')}</p>
                 <p className="mt-0.5 truncate text-xs font-bold text-slate-800" title={projectName}>
                   {projectName}
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 shrink-0">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 shrink-0 whitespace-nowrap">
               <CheckCircle2 size={11} />
-              退出自动保存
+              {tr('退出自动保存', 'Auto-save on exit')}
             </span>
           </div>
         ) : (
           <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 py-2.5 text-xs text-slate-600">
             <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
-            <span>当前未打开待保存的工程，可直接安全退出。</span>
+            <span>{tr('当前未打开待保存的工程，可直接安全退出。', 'No open project needs saving — safe to quit.')}</span>
           </div>
         )}
 
@@ -96,8 +98,8 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
               <Bot size={13.5} className="text-amber-700" />
             </div>
             <div>
-              <p className="font-semibold text-amber-900">AI 任务正在处理中</p>
-              <p className="mt-0.5 text-[11px] text-amber-700">AI 正在处理请求，退出后当前任务会停止。</p>
+              <p className="font-semibold text-amber-900">{tr('AI 任务正在处理中', 'AI Task in Progress')}</p>
+              <p className="mt-0.5 text-[11px] text-amber-700">{tr('AI 正在处理请求，退出后当前任务会停止。', 'AI is currently processing a request. Quitting will stop the active task.')}</p>
             </div>
           </div>
         )}
@@ -111,8 +113,8 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
               <AlertCircle size={13.5} className="text-rose-600" />
             </div>
             <div className="min-w-0">
-              <p className="font-semibold text-rose-800">保存未完成，已保留当前窗口</p>
-              <p className="mt-0.5 text-[11px] text-rose-600 break-words">{state.error}</p>
+              <p className="font-semibold text-rose-800">{tr('保存未完成，已保留当前窗口', 'Save incomplete — window kept open')}</p>
+              <p className="mt-0.5 text-[11px] text-rose-600 break-words">{state.error ? td(state.error) : ''}</p>
             </div>
           </div>
         )}
@@ -123,14 +125,14 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
             className="flex items-center gap-2 rounded-xl border border-blue-200/80 bg-blue-50/70 px-3.5 py-2.5 text-xs font-medium text-blue-700"
           >
             <Loader2 size={14} className="animate-spin motion-reduce:animate-none text-blue-600 shrink-0" />
-            正在保存项目，请稍候…
+            {tr('正在保存项目，请稍候…', 'Saving project, please wait…')}
           </p>
         )}
       </div>
 
       {/* Footer Actions */}
       <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-3.5">
-        <span className="text-[11px] text-slate-400">按 Esc 可取消</span>
+        <span className="text-[11px] text-slate-400">{tr('按 Esc 可取消', 'Press Esc to cancel')}</span>
         <div className="flex items-center gap-2">
           <button
             ref={cancel}
@@ -139,7 +141,7 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
             disabled={saving}
             className="rounded-lg border border-slate-200/90 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 active:bg-slate-100 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-40"
           >
-            继续使用
+            {tr('继续使用', 'Keep Working')}
           </button>
           <button
             type="button"
@@ -148,7 +150,7 @@ export function ExitDialog({ state, projectName, aiRunning, onCancel, onConfirm 
             className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs shadow-blue-600/20 transition hover:bg-blue-700 active:bg-blue-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-wait disabled:opacity-60"
           >
             {saving ? <Loader2 size={13.5} className="animate-spin motion-reduce:animate-none" /> : <ArrowRight size={13.5} />}
-            {saving ? '正在保存' : state.state === 'error' ? '重试并退出' : projectName !== null ? '保存并退出' : '退出程序'}
+            {saving ? tr('正在保存', 'Saving') : state.state === 'error' ? tr('重试并退出', 'Retry & Quit') : projectName !== null ? tr('保存并退出', 'Save & Quit') : tr('退出程序', 'Quit')}
           </button>
         </div>
       </div>

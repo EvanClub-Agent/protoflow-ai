@@ -7,10 +7,16 @@ import { plannedFolders, type ProjectPlan } from './projectPlan';
 
 import type { ProjectMode } from '../proto/mobile/types';
 import { pageRootType, plannedPagePlatform } from './projectPagePlatform';
+import { tr } from '../i18n/runtime';
 
 export function pagePrototypeIssue(source: string) {
-  if (!parsePageSource(source).doc?.root.children.some(child => child.kind === 'node')) return '页面只有空框架';
-  if (source.includes('从左侧物料库拖入组件开始设计')) return '页面仍包含编辑器的起始占位提示';
+  if (!parsePageSource(source).doc?.root.children.some(child => child.kind === 'node')) return tr('页面只有空框架', 'Page only contains an empty shell');
+  if (
+    source.includes('从左侧物料库拖入组件开始设计') ||
+    source.includes('Drag components from the left palette to start designing')
+  ) {
+    return tr('页面仍包含编辑器的起始占位提示', 'Page still contains the initial blank placeholder');
+  }
   return '';
 }
 

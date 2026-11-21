@@ -1,4 +1,5 @@
 import type { PublishedMenuItem } from './publishedSitemap';
+import { tr } from '../i18n/runtime';
 import { buildSitemap } from '../proto/sitemap';
 import { useProtoStore, type SitemapItem } from '../store/useProtoStore';
 import { usePageStore, type DesignerPage } from '../proto/store/usePageStore';
@@ -24,7 +25,7 @@ export function publishablePages(pages: PublishablePageState = usePageStore.getS
   for (const page of pages.designerPages) metadata.set(page.pageId, page);
   return Object.keys(pages.pageSources).map(pageId => {
     const page = metadata.get(pageId);
-    if (!page) throw new Error(`页面 ${pageId} 缺少目录信息，请先修复工程页面目录`);
+    if (!page) throw new Error(tr(`页面 ${pageId} 缺少目录信息，请先修复工程页面目录`, `Page ${pageId} is missing folder metadata; fix the project sitemap first`));
     return page;
   });
 }
@@ -36,7 +37,7 @@ export function publishableSitemap(): PublishedMenuItem[] {
   const copy = (items: SitemapItem[]): PublishedMenuItem[] => items.map(item => {
     const base = { id: item.id, title: item.title, deprecated: item.deprecated === true };
     if (item.type === 'folder') return { ...base, type: 'folder', children: copy(item.children ?? []) };
-    if (item.pageId === undefined && !(item.type === 'page' && item.deprecated)) throw new Error(`菜单“${item.title}”缺少页面标识`);
+    if (item.pageId === undefined && !(item.type === 'page' && item.deprecated)) throw new Error(tr(`菜单“${item.title}”缺少页面标识`, `Menu "${item.title}" is missing pageId`));
     return { ...base, type: item.type, pageId: item.pageId === undefined ? null : item.pageId };
   });
   return copy(buildSitemap(state.designerFolders, state.designerPages, state.sitemapOverrides, state.sitemapBase));
@@ -48,14 +49,14 @@ export function createPublishedSnapshot(entryPageId: string): PublishedSnapshot 
     formatVersion: 5, projectId: project.currentProjectMeta.projectId, title: project.currentProjectMeta.projectName, entryPageId,
     pages: publishablePages().map(page => {
       const result = parsePageSource(pages.pageSources[page.pageId]);
-      if (!result.doc || result.issues.some(i => i.level === 'error')) throw new Error(`页面“${page.title}”有代码错误，修复后才能发布`);
+      if (!result.doc || result.issues.some(i => i.level === 'error')) throw new Error(tr(`页面“${page.title}”有代码错误，修复后才能发布`, `Page "${page.title}" has code errors; fix them before publishing`));
       if (result.doc.root.type === 'MobilePage') {
         const issues = pageContractErrors(printPageSource(result.doc), project.dbTables, { tableRows: pages.tableRows });
-        if (issues.length) throw new Error(`页面“${page.title}”不能发布：${issues.join('；')}`);
+        if (issues.length) throw new Error(tr(`页面“${page.title}”不能发布：${issues.join('；')}`, `Page "${page.title}" cannot be published: ${issues.join('; ')}`));
       }
       walk(result.doc.root, node => {
         if (isChartType(node.type) && node.props.source === 'table' && typeof node.props.table === 'string' && !Object.hasOwn(pages.tableRows, node.props.table)) {
-          throw new Error(`图表 ${node.pfId} 的数据表尚无已保存的预览数据，请先准备数据后再发布`);
+          throw new Error(tr(`图表 ${node.pfId} 的数据表尚无已保存的预览数据，请先准备数据后再发布`, `Table bound to chart ${node.pfId} has no saved preview data; prepare data before publishing`));
         }
       });
       return { pageId: page.pageId, title: page.title, folderId: page.folderId, doc: result.doc };

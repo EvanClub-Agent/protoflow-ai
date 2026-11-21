@@ -17,9 +17,11 @@ import Segmented from 'antd/es/segmented';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import 'dayjs/locale/zh-cn';
+import 'dayjs/locale/en';
 import type { FieldDef } from './components';
 import { AntdSurface } from './AntdSurface';
 import { materialOptions } from './antdOptions';
+import { isEnLocale, tr, useI18n } from '../../i18n';
 
 dayjs.extend(customParseFormat);
 
@@ -39,10 +41,10 @@ interface Props {
 /** Dates remain strings in the DSL/runtime, never Dayjs objects in saved data. */
 export function parseMaterialDate(value: unknown, format: string) {
   if (value === '' || value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new Error(`日期值必须是 ${format} 字符串`);
+  if (typeof value !== 'string') throw new Error(tr(`日期值必须是 ${format} 字符串`, `Date value must be a ${format} string`));
   const parsed = dayjs(value, format, true);
-  if (!parsed.isValid()) throw new Error(`日期值不符合 ${format} 格式：${value}`);
-  return parsed.locale('zh-cn');
+  if (!parsed.isValid()) throw new Error(tr(`日期值不符合 ${format} 格式：${value}`, `Date value does not match ${format}: ${value}`));
+  return parsed.locale(isEnLocale() ? 'en' : 'zh-cn');
 }
 
 function renderControl({ def, value, onChange, disabled, size, placeholder, error, onClick }: Props) {
@@ -60,9 +62,10 @@ function renderControl({ def, value, onChange, disabled, size, placeholder, erro
       return <InputNumber {...common} readOnly={def.readOnly} value={value === '' ? null : value as number | null} onChange={onChange} min={def.min} max={def.max} step={def.step} precision={def.precision} prefix={def.prefix} suffix={def.suffix} controls={def.controls !== false} keyboard={def.keyboard !== false} />;
     case 'select': {
       const options = materialOptions(def.options);
+      const hasEmptyOption = options.some((o) => o.value === '');
       // `multiple` is the existing DSL contract; mode takes precedence when explicitly configured.
       const mode = def.mode === 'single' ? undefined : def.mode ?? (def.multiple ? 'multiple' : undefined);
-      return <Select {...common} disabled={locked} options={options} mode={mode} value={mode ? (Array.isArray(value) ? value : []) : value === '' ? undefined : value}
+      return <Select {...common} disabled={locked} options={options} mode={mode} value={mode ? (Array.isArray(value) ? value : []) : value === '' && !hasEmptyOption ? undefined : value}
         onChange={(v) => onChange(v === undefined ? '' : v)} allowClear={def.allowClear} showSearch={def.showSearch ? { optionFilterProp: 'label' } : false}
         loading={def.loading} maxTagCount={def.maxTagCount} maxCount={def.maxCount} popupMatchSelectWidth={def.popupMatchSelectWidth} />;
     }
@@ -81,13 +84,13 @@ function renderControl({ def, value, onChange, disabled, size, placeholder, erro
     case 'dateRange': {
       const format = def.showTime ? 'YYYY-MM-DDTHH:mm' : 'YYYY-MM-DD';
       const dates = Array.isArray(value) ? value : ['', ''];
-      return <DatePicker.RangePicker {...common} placeholder={['开始日期', '结束日期']} disabled={locked} showTime={def.showTime} format={def.showTime ? 'YYYY-MM-DD HH:mm' : format} allowClear={def.allowClear !== false}
+      return <DatePicker.RangePicker {...common} placeholder={[tr('开始日期', 'Start date'), tr('结束日期', 'End date')]} disabled={locked} showTime={def.showTime} format={def.showTime ? 'YYYY-MM-DD HH:mm' : format} allowClear={def.allowClear !== false}
         value={[parseMaterialDate(dates[0], format), parseMaterialDate(dates[1], format)]} onChange={(v) => onChange(v ? v.map((d) => d ? d.format(format) : '') : [])} />;
     }
     case 'time': {
       const format = def.format ?? 'HH:mm:ss';
       for (const [key, limit] of [['hourStep', 23], ['minuteStep', 59], ['secondStep', 59]] as const) {
-        if (def[key] !== undefined && (!Number.isInteger(def[key]) || def[key]! < 1 || def[key]! > limit)) throw new Error(`${key} 必须是 1 到 ${limit} 的整数`);
+        if (def[key] !== undefined && (!Number.isInteger(def[key]) || def[key]! < 1 || def[key]! > limit)) throw new Error(tr(`${key} 必须是 1 到 ${limit} 的整数`, `${key} must be an integer between 1 and ${limit}`));
       }
       return <TimePicker {...common} disabled={locked} format={format} value={parseMaterialDate(value, format)} onChange={(v) => onChange(v ? v.format(format) : '')} allowClear={def.allowClear !== false} use12Hours={def.use12Hours} hourStep={def.hourStep as TimePickerProps['hourStep']} minuteStep={def.minuteStep as TimePickerProps['minuteStep']} secondStep={def.secondStep as TimePickerProps['secondStep']} />;
     }
@@ -108,7 +111,7 @@ function renderControl({ def, value, onChange, disabled, size, placeholder, erro
     }
     case 'autoComplete': {
       const options = materialOptions(def.options);
-      if (options.some((o) => typeof o.value !== 'string')) throw new Error('自动补全的 value 必须为字符串');
+      if (options.some((o) => typeof o.value !== 'string')) throw new Error(tr('自动补全的 value 必须为字符串', 'AutoComplete option values must be strings'));
       return <AutoComplete {...common} disabled={locked} value={typeof value === 'string' ? value : ''} options={options} onChange={onChange} allowClear={def.allowClear}
         filterOption={(input, option) => String(option?.label).toLowerCase().includes(input.toLowerCase())} />;
     }
@@ -119,9 +122,10 @@ function renderControl({ def, value, onChange, disabled, size, placeholder, erro
 }
 
 export const AntdFieldControl: React.FC<Props> = (props) => {
+  const { tr: t, td } = useI18n();
   try {
     return <AntdSurface>{renderControl(props)}</AntdSurface>;
   } catch (error) {
-    return <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-600">{error instanceof Error ? error.message : '控件配置无效'}</div>;
+    return <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-600">{error instanceof Error ? td(error.message) : t('控件配置无效', 'Invalid control config')}</div>;
   }
 };

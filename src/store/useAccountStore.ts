@@ -3,6 +3,7 @@ import { accountSettings, authenticatePublishing, logoutPublishing, type Publish
 import { flushProjectChanges } from '../services/projectStorage';
 import { useProtoStore } from './useProtoStore';
 import { useHermesStore } from './useHermesStore';
+import { td, tr } from '../i18n/runtime';
 
 interface AccountState {
   status: 'checking' | 'authenticated' | 'local' | 'signedOut' | 'error';
@@ -45,7 +46,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         // Transient network errors never discard an already verified session or local offline session.
         set({
           status: active === 'authenticated' || active === 'local' ? active : 'error',
-          error: error instanceof Error ? error.message : '账号服务暂不可用',
+          error: error instanceof Error ? td(error.message) : tr('账号服务暂不可用', 'Account service is temporarily unavailable'),
         });
       } finally { refreshPromise = null; }
     })();
@@ -64,21 +65,21 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     try {
       const settings = await authenticatePublishing(input);
       if (current !== epoch) return;
-      if (!settings.user) throw new Error('登录未完成，请重试');
+      if (!settings.user) throw new Error(tr('登录未完成，请重试', 'Sign-in did not complete. Please try again.'));
       set({ status: 'authenticated', serverUrl: settings.url, user: settings.user, error: '' });
     } catch (error) {
       if (current === epoch) {
         set({
           status: previousStatus === 'local' ? 'local' : 'signedOut',
           user: null,
-          error: error instanceof Error ? error.message : '登录失败',
+          error: error instanceof Error ? td(error.message) : tr('登录失败', 'Sign-in failed'),
         });
       }
     } finally { if (current === epoch) set({ busy: false }); }
   },
   logout: async () => {
     if (get().busy) return;
-    if (Object.values(useHermesStore.getState().runningProjects).some(Boolean)) throw new Error('AI 任务正在进行，请完成或停止任务后再退出账号');
+    if (Object.values(useHermesStore.getState().runningProjects).some(Boolean)) throw new Error(tr('AI 任务正在进行，请完成或停止任务后再退出账号', 'An AI task is running. Please wait for it to finish or stop it before signing out.'));
     ++epoch; set({ busy: true, error: '' });
     try {
       await flushProjectChanges();

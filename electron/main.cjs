@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const { saveProjectArchive, projectIdentity } = require('./project-files.cjs');
 const { installProjectCloseGuard } = require('./project-close-guard.cjs');
 const { installApplicationMenu } = require('./application-menu.cjs');
+const { initMainI18n, getMainLocale, setMainLocale, isMainEn, tr } = require('./i18n.cjs');
 
 require('./app-identity.cjs').initializeApplicationIdentity(app);
 
@@ -56,7 +57,13 @@ function getDiagnostics() {
 }
 function captureDiagnostic(input) {
   try { return getDiagnostics().capture(input); }
-  catch { diagnosticInitError = '诊断存储初始化失败，请检查本地目录权限或诊断安装凭证'; return null; }
+  catch {
+    diagnosticInitError = tr(
+      '诊断存储初始化失败，请检查本地目录权限或诊断安装凭证',
+      'Failed to initialize diagnostics storage. Please check local directory permissions.',
+    );
+    return null;
+  }
 }
 // One failure boundary for desktop IO, network, update and AI IPC operations.
 // Never collect invocation arguments, tokens, file contents or AI prompt/response text.
@@ -67,7 +74,7 @@ function handleIpc(channel, handler) {
       if (isMainRendererEvent(event) && !channel.startsWith('pflow:diagnostics-') && !require('./diagnostics.cjs').isCancellation(error)) {
         const category = channel.includes('hermes') ? 'ai' : /publishing|updater/.test(channel) ? 'network' : /project|file|directory/.test(channel) ? 'storage' : 'main';
         captureDiagnostic({ source:'main', category, code:'IPC_FAILED', stage:channel,
-          message: category==='ai' ? 'AI 桌面调用失败：'+require('./diagnostics.cjs').failureReason(error?.cause ?? error) : error?.message,
+          message: category==='ai' ? tr('AI 桌面调用失败：', 'Desktop AI call failed: ')+require('./diagnostics.cjs').failureReason(error?.cause ?? error) : error?.message,
           stack: String(error?.stack ?? '').split('\n').slice(1).join('\n'), context: category === 'ai' ? { ...args[0],
             checks: [...(error?.backgroundChecks ?? []), ...(Number.isInteger(error?.rpcCode) ? [{kind:'acp-error',status:String(error.rpcCode),actionKind:error.rpcMethod}] : [])] } : args[0] });
       }
@@ -77,7 +84,7 @@ function handleIpc(channel, handler) {
 }
 for (const method of ['capture', 'snapshot', 'configure', 'retry']) {
   handleIpc(`pflow:diagnostics-${method}`, (event, input) => {
-    if (!isMainRendererEvent(event)) throw new Error('不允许的诊断调用');
+    if (!isMainRendererEvent(event)) throw new Error(tr('不允许的诊断调用', 'Unauthorized diagnostics call'));
     if (method==='capture') return captureDiagnostic({...input,source:'renderer'});
     if (method==='snapshot' && diagnosticInitError) return {enabled:false,items:[],healthError:diagnosticInitError,dropped:0};
     return getDiagnostics()[method](input);
@@ -95,7 +102,7 @@ for (const method of ['begin', 'end', 'snapshot', 'configure']) {
 process.on('uncaughtExceptionMonitor', error => captureDiagnostic({source:'main',category:'main',code:'UNCAUGHT_EXCEPTION',stage:'process',message:error.message,stack:error.stack}));
 for (const method of ['settings', 'accountSettings', 'authenticate', 'logout', 'legacyChoice', 'request']) {
   handleIpc(`pflow:publishing-${method}`, (event, input) => {
-    if (!isMainRendererEvent(event)) throw new Error('不允许的发布调用');
+    if (!isMainRendererEvent(event)) throw new Error(tr('不允许的发布调用', 'Unauthorized publishing call'));
     if (!publishingClient) {
       const { PublishingClient } = require('./publishing.cjs');
       publishingClient = new PublishingClient({ dataDir: app.getPath('userData'), safeStorage: require('electron').safeStorage });
@@ -150,13 +157,13 @@ const updaterMethods = {
 };
 for (const [name, method] of Object.entries(updaterMethods)) {
   handleIpc(`pflow:updater-${name}`, (event, input) => {
-    if (!isMainRendererEvent(event)) throw new Error('不允许的版本更新调用');
+    if (!isMainRendererEvent(event)) throw new Error(tr('不允许的版本更新调用', 'Unauthorized updater call'));
     if (method === 'apply') { hermesManagement?.assertIdle(); hermesManagement?.assertNoChat(); }
     return getDesktopUpdater()[method](method === 'check' ? { silent: input?.silent === true } : input);
   });
 }
 handleIpc('pflow:updater-open-web', event => {
-  if (!isMainRendererEvent(event)) throw new Error('不允许的版本更新调用');
+  if (!isMainRendererEvent(event)) throw new Error(tr('不允许的版本更新调用', 'Unauthorized updater call'));
   const updater = getDesktopUpdater();
   const baseUrl = updater.resolveServerUrl();
   const target = baseUrl
@@ -165,7 +172,7 @@ handleIpc('pflow:updater-open-web', event => {
   return require('electron').shell.openExternal(target);
 });
 
-const WELCOME_SIZE = { width: 980, height: 640 };
+const WELCOME_SIZE = { width: 1020, height: 660 };
 const WORKSPACE_SIZE = { width: 1560, height: 960 };
 
 // Clamp a desired window size to the work area of the display the window is on
@@ -257,7 +264,7 @@ async function createMainWindow() {
     mainWindow.setMenuBarVisibility(false);
   }
   installProjectCloseGuard({ app, window: mainWindow, ipcMain, dialog,
-    getCloseBlockReason: () => desktopUpdater?.installing ? '正在安装更新，请等待完成后应用自动重启。' : null,
+    getCloseBlockReason: () => desktopUpdater?.installing ? tr('正在安装更新，请等待完成后应用自动重启。', 'Installing update. Please wait for the app to restart automatically.') : null,
   });
   const win = mainWindow;
   const rendererOwner = win.webContents.id;
@@ -318,7 +325,7 @@ handleIpc('pflow:default-projects-directory', () => {
 
 handleIpc('pflow:select-directory', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title: '选择保存 .pflow 二进制工程文件的电脑目录',
+    title: tr('选择保存 .pflow 二进制工程文件的电脑目录', 'Select Directory to Save .pflow Project'),
     properties: ['openDirectory', 'createDirectory'],
   });
   if (canceled || !filePaths.length) return { selected: false };
@@ -331,7 +338,7 @@ handleIpc('pflow:write-binary-project', async (event, { dirPath, fileName, binar
   let targetFilePath = dirPath ? path.join(dirPath, fileName) : null;
   if (!targetFilePath) {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-      title: '保存 Alex 二进制工程文件 (.pflow)',
+      title: tr('保存 Alex 二进制工程文件 (.pflow)', 'Save Alex Binary Project (.pflow)'),
       defaultPath: fileName || 'project.pflow',
       filters: [{ name: 'Alex Binary Archive (.pflow)', extensions: ['pflow'] }],
     });
@@ -355,7 +362,7 @@ handleIpc(
     let targetDir = rootDirPath;
     if (!targetDir) {
       const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-        title: '选择展开 Git 文件级工程结构的电脑目录',
+        title: tr('选择展开 Git 文件级工程结构的电脑目录', 'Select Directory to Unpack Git Project Tree'),
         properties: ['openDirectory', 'createDirectory'],
       });
       if (canceled || !filePaths.length) return { saved: false };
@@ -379,12 +386,12 @@ handleIpc(
 // Read a previously selected project at its recorded location.
 handleIpc('pflow:read-binary-project', async (_event, { dirPath, fileName }) => {
   if (typeof dirPath !== 'string' || !path.isAbsolute(dirPath) || typeof fileName !== 'string' ||
-      !fileName || path.basename(fileName) !== fileName) throw new Error('工程路径无效，请重新选择文件');
+      !fileName || path.basename(fileName) !== fileName) throw new Error(tr('工程路径无效，请重新选择文件', 'Invalid project path. Please select the file again.'));
   return { binaryBytes: new Uint8Array(await fs.promises.readFile(path.join(dirPath, fileName))) };
 });
 
 handleIpc('pflow:mcp-runtime-info', (event) => {
-  if (!isMainRendererEvent(event)) throw new Error('不允许的 MCP 配置查询调用');
+  if (!isMainRendererEvent(event)) throw new Error(tr('不允许的 MCP 配置查询调用', 'Unauthorized MCP config query'));
   const bundled = path.join(__dirname, 'generated/spec-mcp-server.cjs');
   const unpacked = bundled.replace(/app\.asar([/\\])/, 'app.asar.unpacked$1');
   const scriptPath = unpacked !== bundled && fs.existsSync(unpacked) ? unpacked : bundled;
@@ -398,14 +405,14 @@ handleIpc('pflow:mcp-runtime-info', (event) => {
 });
 
 handleIpc('pflow:trash-project', async (event, input) => {
-  if (!isMainRendererEvent(event)) throw new Error('不允许的工程删除调用');
+  if (!isMainRendererEvent(event)) throw new Error(tr('不允许的工程删除调用', 'Unauthorized project deletion call'));
   return require('./project-files.cjs').trashProjectArchive(input, file => require('electron').shell.trashItem(file));
 });
 
 // 3. Open an existing binary .pflow file from disk
 handleIpc('pflow:open-binary-project', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title: '打开本地 Alex 二进制工程文件 (.pflow)',
+    title: tr('打开本地 Alex 二进制工程文件 (.pflow)', 'Open Local Alex Project (.pflow)'),
     properties: ['openFile'],
     filters: [{ name: 'Alex Binary Archive (.pflow)', extensions: ['pflow'] }],
   });
@@ -424,17 +431,28 @@ handleIpc('pflow:open-binary-project', async () => {
 // Legacy string save fallback
 handleIpc('pflow:save-file', async (_event, bundleJsonString) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: '保存 Alex 桌面工程产物包 (.pflow)',
-    defaultPath: '未命名原型项目.pflow',
+    title: tr('保存 Alex 桌面工程产物包 (.pflow)', 'Save Alex Project Bundle (.pflow)'),
+    defaultPath: tr('未命名原型项目.pflow', 'Untitled-Prototype.pflow'),
     filters: [
       { name: 'Alex Project Bundle (.pflow)', extensions: ['pflow'] },
-      { name: 'All Files', extensions: ['*'] },
+      { name: tr('所有文件', 'All Files'), extensions: ['*'] },
     ],
   });
 
   if (canceled || !filePath) return { saved: false };
   fs.writeFileSync(filePath, bundleJsonString, 'utf-8');
   return { saved: true, filePath };
+});
+
+handleIpc('pflow:get-locale', () => getMainLocale());
+handleIpc('pflow:set-locale', async (event, locale) => {
+  if (!isMainRendererEvent(event)) return getMainLocale();
+  const next = setMainLocale(locale);
+  if (hermesManagementWindow && !hermesManagementWindow.isDestroyed()) {
+    hermesManagementWindow.setTitle(tr('AI 管理中心 · Hermes', 'AI Engine Center · Hermes', next));
+    await syncHermesDashboardWindowLocale(hermesManagementWindow, next);
+  }
+  return next;
 });
 
 // Native OS theme synchronization
@@ -478,7 +496,7 @@ let hermesManagement;
 let hermesManagementWindow;
 let hermesAccounts;
 const { HermesAccounts } = require('./hermes-accounts.cjs');
-const { HermesManagement, MANAGEMENT_ROUTES } = require('./hermes-management.cjs');
+const { HermesManagement, MANAGEMENT_ROUTES, syncHermesDashboardWindowLocale } = require('./hermes-management.cjs');
 function isMainRendererEvent(event) {
   return Boolean(
     mainWindow &&
@@ -510,9 +528,9 @@ function getHermesRuntime() {
     deleteHistorySession: (sessionId, identity) => getHermesManagement().deleteHistorySession(sessionId, identity),
     validateDecodedImage: bytes => {
       const image = require('electron').nativeImage.createFromBuffer(bytes);
-      if (image.isEmpty()) throw new Error('图片内容无法识别，请重新选择图片');
+      if (image.isEmpty()) throw new Error(tr('图片内容无法识别，请重新选择图片', 'Image content cannot be recognized. Please choose another image.'));
       const { width, height } = image.getSize();
-      if (width * height > 40_000_000) throw new Error('图片分辨率过大，请缩小到 4000 万像素以内');
+      if (width * height > 40_000_000) throw new Error(tr('图片分辨率过大，请缩小到 4000 万像素以内', 'Image resolution is too large. Please resize below 40 megapixels.'));
     },
   });
   return hermesRuntime;
@@ -525,7 +543,7 @@ function getHermesManagement() {
 }
 function assertMainRenderer(event) {
   if (!isMainRendererEvent(event))
-    throw new Error('此窗口没有管理 AI 的权限');
+    throw new Error(tr('此窗口没有管理 AI 的权限', 'This window is not authorized to manage AI'));
 }
 function getHermesAccounts() {
   if (!hermesAccounts) hermesAccounts = new HermesAccounts({ management: getHermesManagement(), openExternal: url => require('electron').shell.openExternal(url) });
@@ -535,15 +553,17 @@ for (const method of ['list', 'saveKey', 'removeKey', 'start', 'openLogin', 'pol
   handleIpc(`pflow:hermes-accounts-${method}`, (event, payload) => { assertMainRenderer(event); return getHermesAccounts()[method](payload); });
 }
 async function openHermesManagement(section) {
-  if (typeof section !== 'string' || !Object.hasOwn(MANAGEMENT_ROUTES, section)) throw new Error('未知的 AI 管理页面');
+  if (typeof section !== 'string' || !Object.hasOwn(MANAGEMENT_ROUTES, section)) throw new Error(tr('未知的 AI 管理页面', 'Unknown AI management section'));
   const url = await getHermesManagement().managementUrl(section);
   const origin = new URL(url).origin;
   // This window never receives Alex's privileged preload/IPC API.
   if (!hermesManagementWindow || hermesManagementWindow.isDestroyed()) {
+    const winTitle = tr('AI 管理中心 · Hermes', 'AI Engine Center · Hermes');
     const win = new BrowserWindow({
       parent: mainWindow, width: 1180, height: 820, minWidth: 880, minHeight: 620,
-      title: 'AI 管理中心 · Hermes', show: false, autoHideMenuBar: true,
+      title: winTitle, show: false, autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true,
+        additionalArguments: [`--alex-locale=${isMainEn() ? 'en' : 'zh'}`],
         preload: path.join(__dirname, 'hermes-dashboard-preload.cjs') },
     });
     if (process.platform !== 'darwin') {
@@ -563,7 +583,7 @@ async function openHermesManagement(section) {
       else external(target);
       return { action: 'deny' };
     });
-    win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle('AI 管理中心 · Hermes'); });
+    win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle(tr('AI 管理中心 · Hermes', 'AI Engine Center · Hermes')); });
     win.on('closed', () => {
       if (hermesManagementWindow === win) hermesManagementWindow = null;
       emitHermes({ type: 'management-closed' });
@@ -572,6 +592,7 @@ async function openHermesManagement(section) {
   const win = hermesManagementWindow;
   win.managementOrigin = origin;
   await win.loadURL(url);
+  await syncHermesDashboardWindowLocale(win, getMainLocale());
   win.show(); win.focus();
   return { opened: true };
 }
@@ -607,16 +628,17 @@ handleIpc('pflow:hermes-install-cancel', event => { assertMainRenderer(event); r
 handleIpc('pflow:hermes-install-log', async event => {
   assertMainRenderer(event);
   const log = path.join(getHermesManagement().dataDir, 'hermes-home', 'logs', 'install.log');
-  if (!fs.existsSync(log)) throw new Error('安装器尚未生成日志，请检查网络后重试');
+  if (!fs.existsSync(log)) throw new Error(tr('安装器尚未生成日志，请检查网络后重试', 'Installer log has not been generated yet. Check your network and retry.'));
   const error = await require('electron').shell.openPath(log);
-  if (error) throw new Error('无法打开安装日志，请检查系统是否有可用的文本查看器');
+  if (error) throw new Error(tr('无法打开安装日志，请检查系统是否有可用的文本查看器', 'Unable to open install log. Please check if a text viewer is available.'));
 });
 handleIpc('pflow:hermes-management', (event, { section }) => { assertMainRenderer(event); return openHermesManagement(section); });
 handleIpc('pflow:hermes-install-guide', () => require('electron').shell.openExternal('https://hermes-agent.nousresearch.com/docs/getting-started/installation'));
 
 app.whenReady().then(() => {
-  try { getDiagnostics(); } catch { diagnosticInitError = '诊断存储初始化失败'; }
-  installApplicationMenu({ app, Menu });
+  initMainI18n(app);
+  try { getDiagnostics(); } catch { diagnosticInitError = tr('诊断存储初始化失败', 'Diagnostics storage initialization failed'); }
+  installApplicationMenu({ app, Menu, locale: getMainLocale() });
   const iconPath = path.join(__dirname, '../public/icon.png');
   if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
     try {

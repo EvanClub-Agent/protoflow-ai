@@ -2,6 +2,19 @@ const { spawn, spawnSync, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
+let getMainLocale;
+let tr;
+try {
+  ({ getMainLocale, tr } = require('./i18n.cjs'));
+} catch {
+  getMainLocale = () => (String(process.env.PROTOFLOW_LOCALE || '').toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN');
+  tr = (zh, en) => (getMainLocale() === 'en-US' ? en : zh);
+}
+
+function resolveEnv(env) {
+  const base = typeof env === 'function' ? env() : env;
+  return { ...base, PROTOFLOW_LOCALE: getMainLocale() };
+}
 
 const SCRIPT_FILE = path.join(__dirname, 'hermes-context.py');
 const SURFACE_FILE = path.join(__dirname, 'hermes-acp-surface.py');
@@ -62,7 +75,7 @@ class PersistentContextBridge {
     const child = spawn(
       this.bridge.python,
       ['-I', '-c', readContextScript(), this.bridge.installDir, '--serve'],
-      { env: { ...this.env, HERMES_HOME: this.bridge.home }, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true },
+      { env: { ...resolveEnv(this.env), HERMES_HOME: this.bridge.home }, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true },
     );
     this.spawnCount += 1;
     this.child = child;
@@ -79,8 +92,8 @@ class PersistentContextBridge {
       // A late exit from a killed process must never reject a newer request.
       if (this.pending?.child === child) this.rejectPending(new BridgeTransportError(message));
     };
-    child.on('error', () => fail('无法启动 Hermes 上下文接口'));
-    child.on('exit', () => fail('Hermes 上下文接口已退出'));
+    child.on('error', () => fail(tr('无法启动 Hermes 上下文接口', 'Unable to start Hermes context bridge')));
+    child.on('exit', () => fail(tr('Hermes 上下文接口已退出', 'Hermes context bridge exited')));
     return true;
   }
 
@@ -151,10 +164,10 @@ class PersistentContextBridge {
         reject,
       };
       try {
-        this.child.stdin.write(JSON.stringify({ ...payload, requestId }) + '\n');
+        this.child.stdin.write(JSON.stringify({ ...payload, locale: getMainLocale(), requestId }) + '\n');
       } catch {
         this.kill();
-        this.rejectPending(new BridgeTransportError('无法写入 Hermes 上下文接口'));
+        this.rejectPending(new BridgeTransportError(tr('无法写入 Hermes 上下文接口', 'Unable to write to Hermes context bridge')));
       }
     });
     const next = this.queue.then(run, run);
@@ -165,7 +178,7 @@ class PersistentContextBridge {
   close() {
     this.closed = true;
     this.kill();
-    this.rejectPending(new BridgeTransportError('Hermes 上下文接口已关闭'));
+    this.rejectPending(new BridgeTransportError(tr('Hermes 上下文接口已关闭', 'Hermes context bridge closed')));
   }
 }
 
@@ -173,20 +186,20 @@ class PersistentContextBridge {
 function oneShotContextSync(bridge, payload, { env = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const result = spawnSync(bridge.python, ['-I', '-c', readContextScript(), bridge.installDir], {
     input: JSON.stringify(payload),
-    env: { ...env, HERMES_HOME: bridge.home }, timeout: timeoutMs, maxBuffer: 256 * 1024, encoding: 'utf8', windowsHide: true,
+    env: { ...resolveEnv(env), HERMES_HOME: bridge.home }, timeout: timeoutMs, maxBuffer: 256 * 1024, encoding: 'utf8', windowsHide: true,
   });
-  if (result.status !== 0) throw new BridgeTransportError('Hermes 上下文接口不可用');
-  try { return JSON.parse(result.stdout); } catch { throw new BridgeTransportError('Hermes 上下文响应无效'); }
+  if (result.status !== 0) throw new BridgeTransportError(tr('Hermes 上下文接口不可用', 'Hermes context bridge unavailable'));
+  try { return JSON.parse(result.stdout); } catch { throw new BridgeTransportError(tr('Hermes 上下文响应无效', 'Invalid Hermes context response')); }
 }
 
 /** Async one-shot process for fallbacks; never blocks the caller's event loop. */
 function oneShotContext(bridge, payload, { env = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(bridge.python, ['-I', '-c', readContextScript(), bridge.installDir], {
-      env: { ...env, HERMES_HOME: bridge.home }, timeout: timeoutMs, maxBuffer: 256 * 1024, windowsHide: true,
+      env: { ...resolveEnv(env), HERMES_HOME: bridge.home }, timeout: timeoutMs, maxBuffer: 256 * 1024, windowsHide: true,
     }, (error, stdout) => {
-      if (error) return reject(new BridgeTransportError('Hermes 上下文接口不可用'));
-      try { resolve(JSON.parse(stdout)); } catch { reject(new BridgeTransportError('Hermes 上下文响应无效')); }
+      if (error) return reject(new BridgeTransportError(tr('Hermes 上下文接口不可用', 'Hermes context bridge unavailable')));
+      try { resolve(JSON.parse(stdout)); } catch { reject(new BridgeTransportError(tr('Hermes 上下文响应无效', 'Invalid Hermes context response'))); }
     });
     child.stdin.on('error', () => {});
     child.stdin.end(JSON.stringify(payload));

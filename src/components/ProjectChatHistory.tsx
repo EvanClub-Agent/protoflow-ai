@@ -18,12 +18,14 @@ import { useAiChatStore } from '../store/useAiChatStore';
 import { useHermesStore } from '../store/useHermesStore';
 import { purgeConversationTelemetry, useProjectWorkflow } from '../services/projectWorkflow';
 import { DeleteConfirmation } from './DeleteConfirmation';
+import { useI18n } from '../i18n';
 
 export function ProjectChatHistory({
   index,
 }: {
   index: ProjectChatIndex;
 }) {
+  const { isEn, tr, td } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [target, setTarget] = useState<ProjectChatEntry | null>(null);
   const [error, setError] = useState('');
@@ -52,9 +54,10 @@ export function ProjectChatHistory({
 
   const createChat = () => run(() => useAiChatStore.getState().newProjectChat(projectId));
 
+  const defaultTitle = tr('新会话', 'New Chat');
   const keyword = search.trim().toLowerCase();
   const visibleEntries = keyword
-    ? index.entries.filter(e => (e.title || '新会话').toLowerCase().includes(keyword))
+    ? index.entries.filter(e => (e.title || defaultTitle).toLowerCase().includes(keyword))
     : index.entries;
 
   return (
@@ -63,11 +66,11 @@ export function ProjectChatHistory({
         <button
           type="button"
           onClick={createChat}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200/90 bg-blue-50/80 hover:bg-blue-100/80 px-2.5 py-1 text-[11px] font-semibold text-blue-700 shadow-2xs cursor-pointer transition"
-          title="开启一段新的项目 AI 会话"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200/90 bg-blue-50/80 hover:bg-blue-100/80 px-2.5 py-1 text-[11px] font-semibold text-blue-700 shadow-2xs whitespace-nowrap shrink-0 cursor-pointer transition"
+          title={tr('开启一段新的项目 AI 会话', 'Start a new Project AI conversation')}
         >
           <MessageSquarePlus size={13} className="shrink-0" />
-          <span>新建会话</span>
+          <span>{tr('新建会话', 'New Chat')}</span>
         </button>
         <button
           type="button"
@@ -76,23 +79,23 @@ export function ProjectChatHistory({
             dialog.current?.showModal();
           }}
           aria-haspopup="dialog"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-2xs cursor-pointer transition"
-          title={`查看与切换历史会话（共 ${index.entries.length} 条）`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-2xs whitespace-nowrap shrink-0 cursor-pointer transition"
+          title={tr(`查看与切换历史会话（共 ${index.entries.length} 条）`, `View and switch chat history (${index.entries.length} total)`)}
         >
           <History size={13} className="text-slate-500 shrink-0" />
-          <span>历史会话</span>
+          <span>{tr('历史会话', 'History')}</span>
         </button>
       </div>
 
       {error && !dialog.current?.open && (
         <span role="alert" className="text-xs text-rose-700">
-          {error}
+          {td(error)}
         </span>
       )}
 
       <dialog
         ref={dialog}
-        aria-label="项目历史会话"
+        aria-label={tr('项目历史会话', 'Project chat history')}
         onClick={e => {
           if (e.target === dialog.current) dialog.current?.close();
         }}
@@ -106,13 +109,16 @@ export function ProjectChatHistory({
             </span>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-slate-900">历史会话</h2>
+                <h2 className="text-sm font-bold text-slate-900">{tr('历史会话', 'Chat History')}</h2>
                 <span className="rounded-full bg-slate-100 border border-slate-200/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600 tabular-nums">
-                  {index.entries.length} 条
+                  {tr(`${index.entries.length} 条`, `${index.entries.length}`)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 truncate">
-                切换不同讨论主题，右侧已保存方案与页面进度会自动保留
+                {tr(
+                  '切换不同讨论主题，右侧已保存方案与页面进度会自动保留',
+                  'Switch topics freely — saved plans and page generation progress on the right remain intact'
+                )}
               </p>
             </div>
           </div>
@@ -121,14 +127,14 @@ export function ProjectChatHistory({
             <button
               type="button"
               onClick={createChat}
-              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 cursor-pointer transition"
+              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 whitespace-nowrap cursor-pointer transition"
             >
               <MessageSquarePlus size={13} />
-              <span>新建</span>
+              <span>{tr('新建', 'New')}</span>
             </button>
             <button
               type="button"
-              aria-label="关闭历史会话"
+              aria-label={tr('关闭历史会话', 'Close chat history')}
               onClick={() => dialog.current?.close()}
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer transition"
             >
@@ -146,7 +152,7 @@ export function ProjectChatHistory({
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="搜索会话标题…"
+                placeholder={tr('搜索会话标题…', 'Search chat titles…')}
                 className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none"
               />
               {search && (
@@ -166,7 +172,7 @@ export function ProjectChatHistory({
         <ul className="max-h-[55vh] overflow-y-auto p-3 space-y-2">
           {visibleEntries.map(entry => {
             const key = conversationKey(projectChatScope(projectId, entry.id));
-            const title = entry.title || '新会话';
+            const title = entry.title || defaultTitle;
             const isActive = entry.id === index.activeId;
             const isRunning = owner === key;
             const msgCount = byConversation[key]?.length ?? 0;
@@ -214,7 +220,7 @@ export function ProjectChatHistory({
                         <span className="inline-flex items-center gap-1 tabular-nums">
                           <Clock size={10} className="shrink-0" />
                           <time>
-                            {new Date(entry.updatedAt).toLocaleString('zh-CN', {
+                            {new Date(entry.updatedAt).toLocaleString(isEn ? 'en-US' : 'zh-CN', {
                               month: 'numeric',
                               day: 'numeric',
                               hour: '2-digit',
@@ -223,25 +229,25 @@ export function ProjectChatHistory({
                           </time>
                         </span>
                       ) : (
-                        <span>{entry.id === null ? '默认主会话' : '刚刚创建'}</span>
+                        <span>{entry.id === null ? tr('默认主会话', 'Main chat') : tr('刚刚创建', 'Just created')}</span>
                       )}
                       {msgCount > 0 && (
-                        <span className="tabular-nums text-slate-400">· {msgCount} 条消息</span>
+                        <span className="tabular-nums text-slate-400">{tr(`· ${msgCount} 条消息`, `· ${msgCount} msgs`)}</span>
                       )}
                     </span>
                   </span>
 
                   <span className="flex items-center gap-1.5 shrink-0 self-center">
                     {isRunning && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 whitespace-nowrap">
                         <Loader2 size={10} className="animate-spin" />
-                        <span>执行中</span>
+                        <span>{tr('执行中', 'Running')}</span>
                       </span>
                     )}
                     {isActive && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-600/10 border border-blue-200/80 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                        <Check aria-label="当前会话" size={12} className="text-blue-600" />
-                        <span>当前</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-600/10 border border-blue-200/80 px-2 py-0.5 text-[10px] font-semibold text-blue-700 whitespace-nowrap">
+                        <Check aria-label={tr('当前会话', 'Current chat')} size={12} className="text-blue-600" />
+                        <span>{tr('当前', 'Active')}</span>
                       </span>
                     )}
                   </span>
@@ -249,9 +255,9 @@ export function ProjectChatHistory({
 
                 <button
                   type="button"
-                  aria-label={`删除会话「${title}」`}
+                  aria-label={tr(`删除会话「${title}」`, `Delete chat "${title}"`)}
                   disabled={isRunning}
-                  title={isRunning ? '会话正在执行任务，无法删除' : `删除会话「${title}」`}
+                  title={isRunning ? tr('会话正在执行任务，无法删除', 'Chat is currently running and cannot be deleted') : tr(`删除会话「${title}」`, `Delete chat "${title}"`)}
                   className="mr-1 rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition"
                   onClick={() => setTarget(entry)}
                 >
@@ -268,7 +274,7 @@ export function ProjectChatHistory({
               role="alert"
               className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
             >
-              {error}
+              {td(error)}
             </p>
           </div>
         )}
@@ -276,21 +282,21 @@ export function ProjectChatHistory({
 
       {target && (
         <DeleteConfirmation
-          title="删除这条会话？"
-          confirmLabel="删除会话"
+          title={tr('删除这条会话？', 'Delete this chat?')}
+          confirmLabel={tr('删除会话', 'Delete Chat')}
           onClose={() => setTarget(null)}
           onConfirm={async () => {
             const scope = projectChatScope(projectId, target.id),
               key = conversationKey(scope);
             if (useProjectWorkflow.getState().runningChat[projectId] === key)
-              throw new Error('请先停止这条会话的任务');
+              throw new Error(tr('请先停止这条会话的任务', 'Please stop the running task in this chat first'));
             // A browser-only workspace can create local chats but cannot open an ACP
             // session. A desktop workspace must acknowledge native deletion first.
             if ('protoflowDesktop' in window) {
               const api = getHermesApi();
-              if (!api.deleteProjectChat) throw new Error('请完整重启 Alex 以启用会话管理');
+              if (!api.deleteProjectChat) throw new Error(tr('请完整重启 Alex 以启用会话管理', 'Please restart Alex completely to enable session management'));
               if ((await api.deleteProjectChat(scope)).deleted !== true)
-                throw new Error('删除未完成，请重试');
+                throw new Error(tr('删除未完成，请重试', 'Deletion incomplete; please try again'));
             }
             useAiChatStore.getState().forgetProjectChat(projectId, target.id);
             purgeConversationTelemetry(scope);
@@ -305,7 +311,10 @@ export function ProjectChatHistory({
           }}
         >
           <p>
-            将删除「{target.title || '新会话'}」的聊天记录和 AI 上下文。已经应用到工程的修改会保留。
+            {tr(
+              `将删除「${target.title || '新会话'}」的聊天记录和 AI 上下文。已经应用到工程的修改会保留。`,
+              `Deletes chat messages and AI context for "${target.title || 'New Chat'}". Changes already applied to the project will be preserved.`
+            )}
           </p>
         </DeleteConfirmation>
       )}

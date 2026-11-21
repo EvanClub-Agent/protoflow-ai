@@ -1,4 +1,5 @@
 import { captureRuntimeError, isDiagnosticCancellation, type DiagnosticContext } from './runtimeDiagnostics';
+import { tr } from '../i18n/runtime';
 
 export type AiBackgroundState = {
   preventSleep: boolean; notifications: boolean; active: boolean; protected: boolean;
@@ -23,7 +24,7 @@ export function beginAiBackgroundTask(scope: DiagnosticContext) {
     try { await bridge.end({ leaseId, outcome }); }
     catch (error) {
       // Cleanup transport errors must not replace a generation/validation failure.
-      void captureRuntimeError(error, { category: 'main', code: 'AI_BACKGROUND_RELEASE_FAILED', stage: 'background', message: '后台任务保护释放失败', context: scope });
+      void captureRuntimeError(error, { category: 'main', code: 'AI_BACKGROUND_RELEASE_FAILED', stage: 'background', message: tr('后台任务保护释放失败', 'Failed to release background task power protection'), context: scope });
     }
   });
 }

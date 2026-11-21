@@ -10,6 +10,7 @@ import { conversationKey, type HermesChatConversation } from '../services/hermes
 import type { HermesImageAttachment } from '../services/hermesClient';
 import { MAX_CHAT_IMAGES, validImageReference, type ChatImageDraft } from '../services/chatImages';
 import { validChatMindmaps, type ChatMindmap } from '../services/projectChatMindmaps';
+import { tr } from '../i18n/runtime';
 export type ChatRole = 'user' | 'assistant';
 export type AiChatMessage = HermesChatConversation & {
   id: string;
@@ -38,7 +39,7 @@ type NewChatMessage = AiChatMessage extends infer M ? M extends AiChatMessage ? 
 export type RightPanelMode = 'chat' | 'inspector';
 function imageReferences(images: HermesImageAttachment[], scope: HermesChatConversation) {
   if (!Array.isArray(images) || images.length > MAX_CHAT_IMAGES || images.some(image => !validImageReference(image, scope)))
-    throw new Error('聊天图片附件不属于当前会话或格式无效');
+    throw new Error(tr('聊天图片附件不属于当前会话或格式无效', 'Chat image attachment does not belong to this conversation or has an invalid format'));
   // Persist only references, even if an IPC record happens to include media data.
   const owner = scope.kind === 'project' ? projectChatScope(scope.projectId, scope.threadId ?? null) : {projectId: scope.projectId, pageId: scope.pageId};
   return images.map(({ id, name, mimeType, size }) => ({ ...owner, id, name, mimeType, size }));
@@ -80,7 +81,7 @@ function validMessage(m: any, scope: HermesChatConversation): m is AiChatMessage
 }
 function persist(scope: HermesChatConversation, messages: AiChatMessage[]) {
   try { window.localStorage.setItem(storageKey(scope), JSON.stringify(scope.kind === 'project' ? messages : messages.slice(-120))); return null; }
-  catch { return '聊天记录尚未保存到本机，请保持应用打开并重试。'; }
+  catch { return tr('聊天记录尚未保存到本机，请保持应用打开并重试。', 'Chat history has not been saved locally yet; keep the app open and retry.'); }
 }
 function read(scope: HermesChatConversation): { messages: AiChatMessage[]; error: string | null } {
   try {
@@ -89,12 +90,12 @@ function read(scope: HermesChatConversation): { messages: AiChatMessage[]; error
     // retain the original V2 archive and never assign unscoped history to a menu.
     const legacy = raw === null && scope.kind === undefined;
     const value: unknown = JSON.parse(legacy ? window.localStorage.getItem(`protoflow_ai_chat_v2:${encodeURIComponent(scope.projectId)}`) ?? '[]' : raw ?? '[]');
-    if (!Array.isArray(value)) throw new Error('聊天记录格式无效');
-    if (!legacy && value.some(m => !validMessage(m, scope))) throw new Error('聊天记录归属或格式无效');
+    if (!Array.isArray(value)) throw new Error(tr('聊天记录格式无效', 'Invalid chat history format'));
+    if (!legacy && value.some(m => !validMessage(m, scope))) throw new Error(tr('聊天记录归属或格式无效', 'Invalid chat history scope or format'));
     const messages = value.filter(m => validMessage(m, scope)).map(m => m.status === 'pending'
-      ? { ...m, status: 'error' as const, text: '应用重启，本次执行结果未确认，请检查当前菜单的内容后再继续。' } : m);
+      ? { ...m, status: 'error' as const, text: tr('应用重启，本次执行结果未确认，请检查当前菜单的内容后再继续。', 'App restarted before this run finished. Please inspect the current menu before continuing.') } : m);
     return { messages, error: legacy ? persist(scope, messages) : null };
-  } catch { return { messages: [], error: '读取当前菜单的聊天记录失败，原记录未覆盖。' }; }
+  } catch { return { messages: [], error: tr('读取当前菜单的聊天记录失败，原记录未覆盖。', 'Failed to read chat history for this menu; existing data was preserved.') }; }
 }
 export interface ProjectDraft { text: string; images: ChatImageDraft[]; mindmapIds: string[]; rpTask?: RpTaskState }
 type ProjectDrafts = Map<string, ProjectDraft>;
@@ -159,7 +160,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   },
   selectProjectChat: (projectId,id) => {
     const previous = get().loadProjectIndex(projectId);
-    if (!previous.entries.some(entry => entry.id === id)) throw new Error('项目会话已删除');
+    if (!previous.entries.some(entry => entry.id === id)) throw new Error(tr('项目会话已删除', 'Project thread was deleted'));
     const index = {...previous,activeId:id};
     writeProjectChatIndex(index);
     set(s => ({projectIndexes:{...s.projectIndexes,[projectId]:index}}));
@@ -168,7 +169,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   forgetProjectChat: (projectId,id) => {
     const previous = get().loadProjectIndex(projectId);
     const entries = previous.entries.filter(entry => entry.id !== id);
-    if (entries.length === previous.entries.length) throw new Error('项目中没有这条会话');
+    if (entries.length === previous.entries.length) throw new Error(tr('项目中没有这条会话', 'Thread does not exist in this project'));
     if (!entries.length) entries.push(newProjectChat());
     const index = {...previous, entries, activeId:previous.activeId === id ? entries[0].id : previous.activeId};
     const scope = projectChatScope(projectId,id), key = conversationKey(scope);
@@ -187,7 +188,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   switchConversation: scope => {
     if (scope?.kind === 'project') {
       const index = get().loadProjectIndex(scope.projectId);
-      if (!index.entries.some(entry => entry.id === (scope.threadId ?? null))) throw new Error('项目会话已删除');
+      if (!index.entries.some(entry => entry.id === (scope.threadId ?? null))) throw new Error(tr('项目会话已删除', 'Project thread was deleted'));
     }
     set(s => {
       if (!scope) return { conversation: null, messages: [] };
@@ -202,11 +203,11 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   addMessage: (message, options) => {
     const scope: HermesChatConversation = message.kind === 'project' ? projectChatScope(message.projectId, message.threadId ?? null) : { projectId: message.projectId, pageId: message.pageId }, key = conversationKey(scope);
     if (message.mindmaps !== undefined && (scope.kind !== 'project' || message.role !== 'user' || !validChatMindmaps(message.mindmaps, scope.projectId)))
-      throw new Error('脑图附件不属于此项目或内容无效');
+      throw new Error(tr('脑图附件不属于此项目或内容无效', 'Mindmap attachment does not belong to this project or is invalid'));
     if (scope.kind === 'project') {
       const index = get().loadProjectIndex(scope.projectId);
       const entry = index.entries.find(item => item.id === (scope.threadId ?? null));
-      if (!entry) throw new Error('项目会话已删除，无法写入消息');
+      if (!entry) throw new Error(tr('项目会话已删除，无法写入消息', 'Project thread was deleted; cannot append message'));
       if (message.role === 'user') {
         const updated = {...entry, title:entry.title || chatTitle(message.text), updatedAt:Date.now()};
         const next = {...index,entries:[updated,...index.entries.filter(item => item.id !== entry.id)]};
@@ -221,7 +222,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       if (loaded.error) throw new Error(loaded.error);
       const messages = [...loaded.messages];
       const position = options === undefined ? messages.length : messages.findIndex(item => item.id === options.beforeMessageId);
-      if (position < 0) throw new Error('回答关联的聊天消息已不存在');
+      if (position < 0) throw new Error(tr('回答关联的聊天消息已不存在', 'Associated chat message no longer exists'));
       messages.splice(position, 0, { ...message, images, id, time: new Date().toTimeString().slice(0, 5) });
       const error = persist(scope, messages);
       return { byConversation: { ...s.byConversation, [key]: messages }, storageErrors: { ...s.storageErrors, [key]: error },
@@ -249,7 +250,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   retrySave: scope => {
     const key = conversationKey(scope), messages = get().byConversation[key];
     if (messages === undefined) return;
-    if (get().storageErrors[key]?.startsWith('读取')) throw new Error('原记录读取失败，不能用空白记录覆盖。');
+    const prevErr = get().storageErrors[key];
+    if (prevErr?.startsWith('读取') || prevErr?.startsWith('Failed to read')) throw new Error(tr('原记录读取失败，不能用空白记录覆盖。', 'Original chat log failed to load; refusing to overwrite with an empty log.'));
     const error = persist(scope, messages);
     set(s => ({ storageErrors: { ...s.storageErrors, [key]: error } }));
   },

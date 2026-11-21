@@ -1,4 +1,5 @@
 import { mindmapPath, type MindmapWorkspace } from '../proto/mindmaps';
+import { tr } from '../i18n/runtime';
 
 // Store the sent document, not a derived SVG or a pointer to mutable editor state.
 export interface ChatMindmap {
@@ -10,11 +11,11 @@ export interface ChatMindmap {
 }
 
 export function captureChatMindmaps(projectId: string, workspace: MindmapWorkspace, ids: string[]): ChatMindmap[] {
-  if (new Set(ids).size !== ids.length) throw new Error('同一条消息不能重复添加同一张脑图');
+  if (new Set(ids).size !== ids.length) throw new Error(tr('同一条消息不能重复添加同一张脑图', 'Cannot attach the same mindmap multiple times in one message'));
   return ids.map(id => {
     const node = workspace.nodes.find(item => item.id === id);
-    if (!node || node.kind !== 'mindmap') throw new Error('所选脑图已不存在，请移除后再发送');
-    if (!node.source.trim()) throw new Error(`「${node.title}」还是空脑图，请先编辑或移除`);
+    if (!node || node.kind !== 'mindmap') throw new Error(tr('所选脑图已不存在，请移除后再发送', 'Selected mindmap no longer exists; remove it before sending'));
+    if (!node.source.trim()) throw new Error(tr(`「${node.title}」还是空脑图，请先编辑或移除`, `"${node.title}" is empty; edit or remove it first`));
     return { projectId, mindmapId: node.id, title: node.title, path: mindmapPath(workspace, id), source: node.source };
   });
 }

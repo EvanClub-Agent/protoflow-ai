@@ -1,4 +1,5 @@
 import { parsePageSource } from '../dsl/parser';
+import { tr } from '../../i18n/runtime';
 import { readPageHeader } from '../dsl/header';
 import { printPageSource } from '../dsl/printer';
 import { findNode, findParent, replaceNode, walk } from '../dsl/tree';
@@ -14,14 +15,14 @@ export function importedDoc(pageId: string, source: string) {
   const parsed = parsePageSource(source, { strict: true });
   if (!guid || !parsed.doc || parsed.issues.length || parsed.normalized ||
       !parsed.doc.root.children.some(c => isNode(c) && c.type === 'AxureCanvas' && c.pfId === 'rp-canvas-' + guid))
-    throw new Error('指定页面缺少可核对的 RP 导入画布');
+    throw new Error(tr('指定页面缺少可核对的 RP 导入画布', 'Specified page is missing a verifiable imported RP canvas'));
   return parsed.doc;
 }
 
 export function optimizedDoc(copyId: string, source: string) {
   const parsed = parsePageSource(source, {strict:true});
   if (!parsed.doc || parsed.issues.length || parsed.normalized || !verifiedAxureSourceId(copyId,parsed.doc.header))
-    throw new Error('优化版来源不一致：' + copyId);
+    throw new Error(tr('优化版来源不一致：' + copyId, 'Optimized copy source mismatch: ' + copyId));
   return parsed.doc;
 }
 
@@ -190,7 +191,7 @@ function findNearbySiblingLabel(target: ProtoNode, parent: ProtoNode | undefined
 // Inspect the actual saved document, including imports made before the AI workflow existed.
 // Table bodies can contain thousands of identical blank cells. Expand them only on request.
 export function inspectAxurePage(pageId: string, source: string, selectedPfId?: string, offset = 0, limit = 30) {
-  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 60) throw new Error('offset 从 0 开始，limit 为 1 到 60 的整数');
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 60) throw new Error(tr('offset 从 0 开始，limit 为 1 到 60 的整数', 'offset must be >= 0 and limit must be an integer between 1 and 60'));
   const copy = /^rp-optimized-([0-9a-f]{32})$/.exec(pageId);
   const sourcePageId = copy ? 'rp-page-' + copy[1] : pageId;
   const doc = copy ? optimizedDoc(pageId,source) : importedDoc(sourcePageId, source);
@@ -244,7 +245,7 @@ export function inspectAxurePage(pageId: string, source: string, selectedPfId?: 
     kids.forEach((c,i) => visit(c,n,hidden,inactive || (n.type === 'DynamicPanel' && i+1 !== (n.props.activeState ?? 1)),selected));
   }
   visit(doc.root,undefined,false,false,!selectedPfId);
-  if (!found) throw new Error('当前页面没有指定的 pfId');
+  if (!found) throw new Error(tr('当前页面没有指定的 pfId', 'Specified pfId not found on the current page'));
   return { pageId, sourcePageId, title:doc.root.props.title, importNotes:doc.root.props.description, total, offset,
     nextOffset:offset+records.length < total ? offset+records.length : null, records };
 }
@@ -330,7 +331,7 @@ export function optimizeAxureBlock(
   migratedCellPfIds?: ReadonlySet<string>,
 ) {
   const page = snapshot.designerPages.find(p => p.pageId === pageId);
-  if (!page || !Object.hasOwn(snapshot.pageSources,pageId)) throw new Error('找不到 RP 来源页面');
+  if (!page || !Object.hasOwn(snapshot.pageSources,pageId)) throw new Error(tr('找不到 RP 来源页面', 'RP source page not found'));
   const original = importedDoc(pageId,snapshot.pageSources[pageId]);
   const copyId = axureCopyId(pageId);
   const copy = snapshot.designerPages.find(p => p.pageId === copyId);
@@ -338,25 +339,25 @@ export function optimizeAxureBlock(
   let doc: ProtoDoc;
   if (copy || Object.hasOwn(snapshot.pageSources,copyId)) {
     if (!copy || !Object.hasOwn(snapshot.pageSources,copyId))
-      throw new Error('优化版页面标识已占用或来源不一致');
+      throw new Error(tr('优化版页面标识已占用或来源不一致', 'Optimized page ID is already occupied or source mismatches'));
     doc = optimizedDoc(copyId,snapshot.pageSources[copyId]);
   } else {
     doc = original;
     doc.header = [...doc.header,marker];
-    doc.root.props.title = page.title + '（优化版）';
+    doc.root.props.title = page.title + tr('（优化版）', ' (Optimized)');
   }
   const target = findNode(doc.root,targetPfId), parent = findParent(doc.root,targetPfId)?.parent;
   const originalTarget = findNode(original.root,targetPfId);
   if (!target || !originalTarget || !parent || !['AxureCanvas','PositionedGroup','PanelState'].includes(parent.type))
-    throw new Error('请选择源页面中可独立定位的控件或分组');
+    throw new Error(tr('请选择源页面中可独立定位的控件或分组', 'Select an independently positioned widget or group on the source page'));
   const parsed = parsePageSource('export default function Page(){return <Page pfId="__fragment__">' + tsx + '</Page>}',{strict:true});
   const children = parsed.doc?.root.children;
   if (!parsed.doc || parsed.normalized || parsed.issues.length || children?.length !== 1 || !isNode(children[0]) ||
       children[0].pfId !== targetPfId || !positionedNativeTypes.has(children[0].type))
-    throw new Error('优化区块须提供一个支持定位的 Alex 标准物料，保留目标 pfId，子节点提供唯一 pfId');
+    throw new Error(tr('优化区块须提供一个支持定位的 Alex 标准物料，保留目标 pfId，子节点提供唯一 pfId', 'Optimized block must provide a single positionable Alex material preserving targetPfId with unique pfId on child nodes'));
   const next = children[0];
   if (requireHeaderBindings && originalTarget.type === 'StaticTable' && next.type === 'Table')
-    throw new Error('请用 protoflow_bind_axure_table 根据原表头逐列绑定数据表');
+    throw new Error(tr('请用 protoflow_bind_axure_table 根据原表头逐列绑定数据表', 'Use protoflow_bind_axure_table to bind each original header column to a database table'));
   const sourceFrame = frame(target);
   const transferable = [...frameSpecs, ...appearanceSpecs].map(s=>s.name);
   const requestedFrame = next.props.layoutFrame;
@@ -379,13 +380,13 @@ export function optimizeAxureBlock(
   });
   walk(target, oldNode => {
     if (oldNode.type === 'DynamicPanel' && replacements.get(oldNode.pfId)?.type !== 'DynamicPanel')
-      throw new Error(`动态面板 ${oldNode.pfId} 含有独立状态，请分别优化各状态中的控件`);
+      throw new Error(tr(`动态面板 ${oldNode.pfId} 含有独立状态，请分别优化各状态中的控件`, `DynamicPanel ${oldNode.pfId} has independent states; optimize widgets inside each state individually`));
     for (const [key,value] of Object.entries(oldNode.props)) {
       if (!isActionChain(value)) continue;
       if (key === 'onClick' && migratedCellPfIds?.has(oldNode.pfId)) continue;
       const replacement = replacements.get(oldNode.pfId);
       if (!replacement || !COMPONENT_MAP[replacement.type]?.events?.some(e => e.name === key))
-        throw new Error(`区块包含需要保留的交互 ${oldNode.pfId}.${key}，请保留对应控件或选择更小的区块`);
+        throw new Error(tr(`区块包含需要保留的交互 ${oldNode.pfId}.${key}，请保留对应控件或选择更小的区块`, `Block contains interactive event ${oldNode.pfId}.${key} that must be preserved; retain the widget or select a smaller block`));
       if (replacement.props[key] === undefined) replacement.props[key] = value;
     }
   });
@@ -761,7 +762,7 @@ export function reshapeAxurePage(
 ) {
   const page = snapshot.designerPages.find(p => p.pageId === pageId);
   if (!page || !Object.hasOwn(snapshot.pageSources, pageId)) {
-    throw new Error('找不到 RP 来源页面');
+    throw new Error(tr('找不到 RP 来源页面', 'RP source page not found'));
   }
   const original = importedDoc(pageId, snapshot.pageSources[pageId]);
   const guid = pageId.slice('rp-page-'.length);
@@ -770,34 +771,36 @@ export function reshapeAxurePage(
   const copy = snapshot.designerPages.find(p => p.pageId === copyId);
   if (copy || Object.hasOwn(snapshot.pageSources, copyId)) {
     if (!copy || !Object.hasOwn(snapshot.pageSources, copyId)) {
-      throw new Error('优化版页面标识已占用或来源不一致');
+      throw new Error(tr('优化版页面标识已占用或来源不一致', 'Optimized page ID is already occupied or source mismatches'));
     }
     optimizedDoc(copyId, snapshot.pageSources[copyId]);
   }
 
   const parsed = parsePageSource(source, { strict: true });
   if (!parsed.doc || parsed.issues.length || parsed.normalized || parsed.doc.root.type !== 'Page') {
-    const issueMsg = parsed.issues.map(i => i.message).slice(0, 3).join('；');
-    throw new Error(
+    const issueMsg = parsed.issues.map(i => i.message).slice(0, 3).join(tr('；', '; '));
+    throw new Error(tr(
       `重塑页面源码必须是完整且每个节点带唯一 pfId 的桌面端 <Page>（${issueMsg || '解析或 pfId 校验未通过'}）`,
-    );
+      `Reshaped page source must be a complete desktop <Page> with unique pfId on every node (${issueMsg || 'parse or pfId check failed'})`,
+    ));
   }
 
   const doc = parsed.doc;
   if (doc.root.children.some(c => isNode(c) && c.type === 'AxureCanvas')) {
-    throw new Error(
+    throw new Error(tr(
       'protoflow_reshape_axure_page 用于将 RP 页面重塑为标准流式布局 <Page>，不能继续使用顶层自由定位画布 AxureCanvas；局部原位替换请使用 protoflow_optimize_axure_block 或 protoflow_bind_axure_table',
-    );
+      'protoflow_reshape_axure_page reshapes RP pages into standard flow-layout <Page> and cannot retain a top-level AxureCanvas; use protoflow_optimize_axure_block or protoflow_bind_axure_table for partial in-place edits',
+    ));
   }
 
   const cleanHeader = doc.header.filter(line => !line.startsWith('// @alex-axure-source '));
   doc.header = [...cleanHeader, '// @alex-axure-source ' + pageId];
   if (typeof doc.root.props.title !== 'string' || !doc.root.props.title.trim()) {
-    doc.root.props.title = copy ? copy.title : page.title + '（优化版）';
+    doc.root.props.title = copy ? copy.title : page.title + tr('（优化版）', ' (Optimized)');
   }
 
   if (!rawCoverage || typeof rawCoverage !== 'object' || Array.isArray(rawCoverage)) {
-    throw new Error('重塑 RP 页面必须提供 coverage（包含 converted / retained / pending 去向清单）');
+    throw new Error(tr('重塑 RP 页面必须提供 coverage（包含 converted / retained / pending 去向清单）', 'Reshaping an RP page requires coverage (converted / retained / pending manifest)'));
   }
   const covObj = rawCoverage as Record<string, unknown>;
   if (!Array.isArray(covObj.converted)) {
@@ -1142,7 +1145,7 @@ export function reshapeAxurePage(
           if (!alreadyMentioned) {
             pending.push({
               sourcePfIds: [h.pfId],
-              reason: m.reason || `原表头「${hTitle || h.pfId}」字段归属或交互语义待确认`,
+              reason: m.reason || tr(`原表头「${hTitle || h.pfId}」字段归属或交互语义待确认`, `Original header "${hTitle || h.pfId}" column ownership or interaction semantics pending confirmation`),
             });
           }
         }
@@ -1242,12 +1245,18 @@ export function reshapeAxurePage(
         );
         if (!alreadyMentioned) {
           const detail = [
-            ...cs.variants.map(v => `「${v.label || '点击'}」仅出现在 ${v.rowCount}/${cs.populatedDataRowCount} 条非空样例行`),
-            ...(cs.unlinkedTexts.length ? [`文本「${cs.unlinkedTexts.join('、')}」缺少已导入的点击动作`] : []),
-          ].join('；');
+            ...cs.variants.map(v => tr(
+              `「${v.label || '点击'}」仅出现在 ${v.rowCount}/${cs.populatedDataRowCount} 条非空样例行`,
+              `"${v.label || 'Click'}" appears in only ${v.rowCount}/${cs.populatedDataRowCount} populated sample rows`,
+            )),
+            ...(cs.unlinkedTexts.length ? [tr(`文本「${cs.unlinkedTexts.join('、')}」缺少已导入的点击动作`, `Text "${cs.unlinkedTexts.join(', ')}" lacks an imported click action`)] : []),
+          ].join(tr('；', '; '));
           pending.push({
             sourcePfIds: [cs.headerPfId],
-            reason: `原表格列「${cs.headerText || cs.headerPfId}」存在待确认行级交互（${detail}），未自动推广为全表行操作`,
+            reason: tr(
+              `原表格列「${cs.headerText || cs.headerPfId}」存在待确认行级交互（${detail}），未自动推广为全表行操作`,
+              `Original column "${cs.headerText || cs.headerPfId}" has unconfirmed row-level interactions (${detail}); not promoted to table-wide rowActions`,
+            ),
           });
         }
       }
@@ -1306,10 +1315,10 @@ export function reshapeAxurePage(
 
   if (typeof original.root.props.description === 'string' && original.root.props.description.trim()) {
     const notes = original.root.props.description.trim();
-    const mentioned = pending.some(p => p.reason.includes(notes) || p.reason.includes('导入'));
+    const mentioned = pending.some(p => p.reason.includes(notes) || p.reason.includes('导入') || /import/i.test(p.reason));
     if (!mentioned) {
       pending.push({
-        reason: `源页面导入提示待核对：${notes}`,
+        reason: tr(`源页面导入提示待核对：${notes}`, `Source page import notes pending review: ${notes}`),
       });
     }
   }
@@ -1382,12 +1391,18 @@ export function evaluateAxureMigrationProgress(
 
   const remainingLabels = [
     ...unconvertedPages.map(p => `${p.title}(${p.pageId})`),
-    ...partiallyOptimizedPages.map(p => `${p.title}(${p.pageId}，仅局部优化)`),
+    ...partiallyOptimizedPages.map(p => tr(`${p.title}(${p.pageId}，仅局部优化)`, `${p.title}(${p.pageId}, partial only)`)),
   ];
   const hint =
     remainingLabels.length > 0
-      ? `当前迁移范围共 ${scopePages.length} 页：已完成整页流式重塑 ${flowReshapedPages.length} 页，本轮暂存修改 ${stagedThisTurnPages.length} 页，仍有 ${remainingLabels.length} 页未完成整页流式重塑（${remainingLabels.slice(0, 6).join('、')}）。仅暂存表结构或只改局部控件不等于完成整页转换，若无阻塞疑问请调用 protoflow_reshape_axure_page 完成流式重塑。`
-      : `当前迁移范围内的 ${scopePages.length} 个 RP 页面均已完成整页流式重塑（本轮暂存修改 ${stagedThisTurnPages.length} 页）。`;
+      ? tr(
+          `当前迁移范围共 ${scopePages.length} 页：已完成整页流式重塑 ${flowReshapedPages.length} 页，本轮暂存修改 ${stagedThisTurnPages.length} 页，仍有 ${remainingLabels.length} 页未完成整页流式重塑（${remainingLabels.slice(0, 6).join('、')}）。仅暂存表结构或只改局部控件不等于完成整页转换，若无阻塞疑问请调用 protoflow_reshape_axure_page 完成流式重塑。`,
+          `Scope total: ${scopePages.length} page(s); full-page flow reshaped: ${flowReshapedPages.length}, staged this turn: ${stagedThisTurnPages.length}, pending full-page reshape: ${remainingLabels.length} (${remainingLabels.slice(0, 6).join(', ')}). Staging schemas or partial blocks alone does not complete page conversion; call protoflow_reshape_axure_page when no blocking questions remain.`,
+        )
+      : tr(
+          `当前迁移范围内的 ${scopePages.length} 个 RP 页面均已完成整页流式重塑（本轮暂存修改 ${stagedThisTurnPages.length} 页）。`,
+          `All ${scopePages.length} RP page(s) in scope have completed full-page flow reshaping (${stagedThisTurnPages.length} staged this turn).`,
+        );
 
   return {
     totalScopePages: scopePages.length,

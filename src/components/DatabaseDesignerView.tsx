@@ -40,6 +40,7 @@ import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { ProjectTableData } from './ProjectTableData';
 import { useHermesStore } from '../store/useHermesStore';
 import { runScanStickiesAndAstToDbWithHermes, reportAiError } from '../services/hermesBridge';
+import { useI18n } from '../i18n';
 
 import { CARD_WIDTH, HEADER_HEIGHT, ROW_HEIGHT, FOOTER_HEIGHT, layoutTables, resolvePositions, domainBounds, diagramRelations, visibleColumns, columnAnchor, cardHeight, type Point as TablePosition, type DiagramRelation as CustomRelation } from './databaseDiagram';
 
@@ -85,6 +86,7 @@ export const DatabaseDesignerView: React.FC = () => {
 };
 
 const DatabaseDesignerWorkspace: React.FC = () => {
+  const { isEn, tr, td } = useI18n();
   const {
     dbTables,
     selectedTableId,
@@ -225,14 +227,14 @@ const DatabaseDesignerWorkspace: React.FC = () => {
   const localIndexes = tableIndexes.filter(i => i.tableId === activeTable?.id);
   const saveIndex = () => editSchema(() => {
     const name = newIdxName.trim();
-    if (!name || !newIdxCols.trim()) throw new Error('请填写索引名和本表的物理列名');
+    if (!name || !newIdxCols.trim()) throw new Error(tr('请填写索引名和本表的物理列名', 'Please enter both the index name and physical column names of this table'));
     if (localIndexes.some(i => i.name.toLowerCase() === name.toLowerCase()) ||
         uniqueKeys.some(k => k.name !== editingKey && k.name.toLowerCase() === name.toLowerCase()))
-      throw new Error(`索引名 ${name} 已存在`);
+      throw new Error(tr(`索引名 ${name} 已存在`, `Index name ${name} already exists`));
     if (newIdxType === 'UNIQUE') {
       const columnIds = newIdxCols.split(',').map(token => {
         const columns = activeTable.columns.filter(c => c.name === token.trim());
-        if (columns.length !== 1) throw new Error(`请填写本表的准确物理列名：${token}`);
+        if (columns.length !== 1) throw new Error(tr(`请填写本表的准确物理列名：${token}`, `Please enter an exact physical column name from this table: ${token}`));
         return columns[0].id;
       });
       const existing = activeTable.uniqueConstraints ?? [];
@@ -242,7 +244,7 @@ const DatabaseDesignerWorkspace: React.FC = () => {
     } else {
       setTableIndexes(prev => [...prev, {
         id: crypto.randomUUID(), tableId: activeTable.id, name, columnNames: newIdxCols.trim(),
-        indexType: newIdxType, method: 'BTREE', comment: '自定义业务索引',
+        indexType: newIdxType, method: 'BTREE', comment: tr('自定义业务索引', 'Custom business index'),
       }]);
     }
     clearIndexForm();
@@ -391,7 +393,7 @@ const DatabaseDesignerWorkspace: React.FC = () => {
       let tableNumber = dbTables.length + 1;
       while (dbTables.some(t => t.id === `t_custom_entity_${tableNumber}` || t.tableName === `t_custom_entity_${tableNumber}`)) tableNumber++;
       const newTblName = `t_custom_entity_${tableNumber}`;
-      createNewTable(newTblName, `新建业务实体表_${dbTables.length + 1}`, '仓储验收域 (WMS)');
+      createNewTable(newTblName, tr(`新建业务实体表_${dbTables.length + 1}`, `New_Entity_Table_${dbTables.length + 1}`), '仓储验收域 (WMS)');
       setPositions((prev) => ({
         ...prev,
         [newTblName]: {
@@ -497,8 +499,8 @@ const DatabaseDesignerWorkspace: React.FC = () => {
       name: `new_field_${activeTable.columns.length + 1}`,
       dataType: 'VARCHAR(64)',
       nullable: true,
-      comment: '新增业务字段',
-      sourceWidgetOrSticky: 'Navicat 表设计器新增',
+      comment: tr('新增业务字段', 'New business column'),
+      sourceWidgetOrSticky: tr('Navicat 表设计器新增', 'Added in Schema Designer'),
     });
   };
 
@@ -507,8 +509,8 @@ const DatabaseDesignerWorkspace: React.FC = () => {
       name: `inserted_col_${activeTable.columns.length + 1}`,
       dataType: 'VARCHAR(64)',
       nullable: true,
-      comment: '插入字段',
-      sourceWidgetOrSticky: 'Navicat 表设计器插入',
+      comment: tr('插入字段', 'Inserted column'),
+      sourceWidgetOrSticky: tr('Navicat 表设计器插入', 'Inserted in Schema Designer'),
     });
   };
 
@@ -542,10 +544,17 @@ const DatabaseDesignerWorkspace: React.FC = () => {
 
     const pk = activeTable.columns.filter(c => c.isPrimaryKey);
     const pending = activeTable.modeling?.pendingRules?.length;
-    const boundary = pending ? `${sqlDialect === 'prisma' ? '//' : '--'} 有 ${pending} 项业务规则未由此结构实现，详见数据库设计审查。\n` : '';
+    const boundary = pending
+      ? tr(
+          `${sqlDialect === 'prisma' ? '//' : '--'} 有 ${pending} 项业务规则未由此结构实现，详见数据库设计审查。\n`,
+          `${sqlDialect === 'prisma' ? '//' : '--'} ${pending} business rule(s) are not enforced by this schema; see Schema Design Review.\n`
+        )
+      : '';
     if (sqlDialect === 'prisma') {
-      return `${boundary}// Prisma Schema · 由 Navicat 表设计器【${activeTable.cnName}】实时生成
-// 共用此表的模块菜单: ${activeTable.sharedByMenus.map((m) => m.menuTitle).join(' | ')}
+      const prismaHeader = isEn
+        ? `// Prisma Schema · Live-generated from Schema Designer [${activeTable.cnName}]\n// Shared by module menus: ${activeTable.sharedByMenus.map((m) => m.menuTitle).join(' | ')}`
+        : `// Prisma Schema · 由 Navicat 表设计器【${activeTable.cnName}】实时生成\n// 共用此表的模块菜单: ${activeTable.sharedByMenus.map((m) => m.menuTitle).join(' | ')}`;
+      return `${boundary}${prismaHeader}
 
 model ${activeTable.tableName
         .split('_')
@@ -591,17 +600,28 @@ ${uniqueKeys.map(k => `  @@unique([${k.columns.map(c => c.name).join(', ')}], ma
     const allBodyLines = [...colLines, ...compoundKey, ...uniqueConstraintSql(activeTable, sqlDialect), ...idxLines, ...fkLines];
     const tableOptions = sqlDialect === 'mysql' ? ` ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='${activeTable.cnName.replace(/'/g, "''")}'` : '';
     const pgIndexes = sqlDialect === 'postgres' ? localIndexes.map(ix => ix.indexType === 'FULLTEXT'
-      ? `\n-- ${ix.name}：全文索引需明确 PostgreSQL 分词配置及表达式。`
+      ? tr(`\n-- ${ix.name}：全文索引需明确 PostgreSQL 分词配置及表达式。`, `\n-- ${ix.name}: Full-text index requires explicit PostgreSQL text search config and expression.`)
       : `\nCREATE INDEX ${quote(ix.name)} ON ${quote(activeTable.tableName)} (${ix.columnNames});`).join('') : '';
 
-    return `${boundary}-- =====================================================================
+    const ddlComments = isEn
+      ? `-- =====================================================================
+-- Navicat Data Modeler · Physical Table DDL: ${activeTable.tableName} (${activeTable.cnName})
+-- Domain: ${td(activeTable.domain)}
+-- Shared by Module Menus (${activeTable.sharedByMenus.length}):
+${activeTable.sharedByMenus
+  .map((m) => `--   • [${m.accessMode}] ${m.menuTitle}`)
+  .join('\n')}
+-- =====================================================================`
+      : `-- =====================================================================
 -- Navicat Data Modeler · 物理表 DDL: ${activeTable.tableName} (${activeTable.cnName})
 -- 所属业务域: ${activeTable.domain}
 -- 共用该表的模块菜单 (${activeTable.sharedByMenus.length}个):
 ${activeTable.sharedByMenus
   .map((m) => `--   • [${m.accessMode}] ${m.menuTitle}`)
   .join('\n')}
--- =====================================================================
+-- =====================================================================`;
+
+    return `${boundary}${ddlComments}
 
 CREATE TABLE ${quote(activeTable.tableName)} (
 ${allBodyLines.join(',\n')}
@@ -634,71 +654,81 @@ ${allBodyLines.join(',\n')}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold tracking-tight text-slate-900">数据模型</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 border border-slate-200/80">
-                  ER 实体关系图
+                <h2 className="text-sm font-bold tracking-tight text-slate-900">{tr('数据模型', 'Data Model')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 border border-slate-200/80 whitespace-nowrap shrink-0">
+                  {tr('ER 实体关系图', 'ER Diagram')}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5">{dbTables.length} 张表 · {relations.length} 条关系 · {areas.length} 个业务域</p>
+              <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                {tr(
+                  `${dbTables.length} 张表 · ${relations.length} 条关系 · ${areas.length} 个业务域`,
+                  `${dbTables.length} tables · ${relations.length} relations · ${areas.length} domains`
+                )}
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <button type="button" onClick={handleRunHermesDbScan} title="扫描页面需求便签与画布控件，补齐物理表字段" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white font-medium text-slate-700 shadow-2xs transition hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700 cursor-pointer"><Sparkles size={14} className="text-blue-600" />AI 补全字段</button>
-            <button type="button" onClick={handleAutoLayout} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200/90 bg-blue-50/80 font-medium text-blue-700 transition hover:bg-blue-100/80 cursor-pointer"><LayoutGrid size={14} />自动排布</button>
-            <button type="button" onClick={() => setSplitLayout(splitLayout === 'canvas_max' ? 'split' : 'canvas_max')} disabled={!activeTable} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 font-semibold text-white shadow-2xs transition hover:bg-blue-700 disabled:opacity-40 cursor-pointer"><Table2 size={14} />{splitLayout === 'canvas_max' ? '编辑表结构' : '收起编辑区'}</button>
+            <button type="button" onClick={handleRunHermesDbScan} title={tr('扫描页面需求便签与画布控件，补齐物理表字段', 'Scan page sticky rules and canvas widgets to complete physical table columns')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white font-medium text-slate-700 shadow-2xs transition hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700 whitespace-nowrap shrink-0 cursor-pointer"><Sparkles size={14} className="text-blue-600 shrink-0" />{tr('AI 补全字段', 'AI Fields')}</button>
+            <button type="button" onClick={handleAutoLayout} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200/90 bg-blue-50/80 font-medium text-blue-700 transition hover:bg-blue-100/80 whitespace-nowrap shrink-0 cursor-pointer"><LayoutGrid size={14} className="shrink-0" />{tr('自动排布', 'Auto Layout')}</button>
+            <button type="button" onClick={() => setSplitLayout(splitLayout === 'canvas_max' ? 'split' : 'canvas_max')} disabled={!activeTable} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 font-semibold text-white shadow-2xs transition hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap shrink-0 cursor-pointer"><Table2 size={14} className="shrink-0" />{splitLayout === 'canvas_max' ? tr('编辑表结构', 'Edit Schema') : tr('收起编辑区', 'Hide Panel')}</button>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-slate-100 bg-slate-50/50 px-4 py-1.5 text-[11px] text-slate-600">
           <div className="flex flex-wrap items-center gap-1">
             <div className="flex items-center gap-0.5 rounded-lg border border-slate-200/80 bg-white p-0.5 shadow-2xs">
-              {([{tool:'select',label:'选择',icon:MousePointer},{tool:'pan',label:'平移',icon:Hand},{tool:'new_table',label:'建表',icon:Plus},{tool:'link_fk',label:'连线',icon:Link2}] as const).map(({tool,label,icon:Icon}) => <button key={tool} type="button" aria-pressed={activeTool === tool} onClick={() => setActiveTool(tool)} className={`flex items-center gap-1 rounded-md px-2 py-1 font-medium transition cursor-pointer ${activeTool === tool ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}><Icon size={13} />{label}</button>)}
+              {([{tool:'select',label:tr('选择','Select'),icon:MousePointer},{tool:'pan',label:tr('平移','Pan'),icon:Hand},{tool:'new_table',label:tr('建表','Table'),icon:Plus},{tool:'link_fk',label:tr('连线','Relation'),icon:Link2}] as const).map(({tool,label,icon:Icon}) => <button key={tool} type="button" aria-pressed={activeTool === tool} onClick={() => setActiveTool(tool)} className={`flex items-center gap-1 rounded-md px-2 py-1 font-medium whitespace-nowrap shrink-0 transition cursor-pointer ${activeTool === tool ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}><Icon size={13} className="shrink-0" />{label}</button>)}
             </div>
-            <button type="button" onClick={() => setCanvasNotes(prev => [...prev, {id:crypto.randomUUID(),x:48,y:Math.max(0,...areas.map(a=>a.y+a.height))+40,title:'模型批注',text:'点击编辑批注内容',color:'amber'}])} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200/80 bg-white hover:bg-amber-50/60 hover:border-amber-200 hover:text-amber-800 transition cursor-pointer"><StickyNote size={13} className="text-amber-500" />批注</button>
-            <span className="mx-1 h-4 border-l border-slate-200" />
-            <button type="button" aria-pressed={snapToGrid} onClick={() => setSnapToGrid(!snapToGrid)} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition cursor-pointer ${snapToGrid ? 'border-blue-200 text-blue-700 bg-blue-50/80 font-medium' : 'border-transparent hover:bg-slate-100'}`}><Magnet size={13} />吸附</button>
-            <button type="button" aria-pressed={showDomainSwimlanes} onClick={() => setShowDomainSwimlanes(!showDomainSwimlanes)} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition cursor-pointer ${showDomainSwimlanes ? 'border-blue-200 text-blue-700 bg-blue-50/80 font-medium' : 'border-transparent hover:bg-slate-100'}`}><ListFilter size={13} />业务分区</button>
+            <button type="button" onClick={() => setCanvasNotes(prev => [...prev, {id:crypto.randomUUID(),x:48,y:Math.max(0,...areas.map(a=>a.y+a.height))+40,title:tr('模型批注','Schema Note'),text:tr('点击编辑批注内容','Click to edit note'),color:'amber'}])} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200/80 bg-white hover:bg-amber-50/60 hover:border-amber-200 hover:text-amber-800 whitespace-nowrap shrink-0 transition cursor-pointer"><StickyNote size={13} className="text-amber-500 shrink-0" />{tr('批注', 'Notes')}</button>
+            <span className="mx-1 h-4 border-l border-slate-200 shrink-0" />
+            <button type="button" aria-pressed={snapToGrid} onClick={() => setSnapToGrid(!snapToGrid)} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border whitespace-nowrap shrink-0 transition cursor-pointer ${snapToGrid ? 'border-blue-200 text-blue-700 bg-blue-50/80 font-medium' : 'border-transparent hover:bg-slate-100'}`}><Magnet size={13} className="shrink-0" />{tr('吸附', 'Snap')}</button>
+            <button type="button" aria-pressed={showDomainSwimlanes} onClick={() => setShowDomainSwimlanes(!showDomainSwimlanes)} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border whitespace-nowrap shrink-0 transition cursor-pointer ${showDomainSwimlanes ? 'border-blue-200 text-blue-700 bg-blue-50/80 font-medium' : 'border-transparent hover:bg-slate-100'}`}><ListFilter size={13} className="shrink-0" />{tr('业务分区', 'Domains')}</button>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center bg-slate-200/70 rounded-lg p-0.5 border border-slate-200/80" aria-label="字段显示范围">
-              {([{value:'keys_only',label:'主外键'},{value:'all',label:'全部字段'},{value:'header_only',label:'仅表名'}] as const).map(({value,label}) => <button key={value} type="button" aria-pressed={tableViewLevel === value} onClick={() => {setPositions({});setTableViewLevel(value);}} className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${tableViewLevel === value ? 'bg-white text-blue-700 font-semibold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>)}
+            <div className="flex items-center bg-slate-200/70 rounded-lg p-0.5 border border-slate-200/80" aria-label={tr('字段显示范围', 'Column visibility')}>
+              {([{value:'keys_only',label:tr('主外键','Keys')},{value:'all',label:tr('全部字段','All Cols')},{value:'header_only',label:tr('仅表名','Title')}] as const).map(({value,label}) => <button key={value} type="button" aria-pressed={tableViewLevel === value} onClick={() => {setPositions({});setTableViewLevel(value);}} className={`px-2.5 py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition cursor-pointer ${tableViewLevel === value ? 'bg-white text-blue-700 font-semibold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>)}
             </div>
-            <button type="button" onClick={() => fitCanvas()} title="适应画布，显示全部表" className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200/80 bg-white hover:bg-slate-100 transition cursor-pointer"><Scan size={13} />适应</button>
-            <button type="button" onClick={() => activeTable && focusTable(activeTable.id)} disabled={!activeTable} title="以 100% 定位选中表" className="p-1.5 rounded-lg border border-slate-200/80 bg-white hover:bg-slate-100 disabled:opacity-40 transition cursor-pointer"><LocateFixed size={13} /></button>
-            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200/80 bg-white px-1 py-0.5">
-              <button type="button" title="缩小画布" onClick={() => setZoom(z=>Math.max(0.1,z-0.1))} className="p-1 rounded hover:bg-slate-100 cursor-pointer"><ZoomOut size={13} /></button>
-              <button type="button" title="重置为 100%" onClick={() => setZoom(1)} className="w-10 text-center font-mono font-semibold text-slate-700 tabular-nums cursor-pointer">{Math.round(zoom*100)}%</button>
-              <button type="button" title="放大画布" onClick={() => setZoom(z=>Math.min(2,z+0.1))} className="p-1 rounded hover:bg-slate-100 cursor-pointer"><ZoomIn size={13} /></button>
+            <button type="button" onClick={() => fitCanvas()} title={tr('适应画布，显示全部表', 'Fit all tables in canvas')} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200/80 bg-white hover:bg-slate-100 whitespace-nowrap shrink-0 transition cursor-pointer"><Scan size={13} className="shrink-0" />{tr('适应', 'Fit')}</button>
+            <button type="button" onClick={() => activeTable && focusTable(activeTable.id)} disabled={!activeTable} title={tr('以 100% 定位选中表', 'Center selected table at 100%')} className="p-1.5 rounded-lg border border-slate-200/80 bg-white hover:bg-slate-100 disabled:opacity-40 shrink-0 transition cursor-pointer"><LocateFixed size={13} /></button>
+            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200/80 bg-white px-1 py-0.5 shrink-0">
+              <button type="button" title={tr('缩小画布', 'Zoom out')} onClick={() => setZoom(z=>Math.max(0.1,z-0.1))} className="p-1 rounded hover:bg-slate-100 cursor-pointer"><ZoomOut size={13} /></button>
+              <button type="button" title={tr('重置为 100%', 'Reset to 100%')} onClick={() => setZoom(1)} className="w-10 text-center font-mono font-semibold text-slate-700 tabular-nums cursor-pointer">{Math.round(zoom*100)}%</button>
+              <button type="button" title={tr('放大画布', 'Zoom in')} onClick={() => setZoom(z=>Math.min(2,z+0.1))} className="p-1 rounded hover:bg-slate-100 cursor-pointer"><ZoomIn size={13} /></button>
             </div>
           </div>
         </div>
       </div>
       {dbTables.length > 0 && <details className="shrink-0 px-4 py-2 text-xs bg-white border-b border-slate-200">
-        <summary className="cursor-pointer font-semibold text-slate-700">数据库设计审查 · {designErrors.length} 项结构问题 · {design.risks.length} 项待复核</summary>
+        <summary className="cursor-pointer font-semibold text-slate-700 tabular-nums">
+          {tr(
+            `数据库设计审查 · ${designErrors.length} 项结构问题 · ${design.risks.length} 项待复核`,
+            `Schema Design Review · ${designErrors.length} structural issues · ${design.risks.length} to review`
+          )}
+        </summary>
         <div className="max-h-52 overflow-y-auto select-text space-y-2 pt-2">
-          {trace.lines.length > 0 && <details><summary className="cursor-pointer">需求原文与约束核对（{trace.lines.length} 条）</summary>
-            {trace.conflicts.map((line,i)=><p key={i} className="text-red-700">案例冲突 · {line}</p>)}
-            {trace.lines.map((line,i)=><p key={i} className="mt-1 whitespace-pre-wrap">{line}</p>)}
+          {trace.lines.length > 0 && <details><summary className="cursor-pointer tabular-nums">{tr(`需求原文与约束核对（${trace.lines.length} 条）`, `Requirement & Constraint Check (${trace.lines.length})`)}</summary>
+            {trace.conflicts.map((line,i)=><p key={i} className="text-red-700">{tr('案例冲突 · ', 'Case conflict · ')}{td(line)}</p>)}
+            {trace.lines.map((line,i)=><p key={i} className="mt-1 whitespace-pre-wrap">{td(line)}</p>)}
           </details>}
-          {designErrors.map((issue, i) => <p key={i} className="text-red-700">结构问题 · {issue}</p>)}
-          {design.risks.map((risk, i) => <p key={i} className="text-amber-800">待复核 · {risk}</p>)}
-          {dbTables.map(table => table.modeling && <p key={table.id}><strong>{table.tableName} · {table.modeling.entity}</strong>　{table.modeling.grain}。{table.modeling.reason}</p>)}
-          <p className="text-slate-500">根据工程中声明的键、字段和关系检查。查询的实际连接条件和指标口径需结合业务需求复核。</p>
+          {designErrors.map((issue, i) => <p key={i} className="text-red-700">{tr('结构问题 · ', 'Structural issue · ')}{td(issue)}</p>)}
+          {design.risks.map((risk, i) => <p key={i} className="text-amber-800">{tr('待复核 · ', 'Needs review · ')}{td(risk)}</p>)}
+          {dbTables.map(table => table.modeling && <p key={table.id}><strong>{table.tableName} · {td(table.modeling.entity)}</strong>{tr('　', ' — ')}{td(table.modeling.grain)}{tr('。', '. ')}{td(table.modeling.reason)}</p>)}
+          <p className="text-slate-500">{tr('根据工程中声明的键、字段和关系检查。查询的实际连接条件和指标口径需结合业务需求复核。', 'Checked against declared keys, columns, and relations in the project. Actual query join conditions and metrics should be verified against business requirements.')}</p>
         </div>
       </details>}
 
-      {schemaError && <div role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50">{schemaError}</div>}
+      {schemaError && <div role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50">{td(schemaError)}</div>}
       {/* Hermes / AI Scan Execution Report Banner */}
       {dbScanReport && (
         <div className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between gap-2 flex-wrap shadow-2xs">
           <div className="flex items-center gap-2 flex-wrap">
             <Bot className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{dbScanReport.summary}</span>
+            <span className="font-medium">{td(dbScanReport.summary)}</span>
             <button
               type="button"
               onClick={() => setHermesModalOpen(true, 'overview')}
               className="px-2 py-0.5 rounded-full bg-white text-emerald-800 border border-emerald-300 font-mono text-[10px] font-semibold hover:bg-emerald-100 cursor-pointer"
             >
-              {dbScanReport.engineBadge}
+              {td(dbScanReport.engineBadge)}
             </button>
           </div>
           <button
@@ -762,9 +792,9 @@ ${allBodyLines.join(',\n')}
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-200/70">
                   <Database size={24} />
                 </div>
-                <p className="text-sm font-bold text-slate-800">还没有数据表</p>
+                <p className="text-sm font-bold text-slate-800">{tr('还没有数据表', 'No tables yet')}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  点击工具栏「建表」，在画布中创建第一张表
+                  {tr('点击工具栏「建表」，在画布中创建第一张表', 'Click "Table" in the toolbar to place your first table on the canvas')}
                 </p>
               </div>
             </div>
@@ -772,13 +802,13 @@ ${allBodyLines.join(',\n')}
           {/* Floating Active Tool Banner */}
           {(activeTool === 'new_table' || activeTool === 'link_fk' || fkDragSource) && (
             <div onMouseDown={(e) => e.stopPropagation()} className="absolute top-3 left-4 z-40 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium shadow-md">
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {activeTool === 'new_table'
-                  ? '➕ 请在画布任意空白位置点击，即可在该坐标放置新物理表（右键可取消）'
+                  ? tr('➕ 请在画布任意空白位置点击，即可在该坐标放置新物理表（右键可取消）', '➕ Click any blank spot on the canvas to place a new physical table (right-click to cancel)')
                   : fkDragSource
-                  ? `🔗 正在从 [${fkDragSource.tableId}.${fkDragSource.colName}] 拉出外键连线，请移动到目标表的字段上松开鼠标！`
-                  : '🔗 请按住任意表字段左右两侧的圆点 (●) 拖拽到另一张表的字段上建立 1:N 外键关系'}
+                  ? tr(`🔗 正在从 [${fkDragSource.tableId}.${fkDragSource.colName}] 拉出外键连线，请移动到目标表的字段上松开鼠标！`, `🔗 Dragging foreign key from [${fkDragSource.tableId}.${fkDragSource.colName}] — release over a target table column!`)
+                  : tr('🔗 请按住任意表字段左右两侧的圆点 (●) 拖拽到另一张表的字段上建立 1:N 外键关系', '🔗 Drag from any column port dot (●) to another table column to create a 1:N foreign key relation')}
               </span>
             </div>
           )}
@@ -790,7 +820,7 @@ ${allBodyLines.join(',\n')}
               onMouseDown={(e) => e.stopPropagation()} className="absolute top-3 left-4 right-4 z-40 flex flex-wrap items-center gap-3 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-xs shadow-lg"
             >
               <span className="font-mono font-semibold text-slate-900">
-                🔗 外键关系: {selectedRelation.name}
+                {tr(`🔗 外键关系: ${selectedRelation.name}`, `🔗 Foreign Key: ${selectedRelation.name}`)}
               </span>
               <span className="text-slate-700 font-mono text-[11px]">
                 {selectedRelation.fromTableId}({selectedRelation.fromColumnName}) →{' '}
@@ -803,9 +833,9 @@ ${allBodyLines.join(',\n')}
                 }
                 className="px-2 py-0.5 rounded bg-slate-50 border border-slate-300 text-slate-900 text-[11px]"
               >
-                <option value="" disabled>基数未设置</option>
-                <option value="1:N">1 : N (一对多鸦爪)</option>
-                <option value="1:1">1 : 1 (一对一)</option>
+                <option value="" disabled>{tr('基数未设置', 'Cardinality unset')}</option>
+                <option value="1:N">{tr('1 : N (一对多鸦爪)', "1 : N (One-to-Many Crow's Foot)")}</option>
+                <option value="1:1">{tr('1 : 1 (一对一)', '1 : 1 (One-to-One)')}</option>
               </select>
               <select
                 value={selectedRelation.onDelete ?? ''}
@@ -814,7 +844,7 @@ ${allBodyLines.join(',\n')}
                 }
                 className="px-2 py-0.5 rounded bg-slate-50 border border-slate-300 text-slate-900 text-[11px]"
               >
-                <option value="" disabled>删除策略未设置</option>
+                <option value="" disabled>{tr('删除策略未设置', 'On Delete unset')}</option>
                 <option value="RESTRICT">ON DELETE RESTRICT</option>
                 <option value="CASCADE">ON DELETE CASCADE</option>
                 <option value="SET NULL" disabled={!dbTables.find(t=>t.id===selectedRelation.toTableId)?.columns.find(c=>c.id===selectedRelation.toColumnId)?.nullable}>ON DELETE SET NULL</option>
@@ -825,9 +855,9 @@ ${allBodyLines.join(',\n')}
                   removeRelation(selectedRelation);
                   setSelectedRelationId(null);
                 }}
-                className="px-2 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                className="px-2 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
               >
-                删除连线
+                {tr('删除连线', 'Delete Relation')}
               </button>
             </div>
           )}
@@ -838,7 +868,7 @@ ${allBodyLines.join(',\n')}
               transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
             }}
           >
-            {showDomainSwimlanes && areas.map(area => <div key={area.domain} data-db-domain={area.domain} style={{left:area.x,top:area.y,width:area.width,height:area.height}} className="absolute rounded-xl border border-dashed border-slate-300 bg-slate-100/40 pointer-events-none px-4 py-2"><span className="text-[11px] font-semibold text-slate-500">{area.domain}<span className="ml-2 font-normal text-slate-400">{area.count} 张表</span></span></div>)}
+            {showDomainSwimlanes && areas.map(area => <div key={area.domain} data-db-domain={area.domain} style={{left:area.x,top:area.y,width:area.width,height:area.height}} className="absolute rounded-xl border border-dashed border-slate-300 bg-slate-100/40 pointer-events-none px-4 py-2"><span className="text-[11px] font-semibold text-slate-500">{td(area.domain)}<span className="ml-2 font-normal text-slate-400 tabular-nums">{tr(`${area.count} 张表`, `${area.count} tables`)}</span></span></div>)}
 
             {/* 1. SVG Layer: Field-to-Field Bezier Connectors + Crow's Foot (1:N) + Live Rubberband */}
             <svg data-db-relations className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
@@ -1019,7 +1049,7 @@ ${allBodyLines.join(',\n')}
                     ✕
                   </button>
                 </div>
-                <textarea aria-label="批注内容" value={note.text} onMouseDown={e=>e.stopPropagation()} onChange={e=>setCanvasNotes(notes=>notes.map(n=>n.id===note.id?{...n,text:e.target.value}:n))} className="w-full h-24 resize-none bg-transparent text-[11px] leading-snug text-slate-800 outline-none" />
+                <textarea aria-label={tr('批注内容', 'Note content')} value={note.text} onMouseDown={e=>e.stopPropagation()} onChange={e=>setCanvasNotes(notes=>notes.map(n=>n.id===note.id?{...n,text:e.target.value}:n))} className="w-full h-24 resize-none bg-transparent text-[11px] leading-snug text-slate-800 outline-none" />
               </div>
             ))}
 
@@ -1096,8 +1126,8 @@ ${allBodyLines.join(',\n')}
                       className="flex items-center gap-1 overflow-x-auto no-scrollbar pt-0.5"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <span className="text-[10px] text-slate-400 shrink-0">
-                        引用 {table.sharedByMenus.length}
+                      <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                        {tr(`引用 ${table.sharedByMenus.length}`, `Refs ${table.sharedByMenus.length}`)}
                       </span>
                       {table.sharedByMenus.map((m, idx) => (
                         <button
@@ -1109,7 +1139,7 @@ ${allBodyLines.join(',\n')}
                             setViewMode('single_page');
                           }}
                           className="px-1.5 py-px rounded bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-[10px] text-slate-600 hover:text-blue-700 whitespace-nowrap transition cursor-pointer"
-                          title={`点击跳转到共用该表的菜单：${m.menuTitle}`}
+                          title={tr(`点击跳转到共用该表的菜单：${m.menuTitle}`, `Jump to menu sharing this table: ${m.menuTitle}`)}
                         >
                           {m.menuTitle.split('→')[1]?.trim() || m.menuTitle}
                         </button>
@@ -1157,7 +1187,7 @@ ${allBodyLines.join(',\n')}
                               onMouseDown={(e) =>
                                 handleStartFkDrag(e, table.id, col.name, 'left')
                               }
-                              title="按住此圆点拖拽到其他表字段建立主外键连线"
+                              title={tr('按住此圆点拖拽到其他表字段建立主外键连线', 'Drag from this port to another table column to create a foreign key relation')}
                               className={`absolute top-1/2 -translate-y-1/2 -left-1.5 w-2.5 h-2.5 rounded-full cursor-crosshair transition-transform hover:scale-150 ${
                                 col.isPrimaryKey
                                   ? 'bg-amber-500'
@@ -1179,14 +1209,14 @@ ${allBodyLines.join(',\n')}
                                     });
                                   }}
                                   className="text-amber-600 shrink-0 cursor-pointer"
-                                  title="主键 (点击切换)"
+                                  title={tr('主键 (点击切换)', 'Primary Key (click to toggle)')}
                                 >
                                   <Key className="w-3 h-3" />
                                 </button>
                               ) : col.isForeignKey ? (
                                 <span
                                   className="text-blue-600 shrink-0 font-mono text-[9px] font-bold"
-                                  title={`外键 → ${col.references}`}
+                                  title={tr(`外键 → ${col.references}`, `Foreign Key → ${col.references}`)}
                                 >
                                   FK
                                 </span>
@@ -1232,7 +1262,7 @@ ${allBodyLines.join(',\n')}
                                       ? 'font-medium text-blue-700'
                                       : 'text-slate-800'
                                   }`}
-                                  title={`${col.name} (${col.comment}) — 双击直接重命名`}
+                                  title={tr(`${col.name} (${col.comment}) — 双击直接重命名`, `${col.name} (${col.comment}) — double-click to rename`)}
                                 >
                                   {col.name}
                                 </span>
@@ -1271,7 +1301,7 @@ ${allBodyLines.join(',\n')}
                                     })
                                   }
                                   className="font-mono text-[10px] text-slate-500 cursor-text"
-                                  title="双击修改数据类型"
+                                  title={tr('双击修改数据类型', 'Double-click to edit data type')}
                                 >
                                   {col.dataType}
                                 </span>
@@ -1290,7 +1320,7 @@ ${allBodyLines.join(',\n')}
                               onMouseDown={(e) =>
                                 handleStartFkDrag(e, table.id, col.name, 'right')
                               }
-                              title="按住此圆点拖拽到其他表字段建立主外键连线"
+                              title={tr('按住此圆点拖拽到其他表字段建立主外键连线', 'Drag from this port to another table column to create a foreign key relation')}
                               className={`absolute top-1/2 -translate-y-1/2 -right-1.5 w-2.5 h-2.5 rounded-full cursor-crosshair transition-transform hover:scale-150 ${
                                 col.isPrimaryKey
                                   ? 'bg-amber-500'
@@ -1307,7 +1337,12 @@ ${allBodyLines.join(',\n')}
 
                   {/* Card Footer Quick Bar */}
                   <div style={{height:FOOTER_HEIGHT}} className="px-3 py-1 bg-slate-50 rounded-b-lg border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500">
-                    <span className="font-mono">{table.columns.length} 字段 · {tableViewLevel === 'all' ? '双击字段编辑' : `显示 ${visCols.length} 项`}</span>
+                    <span className="font-mono tabular-nums">
+                      {tr(
+                        `${table.columns.length} 字段 · ${tableViewLevel === 'all' ? '双击字段编辑' : `显示 ${visCols.length} 项`}`,
+                        `${table.columns.length} cols · ${tableViewLevel === 'all' ? 'Double-click to edit' : `${visCols.length} shown`}`
+                      )}
+                    </span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1318,14 +1353,14 @@ ${allBodyLines.join(',\n')}
                           name: `col_${table.columns.length + 1}`,
                           dataType: 'VARCHAR(64)',
                           nullable: true,
-                          comment: '快捷新增字段',
-                          sourceWidgetOrSticky: 'ER卡片快捷新增',
+                          comment: tr('快捷新增字段', 'Quick-added column'),
+                          sourceWidgetOrSticky: tr('ER卡片快捷新增', 'ER Card Quick Add'),
                         });
                       }}
-                      className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5 cursor-pointer"
+                      className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5 whitespace-nowrap shrink-0 cursor-pointer"
                     >
-                      <Plus className="w-3 h-3" />
-                      <span>加字段</span>
+                      <Plus className="w-3 h-3 shrink-0" />
+                      <span>{tr('加字段', 'Add Col')}</span>
                     </button>
                   </div>
                 </div>
@@ -1343,8 +1378,8 @@ ${allBodyLines.join(',\n')}
             >
               {contextMenu.targetType === 'table' && contextMenu.tableId ? (
                 <>
-                  <div className="px-3 py-1 text-[10px] font-mono font-semibold text-slate-500 border-b border-slate-200">
-                    表操作: {contextMenu.tableId}
+                  <div className="px-3 py-1 text-[10px] font-mono font-semibold text-slate-500 border-b border-slate-200 truncate">
+                    {tr(`表操作: ${contextMenu.tableId}`, `Table Actions: ${contextMenu.tableId}`)}
                   </div>
                   <button
                     type="button"
@@ -1356,8 +1391,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <Table2 className="w-3.5 h-3.5" />
-                    <span>设计表字段 (Design Table)</span>
+                    <Table2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('设计表字段 (Design Table)', 'Design Columns')}</span>
                   </button>
                   <button
                     type="button"
@@ -1369,8 +1404,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>打开表数据网格 (Open Table)</span>
+                    <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('打开表数据网格 (Open Table)', 'Open Table Data')}</span>
                   </button>
                   <button
                     type="button"
@@ -1380,8 +1415,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>复制表结构 (Duplicate Table)</span>
+                    <Copy className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('复制表结构 (Duplicate Table)', 'Duplicate Table')}</span>
                   </button>
                   <button
                     type="button"
@@ -1391,8 +1426,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <Code2 className="w-3.5 h-3.5" />
-                    <span>复制 CREATE TABLE DDL</span>
+                    <Code2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('复制 CREATE TABLE DDL', 'Copy CREATE TABLE DDL')}</span>
                   </button>
                   <div className="my-1 border-t border-slate-200" />
                   <button
@@ -1403,14 +1438,14 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 flex items-center gap-2 cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>删除物理表 (Delete Table)</span>
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('删除物理表 (Delete Table)', 'Delete Table')}</span>
                   </button>
                 </>
               ) : (
                 <>
                   <div className="px-3 py-1 text-[10px] font-bold text-slate-500 border-b border-slate-200">
-                    Navicat ER 画布操作
+                    {tr('Navicat ER 画布操作', 'ER Canvas Actions')}
                   </div>
                   <button
                     type="button"
@@ -1420,7 +1455,7 @@ ${allBodyLines.join(',\n')}
                       const newTblName = `t_wms_table_${tableNumber}`;
                       createNewTable(
                         newTblName,
-                        `新建物理表_${dbTables.length + 1}`,
+                        tr(`新建物理表_${dbTables.length + 1}`, `New_Table_${dbTables.length + 1}`),
                         '仓储验收域 (WMS)'
                       );
                       setPositions((prev) => ({
@@ -1434,8 +1469,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>在此坐标新建物理表 (New Table)</span>
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('在此坐标新建物理表 (New Table)', 'New Table Here')}</span>
                   </button>
                   <button
                     type="button"
@@ -1446,8 +1481,8 @@ ${allBodyLines.join(',\n')}
                           id: `cnote-${Date.now()}`,
                           x: contextMenu.canvasX,
                           y: contextMenu.canvasY,
-                          title: '📝 模型设计批注',
-                          text: '在此记录索引策略或跨模块共表约束。',
+                          title: tr('📝 模型设计批注', '📝 Schema Design Note'),
+                          text: tr('在此记录索引策略或跨模块共表约束。', 'Document indexing strategies or cross-module shared table constraints here.'),
                           color: 'amber',
                         },
                       ]);
@@ -1455,8 +1490,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <StickyNote className="w-3.5 h-3.5" />
-                    <span>在此处添加画布便签 (New Note)</span>
+                    <StickyNote className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('在此处添加画布便签 (New Note)', 'Add Note Here')}</span>
                   </button>
                   <button
                     type="button"
@@ -1466,8 +1501,8 @@ ${allBodyLines.join(',\n')}
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
                   >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    <span>自动正交排列所有表 (Auto Layout)</span>
+                    <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{tr('自动正交排列所有表 (Auto Layout)', 'Auto Layout All Tables')}</span>
                   </button>
                 </>
               )}
@@ -1476,19 +1511,19 @@ ${allBodyLines.join(',\n')}
         </div>
       )}
 
-      {splitLayout !== 'inspector_max' && <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 text-[10px] text-slate-500"><span>拖动表头移动 · 双击表卡编辑 · 滚轮平移 · Ctrl / ⌘ + 滚轮缩放</span><span className="flex items-center gap-3"><span className="flex items-center gap-1"><Key size={11} className="text-amber-600" />主键</span><span className="flex items-center gap-1"><Link2 size={11} className="text-blue-500" />外键</span></span></div>}
+      {splitLayout !== 'inspector_max' && <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 text-[10px] text-slate-500"><span>{tr('拖动表头移动 · 双击表卡编辑 · 滚轮平移 · Ctrl / ⌘ + 滚轮缩放', 'Drag header to move · Double-click card to edit · Wheel to pan · Ctrl / ⌘ + wheel to zoom')}</span><span className="flex items-center gap-3"><span className="flex items-center gap-1"><Key size={11} className="text-amber-600" />{tr('主键', 'PK')}</span><span className="flex items-center gap-1"><Link2 size={11} className="text-blue-500" />{tr('外键', 'FK')}</span></span></div>}
       {/* =====================================================================
           3. AUTHENTIC NAVICAT "DESIGN TABLE (设计表)" MULTI-TAB WORKBENCH
          ===================================================================== */}
       {splitLayout !== 'canvas_max' && activeTable && (
         <div className="flex-1 flex flex-col bg-white border-t-2 border-slate-200 overflow-hidden min-h-[240px]">
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200 text-xs"><span className="text-slate-500">表结构 <span className="ml-2 text-slate-800 font-medium">{activeTable.cnName}</span></span><button type="button" onClick={()=>setSplitLayout(splitLayout === 'inspector_max' ? 'split' : 'inspector_max')} className="flex items-center gap-1 text-slate-500 hover:text-blue-600"><Maximize2 size={12}/>{splitLayout === 'inspector_max' ? '返回分栏' : '展开编辑区'}</button></div>
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200 text-xs"><span className="text-slate-500 min-w-0 truncate">{tr('表结构', 'Table Schema')} <span className="ml-2 text-slate-800 font-medium">{activeTable.cnName}</span></span><button type="button" onClick={()=>setSplitLayout(splitLayout === 'inspector_max' ? 'split' : 'inspector_max')} className="flex items-center gap-1 text-slate-500 hover:text-blue-600 whitespace-nowrap shrink-0 cursor-pointer"><Maximize2 size={12}/>{splitLayout === 'inspector_max' ? tr('返回分栏', 'Split View') : tr('展开编辑区', 'Expand Editor')}</button></div>
           {/* Navicat Table Designer Header + Field Action Bar + 6 Tabs */}
           <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
             {/* Left: Active Table Editable Name & Navicat Field Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 pr-2 border-r border-slate-200">
-                <Database className="w-4 h-4 text-blue-600" />
+                <Database className="w-4 h-4 text-blue-600 shrink-0" />
                 <input
                   type="text"
                   value={activeTable.tableName}
@@ -1496,7 +1531,7 @@ ${allBodyLines.join(',\n')}
                     updateTableMeta(activeTable.id, { tableName: e.target.value })
                   }
                   className="w-44 px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono font-semibold text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  title="直接修改物理表名"
+                  title={tr('直接修改物理表名', 'Edit physical table name')}
                 />
                 <input
                   type="text"
@@ -1505,58 +1540,58 @@ ${allBodyLines.join(',\n')}
                     updateTableMeta(activeTable.id, { cnName: e.target.value })
                   }
                   className="w-44 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-600"
-                  title="直接修改中文表注释"
+                  title={tr('直接修改中文表注释', 'Edit table display name / comment')}
                 />
               </div>
 
               {/* Navicat Classic Field Operations Bar */}
               {bottomTab === 'fields' && (
-                <div className="flex items-center gap-1 text-[11px]">
+                <div className="flex items-center gap-1 text-[11px] flex-wrap">
                   <button
                     type="button"
                     onClick={handleNavicatAddField}
-                    className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>添加字段</span>
+                    <Plus className="w-3 h-3 shrink-0" />
+                    <span>{tr('添加字段', 'Add Col')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleNavicatInsertField}
-                    className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    <span>插入字段</span>
+                    <span>{tr('插入字段', 'Insert')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleNavicatDeleteField}
-                    className="px-2 py-1 rounded bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-1 rounded bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    <span>删除字段</span>
+                    <Trash2 className="w-3 h-3 shrink-0" />
+                    <span>{tr('删除字段', 'Delete')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleNavicatTogglePk}
-                    className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1 cursor-pointer"
-                    title="切换选中字段的主键 (Primary Key) 状态"
+                    className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    title={tr('切换选中字段的主键 (Primary Key) 状态', 'Toggle Primary Key status on selected column')}
                   >
-                    <Key className="w-3 h-3" />
-                    <span>主键</span>
+                    <Key className="w-3 h-3 shrink-0" />
+                    <span>{tr('主键', 'PK')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleNavicatMoveCol(-1)}
-                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 cursor-pointer"
-                    title="上移选中字段"
+                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shrink-0 cursor-pointer"
+                    title={tr('上移选中字段', 'Move column up')}
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => handleNavicatMoveCol(1)}
-                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 cursor-pointer"
-                    title="下移选中字段"
+                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shrink-0 cursor-pointer"
+                    title={tr('下移选中字段', 'Move column down')}
                   >
                     <ArrowDown className="w-3.5 h-3.5" />
                   </button>
@@ -1565,72 +1600,78 @@ ${allBodyLines.join(',\n')}
             </div>
 
             {/* Right: 6 Authentic Navicat Table Designer Tabs */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px]">
+            <div className="flex items-center overflow-x-auto max-w-full no-scrollbar bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px] tabular-nums">
               <button
                 type="button"
                 onClick={() => setBottomTab('fields')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'fields'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                1. 字段 ({activeTable.columns.length})
+                {tr(`1. 字段 (${activeTable.columns.length})`, `1. Columns (${activeTable.columns.length})`)}
               </button>
               <button
                 type="button"
                 onClick={() => setBottomTab('foreign_keys')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'foreign_keys'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                2. 外键 ({relations.filter((r) => r.toTableId === activeTable.id).length})
+                {tr(
+                  `2. 外键 (${relations.filter((r) => r.toTableId === activeTable.id).length})`,
+                  `2. Foreign Keys (${relations.filter((r) => r.toTableId === activeTable.id).length})`
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => setBottomTab('indexes')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'indexes'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                3. 索引 ({localIndexes.length + uniqueKeys.length})
+                {tr(
+                  `3. 索引 (${localIndexes.length + uniqueKeys.length})`,
+                  `3. Indexes & Unique (${localIndexes.length + uniqueKeys.length})`
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => setBottomTab('data_preview')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'data_preview'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                4. 打开表数据
+                {tr('4. 打开表数据', '4. Table Data')}
               </button>
               <button
                 type="button"
                 onClick={() => setBottomTab('shared_menus')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'shared_menus'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                5. 共表菜单 ({activeTable.sharedByMenus.length})
+                {tr(`5. 共表菜单 (${activeTable.sharedByMenus.length})`, `5. Shared Menus (${activeTable.sharedByMenus.length})`)}
               </button>
               <button
                 type="button"
                 onClick={() => setBottomTab('sql_ddl')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition cursor-pointer ${
                   bottomTab === 'sql_ddl'
                     ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                6. SQL 预览
+                {tr('6. SQL 预览', '6. SQL / DDL')}
               </button>
             </div>
           </div>
@@ -1643,15 +1684,15 @@ ${allBodyLines.join(',\n')}
               <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 border-b border-slate-200 text-[11px]">
                   <tr>
-                    <th className="py-2 px-2 w-10 text-center">排序</th>
-                    <th className="py-2 px-2.5">名 (Field Name)</th>
-                    <th className="py-2 px-2.5">类型 (Data Type)</th>
-                    <th className="py-2 px-2 text-center">不是 null</th>
-                    <th className="py-2 px-2 text-center">键 (Key)</th>
-                    <th className="py-2 px-2.5">默认值 (Default)</th>
-                    <th className="py-2 px-2.5">注释 (Comment)</th>
-                    <th className="py-2 px-2.5">原型组件 / 黄色便签溯源</th>
-                    <th className="py-2 px-2 text-center">操作</th>
+                    <th className="py-2 px-2 w-10 text-center">{tr('排序', 'Order')}</th>
+                    <th className="py-2 px-2.5">{tr('名 (Field Name)', 'Column Name')}</th>
+                    <th className="py-2 px-2.5">{tr('类型 (Data Type)', 'Data Type')}</th>
+                    <th className="py-2 px-2 text-center">{tr('不是 null', 'Not Null')}</th>
+                    <th className="py-2 px-2 text-center">{tr('键 (Key)', 'Key')}</th>
+                    <th className="py-2 px-2.5">{tr('默认值 (Default)', 'Default')}</th>
+                    <th className="py-2 px-2.5">{tr('注释 (Comment)', 'Comment')}</th>
+                    <th className="py-2 px-2.5">{tr('原型组件 / 黄色便签溯源', 'Widget / Sticky Provenance')}</th>
+                    <th className="py-2 px-2 text-center">{tr('操作', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1760,9 +1801,9 @@ ${allBodyLines.join(',\n')}
                           >
                             {col.isPrimaryKey ? '🔑 PK' : col.isForeignKey ? '🔗 FK' : '—'}
                           </button>
-                          <label className="ml-2 inline-flex items-center gap-1" title="单列唯一约束">
-                            <input type="checkbox" aria-label={`${col.name} 单列唯一`} checked={col.isUnique === true}
-                              onChange={e => updateColumnInTable(activeTable.id, col.id, { isUnique: e.target.checked })}/>唯一
+                          <label className="ml-2 inline-flex items-center gap-1" title={tr('单列唯一约束', 'Single-column unique constraint')}>
+                            <input type="checkbox" aria-label={tr(`${col.name} 单列唯一`, `${col.name} unique`)} checked={col.isUnique === true}
+                              onChange={e => updateColumnInTable(activeTable.id, col.id, { isUnique: e.target.checked })}/>{tr('唯一', 'Unique')}
                           </label>
                         </td>
                         <td className="py-1.5 px-2.5">
@@ -1792,8 +1833,8 @@ ${allBodyLines.join(',\n')}
                         </td>
                         <td className="py-1.5 px-2.5">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200 text-[10px]">
-                            <Pin className="w-2.5 h-2.5" />
-                            {col.sourceWidgetOrSticky || '标准字段'}
+                            <Pin className="w-2.5 h-2.5 shrink-0" />
+                            {col.sourceWidgetOrSticky ? td(col.sourceWidgetOrSticky) : tr('标准字段', 'Standard field')}
                           </span>
                         </td>
                         <td className="py-1.5 px-2 text-center">
@@ -1802,7 +1843,7 @@ ${allBodyLines.join(',\n')}
                               type="button"
                               onClick={() => deleteColumnFromTable(activeTable.id, col.id)}
                               className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                              title="删除字段"
+                              title={tr('删除字段', 'Delete column')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1822,28 +1863,28 @@ ${allBodyLines.join(',\n')}
           {bottomTab === 'foreign_keys' && (
             <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
               <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="font-semibold text-slate-800">新增外键约束：</span>
+                <span className="font-semibold text-slate-800">{tr('新增外键约束：', 'Add Foreign Key:')}</span>
                 <select
-                  aria-label="本表外键字段"
+                  aria-label={tr('本表外键字段', 'Foreign key column in this table')}
                   value={newFkCol}
                   onChange={(e) => setNewFkCol(e.target.value)}
                   className="px-2 py-1 rounded bg-white border border-slate-300 font-mono text-slate-900"
                 >
-                  <option value="" disabled>选择本表字段</option>
+                  <option value="" disabled>{tr('选择本表字段', 'Select local column')}</option>
                   {activeTable.columns.map((c) => (
                     <option key={c.id} value={c.name}>
-                      本表字段: {c.name}
+                      {tr(`本表字段: ${c.name}`, `Column: ${c.name}`)}
                     </option>
                   ))}
                 </select>
-                <span className="text-slate-500">引用目标表 →</span>
+                <span className="text-slate-500">{tr('引用目标表 →', 'References →')}</span>
                 <select
-                  aria-label="被引用表"
+                  aria-label={tr('被引用表', 'Referenced table')}
                   value={newFkRefTable}
                   onChange={(e) => {setNewFkRefTable(e.target.value);setNewFkRefCol('');}}
                   className="px-2 py-1 rounded bg-white border border-slate-300 font-mono text-slate-800"
                 >
-                  <option value="" disabled>选择引用表</option>
+                  <option value="" disabled>{tr('选择引用表', 'Select target table')}</option>
                   {dbTables
                     .filter((t) => t.id !== activeTable.id)
                     .map((t) => (
@@ -1852,8 +1893,8 @@ ${allBodyLines.join(',\n')}
                       </option>
                     ))}
                 </select>
-                <select aria-label="被引用字段" value={newFkRefCol} onChange={e => setNewFkRefCol(e.target.value)} className="px-2 py-1 rounded bg-white border border-slate-300 font-mono text-slate-900">
-                  <option value="" disabled>选择引用字段</option>
+                <select aria-label={tr('被引用字段', 'Referenced column')} value={newFkRefCol} onChange={e => setNewFkRefCol(e.target.value)} className="px-2 py-1 rounded bg-white border border-slate-300 font-mono text-slate-900">
+                  <option value="" disabled>{tr('选择引用字段', 'Select target column')}</option>
                   {dbTables.find(t=>t.id===newFkRefTable)?.columns.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
                 <select
@@ -1876,53 +1917,55 @@ ${allBodyLines.join(',\n')}
                     updateColumnInTable(activeTable.id, targetCol.id, { isForeignKey:true, references:`${source.tableName}(${newFkRefCol})`, foreignKeyOptions:{cardinality:'1:N',onDelete:newFkOnDelete} });
                   }}
                   disabled={!activeTable.columns.some(c=>c.name===newFkCol && (newFkOnDelete !== 'SET NULL' || c.nullable)) || !dbTables.some(t=>t.id===newFkRefTable && t.columns.some(c=>c.name===newFkRefCol))}
-                  className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  + 添加外键并同步ER连线
+                  {tr('+ 添加外键并同步ER连线', '+ Add FK & Sync ER Line')}
                 </button>
               </div>
 
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2">外键名 (Name)</th>
-                    <th className="p-2">字段 (Field)</th>
-                    <th className="p-2">被引用表 (Reference Table)</th>
-                    <th className="p-2">被引用字段 (Reference Field)</th>
-                    <th className="p-2">删除时 (On Delete)</th>
-                    <th className="p-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {relations
-                    .filter(
-                      (r) =>
-                        r.toTableId === activeTable.id || r.fromTableId === activeTable.id
-                    )
-                    .map((rel) => (
-                      <tr key={rel.id} className="hover:bg-slate-100 font-mono">
-                        <td className="p-2 text-slate-900 font-semibold">{rel.name}</td>
-                        <td className="p-2 text-slate-900">
-                          {rel.toTableId}.{rel.toColumnName}
-                        </td>
-                        <td className="p-2 text-slate-700">{rel.fromTableId}</td>
-                        <td className="p-2 text-slate-900 font-medium">{rel.fromColumnName}</td>
-                        <td className="p-2">{rel.onDelete ?? '未设置'}</td>
-                        <td className="p-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              removeRelation(rel)
-                            }
-                            className="text-rose-600 hover:underline cursor-pointer"
-                          >
-                            删除
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="p-2">{tr('外键名 (Name)', 'Name')}</th>
+                      <th className="p-2">{tr('字段 (Field)', 'Column')}</th>
+                      <th className="p-2">{tr('被引用表 (Reference Table)', 'Referenced Table')}</th>
+                      <th className="p-2">{tr('被引用字段 (Reference Field)', 'Referenced Column')}</th>
+                      <th className="p-2">{tr('删除时 (On Delete)', 'On Delete')}</th>
+                      <th className="p-2">{tr('操作', 'Actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {relations
+                      .filter(
+                        (r) =>
+                          r.toTableId === activeTable.id || r.fromTableId === activeTable.id
+                      )
+                      .map((rel) => (
+                        <tr key={rel.id} className="hover:bg-slate-100 font-mono">
+                          <td className="p-2 text-slate-900 font-semibold">{rel.name}</td>
+                          <td className="p-2 text-slate-900">
+                            {rel.toTableId}.{rel.toColumnName}
+                          </td>
+                          <td className="p-2 text-slate-700">{rel.fromTableId}</td>
+                          <td className="p-2 text-slate-900 font-medium">{rel.fromColumnName}</td>
+                          <td className="p-2">{rel.onDelete ?? tr('未设置', 'Unset')}</td>
+                          <td className="p-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeRelation(rel)
+                              }
+                              className="text-rose-600 hover:underline cursor-pointer"
+                            >
+                              {tr('删除', 'Delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -1932,10 +1975,10 @@ ${allBodyLines.join(',\n')}
           {bottomTab === 'indexes' && (
             <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
               <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="font-bold text-blue-700">➕ 添加索引：</span>
+                <span className="font-bold text-blue-700">{tr('➕ 添加索引：', '➕ Add Index:')}</span>
                 <input
                   type="text"
-                  aria-label="索引名"
+                  aria-label={tr('索引名', 'Index name')}
                   value={newIdxName}
                   onChange={(e) => setNewIdxName(e.target.value)}
                   placeholder={`idx_${activeTable.tableName}_col`}
@@ -1943,14 +1986,14 @@ ${allBodyLines.join(',\n')}
                 />
                 <input
                   type="text"
-                  aria-label="索引列，按顺序用英文逗号分隔"
+                  aria-label={tr('索引列，按顺序用英文逗号分隔', 'Indexed columns, comma-separated in order')}
                   value={newIdxCols}
                   onChange={(e) => setNewIdxCols(e.target.value)}
-                  placeholder="索引列 (如: supplier_id, status)"
+                  placeholder={tr('索引列 (如: supplier_id, status)', 'Columns (e.g. supplier_id, status)')}
                   className="w-56 px-2.5 py-1 rounded bg-white border border-slate-300 font-mono text-slate-900"
                 />
                 <select
-                  aria-label="索引类型"
+                  aria-label={tr('索引类型', 'Index type')}
                   disabled={editingKey !== null}
                   value={newIdxType}
                   onChange={(e) =>
@@ -1958,73 +2001,75 @@ ${allBodyLines.join(',\n')}
                   }
                   className="px-2 py-1 rounded bg-white border border-slate-300 font-mono text-slate-900"
                 >
-                  <option value="NORMAL">NORMAL (普通索引)</option>
-                  <option value="UNIQUE">UNIQUE (唯一索引)</option>
-                  <option value="FULLTEXT">FULLTEXT (全文索引)</option>
+                  <option value="NORMAL">{tr('NORMAL (普通索引)', 'NORMAL (Standard)')}</option>
+                  <option value="UNIQUE">{tr('UNIQUE (唯一索引)', 'UNIQUE (Constraint)')}</option>
+                  <option value="FULLTEXT">{tr('FULLTEXT (全文索引)', 'FULLTEXT')}</option>
                 </select>
                 <button
                   type="button"
                   onClick={saveIndex}
-                  className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {editingKey === null ? '+ 保存索引' : '保存约束修改'}
+                  {editingKey === null ? tr('+ 保存索引', '+ Save Index') : tr('保存约束修改', 'Update Constraint')}
                 </button>
-                {editingKey !== null && <button type="button" onClick={clearIndexForm}>取消编辑</button>}
+                {editingKey !== null && <button type="button" className="whitespace-nowrap shrink-0 cursor-pointer" onClick={clearIndexForm}>{tr('取消编辑', 'Cancel')}</button>}
               </div>
 
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2">索引名 (Name)</th>
-                    <th className="p-2">字段 (Fields)</th>
-                    <th className="p-2">索引类型 (Index Type)</th>
-                    <th className="p-2">索引方法 (Method)</th>
-                    <th className="p-2">注释 (Comment)</th>
-                    <th className="p-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 font-mono">
-                  {uniqueKeys.map(key => (
-                    <tr key={key.name} className="hover:bg-slate-100">
-                      <td className="p-2 text-blue-700 font-bold">{key.name}</td>
-                      <td className="p-2">{key.columns.map(c => c.name).join(', ')}</td>
-                      <td className="p-2">UNIQUE</td><td className="p-2">—</td>
-                      <td className="p-2">业务唯一约束</td>
-                      <td className="p-2 space-x-2">
-                        <button type="button" onClick={() => {
-                          setEditingKey(key.name); setNewIdxType('UNIQUE'); setNewIdxName(key.name);
-                          setNewIdxCols(key.columns.map(c => c.name).join(', '));
-                        }}>编辑</button>
-                        <button type="button" className="text-rose-600" onClick={() => editSchema(() => {
-                          setUniqueConstraints(activeTable.id, activeTable.uniqueConstraints!.filter(k => k.name !== key.name));
-                          if (editingKey === key.name) clearIndexForm();
-                        })}>删除</button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse whitespace-nowrap">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="p-2">{tr('索引名 (Name)', 'Name')}</th>
+                      <th className="p-2">{tr('字段 (Fields)', 'Columns')}</th>
+                      <th className="p-2">{tr('索引类型 (Index Type)', 'Index Type')}</th>
+                      <th className="p-2">{tr('索引方法 (Method)', 'Method')}</th>
+                      <th className="p-2">{tr('注释 (Comment)', 'Comment')}</th>
+                      <th className="p-2">{tr('操作', 'Actions')}</th>
                     </tr>
-                  ))}
-                  {localIndexes
-                    .map((ix) => (
-                      <tr key={ix.id} className="hover:bg-slate-100">
-                        <td className="p-2 text-blue-700 font-bold">{ix.name}</td>
-                        <td className="p-2 text-slate-700">{ix.columnNames}</td>
-                        <td className="p-2">{ix.indexType}</td>
-                        <td className="p-2">{ix.method}</td>
-                        <td className="p-2 font-sans text-slate-700">{ix.comment}</td>
-                        <td className="p-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setTableIndexes((prev) => prev.filter((x) => x.id !== ix.id))
-                            }
-                            className="text-rose-600 hover:underline cursor-pointer"
-                          >
-                            删除
-                          </button>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-mono">
+                    {uniqueKeys.map(key => (
+                      <tr key={key.name} className="hover:bg-slate-100">
+                        <td className="p-2 text-blue-700 font-bold">{key.name}</td>
+                        <td className="p-2">{key.columns.map(c => c.name).join(', ')}</td>
+                        <td className="p-2">UNIQUE</td><td className="p-2">—</td>
+                        <td className="p-2">{tr('业务唯一约束', 'Unique business constraint')}</td>
+                        <td className="p-2 space-x-2">
+                          <button type="button" className="cursor-pointer hover:underline" onClick={() => {
+                            setEditingKey(key.name); setNewIdxType('UNIQUE'); setNewIdxName(key.name);
+                            setNewIdxCols(key.columns.map(c => c.name).join(', '));
+                          }}>{tr('编辑', 'Edit')}</button>
+                          <button type="button" className="text-rose-600 cursor-pointer hover:underline" onClick={() => editSchema(() => {
+                            setUniqueConstraints(activeTable.id, activeTable.uniqueConstraints!.filter(k => k.name !== key.name));
+                            if (editingKey === key.name) clearIndexForm();
+                          })}>{tr('删除', 'Delete')}</button>
                         </td>
                       </tr>
                     ))}
-                </tbody>
-              </table>
+                    {localIndexes
+                      .map((ix) => (
+                        <tr key={ix.id} className="hover:bg-slate-100">
+                          <td className="p-2 text-blue-700 font-bold">{ix.name}</td>
+                          <td className="p-2 text-slate-700">{ix.columnNames}</td>
+                          <td className="p-2">{ix.indexType}</td>
+                          <td className="p-2">{ix.method}</td>
+                          <td className="p-2 font-sans text-slate-700">{td(ix.comment)}</td>
+                          <td className="p-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTableIndexes((prev) => prev.filter((x) => x.id !== ix.id))
+                              }
+                              className="text-rose-600 hover:underline cursor-pointer"
+                            >
+                              {tr('删除', 'Delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -2037,20 +2082,20 @@ ${allBodyLines.join(',\n')}
               TAB 5: SHARED BY MENUS MATRIX
              ================================================================= */}
           {bottomTab === 'shared_menus' && (
-            <div className="flex-1 p-4 overflow-y-auto grid grid-cols-2 gap-3 text-xs">
+            <div className="flex-1 p-4 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               {activeTable.sharedByMenus.map((menu, i) => (
                 <div
                   key={`${menu.pageId}-${i}`}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3"
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 min-w-0"
                 >
-                  <div className="space-y-1">
-                    <div className="font-bold text-slate-900 flex items-center gap-2">
-                      <span>{menu.menuTitle}</span>
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-mono text-[10px]">
+                  <div className="space-y-1 min-w-0">
+                    <div className="font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                      <span className="break-words">{menu.menuTitle}</span>
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-mono text-[10px] shrink-0">
                         {menu.accessMode}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500">{menu.fieldMappingNote}</p>
+                    <p className="text-[11px] text-slate-500 break-words">{td(menu.fieldMappingNote)}</p>
                   </div>
                   <button
                     type="button"
@@ -2058,10 +2103,10 @@ ${allBodyLines.join(',\n')}
                       setActivePage(menu.pageId);
                       setViewMode('single_page');
                     }}
-                    className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    <span>跳转原型</span>
-                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    <span>{tr('跳转原型', 'Open Page')}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
                   </button>
                 </div>
               ))}
@@ -2073,14 +2118,14 @@ ${allBodyLines.join(',\n')}
              ================================================================= */}
           {bottomTab === 'sql_ddl' && (
             <div className="flex-1 p-4 overflow-y-auto space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs">
                   {(['mysql', 'postgres', 'prisma'] as const).map((d) => (
                     <button
                       key={d}
                       type="button"
                       onClick={() => setSqlDialect(d)}
-                      className={`px-2.5 py-1 rounded-lg font-mono cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg font-mono whitespace-nowrap shrink-0 cursor-pointer ${
                         sqlDialect === d
                           ? 'bg-white text-slate-900 font-semibold shadow-2xs'
                           : 'bg-slate-100 text-slate-500'
@@ -2097,10 +2142,10 @@ ${allBodyLines.join(',\n')}
                 <button
                   type="button"
                   onClick={handleCopySql}
-                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSql ? '已复制 DDL' : '复制建表语句'}</span>
+                  {copiedSql ? <Check className="w-3.5 h-3.5 shrink-0" /> : <Copy className="w-3.5 h-3.5 shrink-0" />}
+                  <span>{copiedSql ? tr('已复制 DDL', 'Copied DDL') : tr('复制建表语句', 'Copy DDL')}</span>
                 </button>
               </div>
               <pre className="p-3 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800 overflow-x-auto leading-relaxed">

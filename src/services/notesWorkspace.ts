@@ -1,4 +1,5 @@
 import { useProtoStore } from '../store/useProtoStore';
+import { tr } from '../i18n/runtime';
 import { usePageStore } from '../proto/store/usePageStore';
 import { pageRefKey } from '../proto/mindmaps';
 import {
@@ -26,7 +27,7 @@ import { groupStickiesByPage, sitemapPageOrder, stickySummaryHtml } from '../pro
 function current(projectId: string) {
   const state = useProtoStore.getState();
   if (state.isProjectClosed || state.currentProjectMeta.projectId !== projectId) {
-    throw new Error('当前项目已变化');
+    throw new Error(tr('当前项目已变化', 'Current project has changed'));
   }
   return state;
 }
@@ -46,7 +47,7 @@ function commit(
     selectedNoteNodeId !== null &&
     !projectNotes.nodes.some((node) => node.id === selectedNoteNodeId)
   ) {
-    throw new Error('选择的笔记节点不存在');
+    throw new Error(tr('选择的笔记节点不存在', 'Selected note node does not exist'));
   }
   useProtoStore.setState({ projectNotes, selectedNoteNodeId });
 }
@@ -122,7 +123,7 @@ export function editNoteNode(
 ) {
   const { projectNotes } = current(projectId);
   if (!projectNotes.nodes.some((node) => node.id === nodeId)) {
-    throw new Error('笔记节点不存在');
+    throw new Error(tr('笔记节点不存在', 'Note node does not exist'));
   }
   const now = new Date().toISOString();
   commit(projectId, {
@@ -145,7 +146,7 @@ export function updateNoteContent(projectId: string, noteId: string, content: st
   const { projectNotes } = current(projectId);
   const existing = projectNotes.nodes.find((node) => node.id === noteId);
   if (!existing || existing.kind !== 'note') {
-    throw new Error('笔记不存在');
+    throw new Error(tr('笔记不存在', 'Note does not exist'));
   }
   // Inline data-URL images (pasted HTML, legacy notes) are moved into the asset table.
   const extracted = extractInlineNoteImages(content, projectNotes.assets);
@@ -166,7 +167,7 @@ export function updateNoteContent(projectId: string, noteId: string, content: st
 export function registerNoteImage(projectId: string, dataUrl: string, name?: string): string {
   const { projectNotes } = current(projectId);
   const parsed = parseImageDataUrl(dataUrl);
-  if (!parsed) throw new Error('仅支持 PNG、JPG、WebP 或 GIF 图片');
+  if (!parsed) throw new Error(tr('仅支持 PNG、JPG、WebP 或 GIF 图片', 'Only PNG, JPG, WebP, or GIF images are supported'));
   const added = addNoteAsset(projectNotes.assets, { ...parsed, name });
   if (added.assets !== projectNotes.assets) {
     commit(projectId, { ...projectNotes, assets: added.assets });
@@ -193,7 +194,7 @@ export function updateNoteMeta(projectId: string, noteId: string, patch: NoteMet
   const { projectNotes } = current(projectId);
   const existing = projectNotes.nodes.find((node) => node.id === noteId);
   if (!existing || existing.kind !== 'note') {
-    throw new Error('笔记不存在');
+    throw new Error(tr('笔记不存在', 'Note does not exist'));
   }
   const next: Extract<NoteNode, { kind: 'note' }> = { ...existing, updatedAt: new Date().toISOString() };
   if (patch.title !== undefined) next.title = patch.title.trim();
@@ -232,7 +233,7 @@ export function toggleNoteTask(projectId: string, noteId: string, taskIndex: num
   const { projectNotes } = current(projectId);
   const existing = projectNotes.nodes.find((node) => node.id === noteId);
   if (!existing || existing.kind !== 'note') {
-    throw new Error('笔记不存在');
+    throw new Error(tr('笔记不存在', 'Note does not exist'));
   }
   const nextHtml = toggleNoteTaskAtIndex(existing.content, taskIndex);
   updateNoteContent(projectId, noteId, nextHtml);
@@ -242,10 +243,13 @@ export function duplicateNoteNode(projectId: string, noteId: string): string {
   const { projectNotes } = current(projectId);
   const source = projectNotes.nodes.find((node) => node.id === noteId);
   if (!source || source.kind !== 'note') {
-    throw new Error('只能复制单篇笔记');
+    throw new Error(tr('只能复制单篇笔记', 'Only individual notes can be duplicated'));
   }
-  const copyTitle = uniqueNoteTitle(projectNotes, source.parentId, `${source.title} (副本)`, (_b, n) =>
-    `${source.title} (副本 ${n})`
+  const copyTitle = uniqueNoteTitle(
+    projectNotes,
+    source.parentId,
+    tr(`${source.title} (副本)`, `${source.title} (Copy)`),
+    (_b, n) => tr(`${source.title} (副本 ${n})`, `${source.title} (Copy ${n})`)
   );
   return createNoteNode(projectId, 'note', copyTitle, source.parentId, {
     icon: source.icon,
@@ -338,7 +342,7 @@ export function setNoteTargetLinks(
 export function openNoteNode(projectId: string, nodeId: string) {
   const state = current(projectId);
   if (!state.projectNotes.nodes.some((node) => node.id === nodeId)) {
-    throw new Error('笔记节点不存在');
+    throw new Error(tr('笔记节点不存在', 'Note node does not exist'));
   }
   useProtoStore.setState({ selectedNoteNodeId: nodeId, viewMode: 'notes' });
 }
@@ -354,12 +358,12 @@ export function importMarkdownAsNote(
   const finalTitle = uniqueNoteTitle(
     state.projectNotes,
     parentId,
-    parsed.title || fileName.replace(/\.(md|markdown|txt)$/i, '').trim() || '导入的需求笔记'
+    parsed.title || fileName.replace(/\.(md|markdown|txt)$/i, '').trim() || tr('导入的需求笔记', 'Imported Requirement Note')
   );
   return createNoteNode(projectId, 'note', finalTitle, parentId, {
     icon: '📄',
     content: parsed.html,
-    tags: ['客户沟通'],
+    tags: [tr('客户沟通', 'Stakeholder')],
     cover: 'ocean',
   });
 }
@@ -383,14 +387,17 @@ export function createStickyReviewNote(
     pageIds,
     onlyActive,
   });
-  if (!groups.length) throw new Error(onlyActive ? '所选页面没有启用中的画布批注' : '所选页面没有画布批注');
+  if (!groups.length) throw new Error(onlyActive ? tr('所选页面没有启用中的画布批注', 'No active canvas sticky notes on selected pages') : tr('所选页面没有画布批注', 'No canvas sticky notes on selected pages'));
   const today = localToday();
-  const id = createNoteNode(projectId, 'note', uniqueNoteTitle(state.projectNotes, null, `评审修改清单 ${today}`), null, {
+  const id = createNoteNode(projectId, 'note', uniqueNoteTitle(state.projectNotes, null, tr(`评审修改清单 ${today}`, `Review Checklist ${today}`)), null, {
     icon: '📋',
-    tags: ['原型评审'],
+    tags: [tr('原型评审', 'Prototype Review')],
     status: 'draft',
     meetingDate: today,
-    content: `<blockquote><p>由画布批注自动汇总生成。补充结论后可导出或发给客户确认；勾选的待办会同步到全局待办。</p></blockquote>${stickySummaryHtml(groups)}`,
+    content: tr(
+      `<blockquote><p>由画布批注自动汇总生成。补充结论后可导出或发给客户确认；勾选的待办会同步到全局待办。</p></blockquote>${stickySummaryHtml(groups)}`,
+      `<blockquote><p>Automatically compiled from canvas sticky notes. Add review conclusions to export or share with stakeholders; task items sync to Global Action Items.</p></blockquote>${stickySummaryHtml(groups)}`,
+    ),
   });
   for (const group of groups) {
     try {

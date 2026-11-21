@@ -3,6 +3,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { withContextLockAsync } = require('./context-transaction.cjs');
 const { verifyDependencyFootprint } = require('./generated/material-contract.cjs');
+const { tr } = require('./i18n.cjs');
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 
 function durableWrite(file, value) {
@@ -40,7 +41,10 @@ function resolveExecutionPaths(convDir, workflowPhase, targetPageId) {
 }
 function read(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return null; throw new Error('恢复记录无法读取，已保留原文件，请检查本地工程数据'); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw new Error(tr('恢复记录无法读取，已保留原文件，请检查本地工程数据', 'Recovery checkpoint could not be read; original file preserved. Please check local project data'));
+  }
 }
 function readCheckpointWithLegacy(paths) {
   const direct = read(paths.checkpointPath);
@@ -119,7 +123,9 @@ const revisionFields = ['projectId','projectName','projectMode','mindmaps','page
   'sitemapBase','sitemapOverrides','sitemap','folders','projectPlan','projectAgreements','databaseRequirements','dbTables','stickyNotes','closedLoopIssues','compositeBlocks','contracts'];
 function revisionSections(revision) {
   const value = JSON.parse(revision);
-  if (!value || !value.context || !value.tableRows || !value.widgets) throw new Error('恢复记录缺少完整工程基线');
+  if (!value || !value.context || !value.tableRows || !value.widgets) {
+    throw new Error(tr('恢复记录缺少完整工程基线', 'Recovery checkpoint is missing a complete project baseline'));
+  }
   const section = (object, key) => hash([Object.hasOwn(object, key), object[key]]);
   return Object.fromEntries([
     ...revisionFields.map(key => ['context.' + key, section(value.context, key)]),
@@ -127,7 +133,7 @@ function revisionSections(revision) {
   ]);
 }
 function recoveryIdentity({ scope, sessionId, modelId, environment, account, revision, revisionVersion = 1, skillDigest, toolVersion }) {
-  if (![1, 2, 3].includes(revisionVersion)) throw new Error('不支持的工程恢复基线版本');
+  if (![1, 2, 3].includes(revisionVersion)) throw new Error(tr('不支持的工程恢复基线版本', 'Unsupported project recovery baseline version'));
   return { scope, sessionId, modelId, environment, account: account?.status === 'signed-in' && typeof account.userId === 'string' && account.userId
     ? { userId: account.userId, serviceUrl: account.serviceUrl } : null,
   revision: revisionVersion === 3 ? null : (typeof revision === 'string' && revision ? hash(revision) : null), revisionVersion,
@@ -147,23 +153,54 @@ function validateCheckpoint(checkpoint, identity, options = {}) {
     ];
     throw error;
   };
-  if (!identity.account || !checkpoint.recovery?.identity?.account) fail('DRAFT_RECOVERY_IDENTITY', 'account', '恢复草稿需要原登录账号，当前账号身份尚未验证');
-  const names = { scope:'任务范围', account:'登录账号', environment:'Hermes 环境', sessionId:'会话', modelId:'模型', revision:'工程内容或需求', skillDigest:'项目指令', toolVersion:'物料契约', targetPageId:'目标页面' };
+  if (!identity.account || !checkpoint.recovery?.identity?.account) {
+    fail('DRAFT_RECOVERY_IDENTITY', 'account', tr('恢复草稿需要原登录账号，当前账号身份尚未验证', 'Draft recovery requires the original signed-in account; current account identity is unverified'));
+  }
+  const names = {
+    scope: tr('任务范围', 'Task scope'),
+    account: tr('登录账号', 'Signed-in account'),
+    environment: tr('Hermes 环境', 'Hermes environment'),
+    sessionId: tr('会话', 'Conversation session'),
+    modelId: tr('模型', 'Model'),
+    revision: tr('工程内容或需求', 'Project content or requirements'),
+    skillDigest: tr('项目指令', 'Project instructions'),
+    toolVersion: tr('物料契约', 'Material contract'),
+    targetPageId: tr('目标页面', 'Target page'),
+  };
   for (const key of ['scope', 'account', 'environment']) {
     if (JSON.stringify(checkpoint.recovery.identity[key]) !== JSON.stringify(identity[key])) {
-      fail('DRAFT_RECOVERY_IDENTITY', key, `${names[key]}已变化，未自动覆盖当前项目；原候选草稿仍保留`);
+      fail(
+        'DRAFT_RECOVERY_IDENTITY',
+        key,
+        tr(
+          `${names[key]}已变化，未自动覆盖当前项目；原候选草稿仍保留`,
+          `${names[key]} has changed; current project was not overwritten and the candidate draft is preserved`
+        )
+      );
     }
   }
   if (targetPageId !== undefined && checkpoint.targetPageId !== targetPageId) {
-    fail('DRAFT_RECOVERY_IDENTITY', 'targetPageId', `${names.targetPageId}已变化，未自动覆盖当前项目；原候选草稿仍保留`);
+    fail(
+      'DRAFT_RECOVERY_IDENTITY',
+      'targetPageId',
+      tr(
+        `${names.targetPageId}已变化，未自动覆盖当前项目；原候选草稿仍保留`,
+        `${names.targetPageId} has changed; current project was not overwritten and the candidate draft is preserved`
+      )
+    );
   }
   // Missing version is the documented pre-v2 baseline, which omitted transient
   // preview rows. It cannot be migrated from the candidate: that may contain edits.
   const savedVersion = checkpoint.recovery.identity.revisionVersion === undefined ? 1 : checkpoint.recovery.identity.revisionVersion;
   const currentVersion = identity.revisionVersion === undefined ? 1 : identity.revisionVersion;
-  const baselineVersionMessage =
-    '旧草稿使用升级前的恢复基线，无法可靠自动接续；这不表示你修改了工程。' + (uncertain ? '上轮还存在执行结果不明的操作。' : '')
-    + '原候选已保留，请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程继续；原会话历史不会清空。';
+  const baselineVersionMessage = tr(
+    '旧草稿使用升级前的恢复基线，无法可靠自动接续；这不表示你修改了工程。' +
+      (uncertain ? '上轮还存在执行结果不明的操作。' : '') +
+      '原候选已保留，请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程继续；原会话历史不会清空。',
+    'The older draft uses a pre-upgrade recovery baseline and cannot be resumed automatically; this does not mean you modified the project.' +
+      (uncertain ? ' The previous run also had operations with uncertain outcomes.' : '') +
+      ' The candidate draft is preserved — click "Archive Old Draft & Regenerate" to continue from the current project without clearing conversation history.'
+  );
   if (isLegacyParent) {
     fail('DRAFT_RECOVERY_BASELINE_VERSION', 'revisionVersion', baselineVersionMessage);
   }
@@ -172,7 +209,14 @@ function validateCheckpoint(checkpoint, identity, options = {}) {
     : ['sessionId', 'modelId', 'skillDigest', 'toolVersion'];
   for (const key of identityKeys) {
     if (JSON.stringify(checkpoint.recovery.identity[key]) !== JSON.stringify(identity[key])) {
-      fail('DRAFT_RECOVERY_IDENTITY', key, `${names[key]}已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。`);
+      fail(
+        'DRAFT_RECOVERY_IDENTITY',
+        key,
+        tr(
+          `${names[key]}已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。`,
+          `${names[key]} has changed; current project was not overwritten and the candidate draft is preserved. Click "Archive Old Draft & Regenerate" to regenerate this page from the current project.`
+        )
+      );
     }
   }
   if (savedVersion !== currentVersion) {
@@ -180,40 +224,69 @@ function validateCheckpoint(checkpoint, identity, options = {}) {
   }
   if (currentVersion === 3) {
     if (!Array.isArray(checkpoint.operations) || !checkpoint.snapshot || !checkpoint.dependencyFootprint || checkpoint.dependencyFootprint.version !== 3) {
-      throw new Error('恢复记录缺少工程基线或候选内容');
+      throw new Error(tr('恢复记录缺少工程基线或候选内容', 'Recovery checkpoint is missing project baseline or candidate operations'));
     }
     if (!liveSnapshot || typeof liveSnapshot !== 'object') {
-      throw new Error('恢复校验缺少实时工程快照');
+      throw new Error(tr('恢复校验缺少实时工程快照', 'Recovery verification is missing a live project snapshot'));
     }
     if (
       checkpoint.snapshot.projectPlan?.generatedPageIds?.includes(checkpoint.targetPageId) ||
       checkpoint.baseSnapshot?.projectPlan?.generatedPageIds?.includes(checkpoint.targetPageId) ||
       liveSnapshot.projectPlan?.generatedPageIds?.includes(checkpoint.targetPageId)
     ) {
-      throw new Error('该页面已完成，不得重放候选操作');
+      throw new Error(tr('该页面已完成，不得重放候选操作', 'This page is already completed; candidate operations will not be replayed'));
     }
     const verified = verifyDependencyFootprint(liveSnapshot, checkpoint.dependencyFootprint);
     if (!verified.ok) {
       fail(
         'DRAFT_RECOVERY_BASELINE_CHANGED',
         'revision',
-        '工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。',
+        tr(
+          '工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。',
+          'Project content or requirements have changed; current project was not overwritten and the candidate draft is preserved. Click "Archive Old Draft & Regenerate" to regenerate this page from the current project.'
+        ),
         verified.changedSections,
       );
     }
   } else {
     if (checkpoint.recovery.identity.revision !== identity.revision) {
       const changed = currentVersion === 2 ? Object.keys(identity.revisionSections).filter(key => checkpoint.recovery.identity.revisionSections?.[key] !== identity.revisionSections[key]) : [];
-      fail('DRAFT_RECOVERY_BASELINE_CHANGED', 'revision', '工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。', changed);
+      fail(
+        'DRAFT_RECOVERY_BASELINE_CHANGED',
+        'revision',
+        tr(
+          '工程内容或需求已变化，未自动覆盖当前项目；原候选草稿仍保留。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮，按当前工程重新生成该页。',
+          'Project content or requirements have changed; current project was not overwritten and the candidate draft is preserved. Click "Archive Old Draft & Regenerate" to regenerate this page from the current project.'
+        ),
+        changed
+      );
     }
-    if (!identity.revision || !Array.isArray(checkpoint.operations) || !checkpoint.snapshot) throw new Error('恢复记录缺少工程基线或候选内容');
-    if (checkpoint.snapshot.projectPlan?.generatedPageIds?.includes(checkpoint.targetPageId)) throw new Error('该页面已完成，不得重放候选操作');
+    if (!identity.revision || !Array.isArray(checkpoint.operations) || !checkpoint.snapshot) {
+      throw new Error(tr('恢复记录缺少工程基线或候选内容', 'Recovery checkpoint is missing project baseline or candidate operations'));
+    }
+    if (checkpoint.snapshot.projectPlan?.generatedPageIds?.includes(checkpoint.targetPageId)) {
+      throw new Error(tr('该页面已完成，不得重放候选操作', 'This page is already completed; candidate operations will not be replayed'));
+    }
   }
   if (checkpoint.recovery.status === 'uncertain') {
-    fail('DRAFT_RECOVERY_UNCERTAIN', 'status', '上轮生成中途中断，存在执行结果不明的操作，候选草稿已保留但无法直接续写。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮：系统会自动归档旧草稿并按当前工程重新生成此页，已完成的页面和不会清空的会话历史均不受影响。');
+    fail(
+      'DRAFT_RECOVERY_UNCERTAIN',
+      'status',
+      tr(
+        '上轮生成中途中断，存在执行结果不明的操作，候选草稿已保留但无法直接续写。请直接点击下方或右侧的“保留旧草稿，重新生成”按钮：系统会自动归档旧草稿并按当前工程重新生成此页，已完成的页面和不会清空的会话历史均不受影响。',
+        'The previous generation was interrupted mid-turn with operations of uncertain outcome; the candidate draft is preserved but cannot be continued directly. Click "Archive Old Draft & Regenerate" to archive the old draft and regenerate this page cleanly without affecting completed pages or conversation history.'
+      )
+    );
   }
   if (checkpoint.recovery.status !== 'available') {
-    fail('DRAFT_RECOVERY_UNCERTAIN', 'status', '当前候选草稿状态不可自动恢复，请直接点击下方或右侧的“保留旧草稿，重新生成”按钮；原会话历史不会清空。');
+    fail(
+      'DRAFT_RECOVERY_UNCERTAIN',
+      'status',
+      tr(
+        '当前候选草稿状态不可自动恢复，请直接点击下方或右侧的“保留旧草稿，重新生成”按钮；原会话历史不会清空。',
+        'Current candidate draft state cannot be resumed automatically. Click "Archive Old Draft & Regenerate" to continue without clearing conversation history.'
+      )
+    );
   }
 }
 module.exports = {

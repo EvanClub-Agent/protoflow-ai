@@ -1,4 +1,5 @@
 import { columnDefaultIssue } from './columnDefault';
+import { tr } from '../../i18n/runtime';
 import { resolveUniqueConstraints } from './uniqueConstraints';
 import type { DBTableSchema } from '../../store/useProtoStore';
 import { diagramRelations, type DiagramRelation } from './relations';
@@ -54,14 +55,20 @@ function relationRisks(relations: DiagramRelation[], byId: Map<string, DBTableSc
   for (const [root, paths] of expansions) {
     if (new Set(paths.map(path => path[0].id)).size > 1) {
       const branches = paths.map(path => path.map(e => `${name(e.toTableId)}.${e.toColumnName}`).join(' → ')).sort();
-      risks.push(`${name(root)} 的多行分支 ${branches.join('、')} 若仅按父键同时连接，行数可能相乘。请分别按父键汇总或分别查询。`);
+      risks.push(tr(
+        `${name(root)} 的多行分支 ${branches.join('、')} 若仅按父键同时连接，行数可能相乘。请分别按父键汇总或分别查询。`,
+        `Multi-row branches ${branches.join(', ')} of ${name(root)} may multiply rows if joined directly on the parent key. Aggregate each branch by parent key first or query them separately.`,
+      ));
     }
     for (const [edge, ...rest] of paths) {
       if (rest.length || edge.toTableId === root) continue;
       for (const next of expansions.get(edge.toTableId) ?? []) {
         const chain = [root, edge.toTableId, ...next.map(e => e.toTableId)];
         if (new Set(chain).size === chain.length)
-          risks.push(`${chain.map(name).join(' → ')} 存在多层明细，展开后上层记录可能重复。请按指标所属粒度汇总。`);
+          risks.push(tr(
+            `${chain.map(name).join(' → ')} 存在多层明细，展开后上层记录可能重复。请按指标所属粒度汇总。`,
+            `${chain.map(name).join(' → ')} forms multi-level detail tables; expanding them may duplicate parent rows. Aggregate metrics at their native grain.`,
+          ));
       }
     }
   }
@@ -81,18 +88,27 @@ export function reviewDatabaseDesign(tables: DBTableSchema[], graph = diagramRel
   for (const table of tables) {
     const name = table.tableName;
     const previousId = physicalNames.get(name.toLowerCase());
-    if (previousId !== undefined) tableErrors.push(`重复物理表名 ${name}（表 ID ${previousId}、${table.id}）。`);
+    if (previousId !== undefined) tableErrors.push(tr(`重复物理表名 ${name}（表 ID ${previousId}、${table.id}）。`, `Duplicate physical table name ${name} (table IDs ${previousId}, ${table.id}).`));
     else physicalNames.set(name.toLowerCase(), table.id);
     const model = table.modeling;
     if (model) {
       for (const pending of model.pendingRules ?? [])
-        risks.push(`${name} 未落实的业务规则：${pending.rule}。当前 DDL 无法保证：${pending.reason}`);
+        risks.push(tr(
+          `${name} 未落实的业务规则：${pending.rule}。当前 DDL 无法保证：${pending.reason}`,
+          `${name} pending business rule: ${pending.rule}. Not enforced by DDL: ${pending.reason}`,
+        ));
       const key = JSON.stringify([table.domain, model.entity.trim(), model.grain.trim()]);
       const previous = grains.get(key);
-      if (previous) tableErrors.push(`${previous} 与 ${name} 重复声明业务实体「${model.entity}」和行粒度「${model.grain}」。请复用已有表，或核实并说明两表各自保存的独立事实。`);
+      if (previous) tableErrors.push(tr(
+        `${previous} 与 ${name} 重复声明业务实体「${model.entity}」和行粒度「${model.grain}」。请复用已有表，或核实并说明两表各自保存的独立事实。`,
+        `${previous} and ${name} declare the same business entity "${model.entity}" and row grain "${model.grain}". Reuse the existing table or clarify the distinct facts stored in each table.`,
+      ));
       else grains.set(key, name);
     } else {
-      risks.push(`${name} 尚未记录行粒度和建表依据，复用或扩表前需核对业务含义。`);
+      risks.push(tr(
+        `${name} 尚未记录行粒度和建表依据，复用或扩表前需核对业务含义。`,
+        `${name} has no recorded row grain or modeling rationale; verify business semantics before reusing or extending it.`,
+      ));
     }
     const pk = table.columns.filter(c => c.isPrimaryKey === true);
     const unique = new Set(table.columns.filter(c => c.isUnique === true).map(c => c.id));
@@ -100,36 +116,42 @@ export function reviewDatabaseDesign(tables: DBTableSchema[], graph = diagramRel
       for (const key of resolveUniqueConstraints(table)) {
         if (key.columns.length === 1) unique.add(key.columns[0].id);
         const nullable = key.columns.filter(c => c.nullable);
-        if (nullable.length) risks.push(`${name} 的唯一约束 ${key.name} 含可空字段 ${nullable.map(c => c.name).join('、')}。MySQL 允许含 NULL 的组合重复，请核实防重范围。`);
+        if (nullable.length) risks.push(tr(
+          `${name} 的唯一约束 ${key.name} 含可空字段 ${nullable.map(c => c.name).join('、')}。MySQL 允许含 NULL 的组合重复，请核实防重范围。`,
+          `Unique constraint ${key.name} on ${name} includes nullable column(s) ${nullable.map(c => c.name).join(', ')}. MySQL allows duplicate combinations containing NULL; verify deduplication scope.`,
+        ));
       }
     } catch (error) { tableErrors.push((error as Error).message); }
     if (pk.length === 1) unique.add(pk[0].id);
     uniqueKeys.set(table.id, unique);
-    if (!pk.length) tableErrors.push(`${name} 缺少主键，请按行粒度声明非空主键。`);
+    if (!pk.length) tableErrors.push(tr(`${name} 缺少主键，请按行粒度声明非空主键。`, `${name} is missing a primary key; declare a non-nullable primary key matching its row grain.`));
     const names = new Map<string, string>();
     for (const col of table.columns) {
       const field = `${name}.${col.name}`;
       const defaultError = columnDefaultIssue(col);
-      if (defaultError) tableErrors.push(`${field}：${defaultError}`);
+      if (defaultError) tableErrors.push(tr(`${field}：${defaultError}`, `${field}: ${defaultError}`));
       const previousCol = names.get(col.name.toLowerCase());
-      if (previousCol !== undefined) tableErrors.push(`重复字段 ${field}（字段 ID ${previousCol}、${col.id}）。`);
+      if (previousCol !== undefined) tableErrors.push(tr(`重复字段 ${field}（字段 ID ${previousCol}、${col.id}）。`, `Duplicate column ${field} (column IDs ${previousCol}, ${col.id}).`));
       else names.set(col.name.toLowerCase(), col.id);
-      if (!col.dataType.trim()) tableErrors.push(`${field} 缺少物理数据类型。`);
-      if (col.isPrimaryKey && col.nullable) tableErrors.push(`${field} 是主键，必须非空。`);
+      if (!col.dataType.trim()) tableErrors.push(tr(`${field} 缺少物理数据类型。`, `${field} is missing physical dataType.`));
+      if (col.isPrimaryKey && col.nullable) tableErrors.push(tr(`${field} 是主键，必须非空。`, `${field} is a primary key and must be NOT NULL.`));
       if ((col.references || col.foreignKeyOptions) && col.isForeignKey !== true)
-        tableErrors.push(`${field} 已声明外键关系，须设置 isForeignKey=true。`);
+        tableErrors.push(tr(`${field} 已声明外键关系，须设置 isForeignKey=true。`, `${field} declares a foreign key reference and must set isForeignKey=true.`));
       if (col.foreignKeyOptions?.cardinality === '1:1' && !unique.has(col.id))
-        tableErrors.push(`${field} 声明 1:1，引用列需要单列主键或 UNIQUE 约束。`);
+        tableErrors.push(tr(`${field} 声明 1:1，引用列需要单列主键或 UNIQUE 约束。`, `${field} declares 1:1 cardinality and requires a single-column PK or UNIQUE constraint.`));
       if (col.foreignKeyOptions?.cardinality === '1:N' && unique.has(col.id))
-        tableErrors.push(`${field} 有单列唯一约束，与 1:N 的声明不一致，请核对基数。`);
+        tableErrors.push(tr(`${field} 有单列唯一约束，与 1:N 的声明不一致，请核对基数。`, `${field} has a single-column UNIQUE constraint, conflicting with 1:N cardinality.`));
       if (col.foreignKeyOptions?.onDelete === 'SET NULL' && !col.nullable)
-        tableErrors.push(`${field} 使用 SET NULL，字段必须允许空值。`);
+        tableErrors.push(tr(`${field} 使用 SET NULL，字段必须允许空值。`, `${field} uses ON DELETE SET NULL and must be nullable.`));
     }
     const fields = new Set(table.columns.filter(c => !c.isPrimaryKey).map(c => c.name));
     for (const [other, otherFields] of businessFields) {
       const shared = [...fields].filter(field => otherFields.has(field));
       if (shared.length >= 2 && shared.length >= 0.75 * Math.max(fields.size, otherFields.size))
-        risks.push(`${other.tableName} 与 ${name} 的非主键字段高度重合（${shared.sort().join('、')}）。请核对是否为同一事实的不同页面，或有独立的生命周期。`);
+        risks.push(tr(
+          `${other.tableName} 与 ${name} 的非主键字段高度重合（${shared.sort().join('、')}）。请核对是否为同一事实的不同页面，或有独立的生命周期。`,
+          `${other.tableName} and ${name} share most non-PK columns (${shared.sort().join(', ')}). Verify whether they represent different views of the same entity or independent lifecycles.`,
+        ));
     }
     businessFields.set(table, fields);
   }
@@ -142,9 +164,9 @@ export function reviewDatabaseDesign(tables: DBTableSchema[], graph = diagramRel
     const source = child.columns.find(c => c.id === edge.toColumnId)!;
     const path = `${child.tableName}.${source.name} → ${source.references}`;
     if (!uniqueKeys.get(parent.id)!.has(target.id))
-      relationErrors.push(`${path} 的引用目标缺少单列唯一性依据，请核对主键或 UNIQUE 约束。`);
+      relationErrors.push(tr(`${path} 的引用目标缺少单列唯一性依据，请核对主键或 UNIQUE 约束。`, `Target of ${path} lacks a single-column uniqueness guarantee; check PK or UNIQUE constraint.`));
     if (comparableType(source.dataType) !== comparableType(target.dataType))
-      relationErrors.push(`${path} 两端键类型声明不一致（${source.dataType} / ${target.dataType}），请核实后沿用同一类型。`);
+      relationErrors.push(tr(`${path} 两端键类型声明不一致（${source.dataType} / ${target.dataType}），请核实后沿用同一类型。`, `Key dataTypes mismatch across ${path} (${source.dataType} vs ${target.dataType}); align them to the same type.`));
   }
   risks.push(...relationRisks(relations, byId, uniqueKeys));
   return { tableErrors, relationErrors, risks };
@@ -163,11 +185,11 @@ export function reviewDatabaseChanges(before: DBTableSchema[], after: DBTableSch
   for (const table of after) {
     const previous = existingTables.get(table.id);
     if (previous?.modeling?.pendingRules?.length && table.modeling?.pendingRules === undefined)
-      current.tableErrors.push(`${table.tableName} 更新时遗漏 modeling.pendingRules，请保留待实现规则或明确提交新的列表。`);
+      current.tableErrors.push(tr(`${table.tableName} 更新时遗漏 modeling.pendingRules，请保留待实现规则或明确提交新的列表。`, `${table.tableName} omitted modeling.pendingRules on update; retain pending rules or submit an explicit updated list.`));
     if (previous?.uniqueConstraints?.length && table.uniqueConstraints === undefined)
-      current.tableErrors.push(`${table.tableName} 更新时遗漏 uniqueConstraints，请保留原约束或明确提交新的约束列表。`);
+      current.tableErrors.push(tr(`${table.tableName} 更新时遗漏 uniqueConstraints，请保留原约束或明确提交新的约束列表。`, `${table.tableName} omitted uniqueConstraints on update; retain existing constraints or submit an explicit updated list.`));
     if (!table.modeling && (!previous || previous.modeling))
-      current.tableErrors.push(`${table.tableName} 须提供 modeling.entity、grain、reason，说明业务实体、行粒度及独立建表依据。`);
+      current.tableErrors.push(tr(`${table.tableName} 须提供 modeling.entity、grain、reason，说明业务实体、行粒度及独立建表依据。`, `${table.tableName} must provide modeling.entity, grain, and reason explaining its business entity, row grain, and rationale.`));
   }
   // When a later menu introduces a new source, revisit rules on BOTH ends.
   // A new FK establishes structure only. Preserve earlier business/service obligations.
@@ -180,6 +202,9 @@ export function reviewDatabaseChanges(before: DBTableSchema[], after: DBTableSch
     const rules = existingTables.get(t.id)?.modeling?.pendingRules;
     return newSources.length && rules?.length ? [{tableId:t.id, pageIds:t.sharedByMenus.map(m => m.pageId), newSources, previousRules:rules}] : [];
   });
-  for (const t of affectedRules) current.risks.push(`新增外键影响已有表 ${t.tableId}，请回查 ${t.previousRules.length} 条原规则的建表依据与服务边界。`);
+  for (const t of affectedRules) current.risks.push(tr(
+    `新增外键影响已有表 ${t.tableId}，请回查 ${t.previousRules.length} 条原规则的建表依据与服务边界。`,
+    `New foreign key affects existing table ${t.tableId}; review the modeling rationale and service boundaries of its ${t.previousRules.length} prior rule(s).`,
+  ));
   return {...current, affectedRules};
 }

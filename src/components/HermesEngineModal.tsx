@@ -9,6 +9,7 @@ import { HermesQuestionCard, useQuestionHosts } from './HermesQuestionCard';
 import { X } from "lucide-react";
 import { useHermesStore } from "../store/useHermesStore";
 import { HermesEnginePanel } from "./HermesManagementPanel";
+import { useI18n } from '../i18n';
 export { HermesEnginePanel } from "./HermesManagementPanel";
 function useVisibleHermesScope() {
   const projectId = useProtoStore(s => s.currentProjectMeta.projectId);
@@ -34,6 +35,7 @@ function HermesQuestionForm() {
 }
 
 function HermesPermissionDialog({ permission }: { permission: HermesPermission }) {
+  const { tr, td } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -60,14 +62,14 @@ function HermesPermissionDialog({ permission }: { permission: HermesPermission }
     }
   };
   const explanations = permission.toolCall.content?.filter(block => block.type === 'content' && block.content?.type === 'text');
-  return <dialog ref={dialog} role="dialog" aria-modal="true" aria-label="Hermes 操作授权"
+  return <dialog ref={dialog} role="dialog" aria-modal="true" aria-label={tr('Hermes 操作授权', 'Hermes Action Permission')}
     onCancel={event => { event.preventDefault(); void answer(null); }}
     className="m-auto w-[min(576px,calc(100vw-32px))] max-h-[85vh] overflow-auto rounded-xl border border-slate-200 bg-white text-slate-900 p-5 shadow-xl backdrop:bg-slate-900/40 space-y-3">
-    <h3 className="font-semibold">Hermes 请求授权</h3>
-    <p className="text-sm">{permission.toolCall.title ?? '工具操作'}</p>
+    <h3 className="font-semibold">{tr('Hermes 请求授权', 'Hermes Requests Permission')}</h3>
+    <p className="text-sm">{permission.toolCall.title ? td(permission.toolCall.title) : tr('工具操作', 'Tool Operation')}</p>
     {explanations?.map((block, index) => <p key={index} className="text-sm whitespace-pre-wrap break-words">{block.content?.text}</p>)}
     {permission.toolCall.rawInput !== undefined && <details>
-      <summary className="cursor-pointer text-xs text-slate-500">查看操作详情</summary>
+      <summary className="cursor-pointer text-xs text-slate-500">{tr('查看操作详情', 'View Operation Details')}</summary>
       <pre className="mt-2 text-xs bg-slate-50 rounded p-2 max-h-60 overflow-auto whitespace-pre-wrap break-words">
         {JSON.stringify(permission.toolCall.rawInput, null, 2)}
       </pre>
@@ -75,15 +77,16 @@ function HermesPermissionDialog({ permission }: { permission: HermesPermission }
     <div className="flex gap-2 flex-wrap">
       {permission.options.map(option => <button type="button" disabled={busy} key={option.optionId}
         className="border border-slate-200 rounded px-3 py-2 text-xs disabled:opacity-40"
-        onClick={() => void answer(option.optionId)}>{option.name}</button>)}
+        onClick={() => void answer(option.optionId)}>{td(option.name)}</button>)}
       <button type="button" disabled={busy} className="border border-slate-200 rounded px-3 py-2 text-xs disabled:opacity-40"
-        onClick={() => void answer(null)}>取消</button>
+        onClick={() => void answer(null)}>{tr('取消', 'Cancel')}</button>
     </div>
-    {failure && <p role="alert" className="text-rose-700 text-xs">{failure}</p>}
+    {failure && <p role="alert" className="text-rose-700 text-xs">{td(failure)}</p>}
   </dialog>;
 }
 
 function HermesFeedback({ inline }: { inline: boolean }) {
+  const { tr, td } = useI18n();
   const { error, permissions: allPermissions, isModalOpen } = useHermesStore();
   const visible = useVisibleHermesScope();
   const permissions = allPermissions.filter(visible);
@@ -96,9 +99,9 @@ function HermesFeedback({ inline }: { inline: boolean }) {
             ? 'shrink-0 px-4 py-2'
             : 'fixed bottom-4 left-1/2 -translate-x-1/2 z-[250] max-w-xl rounded-lg shadow-lg p-3'}`}
         >
-          <span className="max-h-16 overflow-auto break-words">{error}</span>
+          <span className="max-h-16 overflow-auto break-words">{td(error)}</span>
           <button
-            aria-label="关闭 AI 错误提示"
+            aria-label={tr('关闭 AI 错误提示', 'Dismiss AI error')}
             onClick={() => useHermesStore.setState({ error: null })}
           >
             <X className="w-4 h-4" />
@@ -110,6 +113,7 @@ function HermesFeedback({ inline }: { inline: boolean }) {
   );
 }
 export const HermesEngineModal = ({ inlineFeedback = false }: { inlineFeedback?: boolean } = {}) => {
+  const { tr } = useI18n();
   const { isModalOpen, setModalOpen } = useHermesStore();
   return (
     <>
@@ -119,7 +123,7 @@ export const HermesEngineModal = ({ inlineFeedback = false }: { inlineFeedback?:
         <div className="fixed inset-0 z-[200] bg-slate-900/40 flex items-center justify-center p-5">
           <div
             role="dialog"
-            aria-label="Hermes 引擎设置"
+            aria-label={tr('Hermes 引擎设置', 'Hermes Engine Settings')}
             className="w-full max-w-3xl max-h-[90vh] rounded-xl overflow-hidden shadow-xl"
           >
             <HermesEnginePanel onClose={() => setModalOpen(false)} />

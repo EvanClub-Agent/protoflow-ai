@@ -13,8 +13,10 @@ import { captureProjectPayload } from '../services/projectStorage';
 import { projectSpecification } from '../services/projectAnalysis';
 import { useProjectAnalysis } from './useProjectAnalysis';
 import { ProjectTableData } from './ProjectTableData';
+import { useI18n } from '../i18n';
 
 export const InspectorSidebar: React.FC = () => {
+  const { locale, tr, td } = useI18n();
   const { project, pages, analysis } = useProjectAnalysis();
   const projectId = project.currentProjectMeta.projectId;
   const projectName = project.currentProjectMeta.projectName;
@@ -46,6 +48,7 @@ export const InspectorSidebar: React.FC = () => {
     () =>
       tab === 'spec' ? projectSpecification(captureProjectPayload()) : '',
     [
+      locale,
       tab,
       projectId,
       projectName,
@@ -63,16 +66,16 @@ export const InspectorSidebar: React.FC = () => {
 
   return (
     <aside
-      aria-label="工程检查器"
+      aria-label={tr('工程检查器', 'Project Inspector')}
       className="flex w-80 shrink-0 flex-col border-l border-slate-200/90 bg-white text-slate-800"
     >
       {/* Top Sidebar Header */}
       <div className="border-b border-slate-200/80 bg-gradient-to-b from-slate-50/80 to-white px-3.5 py-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 min-w-0">
           <SlidersHorizontal className="h-3 w-3 text-blue-600 shrink-0" />
-          <span className="truncate">工程检查器 · {projectName}</span>
+          <span className="truncate">{tr(`工程检查器 · ${projectName}`, `Project Inspector · ${projectName}`)}</span>
         </div>
-        <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-slate-900 truncate">
+        <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-slate-900 min-w-0">
           <Layers className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
           <span className="truncate">
             {pageTitle} ({activePageId})
@@ -83,16 +86,16 @@ export const InspectorSidebar: React.FC = () => {
         <div className="mt-2.5 grid grid-cols-3 gap-1 rounded-xl border border-slate-200/80 bg-slate-100/80 p-0.5 text-xs">
           {(
             [
-              ['page', '页面配置', Layers],
-              ['data', '预览数据', FileSpreadsheet],
-              ['spec', '工程规格', FileText],
+              ['page', tr('页面配置', 'Page'), Layers],
+              ['data', tr('预览数据', 'Data'), FileSpreadsheet],
+              ['spec', tr('工程规格', 'Spec'), FileText],
             ] as const
           ).map(([id, label, Icon]) => (
             <button
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`inline-flex items-center justify-center gap-1 rounded-lg py-1.5 font-medium transition cursor-pointer ${
+              className={`min-w-0 px-1 inline-flex items-center justify-center gap-1 rounded-lg py-1.5 font-medium transition cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap ${
                 tab === id
                   ? 'bg-white text-blue-700 font-semibold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -111,19 +114,19 @@ export const InspectorSidebar: React.FC = () => {
           <div className="space-y-4">
             {/* Bound Tables Section */}
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                  <Database className="h-3.5 w-3.5 text-blue-600" />
-                  <span>绑定数据表 ({tables.length})</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-bold text-slate-700 min-w-0">
+                  <Database className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">{tr(`绑定数据表 (${tables.length})`, `Bound Tables (${tables.length})`)}</span>
                 </div>
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 tabular-nums">
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 tabular-nums shrink-0">
                   {tables.length}
                 </span>
               </div>
 
               {tables.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3.5 text-center text-slate-500">
-                  当前页面源码未绑定数据表。
+                  {tr('当前页面源码未绑定数据表。', 'No database tables bound in current page source.')}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -151,8 +154,8 @@ export const InspectorSidebar: React.FC = () => {
                           {table.tableName}
                         </span>
                       </div>
-                      <div className="mt-1.5 text-[11px] text-slate-500">
-                        {table.columns.length} 字段 · {table.domain}
+                      <div className="mt-1.5 text-[11px] text-slate-500 tabular-nums truncate">
+                        {tr(`${table.columns.length} 字段 · ${table.domain}`, `${table.columns.length} cols · ${td(table.domain)}`)}
                       </div>
                     </div>
                   ))}
@@ -162,19 +165,19 @@ export const InspectorSidebar: React.FC = () => {
 
             {/* Page Sticky Notes Section */}
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                  <StickyNote className="h-3.5 w-3.5 text-amber-600" />
-                  <span>页面需求记录 ({notes.length})</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-bold text-slate-700 min-w-0">
+                  <StickyNote className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span className="truncate">{tr(`页面需求记录 (${notes.length})`, `Sticky Rules (${notes.length})`)}</span>
                 </div>
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 tabular-nums">
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 tabular-nums shrink-0">
                   {notes.length}
                 </span>
               </div>
 
               {notes.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3.5 text-center text-slate-500">
-                  当前页面没有需求记录。
+                  {tr('当前页面没有需求记录。', 'No requirement notes on this page.')}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -183,22 +186,22 @@ export const InspectorSidebar: React.FC = () => {
                       key={note.id}
                       className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3"
                     >
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="font-semibold text-slate-700">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span className="font-semibold text-slate-700 min-w-0 truncate">
                           #{note.index} ·{' '}
                           {note.targetWidgetName || note.targetWidgetId}
                         </span>
                         <span
-                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          className={`shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                             note.active
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
                               : 'bg-slate-100 text-slate-500 border border-slate-200'
                           }`}
                         >
-                          {note.active ? '启用' : '停用'}
+                          {note.active ? tr('启用', 'Active') : tr('停用', 'Inactive')}
                         </span>
                       </div>
-                      <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-slate-800">
+                      <p className="mt-1.5 whitespace-pre-wrap break-words leading-relaxed text-slate-800">
                         {note.text}
                       </p>
                     </div>
@@ -212,13 +215,13 @@ export const InspectorSidebar: React.FC = () => {
         {tab === 'data' &&
           (tables.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-center text-slate-500">
-              当前页面没有绑定数据表，因此没有可展示的表预览数据。
+              {tr('当前页面没有绑定数据表，因此没有可展示的表预览数据。', 'No tables bound to this page, so no preview data is available.')}
             </div>
           ) : (
             <div className="space-y-3">
               {tables.length > 1 && (
                 <select
-                  aria-label="选择预览数据表"
+                  aria-label={tr('选择预览数据表', 'Select preview table')}
                   value={selectedTable.id}
                   onChange={(e) => setTableId(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-blue-500"

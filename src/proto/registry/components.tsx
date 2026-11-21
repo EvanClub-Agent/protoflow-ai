@@ -36,6 +36,7 @@ import {
   MousePointerSquareDashed,
 } from 'lucide-react';
 import { AntdFieldControl, ANTD_FIELD_KINDS } from './AntdFieldControl';
+import { materialOptions } from './antdOptions';
 import { ANTD_COMPONENTS } from './antdComponents';
 import { FreeformMaterial } from '../freeform/FreeformMaterial';
 import { MOBILE_REGISTRY } from '../mobile/components';
@@ -48,6 +49,15 @@ import type { Runtime, Scope } from '../runtime/runtime';
 import { usePageStore } from '../store/usePageStore';
 import { useProtoStore } from '../../store/useProtoStore';
 import { columnLabel, defaultDisplayColumns, type Row } from '../runtime/mock';
+import {
+  buildForeignKeyOptionsFromRows,
+  currentProjectDataContext,
+  fieldTypeOf,
+  projectBuiltinFixedRows,
+  resolveBoundForeignKeySpec,
+  resolveFieldSelectOptions,
+} from '../ai/templates';
+import { tr as trStatic, useI18n } from '../../i18n';
 
 export type RootAttrs = {
   'data-pf-id'?: string;
@@ -92,13 +102,15 @@ function rootWith(root: RootAttrs, extra: { className?: string; style?: React.CS
   };
 }
 
-const DropHint: React.FC<{ rt: Runtime; label?: string }> = ({ rt, label }) =>
-  rt.isDesign ? (
+const DropHint: React.FC<{ rt: Runtime; label?: string }> = ({ rt, label }) => {
+  const { tr } = useI18n();
+  return rt.isDesign ? (
     <div className="pf-drop-hint col-span-12 w-full flex items-center justify-center gap-1.5 min-h-[44px] rounded border border-dashed border-slate-300 text-[11px] text-slate-400">
       <MousePointerSquareDashed className="w-3.5 h-3.5" />
-      {label ?? '拖入组件'}
+      {label ?? tr('拖入组件', 'Drop components here')}
     </div>
   ) : null;
+};
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   plus: Plus,
@@ -115,6 +127,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 // ───────────────────────── Form & Inline Toolbar context ─────────────────────────
 interface FormCtxValue {
   formId: string;
+  tableId?: string;
+  isQueryForm?: boolean;
   editingSource?: boolean;
   cols: number;
   grid: 'twelve' | 'cells';
@@ -133,6 +147,38 @@ interface FormCtxValue {
 }
 const FormCtx = createContext<FormCtxValue | null>(null);
 export const InlineToolbarCtx = createContext<boolean>(false);
+
+const QUERY_CHOICE_TYPES = new Set(['select', 'radio', 'segmented']);
+
+// These CSV presets shipped before the query material had a separate clear value.
+const LEGACY_QUERY_OPTIONS = new Set([
+  '全部,启用,停用', 'All,Enabled,Disabled',
+  '全部,待审批,已通过,已驳回,已归档', 'All,Pending,Approved,Rejected,Archived',
+]);
+
+export function normalizeQueryChoiceOptions(options: unknown): { options: unknown; legacyClearTokens: Set<string> } {
+  const legacyClearTokens = new Set<string>();
+  if (typeof options !== 'string' || !LEGACY_QUERY_OPTIONS.has(options)) return { options, legacyClearTokens };
+  const [clear, ...choices] = materialOptions(options);
+  legacyClearTokens.add(clear.label);
+  return { options: [{ ...clear, value: '' }, ...choices], legacyClearTokens };
+}
+
+function useForeignKeyRows(tableId: string | undefined): Row[] {
+  const preview = useContext(PreviewDataContext);
+  const hasSaved = usePageStore((s) => (tableId ? Object.hasOwn(s.tableRows, tableId) : false));
+  const savedRows = usePageStore((s) => (tableId && Object.hasOwn(s.tableRows, tableId) ? s.tableRows[tableId] : undefined));
+  const templateId = useProtoStore((s) => s.currentProjectMeta.templateId);
+  const suppliers = useProtoStore((s) => s.suppliers);
+  const purchaseOrderItems = useProtoStore((s) => s.purchaseOrderItems);
+  return useMemo(() => {
+    if (!tableId) return [];
+    if (preview) return preview.rows[tableId] ?? [];
+    if (hasSaved) return savedRows ?? [];
+    const fixed = projectBuiltinFixedRows({ templateId, suppliers, purchaseOrderItems });
+    return fixed[tableId] ?? [];
+  }, [preview, tableId, hasSaved, savedRows, templateId, suppliers, purchaseOrderItems]);
+}
 
 const asOptions = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(String) : typeof v === 'string' ? v.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [];
@@ -228,45 +274,103 @@ export interface FieldDef {
 
 /** A labelled field control, bound to the surrounding Form when present. */
 const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?: boolean; root?: RootAttrs }> = ({ def, rt, scope, inline, root }) => {
+  const { locale, isEn, tr, td } = useI18n();
   const form = useContext(FormCtx);
+  const preview = useContext(PreviewDataContext);
+  const tables = useMaterialTables();
+  const projectId = useProtoStore((s) => s.currentProjectMeta.projectId);
   const inToolbar = useContext(InlineToolbarCtx);
   const [local, setLocal] = useState<unknown>(def.initialValue ?? '');
   // Unbound controls keep local state; node identity is never a substitute for a business field.
   const name = def.name;
   const bound = form !== null && typeof name === 'string' && name.length > 0;
-  const initialValue = form?.editingSource ? '' : def.initialValue ?? '';
-  const value = bound ? (Object.hasOwn(form.values,name) ? form.values[name] : initialValue) : local;
-  const setValue = (v: unknown) => {
+  const fkSpec = useMemo(
+    () =>
+      form?.tableId && def.type === 'select' && typeof name === 'string' && name
+        ? resolveBoundForeignKeySpec(form.tableId, name, tables)
+        : null,
+    [form?.tableId, def.type, name, tables],
+  );
+  const fkRows = useForeignKeyRows(fkSpec?.refTable.id);
+  const queryChoiceNormalized = useMemo(
+    () =>
+      form?.isQueryForm && QUERY_CHOICE_TYPES.has(def.type)
+        ? normalizeQueryChoiceOptions(def.options)
+        : null,
+    [form?.isQueryForm, def.type, def.options],
+  );
+  const effectiveDef = useMemo(() => {
+    if (fkSpec) {
+      const liveOptions = buildForeignKeyOptionsFromRows(fkRows, fkSpec.valueCol, fkSpec.labelCol, {
+        qualifiedOnly: fkSpec.qualifiedOnly,
+        locale,
+        translateDemoSupplierNames: !preview && projectId === 'proj-default-erp',
+      });
+      return { ...def, options: liveOptions };
+    }
+    if (queryChoiceNormalized && queryChoiceNormalized.options !== def.options) {
+      return { ...def, options: queryChoiceNormalized.options };
+    }
+    return def;
+  }, [def, fkSpec, fkRows, locale, preview, projectId, queryChoiceNormalized]);
+  const rawInitial = form?.editingSource ? '' : def.initialValue ?? '';
+  const initialValue =
+    queryChoiceNormalized && typeof rawInitial === 'string' && queryChoiceNormalized.legacyClearTokens.has(rawInitial)
+      ? ''
+      : rawInitial;
+  const rawBoundVal = bound ? (Object.hasOwn(form.values, name) ? form.values[name] : initialValue) : local;
+  const value =
+    queryChoiceNormalized && typeof rawBoundVal === 'string' && queryChoiceNormalized.legacyClearTokens.has(rawBoundVal)
+      ? ''
+      : rawBoundVal;
+  const setValue = (rawNext: unknown) => {
     if (def.disabled || form?.disabled || def.readOnly) return;
+    const v =
+      queryChoiceNormalized && typeof rawNext === 'string' && queryChoiceNormalized.legacyClearTokens.has(rawNext)
+        ? ''
+        : rawNext;
     if (bound) form.setValue(name, v);
     else setLocal(v);
     if (!rt.isDesign && def.onChange) rt.run(def.onChange, { ...scope, params: { ...scope.params, value: v } });
   };
-  const error = bound ? form.errors[name] : undefined;
+  const rawError = bound ? form.errors[name] : undefined;
+  const error = rawError ? td(rawError) : undefined;
   const disabled = Boolean(def.disabled || form?.disabled);
   const readOnly = Boolean(def.readOnly);
   const effSize = def.size || form?.size || 'middle';
   const curInputCls = `${inputClsBase} ${inputSizeCls[effSize] ?? inputSizeCls.middle}`;
-  const placeholder = def.placeholder ?? (['select', 'date', 'dateRange', 'picker'].includes(def.type) ? `请选择${def.label ?? ''}` : `请输入${def.label ?? ''}`);
+  const placeholder =
+    def.placeholder ??
+    (['select', 'date', 'dateRange', 'picker'].includes(def.type)
+      ? isEn
+        ? def.label
+          ? `Select ${def.label}`
+          : 'Select...'
+        : `请选择${def.label ?? ''}`
+      : isEn
+      ? def.label
+        ? `Enter ${def.label}`
+        : 'Enter...'
+      : `请输入${def.label ?? ''}`);
 
   let control: React.ReactNode;
-  if (ANTD_FIELD_KINDS.has(def.type)) {
-    control = <AntdFieldControl def={def} value={value} onChange={setValue} disabled={disabled} size={effSize} placeholder={placeholder} error={error} onClick={def.onClick && !rt.isDesign && !disabled ? () => rt.run(def.onClick,scope) : undefined} />;
+  if (ANTD_FIELD_KINDS.has(effectiveDef.type)) {
+    control = <AntdFieldControl def={effectiveDef} value={value} onChange={setValue} disabled={disabled} size={effSize} placeholder={placeholder} error={error} onClick={effectiveDef.onClick && !rt.isDesign && !disabled ? () => rt.run(effectiveDef.onClick,scope) : undefined} />;
   } else switch (def.type) {
     case 'upload': {
       const uType = def.listType ?? 'button';
-      const btnLabel = def.buttonText || '点击上传';
+      const btnLabel = def.buttonText || tr('点击上传', 'Click to Upload');
       if (uType === 'dragger') {
         control = (
           <div
-            onClick={() => !rt.isDesign && !disabled && setValue(`附件_${Date.now().toString().slice(-4)}.pdf`)}
+            onClick={() => !rt.isDesign && !disabled && setValue(tr(`附件_${Date.now().toString().slice(-4)}.pdf`, `Attachment_${Date.now().toString().slice(-4)}.pdf`))}
             className="w-full py-4 px-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-50/20 text-center cursor-pointer transition space-y-1"
           >
             <UploadIcon className="w-6 h-6 mx-auto text-blue-500" />
             <div className="text-[12px] text-slate-700 font-medium">
-              {value ? String(value) : '点击或将文件拖拽到此区域上传'}
+              {value ? String(value) : tr('点击或将文件拖拽到此区域上传', 'Click or drag files here to upload')}
             </div>
-            {def.accept && <div className="text-[11px] text-slate-400">支持格式：{def.accept}</div>}
+            {def.accept && <div className="text-[11px] text-slate-400">{tr(`支持格式：${def.accept}`, `Accepted: ${def.accept}`)}</div>}
           </div>
         );
       } else if (uType === 'picture-card') {
@@ -274,11 +378,11 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
           <button
             type="button"
             disabled={disabled}
-            onClick={() => !rt.isDesign && setValue(`图片_${Date.now().toString().slice(-4)}.png`)}
+            onClick={() => !rt.isDesign && setValue(tr(`图片_${Date.now().toString().slice(-4)}.png`, `Image_${Date.now().toString().slice(-4)}.png`))}
             className="w-20 h-20 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 hover:border-blue-400 hover:text-blue-600 flex flex-col items-center justify-center gap-1 text-slate-500 text-[11px] cursor-pointer transition"
           >
             <Plus className="w-4 h-4" />
-            <span>{value ? '已上传' : btnLabel}</span>
+            <span>{value ? tr('已上传', 'Uploaded') : btnLabel}</span>
           </button>
         );
       } else {
@@ -286,7 +390,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
           <button
             type="button"
             disabled={disabled}
-            onClick={() => !rt.isDesign && setValue(`附件_${Date.now().toString().slice(-4)}.pdf`)}
+            onClick={() => !rt.isDesign && setValue(tr(`附件_${Date.now().toString().slice(-4)}.pdf`, `Attachment_${Date.now().toString().slice(-4)}.pdf`))}
             className="h-8 px-3 rounded-md border border-dashed border-slate-300 bg-white text-[12px] text-slate-600 hover:border-blue-400 hover:text-blue-600 flex items-center gap-1.5 cursor-pointer"
           >
             <UploadIcon className="w-3.5 h-3.5" />
@@ -313,7 +417,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       break;
     }
     default:
-      control = <div role="alert" className="text-xs text-red-600">不支持的字段类型：{def.type}</div>;
+      control = <div role="alert" className="text-xs text-red-600">{tr(`不支持的字段类型：${def.type}`, `Unsupported field type: ${def.type}`)}</div>;
   }
 
   const widthMap: Record<string, number> = {
@@ -346,7 +450,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
     typeof def.labelWidth === 'number' && def.labelWidth > 0
       ? def.labelWidth
       : form?.labelWidth;
-  const labelSuffix = effColon ? '：' : '';
+  const labelSuffix = effColon ? tr('：', ': ') : '';
 
   // 1. Compact inline toolbar mode (when placed inside <Toolbar>, horizontal <Space>, or labelLayout === 'inline')
   if (effLayout === 'inline') {
@@ -460,9 +564,12 @@ const fieldFromProps = (type: string) =>
 // ───────────────────────── Components ─────────────────────────
 const STATUS_COLOR: Record<string, string> = {
   已通过: 'green', 启用: 'green', 合格: 'green', qualified: 'green', confirmed: 'green', 已完成: 'green', 已入库: 'green',
+  Approved: 'green', Enabled: 'green', Active: 'green', Pass: 'green', Completed: 'green', Done: 'green', Stored: 'green',
   待审批: 'orange', 审批中: 'orange', pending: 'orange', 待处理: 'orange',
+  Pending: 'orange', 'In Progress': 'orange', Reviewing: 'orange',
   已驳回: 'red', 停用: 'red', rejected: 'red', 异常: 'red',
-  草稿: 'default', draft: 'default',
+  Rejected: 'red', Disabled: 'red', Fail: 'red', Error: 'red',
+  草稿: 'default', draft: 'default', Draft: 'default',
 };
 const TAG_CLS: Record<string, string> = {
   default: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -480,19 +587,22 @@ const TagPill: React.FC<{
   closable?: boolean;
   onClose?: () => void;
   children: React.ReactNode;
-}> = ({ color = 'default', bordered = true, round, closable, onClose, children }) => (
-  <span
-    className={cx(
-      'inline-flex items-center gap-1 px-2 py-px text-[12px] leading-5',
-      round ? 'rounded-full' : 'rounded',
-      bordered ? 'border' : 'border border-transparent',
-      TAG_CLS[color] ?? TAG_CLS.default
-    )}
-  >
-    {children}
-    {closable && <button type="button" aria-label="关闭标签" onClick={onClose} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>}
-  </span>
-);
+}> = ({ color = 'default', bordered = true, round, closable, onClose, children }) => {
+  const { tr } = useI18n();
+  return (
+    <span
+      className={cx(
+        'inline-flex items-center gap-1 px-2 py-px text-[12px] leading-5',
+        round ? 'rounded-full' : 'rounded',
+        bordered ? 'border' : 'border border-transparent',
+        TAG_CLS[color] ?? TAG_CLS.default
+      )}
+    >
+      {children}
+      {closable && <button type="button" aria-label={tr('关闭标签', 'Close tag')} onClick={onClose} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>}
+    </span>
+  );
+};
 
 const BTN_CLS: Record<string, string> = {
   primary: 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600',
@@ -504,6 +614,7 @@ const BTN_CLS: Record<string, string> = {
 };
 
 const Button: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
+  const { tr } = useI18n();
   const Icon = p.icon ? ICONS[p.icon as string] : null;
   return <AntdSurface><AntButton
     {...root}
@@ -517,17 +628,18 @@ const Button: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
       root.onClick?.(event);
       if (!rt.isDesign && !p.disabled && !p.loading) rt.run(p.onClick as PropValue, scope);
     }}
-  >{p.shape === 'circle' && Icon ? null : text || '按钮'}</AntButton></AntdSurface>;
+  >{p.shape === 'circle' && Icon ? null : text || tr('按钮', 'Button')}</AntButton></AntdSurface>;
 };
 
 const Page: React.FC<CompProps> = ({ p, children, root, rt }) => {
+  const { tr } = useI18n();
   const padCls =
     p.padding === 'compact' ? 'p-3.5 gap-y-2.5' : p.padding === 'loose' ? 'p-7 gap-y-5' : 'p-4 gap-y-3.5';
   const bgCls =
     p.bg === 'white' ? 'bg-white' : p.bg === 'gray' ? 'bg-slate-100/80' : 'bg-[#f8fafc]';
   return (
     <div {...rootWith(root, { className: cx('flex-[1_0_auto] grid grid-cols-12 gap-x-4 items-start content-start rounded-[15px]', padCls, bgCls) })}>
-      {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label="从左侧物料库拖入组件" /></div>}
+      {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label={tr('从左侧物料库拖入组件', 'Drop components from the left palette')} /></div>}
       {!p.title && null}
     </div>
   );
@@ -570,19 +682,22 @@ const Card: React.FC<CompProps> = ({ p, children, root, rt }) => {
   );
 };
 
-const Row_: React.FC<CompProps> = ({ p, children, root, rt }) => (
-  <div
-    {...rootWith(root, {
-      className: cx(
-        'grid grid-cols-24',
-        p.align === 'middle' ? 'items-center' : p.align === 'bottom' ? 'items-end' : 'items-start'
-      ),
-      style: { gap: Number(p.gutter ?? 16), gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' },
-    })}
-  >
-    {children.length ? children : <div className="col-span-24"><DropHint rt={rt} label="拖入栅格列 Col" /></div>}
-  </div>
-);
+const Row_: React.FC<CompProps> = ({ p, children, root, rt }) => {
+  const { tr } = useI18n();
+  return (
+    <div
+      {...rootWith(root, {
+        className: cx(
+          'grid grid-cols-24',
+          p.align === 'middle' ? 'items-center' : p.align === 'bottom' ? 'items-end' : 'items-start'
+        ),
+        style: { gap: Number(p.gutter ?? 16), gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' },
+      })}
+    >
+      {children.length ? children : <div className="col-span-24"><DropHint rt={rt} label={tr('拖入栅格列 Col', 'Drop Col grid columns')} /></div>}
+    </div>
+  );
+};
 
 const Col: React.FC<CompProps> = ({ children, root, rt }) => {
   return (
@@ -616,6 +731,7 @@ const Space: React.FC<CompProps> = ({ p, children, root, rt }) => {
 };
 
 const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
+  const { tr } = useI18n();
   const active = Math.min(rt.tabs[node.pfId] ?? 0, Math.max(0, kids.length - 1));
   const pos = (p.tabPosition as 'top' | 'left' | 'bottom' | 'right') ?? 'top';
   const isSide = pos === 'left' || pos === 'right';
@@ -669,7 +785,7 @@ const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
               : 'text-slate-600 hover:text-slate-900'
           )}
         >
-          {String(k.props.title ?? `页签${i + 1}`)}
+          {String(k.props.title ?? tr(`页签${i + 1}`, `Tab ${i + 1}`))}
           {typeof k.props.badge === 'number' && k.props.badge > 0 && (
             <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] leading-4">{k.props.badge}</span>
           )}
@@ -688,7 +804,7 @@ const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
 
   const pane = (
     <div className="flex-1 min-w-0">
-      {kids.length ? renderNode(kids[active]) : <DropHint rt={rt} label="拖入 Tab 页签项" />}
+      {kids.length ? renderNode(kids[active]) : <DropHint rt={rt} label={tr('拖入 Tab 页签项', 'Drop Tab panes')} />}
     </div>
   );
 
@@ -833,13 +949,16 @@ const Pager: React.FC<{
   simple?: boolean;
   disabled?: boolean;
   hideOnSinglePage?: boolean;
-}> = ({ total, pageSize, page, onChange, size, align, showTotal = true, showSizeChanger = true, showQuickJumper, simple, disabled, hideOnSinglePage }) => (
-  <AntdSurface><AntPagination total={total} pageSize={pageSize} current={page} onChange={onChange}
-    size={size === 'small' ? 'small' : undefined} align={align === 'left' ? 'start' : align === 'center' ? 'center' : 'end'}
-    showTotal={showTotal ? (count) => `共 ${count} 条` : undefined} showSizeChanger={showSizeChanger}
-    showQuickJumper={showQuickJumper} simple={simple} disabled={disabled} hideOnSinglePage={hideOnSinglePage}
-  /></AntdSurface>
-);
+}> = ({ total, pageSize, page, onChange, size, align, showTotal = true, showSizeChanger = true, showQuickJumper, simple, disabled, hideOnSinglePage }) => {
+  const { tr } = useI18n();
+  return (
+    <AntdSurface><AntPagination total={total} pageSize={pageSize} current={page} onChange={onChange}
+      size={size === 'small' ? 'small' : undefined} align={align === 'left' ? 'start' : align === 'center' ? 'center' : 'end'}
+      showTotal={showTotal ? (count) => tr(`共 ${count} 条`, `Total ${count}`) : undefined} showSizeChanger={showSizeChanger}
+      showQuickJumper={showQuickJumper} simple={simple} disabled={disabled} hideOnSinglePage={hideOnSinglePage}
+    /></AntdSurface>
+  );
+};
 
 function usePageSize(configured: number) {
   const [selection, setSelection] = useState<{ configured: number; value: number } | null>(null);
@@ -863,6 +982,7 @@ const Pagination: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 };
 
 const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const fields = (Array.isArray(p.fields) ? p.fields : []) as FieldDef[];
   const cols = Math.max(1, Math.min(4, Number(p.cols ?? 3)));
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -874,6 +994,7 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const customLabelW = typeof p.labelWidth === 'number' && p.labelWidth > 0 ? p.labelWidth : undefined;
   const ctx: FormCtxValue = {
     formId: `query-${node.pfId}`,
+    isQueryForm: true,
     cols,
     grid: 'cells',
     controlMaxWidth: Number(p.controlMaxWidth ?? 240),
@@ -891,8 +1012,18 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const search = () => {
     if (rt.isDesign) return;
     const effectiveValues: Record<string, unknown> = {};
-    for (const f of fields) if (f?.name && f.initialValue !== undefined) effectiveValues[f.name] = f.initialValue;
+    for (const f of fields) {
+      if (f?.name && f.initialValue !== undefined) effectiveValues[f.name] = f.initialValue;
+    }
     Object.assign(effectiveValues, values);
+    for (const f of fields) {
+      if (!f?.name || !QUERY_CHOICE_TYPES.has(f.type ?? 'input')) continue;
+      const { legacyClearTokens } = normalizeQueryChoiceOptions(f.options);
+      const cur = effectiveValues[f.name];
+      if (typeof cur === 'string' && legacyClearTokens.has(cur)) {
+        effectiveValues[f.name] = '';
+      }
+    }
     if (p.target) rt.setFilter(p.target as string, effectiveValues);
     rt.run(p.onSearch as PropValue, scope);
   };
@@ -918,7 +1049,7 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               }}
               className={cx('h-8 px-3 rounded-md border text-[13px] whitespace-nowrap cursor-pointer', BTN_CLS.default)}
             >
-              {(p.resetText as string) || '重置'}
+              {(p.resetText as string) || tr('重置', 'Reset')}
             </button>
             <button
               type="button"
@@ -926,7 +1057,7 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               className={cx('h-8 px-3.5 rounded-md border text-[13px] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer', BTN_CLS.primary)}
             >
               <Search className="w-3.5 h-3.5 shrink-0" />
-              <span>{(p.searchText as string) || '查询'}</span>
+              <span>{(p.searchText as string) || tr('查询', 'Search')}</span>
             </button>
             {fields.length > cols && (
               <button
@@ -934,19 +1065,20 @@ const QueryForm: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 onClick={() => setExpanded((e) => !e)}
                 className="h-8 px-1 text-[12px] text-blue-600 inline-flex items-center gap-0.5 whitespace-nowrap cursor-pointer"
               >
-                {expanded ? '收起' : '展开'}
+                {expanded ? tr('收起', 'Collapse') : tr('展开', 'Expand')}
                 {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>
         </div>
       </FormCtx.Provider>
-      {fields.length === 0 && <DropHint rt={rt} label="在右侧属性面板配置查询条件" />}
+      {fields.length === 0 && <DropHint rt={rt} label={tr('在右侧属性面板配置查询条件', 'Configure query fields in the right inspector')} />}
     </div>
   );
 };
 
 const SearchInput: React.FC<CompProps> = ({ p, root, rt }) => {
+  const { tr } = useI18n();
   const [v, setV] = useState('');
   const sz = (p.size as string) || 'middle';
   const trigger = () => !rt.isDesign && p.target && rt.setFilter(p.target as string, { __keyword: v });
@@ -960,7 +1092,7 @@ const SearchInput: React.FC<CompProps> = ({ p, root, rt }) => {
             p.enterButton ? 'rounded-r-none border-r-0 pr-6' : 'pr-8'
           )}
           value={v}
-          placeholder={p.placeholder ?? '搜索...'}
+          placeholder={p.placeholder ?? tr('搜索...', 'Search...')}
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && trigger()}
         />
@@ -1004,6 +1136,17 @@ function useTableRows(tableId: string | undefined): Row[] {
   return useMemo(() => preview ? (tableId ? preview.rows[tableId] ?? [] : []) : (tableId ? stored ?? getRows(tableId) : []), [preview, tableId, stored, getRows]);
 }
 
+const SAMPLE_FIELD_EN_TITLES: Record<string, string> = {
+  id: 'ID',
+  parentId: 'Parent ID',
+  name: 'Name',
+  status: 'Status',
+  remark: 'Notes',
+  quantity: 'Quantity',
+  updated: 'Updated',
+  enabled: 'Enabled',
+};
+
 function renderCell(v: unknown, render?: string, dataIndex?: string): React.ReactNode {
   if (v === undefined || v === null || v === '') return <span className="text-slate-300">—</span>;
   const s = String(v);
@@ -1016,7 +1159,7 @@ function renderCell(v: unknown, render?: string, dataIndex?: string): React.Reac
     }
   }
   if (render === 'link') return <span className="text-blue-600 hover:underline cursor-pointer">{s}</span>;
-  if (typeof v === 'boolean') return v ? '是' : '否';
+  if (typeof v === 'boolean') return v ? trStatic('是', 'Yes') : trStatic('否', 'No');
   if (typeof v === 'number') return <span className="tabular-nums">{v}</span>;
   return s;
 }
@@ -1030,6 +1173,7 @@ const Table: React.FC<CompProps> = props => {
 };
 
 const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { isEn, tr, td } = useI18n();
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const tableId = typeof p.table === 'string' && p.table !== '' ? p.table : undefined;
@@ -1040,22 +1184,30 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const [sortCol, setSortCol] = useState<TableSort | null>(null);
   const [toggled, setToggled] = useState<Set<string>>(() => new Set());
   const [pageSize, setPageSize] = usePageSize(Math.max(1, Number(p.pageSize ?? 10)));
-  const columns: TableColumn[] = Array.isArray(p.columns) && p.columns.length ? p.columns : defaultTableColumns(table);
+  const columns: TableColumn[] =
+    Array.isArray(p.columns) && p.columns.length
+      ? p.columns
+      : !table && isEn
+      ? defaultTableColumns(table).map((c) => ({
+          ...c,
+          title: SAMPLE_FIELD_EN_TITLES[c.dataIndex] ?? c.title,
+        }))
+      : defaultTableColumns(table);
   const records = table ? boundRows : sampleRows;
   const query = rt.filters[node.pfId];
   const model = useMemo(() => {
     try {
-      if (tableId && !table) throw new Error(`未找到绑定的物理表 ${tableId}`);
+      if (tableId && !table) throw new Error(tr(`未找到绑定的物理表 ${tableId}`, `Bound physical table "${tableId}" not found`));
       const errors = [...tableConfigErrors(p, table), ...sourceForeignKeyErrors(p, tables)];
       if (errors.length) throw new Error(errors[0]);
       const visibleRecords = typeof p.sourceForeignKey === 'string' ? rowsForSource(records, p.sourceForeignKey, tableId, {row:sourceRow,tableId:sourceTableId}, tables) : records;
       return prepareTableRows(visibleRecords, p, query ?? {}, sortCol);
     } catch (error) {
-      return { error: error instanceof Error ? error.message : '表格配置无效' };
+      return { error: error instanceof Error ? error.message : tr('表格配置无效', 'Invalid table configuration') };
     }
-  }, [p, tableId, table, records, query, sortCol, sourceRow, sourceTableId, tables]);
+  }, [p, tableId, table, records, query, sortCol, sourceRow, sourceTableId, tables, tr]);
   if ('error' in model) {
-    return <div {...rootWith(root, { className: 'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">{model.error}</div>;
+    return <div {...rootWith(root, { className: 'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">{td(model.error)}</div>;
   }
   const isTree = p.rowMode === 'tree', isDetail = p.rowMode === 'expandable';
   const expandable = isTree || isDetail;
@@ -1071,7 +1223,12 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const detailFields: string[] = p.detailFields ?? columns.map(c => c.dataIndex);
   const fieldTitle = (field: string) => {
     const col = table?.columns.find(c => c.name === field);
-    const title = table ? (col && columnLabel(col)) : SAMPLE_FIELDS.find(c => c.dataIndex === field)?.title;
+    const sampleTitle = SAMPLE_FIELDS.find(c => c.dataIndex === field)?.title;
+    const title = table
+      ? (col && columnLabel(col))
+      : isEn
+      ? (SAMPLE_FIELD_EN_TITLES[field] ?? sampleTitle)
+      : sampleTitle;
     return columns.find(c => c.dataIndex === field)?.title ?? title ?? field;
   };
   const sel = rt.selections[node.pfId] ?? [];
@@ -1099,11 +1256,11 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 
   return (
     <div {...rootWith(root, { className: 'space-y-2.5 min-w-0' })}>
-      <p className="text-[10px] text-slate-400">{table ? '原型预览数据 · 保存在工程内' : '未绑定数据表 · 示例预览'}</p>
-      {mergeWarning && <p role="alert" className="text-xs text-amber-700">{mergeWarning}</p>}
+      <p className="text-[10px] text-slate-400">{table ? tr('原型预览数据 · 保存在工程内', 'Prototype preview data · Stored in project') : tr('未绑定数据表 · 示例预览', 'Unbound table · Sample preview')}</p>
+      {mergeWarning && <p role="alert" className="text-xs text-amber-700">{td(mergeWarning)}</p>}
       {!table && rt.isDesign && (
         <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-          未绑定物理表：在右侧属性中选择「绑定物理表」，列和数据会自动生成
+          {tr('未绑定物理表：在右侧属性中选择「绑定物理表」，列和数据会自动生成', 'Unbound table: select a physical table in the right inspector to auto-generate columns and data')}
         </div>
       )}
       <AntdSurface><Spin spinning={Boolean(p.loading)}><div className="overflow-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: p.scrollY }}>
@@ -1116,7 +1273,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           {showHeader && (
             <thead className={p.sticky ? 'sticky top-0 z-10 bg-slate-50' : undefined}>
               <tr className="bg-slate-50/90 text-slate-600 text-[12px]">
-                {expandable && <th aria-label="展开行" className={cx('w-8 border-b border-slate-200', cellPadCls, borderCellCls)} />}
+                {expandable && <th aria-label={tr('展开行', 'Expand row')} className={cx('w-8 border-b border-slate-200', cellPadCls, borderCellCls)} />}
                 {p.selectable && (
                   <th className={cx('w-10 text-left border-b border-slate-200', cellPadCls, borderCellCls)}>
                     {!isRadioSel && (
@@ -1131,7 +1288,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 )}
                 {showIndex && (
                   <th className={cx('w-12 text-left font-semibold border-b border-slate-200 whitespace-nowrap', cellPadCls, borderCellCls)}>
-                    序号
+                    {tr('序号', '#')}
                   </th>
                 )}
                 {columns.map((c) => {
@@ -1164,7 +1321,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 })}
                 {actions.length > 0 && (
                   <th className={cx('text-left font-semibold border-b border-l border-slate-200 whitespace-nowrap sticky right-0 bg-slate-50 z-10 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.06)]', cellPadCls)}>
-                    操作
+                    {tr('操作', 'Actions')}
                   </th>
                 )}
               </tr>
@@ -1181,7 +1338,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 )}
               >
                 {expandable && <td className={cx('w-8 text-center', cellPadCls, borderCellCls)}>
-                  {(isDetail || hasChildren) && <button type="button" aria-expanded={isOpen(r.id)} aria-label={`${isOpen(r.id) ? '收起' : '展开'}记录 ${r.id}`}
+                  {(isDetail || hasChildren) && <button type="button" aria-expanded={isOpen(r.id)} aria-label={tr(`${isOpen(r.id) ? '收起' : '展开'}记录 ${r.id}`, `${isOpen(r.id) ? 'Collapse' : 'Expand'} record ${r.id}`)}
                     disabled={model.forcedOpen.has(r.id)} onClick={e => { if (!rt.isDesign) e.stopPropagation(); toggleRow(r.id); }}
                     className="inline-flex items-center justify-center rounded border border-slate-300 bg-white p-0.5 text-slate-600 hover:border-blue-400">
                     {isOpen(r.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1271,7 +1428,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
               <tr>
                 <td colSpan={totalColumns} className="py-10 text-center text-slate-400 text-[13px]">
                   <Inbox className="w-8 h-8 mx-auto mb-1 text-slate-300" />
-                  {(p.emptyText as string) || '暂无数据'}
+                  {(p.emptyText as string) || tr('暂无数据', 'No data')}
                 </td>
               </tr>
             )}
@@ -1283,14 +1440,14 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 {p.selectable && <td className={cx(cellPadCls, borderCellCls)} />}
                 {showIndex && (
                   <td className={cx('text-amber-800 font-bold whitespace-nowrap', cellPadCls, borderCellCls)}>
-                    合计
+                    {tr('合计', 'Total')}
                   </td>
                 )}
                 {columns.map((c, idx) => {
                   if (idx === 0 && !showIndex) {
                     return (
                       <td key={c.dataIndex} className={cx('text-amber-800 font-bold', cellPadCls, borderCellCls)}>
-                        {(p.summaryText as string) || '合计'}
+                        {(p.summaryText as string) || tr('合计', 'Total')}
                       </td>
                     );
                   }
@@ -1329,6 +1486,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 };
 
 const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const tables = useMaterialTables();
   const table = tables.find((t) => t.id === p.table);
   const rows = useTableRows(table?.id);
@@ -1345,8 +1503,8 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
       : table
       ? table.columns.filter((c) => !c.isPrimaryKey).slice(0, 10).map((c) => ({ label: columnLabel(c), value: renderCell(row?.[c.name], undefined, c.name) }))
       : [
-          { label: '字段一', value: '示例值' },
-          { label: '字段二', value: '示例值' },
+          { label: tr('字段一', 'Field 1'), value: tr('示例值', 'Sample') },
+          { label: tr('字段二', 'Field 2'), value: tr('示例值', 'Sample') },
         ];
   const column = Math.max(1, Number(p.column ?? 2));
   const isBordered = Boolean(p.bordered);
@@ -1406,7 +1564,7 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
                 style={customLabelW ? { width: customLabelW } : undefined}
               >
                 {it.label}
-                {showColon ? '：' : ''}
+                {showColon ? tr('：', ': ') : ''}
               </span>
               <span className="text-slate-800 truncate">{it.value}</span>
             </div>
@@ -1455,12 +1613,13 @@ const Statistic: React.FC<CompProps> = ({ p, root }) => {
 };
 
 const Tag: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
+  const { tr } = useI18n();
   const [closed, setClosed] = useState(false);
   if (closed && !rt.isDesign) return null;
   return <span {...rootWith(root, { className: 'inline-block' })}>
     <TagPill color={p.color} bordered={p.bordered !== false} round={p.round} closable={p.closable}
       onClose={() => { if (!rt.isDesign) { setClosed(true); rt.run(p.onClose, scope); } }}>
-      {text || '标签'}
+      {text || tr('标签', 'Tag')}
     </TagPill>
   </span>;
 };
@@ -1494,28 +1653,32 @@ const Timeline: React.FC<CompProps> = ({ p, root }) => {
 
 const TEXT_CLS: Record<string, string> = { default: 'text-slate-700', secondary: 'text-slate-500', success: 'text-emerald-600', warning: 'text-amber-600', danger: 'text-rose-600' };
 const TEXT_SIZE: Record<string, string> = { xs: 'text-[11px]', sm: 'text-[13px]', base: 'text-[14px]', lg: 'text-[16px]' };
-const Text: React.FC<CompProps> = ({ p, text, root }) => (
-  <p
-    {...rootWith(root, {
-      className: cx(
-        'leading-relaxed inline-flex items-center gap-1',
-        TEXT_SIZE[(p.size as string) || 'sm'] ?? TEXT_SIZE.sm,
-        TEXT_CLS[p.type as string] ?? TEXT_CLS.default,
-        p.strong && 'font-semibold',
-        p.italic && 'italic',
-        p.underline && 'underline',
-        p.delete && 'line-through',
-        p.code && 'font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[12px]'
-      ),
-      style: p.layoutFrame && textFrameStyle(p.layoutFrame),
-    })}
-  >
-    <span>{text || '文本'}</span>
-    {p.copyable && <CopyIcon className="w-3 h-3 text-blue-500 cursor-pointer shrink-0" />}
-  </p>
-);
+const Text: React.FC<CompProps> = ({ p, text, root }) => {
+  const { tr } = useI18n();
+  return (
+    <p
+      {...rootWith(root, {
+        className: cx(
+          'leading-relaxed inline-flex items-center gap-1',
+          TEXT_SIZE[(p.size as string) || 'sm'] ?? TEXT_SIZE.sm,
+          TEXT_CLS[p.type as string] ?? TEXT_CLS.default,
+          p.strong && 'font-semibold',
+          p.italic && 'italic',
+          p.underline && 'underline',
+          p.delete && 'line-through',
+          p.code && 'font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[12px]'
+        ),
+        style: p.layoutFrame && textFrameStyle(p.layoutFrame),
+      })}
+    >
+      <span>{text || tr('文本', 'Text')}</span>
+      {p.copyable && <CopyIcon className="w-3 h-3 text-blue-500 cursor-pointer shrink-0" />}
+    </p>
+  );
+};
 
 const Title: React.FC<CompProps> = ({ p, text, root }) => {
+  const { tr } = useI18n();
   const size = ['', 'text-[22px]', 'text-[18px]', 'text-[15px]', 'text-[14px]', 'text-[13px]'][Number(p.level ?? 3)] ?? 'text-[15px]';
   const alignCls = p.align === 'center' ? 'text-center' : p.align === 'right' ? 'text-right' : 'text-left';
   return (
@@ -1529,22 +1692,24 @@ const Title: React.FC<CompProps> = ({ p, text, root }) => {
         ),
       })}
     >
-      {text || '标题'}
+      {text || tr('标题', 'Title')}
     </div>
   );
 };
 
 const Empty: React.FC<CompProps> = ({ p, root }) => {
+  const { tr } = useI18n();
   const iconSz = p.size === 'small' ? 'w-7 h-7' : p.size === 'large' ? 'w-14 h-14' : 'w-10 h-10';
   return (
     <div {...rootWith(root, { className: cx('text-center text-[13px] text-slate-400', p.size === 'small' ? 'py-4' : 'py-8') })}>
       <Inbox className={cx('mx-auto mb-2 text-slate-300', iconSz)} />
-      {p.description ?? '暂无数据'}
+      {p.description ?? tr('暂无数据', 'No data')}
     </div>
   );
 };
 
 const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
+  const { locale, tr } = useI18n();
   const tables = useMaterialTables();
   const boundTable = tables.find((t) => t.id === p.table);
   const values = rt.formValues[node.pfId] ?? {};
@@ -1562,6 +1727,7 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
   }, [row?.id, scope.tableId, scope.params?.tableId, p.table]);
   const ctx: FormCtxValue = {
     formId: node.pfId,
+    tableId: typeof p.table === 'string' && p.table ? p.table : undefined,
     editingSource,
     cols,
     grid: 'twelve',
@@ -1581,17 +1747,12 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
       ? explicitFields
       : children.length === 0 && boundTable
       ? defaultDisplayColumns(boundTable, 8).map((col) => {
-          const n = col.name.toLowerCase();
-          const t = col.dataType.toUpperCase();
-          const c = col.comment || '';
-          const isSelect = n.includes('status') || c.includes('状态') || n.endsWith('_type');
-          const isDate = t.startsWith('DATE') || t.startsWith('TIMESTAMP') || n.endsWith('_date');
-          const isNumber = t.startsWith('DECIMAL') || t.startsWith('INT') || t.startsWith('BIGINT');
+          const type = fieldTypeOf(col);
           return {
             name: col.name,
-            label: columnLabel(col),
-            type: isSelect ? 'select' : isDate ? 'date' : isNumber ? 'number' : 'input',
-            options: isSelect ? '待审批,已通过,已驳回,草稿' : undefined,
+            label: columnLabel(col, locale),
+            type,
+            options: type === 'select' ? resolveFieldSelectOptions(col, locale, boundTable, tables, currentProjectDataContext(tables)) : undefined,
             required: !col.nullable,
           };
         })
@@ -1610,13 +1771,14 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
             ? children
             : fieldDefs.map((f, i) => <FieldControl key={`${f.name}-${i}`} def={{ ...f, type: f.type ?? 'input' }} rt={rt} scope={scope} />)}
         </div>
-        {children.length === 0 && fieldDefs.length === 0 && <DropHint rt={rt} label="拖入输入框、下拉框等字段，或绑定物理表生成" />}
+        {children.length === 0 && fieldDefs.length === 0 && <DropHint rt={rt} label={tr('拖入输入框、下拉框等字段，或绑定物理表生成', 'Drop inputs/selects or bind a physical table')} />}
       </FormCtx.Provider>
     </div>
   );
 };
 
 const Toolbar: React.FC<CompProps> = ({ p, children, root, rt }) => {
+  const { tr } = useI18n();
   const bgCls =
     p.bg === 'gray'
       ? 'bg-slate-50/90 px-3 py-2 rounded-lg border border-slate-200/80'
@@ -1643,7 +1805,7 @@ const Toolbar: React.FC<CompProps> = ({ p, children, root, rt }) => {
             {p.subTitle && <span className="text-[12px] text-slate-500">{p.subTitle}</span>}
           </div>
         )}
-        {children.length ? (p.title || p.subTitle ? <div className="flex flex-wrap items-center gap-2.5">{children}</div> : children) : <DropHint rt={rt} label="拖入按钮或筛选控件" />}
+        {children.length ? (p.title || p.subTitle ? <div className="flex flex-wrap items-center gap-2.5">{children}</div> : children) : <DropHint rt={rt} label={tr('拖入按钮或筛选控件', 'Drop buttons or inline filters')} />}
       </InlineToolbarCtx.Provider>
     </div>
   );
@@ -1656,6 +1818,7 @@ const ALERT_CLS: Record<string, { cls: string; Icon: React.ComponentType<{ class
   error: { cls: 'bg-rose-50 border-rose-200 text-rose-800', Icon: XCircle },
 };
 const Alert: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
   const [closed, setClosed] = useState(false);
   if (closed && !rt.isDesign) return null;
   const a = ALERT_CLS[p.type as string] ?? ALERT_CLS.info;
@@ -1675,7 +1838,7 @@ const Alert: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         <div className="font-medium">{p.message}</div>
         {p.description && <div className="opacity-80 mt-0.5 text-[12px]">{p.description}</div>}
       </div>
-      {p.closable && <button type="button" aria-label="关闭提示" onClick={() => { if (!rt.isDesign) { setClosed(true); rt.run(p.onClose, scope); } }} className="opacity-60 hover:opacity-100 shrink-0 mt-0.5"><X className="w-3.5 h-3.5" /></button>}
+      {p.closable && <button type="button" aria-label={tr('关闭提示', 'Close alert')} onClick={() => { if (!rt.isDesign) { setClosed(true); rt.run(p.onClose, scope); } }} className="opacity-60 hover:opacity-100 shrink-0 mt-0.5"><X className="w-3.5 h-3.5" /></button>}
     </div>
   );
 };
@@ -1695,27 +1858,28 @@ const Result: React.FC<CompProps> = ({ p, children, root }) => {
 
 /** Modal / Drawer: live = stacked overlay in the preview frame; staticOverlay = framed editor in design mode. */
 const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind, p, children, root, rt, scope, live, staticOverlay }) => {
+  const { tr } = useI18n();
   const width = Number(p.width ?? (kind === 'modal' ? 640 : 520));
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
   const showFooter = p.footer === undefined ? kind === 'modal' : p.footer !== false;
   const body = (
     <>
       <div className="flex items-center justify-between px-5 h-12 border-b border-slate-100 shrink-0">
-        <span className="text-[15px] font-semibold text-slate-900">{p.title ?? (kind === 'modal' ? '弹框' : '抽屉')}</span>
+        <span className="text-[15px] font-semibold text-slate-900">{p.title ?? (kind === 'modal' ? tr('弹框', 'Modal') : tr('抽屉', 'Drawer'))}</span>
         <button type="button" onClick={close} className="p-1 rounded hover:bg-slate-100 text-slate-500">
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-5 grid grid-cols-12 gap-x-4 gap-y-3.5 items-start content-start">
-        {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label={`拖入组件设计${kind === 'modal' ? '弹框' : '抽屉'}内容`} /></div>}
+        {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label={kind === 'modal' ? tr('拖入组件设计弹框内容', 'Drop components to design modal content') : tr('拖入组件设计抽屉内容', 'Drop components to design drawer content')} /></div>}
       </div>
       {showFooter && (
         <div className="flex items-center justify-end gap-2 px-5 h-14 border-t border-slate-100 shrink-0">
           <button type="button" onClick={close} className={cx('h-8 px-3.5 rounded-md border text-[13px] cursor-pointer', BTN_CLS.default)}>
-            {(p.cancelText as string) || '取消'}
+            {(p.cancelText as string) || tr('取消', 'Cancel')}
           </button>
           <button type="button" onClick={() => (p.onOk ? rt.run(p.onOk as PropValue, scope) : close())} className={cx('h-8 px-3.5 rounded-md border text-[13px] cursor-pointer', BTN_CLS.primary)}>
-            {(p.okText as string) || '确定'}
+            {(p.okText as string) || tr('确定', 'OK')}
           </button>
         </div>
       )}

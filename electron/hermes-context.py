@@ -2,6 +2,7 @@
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -266,7 +267,13 @@ async def main(request):
 
 
 SERVE_ACTIONS = ('usage', 'history', 'verify_prompt', 'refresh_prompt')
-SAFE_ERROR = 'Hermes 上下文接口不可用（{}），请检查连接或更新 Hermes 后重试'
+
+
+def _safe_error(locale_override=None):
+    raw = (locale_override or os.environ.get('PROTOFLOW_LOCALE', '')).strip().lower()
+    if raw.startswith('en'):
+        return 'Hermes context interface unavailable ({}), please check connection or update Hermes and retry'
+    return 'Hermes 上下文接口不可用（{}），请检查连接或更新 Hermes 后重试'
 
 
 async def serve():
@@ -281,17 +288,19 @@ async def serve():
         if not line:
             continue
         request_id = None
+        req_locale = None
         try:
             request = json.loads(line)
             if not isinstance(request, dict):
                 raise ValueError('invalid request')
             request_id = request.pop('requestId', None)
+            req_locale = request.pop('locale', None)
             if request.get('action') not in SERVE_ACTIONS:
                 raise ValueError('action not served by persistent bridge')
             result = await main(request)
             emit({'requestId': request_id, **(result or {})})
         except Exception as exc:
-            emit({'requestId': request_id, 'error': SAFE_ERROR.format(type(exc).__name__)})
+            emit({'requestId': request_id, 'error': _safe_error(req_locale).format(type(exc).__name__)})
 
 
 if __name__ == '__main__':
@@ -303,8 +312,11 @@ if __name__ == '__main__':
         if '--serve' in sys.argv[2:]:
             asyncio.run(serve())
         else:
-            result = asyncio.run(main(json.load(sys.stdin)))
+            payload = json.load(sys.stdin)
+            if isinstance(payload, dict):
+                payload.pop('locale', None)
+            result = asyncio.run(main(payload))
             if result is not None:
                 emit(result)
     except Exception as exc:
-        emit({'error': SAFE_ERROR.format(type(exc).__name__)})
+        emit({'error': _safe_error().format(type(exc).__name__)})

@@ -1,11 +1,12 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { tr } = require('./i18n.cjs');
 
 // The updater verifies the signed manifest, size and digest before calling this.
 // pkexec delegates authentication to the desktop; no password or shell is used.
 function installDeb(filePath, { spawnProcess = spawn } = {}) {
   if (!path.isAbsolute(filePath) || !filePath.endsWith('.deb')) {
-    return Promise.reject(new Error('安装包路径无效'));
+    return Promise.reject(new Error(tr('安装包路径无效', 'Invalid installer file path')));
   }
   return new Promise((resolve, reject) => {
     const child = spawnProcess('/usr/bin/pkexec', [
@@ -16,16 +17,19 @@ function installDeb(filePath, { spawnProcess = spawn } = {}) {
     child.stdout.on('data', record);
     child.stderr.on('data', record);
     child.on('error', error => reject(new Error(error.code === 'ENOENT'
-      ? '系统安装组件缺失，请联系管理员重新安装 Alex。'
-      : '无法启动系统安装程序，请稍后重试。')));
+      ? tr('系统安装组件缺失，请联系管理员重新安装 Alex。', 'System installer utility (pkexec) is missing. Please contact your administrator to reinstall Alex.')
+      : tr('无法启动系统安装程序，请稍后重试。', 'Unable to launch system installer. Please try again later.'))));
     child.on('close', code => {
       if (code === 0) { resolve(); return; }
-      if (code === 126) { reject(new Error('已取消系统授权，更新尚未安装，可点击“立即更新”重试。')); return; }
-      if (code === 127) { reject(new Error('未获得系统安装授权，请在密码弹窗中完成授权后重试。')); return; }
+      if (code === 126) { reject(new Error(tr('已取消系统授权，更新尚未安装，可点击“立即更新”重试。', 'System authorization was cancelled; update was not installed. Click "Update Now" to retry.'))); return; }
+      if (code === 127) { reject(new Error(tr('未获得系统安装授权，请在密码弹窗中完成授权后重试。', 'System installation authorization failed. Complete authentication in the password prompt and try again.'))); return; }
       if (/Could not get lock|Unable to acquire|锁|锁定/.test(output)) {
-        reject(new Error('系统正在安装其他软件，请等待完成后再更新。')); return;
+        reject(new Error(tr('系统正在安装其他软件，请等待完成后再更新。', 'Another package manager operation is in progress. Please wait for it to finish and try again.'))); return;
       }
-      reject(new Error(`系统安装未完成（错误码 ${code}），请检查网络后重试；若持续失败，请联系管理员。`));
+      reject(new Error(tr(
+        `系统安装未完成（错误码 ${code}），请检查网络后重试；若持续失败，请联系管理员。`,
+        `System installation did not complete (exit code ${code}). Check your network and try again, or contact your administrator.`
+      )));
     });
   });
 }

@@ -1,4 +1,5 @@
 import { reviewPageDependencies } from './projectDependencies';
+import { tr } from '../i18n/runtime';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 import { projectPageCatalog } from './projectAnalysis';
 import { diagramRelations } from '../proto/database/relations';
@@ -20,15 +21,15 @@ export interface ProjectAgreement {
 }
 
 export function validateProjectAgreements(value: unknown): asserts value is ProjectAgreement[] {
-  if (!Array.isArray(value)) throw new Error('项目约定必须是数组');
+  if (!Array.isArray(value)) throw new Error(tr('项目约定必须是数组', 'Project agreements must be an array'));
   const ids = new Set<string>();
   for (const row of value) {
     if (!row || typeof row !== 'object' || Object.keys(row).some(key => !['id','kind','title','text','pageIds'].includes(key)) ||
       !['requirement', 'field_constraint', 'design'].includes(row.kind) ||
       ['id', 'title', 'text'].some(key => typeof row[key] !== 'string' || !row[key].trim()) ||
       !Array.isArray(row.pageIds) || row.pageIds.some((id: unknown) => typeof id !== 'string' || !id.trim()) ||
-      new Set(row.pageIds).size !== row.pageIds.length || ids.has(row.id)) throw new Error('项目约定的标识、类型、正文或页面范围无效');
-    if (row.title.length > 160 || row.text.length > 12000) throw new Error('项目约定过长，请按独立规则拆分');
+      new Set(row.pageIds).size !== row.pageIds.length || ids.has(row.id)) throw new Error(tr('项目约定的标识、类型、正文或页面范围无效', 'Invalid ID, kind, text, or page scope on project agreement'));
+    if (row.title.length > 160 || row.text.length > 12000) throw new Error(tr('项目约定过长，请按独立规则拆分', 'Project agreement is too long; split into separate rules'));
     ids.add(row.id);
   }
 }
@@ -39,7 +40,7 @@ export function applyProjectAgreement(snapshot: Pick<ProjectStateSnapshot, 'proj
   const record = agreement as ProjectAgreement;
   const known = new Set(projectPageCatalog(snapshot).map(page => page.pageId));
   for (const page of snapshot.projectPlan?.pages ?? []) known.add(page.pageId);
-  if (record.pageIds.some(id => !known.has(id))) throw new Error('项目约定引用了不存在的页面，请使用准确的 pageId');
+  if (record.pageIds.some(id => !known.has(id))) throw new Error(tr('项目约定引用了不存在的页面，请使用准确的 pageId', 'Project agreement references an unknown page; use an exact pageId'));
   const records = snapshot.projectAgreements ?? []; // V7 archives predating project agreements.
   snapshot.projectAgreements = records.some(row => row.id === record.id)
     ? records.map(row => row.id === record.id ? structuredClone(record) : row)
@@ -53,13 +54,13 @@ export function projectExecutionBrief(
   options?: { generatingTargetPageId?: string },
 ) {
   if (!focus || typeof focus !== 'object' || Object.keys(focus).some(key => !['pageId', 'folderId'].includes(key)) ||
-    Object.values(focus).some(value => typeof value !== 'string' || !value.trim())) throw new Error('资料范围必须使用明确的页面或目录标识');
-  if (focus.pageId !== undefined && focus.folderId !== undefined) throw new Error('请选择页面或目录范围');
+    Object.values(focus).some(value => typeof value !== 'string' || !value.trim())) throw new Error(tr('资料范围必须使用明确的页面或目录标识', 'Brief focus must use an explicit pageId or folderId'));
+  if (focus.pageId !== undefined && focus.folderId !== undefined) throw new Error(tr('请选择页面或目录范围', 'Specify either pageId or folderId, not both'));
   const catalog = projectPageCatalog(snapshot);
   const byPage = new Map(catalog.map(page => [page.pageId, page]));
   const plan = snapshot.projectPlan;
   const approvedPlan = plan?.approved ? plan : null;
-  if (focus.pageId !== undefined && !byPage.has(focus.pageId) && !plan?.pages.some(page => page.pageId === focus.pageId)) throw new Error('未知页面范围');
+  if (focus.pageId !== undefined && !byPage.has(focus.pageId) && !plan?.pages.some(page => page.pageId === focus.pageId)) throw new Error(tr('未知页面范围', 'Unknown pageId in brief focus'));
   const selected = new Set<string>();
   if (focus.pageId !== undefined) selected.add(focus.pageId);
   if (focus.folderId !== undefined) {
@@ -68,7 +69,7 @@ export function projectExecutionBrief(
     const folderIds = new Set(snapshot.designerFolders.map(folder => folder.id));
     const visit = (items: typeof roots) => items.forEach(item => { if (item.type === 'folder') { folderIds.add(item.id); visit(item.children ?? []); } });
     visit(roots);
-    if (!folderIds.has(focus.folderId)) throw new Error('未知目录范围');
+    if (!folderIds.has(focus.folderId)) throw new Error(tr('未知目录范围', 'Unknown folderId in brief focus'));
     // Use structural parent/child IDs, never a title or path-prefix comparison.
     const tree = buildSitemap(snapshot.designerFolders, snapshot.designerPages, snapshot.sitemapOverrides, snapshot.sitemapBase);
     const select = (items: typeof tree, inside = false) => items.forEach(item => {

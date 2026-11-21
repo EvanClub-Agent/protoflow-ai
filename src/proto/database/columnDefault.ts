@@ -1,3 +1,5 @@
+import { tr } from '../../i18n/runtime';
+import { sqlEnumValues } from './enumContract';
 import type { DBColumnSchema, DBTableSchema } from '../../store/useProtoStore';
 
 /** Older projects (including the inventory archive) store simple text defaults
@@ -45,4 +47,20 @@ export function valuesWithColumnDefaults(table: DBTableSchema, input: Record<str
     values[col.name] = value;
   }
   return values;
+}
+
+/** Validate the supplied patch before mutating a preview row. Omitted fields on edits keep their values. */
+export function validateColumnValues(table: DBTableSchema, values: Record<string, unknown>): void {
+  for (const col of table.columns) {
+    if (!Object.hasOwn(values, col.name)) continue;
+    const name = `${table.tableName}.${col.name}`;
+    const value = values[col.name];
+    if (value === null && !col.nullable) {
+      throw new Error(tr(`${name} 不能为空`, `${name} cannot be null`));
+    }
+    const allowed = sqlEnumValues(col);
+    if (allowed && value !== null && !allowed.some(option => option === value)) {
+      throw new Error(tr(`${name} 的值不在声明的枚举中`, `Value for ${name} is outside its declared ENUM`));
+    }
+  }
 }

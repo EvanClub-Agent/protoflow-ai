@@ -1,3 +1,5 @@
+import { tr } from '../i18n/runtime';
+
 // Mermaid is loaded only when a non-empty diagram is opened. Keep initialization
 // and rendering in the same queue because Mermaid's configuration is global.
 let renderQueue: Promise<unknown> = Promise.resolve();
@@ -126,9 +128,9 @@ function processDiagram(source: string, dark: boolean, render: boolean, themeId:
       },
       maxTextSize: 50_000,
     });
-    if (source.length > 50_000) throw new Error('图表源码超过 50,000 字符，请精简后预览。');
+    if (source.length > 50_000) throw new Error(tr('图表源码超过 50,000 字符，请精简后预览。', 'Diagram source exceeds 50,000 characters; simplify it to preview.'));
     const parsed = await mermaid.parse(source);
-    if (!parsed) throw new Error('未能识别 Mermaid 图表，请检查语法。');
+    if (!parsed) throw new Error(tr('未能识别 Mermaid 图表，请检查语法。', 'Unrecognized Mermaid diagram; please check the syntax.'));
     // ZenUML's Mermaid adapter has a no-op parser; its native SVG renderer validates the syntax.
     if (!render && parsed.diagramType !== 'zenuml') return { source, diagramType: parsed.diagramType, svg: '' };
     const staging = document.createElement('div');
