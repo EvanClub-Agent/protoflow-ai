@@ -149,3 +149,35 @@ test('Desktop CLI isolates live and file modes; bundled skill installs are repea
     assert.throws(() => installDesignerSkill('../invalid', home, source), /Unknown/);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+test('client packages contain a portable stdio server, preserve customized plugins and rebind only the connection path', () => {
+  const { claudeBundle, installPlugin, pluginFiles } = require('../scripts/client-integrations.cjs');
+  const { unzipSync } = require('fflate');
+  const root = process.cwd();
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'alex client packages '));
+  const executable = process.execPath;
+  const first = path.join(temp, 'first connection.json'), second = path.join(temp, 'second connection.json');
+  fs.writeFileSync(first, '{"token":"test-private-token"}');
+  try {
+    const portable = pluginFiles(root);
+    assert.equal(JSON.parse(portable['mcp_config.json']).mcpServers.protoflow.variables[0].name, 'ALEX_CONNECTION_FILE');
+    assert.ok(portable['skills/alex-protoflow-designer/SKILL.md']);
+    for (const connection of [undefined, first]) {
+      const files = unzipSync(claudeBundle(root, connection));
+      assert.deepEqual(Object.keys(files).sort(), ['LICENSE', 'manifest.json', 'server/cli.cjs']);
+      const manifest = JSON.parse(Buffer.from(files['manifest.json']).toString());
+      assert.ok(files[manifest.server.entry_point]);
+      assert.equal(manifest.user_config.connection_file.default, connection);
+      assert.ok(Object.values(files).every(bytes => !Buffer.from(bytes as Uint8Array).includes('test-private-token')));
+    }
+    const bind = (connectionFile: string) => installPlugin(root, temp, { executable, connectionFile });
+    const target = bind(first);
+    assert.equal(bind(first), target);
+    assert.equal(bind(second), target);
+    const config = path.join(target, 'mcp_config.json');
+    assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.protoflow.args.at(-1), second);
+    fs.writeFileSync(config, '{"mcpServers":{"custom":{}}}');
+    assert.throws(() => bind(first), /Existing plugin differs/);
+    assert.equal(fs.readFileSync(config, 'utf8'), '{"mcpServers":{"custom":{}}}');
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});

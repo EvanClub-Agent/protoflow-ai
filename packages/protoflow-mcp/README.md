@@ -30,7 +30,7 @@ If your team hosts a ProtoFlow publishing server, Coding Agents can connect dire
 
 ### Live editing in Alex Desktop
 
-Open a saved project, then choose **MCP → Local → Bidirectional design**. Copy the generated configuration into your agent client. It runs the bundled stdio CLI with `--mode readwrite --desktop-bridge <connection.json>`. Keep Alex open. The connection file is specific to this project and contains a local credential. Only copy the generated configuration.
+Open a saved project, then choose **MCP → Local → Bidirectional design**. Copy the generated configuration into your agent client. It runs the bundled stdio CLI with `--mode readwrite --desktop-bridge <connection.json>`. Keep Alex open. The connection file is specific to this project and contains a local credential. Copy its path or the generated configuration.
 
 Start with `protoflow_workspace` using `action: "status"` to read the live revision, active page and selected component. Inspect the page before editing and include `expectedRevision` on writes. Edits appear on the canvas, use the desktop autosave queue, and can be undone from the top bar or with Cmd/Ctrl+Z. Hermes tasks block external writes until they finish. After a save error, the edit remains visible in Alex and saving can be retried there.
 
@@ -38,7 +38,11 @@ The desktop-only `protoflow_capture_preview` tool accepts an optional `pageId` (
 
 Returning to the launcher, closing Alex, or selecting **Read-only specs** revokes the connection. Enable it again on the same project to reuse its configuration. Create and switch projects in the desktop launcher. The local file workflow below also supports project creation and switching.
 
-Use the install buttons to add the bundled designer skill to Codex, Antigravity or Claude Code. Each button uses the client's personal skill directory. Claude Desktop can use the MCP prompts directly. [Codex skills](https://developers.openai.com/codex/skills/) · [Antigravity skills](https://antigravity.google/docs/skills) · [Claude Code skills](https://code.claude.com/docs/en/skills)
+The **Install Antigravity plugin** button installs the designer skill and live MCP server together under `~/.gemini/config/plugins/alex-protoflow-designer`. The **Export Claude Desktop extension** button saves a `.mcpb` file. Open it in Claude Desktop and confirm the connection file shown during setup. Both buttons bind to the project open in Alex. To switch projects, enable bidirectional design for the other project and install the plugin again or update the extension's connection file setting.
+
+For distribution, run `npm run build:integrations`. The ZIP and MCPB in `release/integrations/` include a bundled server and request the connection file path during setup. Copy that path from the desktop MCP panel. The portable Antigravity server needs Node.js 20 or newer. The locally installed plugin uses Alex's Electron runtime.
+
+Standalone skill installation and the generated Codex / Claude Code configurations remain available in the same panel. [Antigravity plugins](https://antigravity.google/docs/build-plugins) · [MCPB manifests](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
 
 ### Option 2: Authoring Mode (`--mode readwrite`) for Codex / Antigravity / Claude Desktop
 

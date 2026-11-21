@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import {
-  desktopAuthoringApi, disableDesktopAuthoring, enableDesktopAuthoring, useDesktopAuthoring, type SkillClient,
+  desktopAuthoringApi, disableDesktopAuthoring, enableDesktopAuthoring, runClientIntegration, useDesktopAuthoring, type SkillClient,
 } from '../services/desktopAuthoring';
 import { canUndoProjectChange, undoProjectChange } from '../services/projectUndo';
 import { useProjectSaveStore } from '../services/projectAutosave';
@@ -36,6 +36,17 @@ export function DesktopAuthoringControls() {
     </fieldset>
     {connection && <>
       <p>{tr('外部 Agent 可以编辑当前打开的工程。返回启动页或关闭双向设计会断开连接。', 'Agents can edit this open project. Returning to the launcher or switching to read-only disconnects them.')}</p>
+      <fieldset disabled={busy} className="flex flex-wrap gap-2">
+        <legend className="mb-1 font-semibold">{tr('客户端扩展', 'Client extensions')}</legend>
+        <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => void run(async () => {
+          const path = await runClientIntegration('installPlugin');
+          setMessage(tr(`插件已安装到 ${path}。请在 Antigravity 中重新加载插件。`, `Plugin installed at ${path}. Reload plugins in Antigravity.`));
+        })}>{tr('安装 Antigravity 插件', 'Install Antigravity plugin')}</button>
+        <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => void run(async () => {
+          const path = await runClientIntegration('exportExtension');
+          if (path) setMessage(tr(`请在 Claude Desktop 中打开 ${path}`, `Open ${path} in Claude Desktop.`));
+        })}>{tr('导出 Claude Desktop 扩展', 'Export Claude Desktop extension')}</button>
+      </fieldset>
       <fieldset disabled={busy} className="flex flex-wrap gap-2">
         <legend className="mb-1 font-semibold">{tr('安装设计 Skill', 'Install designer skill')}</legend>
         {([['codex', 'Codex'], ['antigravity', 'Antigravity'], ['claude', 'Claude Code']] as const).map(([client, label]) =>

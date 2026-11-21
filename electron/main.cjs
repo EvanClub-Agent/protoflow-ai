@@ -426,6 +426,31 @@ handleIpc('pflow:mcp-install-skill', (event, client) => {
     path.join(__dirname, '../skills/alex-protoflow-designer'));
 });
 
+function currentConnectionFile(sessionId) {
+  if (!authoringBridge) throw new Error('Desktop connection closed');
+  return authoringBridge.connectionFile(sessionId);
+}
+handleIpc('pflow:mcp-install-plugin', (event, sessionId) => {
+  assertAuthoringRenderer(event);
+  const connectionFile = currentConnectionFile(sessionId);
+  const { installPlugin } = require('./generated/client-integrations.cjs');
+  return installPlugin(path.resolve(__dirname, '..'), app.getPath('home'), { executable: process.execPath, connectionFile });
+});
+handleIpc('pflow:mcp-export-extension', async (event, sessionId) => {
+  assertAuthoringRenderer(event);
+  currentConnectionFile(sessionId);
+  const { name, claudeBundle, writeAtomic } = require('./generated/client-integrations.cjs');
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: path.join(app.getPath('downloads'), name + '.mcpb'),
+    filters: [{ name: 'Claude Desktop Extension', extensions: ['mcpb'] }],
+  });
+  if (canceled || !filePath) return null;
+  assertAuthoringRenderer(event);
+  const connectionFile = currentConnectionFile(sessionId);
+  writeAtomic(filePath, claudeBundle(path.resolve(__dirname, '..'), connectionFile));
+  return filePath;
+});
+
 handleIpc('pflow:mcp-runtime-info', (event) => {
   if (!isMainRendererEvent(event)) throw new Error(tr('不允许的 MCP 配置查询调用', 'Unauthorized MCP config query'));
   const bundled = path.join(__dirname, 'generated/spec-mcp-server.cjs');

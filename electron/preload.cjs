@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
       ipcRenderer.on('pflow:mcp-live-request', handler);
       return () => ipcRenderer.removeListener('pflow:mcp-live-request', handler);
     },
+    installPlugin: sessionId => ipcRenderer.invoke('pflow:mcp-install-plugin', sessionId),
+    exportExtension: sessionId => ipcRenderer.invoke('pflow:mcp-export-extension', sessionId),
     installSkill: client => ipcRenderer.invoke('pflow:mcp-install-skill', client),
   },
   mcpRuntimeInfo: () => ipcRenderer.invoke('pflow:mcp-runtime-info'),

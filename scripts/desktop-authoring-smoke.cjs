@@ -18,6 +18,8 @@ if (!process.versions.electron) {
   const { app, BrowserWindow, dialog } = require('electron');
   const dir = process.env.ALEX_LIVE_SMOKE_DIR;
   assert.ok(dir && path.isAbsolute(dir));
+  app.setPath('home', dir);
+  assert.equal(app.getPath('home'), dir);
   app.setPath('appData', dir);
   const profile = path.join(dir, 'protoflow-ai');
   fs.mkdirSync(profile);
@@ -92,6 +94,37 @@ if (!process.versions.electron) {
     await click("[...document.querySelectorAll('label')].find(l => /双向设计|Bidirectional design/.test(l.textContent))?.querySelector('input')");
     const config = await until(() => evalUi(`(() => { const code = document.querySelector('code[id$="_snippet"]')?.textContent;
       return code?.includes('--desktop-bridge') && JSON.parse(code).mcpServers.protoflow; })()`), 'generated stdio config');
+    const integrationButton = english => click("[...document.querySelectorAll('dialog button')].find(b => /" + english + "/.test(b.textContent))");
+    const extensionFile = path.join(dir, 'Claude export.mcpb');
+    const pluginDir = path.join(dir, '.gemini/config/plugins/alex-protoflow-designer');
+    await integrationButton('安装 Antigravity 插件|Install Antigravity plugin');
+    await until(() => fs.existsSync(path.join(pluginDir, 'mcp_config.json')), 'installed plugin');
+    dialog.showSaveDialog = async () => ({ canceled: true });
+    await integrationButton('导出 Claude Desktop 扩展|Export Claude Desktop extension');
+    await until(() => evalUi("!document.querySelector('dialog fieldset:disabled')"), 'cancelled export');
+    assert.ok(!fs.existsSync(extensionFile));
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: extensionFile });
+    await integrationButton('导出 Claude Desktop 扩展|Export Claude Desktop extension');
+    await until(() => fs.existsSync(extensionFile), 'exported .mcpb');
+    const { unzipSync } = require('fflate');
+    const extension = unzipSync(fs.readFileSync(extensionFile));
+    const manifest = JSON.parse(Buffer.from(extension['manifest.json']));
+    const extracted = path.join(dir, 'unpacked extension');
+    const entry = path.join(extracted, manifest.server.entry_point);
+    fs.mkdirSync(path.dirname(entry), { recursive: true });
+    fs.writeFileSync(entry, extension[manifest.server.entry_point]);
+    const connectionFile = config.args.at(-1);
+    assert.equal(manifest.user_config.connection_file.default, connectionFile);
+    const claude = manifest.server.mcp_config;
+    claude.args = claude.args.map(arg => arg.replace('${__dirname}', extracted).replace('${user_config.connection_file}', connectionFile));
+    const plugin = JSON.parse(fs.readFileSync(path.join(pluginDir, 'mcp_config.json'))).mcpServers.protoflow;
+    plugin.args = plugin.args.map(arg => arg.replace('${PLUGIN_ROOT}', pluginDir));
+    for (const client of [plugin, claude]) {
+      const list = await request(client, 'tools/list', {});
+      assert.ok(list.tools.some(tool => tool.name === 'protoflow_capture_preview'));
+      assert.equal((await capture(client, { pageId: 'mobile' })).pageId, 'mobile');
+    }
+    console.log('PASS both desktop export buttons, cancellation, package entry points, tool discovery and mobile PNG');
     const ctx = await call(config, 'protoflow_workspace', { action: 'status' });
     assert.equal(ctx.activePageId, 'smoke-page');
     assert.equal(ctx.selectedPfId, 'smoke-tag');

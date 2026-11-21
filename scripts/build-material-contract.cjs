@@ -32,6 +32,12 @@ function buildMaterialContract() {
     legalComments: 'inline',
   });
 
+  buildSync({
+    entryPoints: [path.join(root, 'scripts/client-integrations.cjs')],
+    outfile: path.join(root, 'electron/generated/client-integrations.cjs'),
+    bundle: true, platform: 'node', format: 'cjs', target: 'node20', minify: true, legalComments: 'inline',
+  });
+
   const pkgMcpOut = path.join(root, 'packages/protoflow-mcp/dist/cli.cjs');
   fs.mkdirSync(path.dirname(pkgMcpOut), { recursive: true });
   fs.writeFileSync(pkgMcpOut, '#!/usr/bin/env node\n' + fs.readFileSync(specMcpOut, 'utf8'));

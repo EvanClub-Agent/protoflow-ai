@@ -25,6 +25,8 @@ interface LiveApi {
   close(sessionId: string): Promise<void>;
   onRequest(listener: (request: LiveRequest) => void): () => void;
   reply(result: { sessionId: string; id: string; body?: string | null; failed?: boolean }): void;
+  installPlugin(sessionId: string): Promise<string>;
+  exportExtension(sessionId: string): Promise<string | null>;
   installSkill(client: SkillClient): Promise<string>;
 }
 export function desktopAuthoringApi() {
@@ -54,6 +56,12 @@ function projectOpen(target: Session) {
   return (access === 'local' || access === 'authenticated') && !state.isWelcomeScreenOpen && !state.isProjectClosed &&
     !state.isWebPlayerMode && meta.projectId === target.projectId && meta.fileName === target.fileName &&
     meta.storageDir === target.storageDir && desktopFileSession() === target.opened;
+}
+
+export function runClientIntegration(action: 'installPlugin' | 'exportExtension') {
+  const api = desktopAuthoringApi();
+  if (!api || !session || !projectOpen(session)) throw new Error(tr('请先开启双向设计', 'Enable bidirectional design first'));
+  return api[action](session.sessionId);
 }
 
 export async function disableDesktopAuthoring() {

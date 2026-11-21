@@ -1098,7 +1098,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                     <FolderGit2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    <span>{tr('当前工程本地路径', 'Local Project File Path')}</span>
+                    <span>{live ? tr('双向设计连接文件', 'Bidirectional connection file') : tr('当前工程本地路径', 'Local Project File Path')}</span>
                   </span>
                   {desktopInfo ? (
                     <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5">
@@ -1137,9 +1137,9 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     id={localPathCodeId}
                     className="font-mono text-[11px] text-slate-700 break-all"
                   >
-                    {resolvedLocalProjectPath ?? tr('请先打开已保存的本地工程', 'Open a saved local project first')}
+                    {live ? connectionPath : resolvedLocalProjectPath ?? tr('请先打开已保存的本地工程', 'Open a saved local project first')}
                   </span>
-                  {resolvedLocalProjectPath && <McpCopyButton targetElementId={localPathCodeId} label={tr('复制路径', 'Copy Path')} />}
+                  {(live || resolvedLocalProjectPath) && <McpCopyButton targetElementId={localPathCodeId} label={live ? tr('复制连接文件路径', 'Copy connection file path') : tr('复制路径', 'Copy Path')} />}
                 </div>
               </div>
             )}

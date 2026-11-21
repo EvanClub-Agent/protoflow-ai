@@ -95,7 +95,11 @@ function createDesktopAuthoringBridge(directory, send) {
     if (!active || active.sessionId !== sessionId || !pending.has(id)) throw new Error('Desktop request expired');
     return pending.get(id).lifetime.signal;
   }
-  return { open, close, reply, requestSignal };
+  function connectionFile(sessionId) {
+    if (!active?.published || active.sessionId !== sessionId) throw new Error('Desktop connection closed');
+    return active.connectionPath;
+  }
+  return { open, close, reply, requestSignal, connectionFile };
 }
 
 const skillRoots = new Map([
