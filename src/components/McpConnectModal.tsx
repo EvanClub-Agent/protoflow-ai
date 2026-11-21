@@ -1,3 +1,5 @@
+import { DesktopAuthoringControls } from './DesktopAuthoringControls';
+import { useDesktopAuthoring } from '../services/desktopAuthoring';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Blocks,
@@ -556,8 +558,8 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   }, [open, isViewerOnly, currentProjectMeta.projectId, initialShareUrl]);
 
   const resolvedLocalProjectPath = useMemo(() => {
-    const dir = currentProjectMeta.storageDir || '~/Desktop/ProtoFlowProjects';
-    const file = currentProjectMeta.fileName || `${currentProjectMeta.projectName}.pflow`;
+    const { storageDir: dir, fileName: file } = currentProjectMeta;
+    if (!dir || !file) return null;
     const sep = desktopInfo?.pathSep || '/';
     let expandedDir = dir;
     if (desktopInfo?.homeDir && (dir === '~' || dir.startsWith('~/'))) {
@@ -571,7 +573,6 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   }, [
     currentProjectMeta.storageDir,
     currentProjectMeta.fileName,
-    currentProjectMeta.projectName,
     desktopInfo,
   ]);
 
@@ -598,6 +599,8 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
     [CLIENT_TARGETS, clientTarget]
   );
 
+  const connectionPath = useDesktopAuthoring(s => s.connectionPath);
+  const live = tab === 'local' && !isViewerOnly && connectionPath !== null;
   const usingHttpTransport = tab === 'remote' && remoteTransport === 'http';
 
   const generatedConfig = useMemo(() => {
@@ -714,27 +717,13 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
       return formatStdioCommand('node', cliArgs, cliEnv);
     }
 
-    // Local .pflow mode
+    if (!live && !resolvedLocalProjectPath) return null;
+    const sourceArgs = live ? ['--mode', 'readwrite', '--desktop-bridge', connectionPath] : ['--project', resolvedLocalProjectPath!];
     if (localRunner === 'desktop_builtin' && desktopInfo) {
-      return formatStdioCommand(
-        desktopInfo.execPath,
-        [desktopInfo.scriptPath, '--project', resolvedLocalProjectPath],
-        { ELECTRON_RUN_AS_NODE: '1' }
-      );
+      return formatStdioCommand(desktopInfo.execPath, [desktopInfo.scriptPath, ...sourceArgs], { ELECTRON_RUN_AS_NODE: '1' });
     }
-    if (localRunner === 'desktop_node' && desktopInfo) {
-      return formatStdioCommand('node', [
-        desktopInfo.scriptPath,
-        '--project',
-        resolvedLocalProjectPath,
-      ]);
-    }
-
-    return formatStdioCommand('node', [
-      './packages/protoflow-mcp/dist/cli.cjs',
-      '--project',
-      resolvedLocalProjectPath,
-    ]);
+    const script = localRunner === 'desktop_node' && desktopInfo ? desktopInfo.scriptPath : './packages/protoflow-mcp/dist/cli.cjs';
+    return formatStdioCommand('node', [script, ...sourceArgs]);
   }, [
     tab,
     parsedRemote,
@@ -743,7 +732,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
     clientTarget,
     localRunner,
     desktopInfo,
-    resolvedLocalProjectPath,
+    resolvedLocalProjectPath, connectionPath, live,
   ]);
 
   const handleClientTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -766,7 +755,10 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   };
 
   const projectDisplayName = viewerShareContext?.title || currentProjectMeta.projectName;
-  const starterAgentPrompt = tr(
+  const starterAgentPrompt = live ? tr(
+    '先调用 protoflow_workspace 获取当前工程的 revision、activePageId 和 selectedPfId。读取目标页面及物料契约后，携带 expectedRevision 修改，再审计结果。',
+    'Call protoflow_workspace for revision, activePageId and selectedPfId. Inspect the page and contracts, write with expectedRevision, then audit the result.'
+  ) : tr(
     `请通过已连接的 protoflow MCP 工具读取原型工程「${projectDisplayName}」：先调用 protoflow_get_project_overview 和 protoflow_get_database_schema 对齐全局路由与数据库表结构，再逐页调用 protoflow_get_page_spec 还原前端交互、后端接口与组件便签规则，最后用 protoflow_get_implementation_checklist 逐项自检。`,
     `Read the prototype project "${projectDisplayName}" using the connected protoflow MCP tools: first call protoflow_get_project_overview and protoflow_get_database_schema to align global routes and database schemas, then call protoflow_get_page_spec per page to implement UI interactions, backend APIs, and spec pin rules, and finally verify everything against protoflow_get_implementation_checklist.`
   );
@@ -800,7 +792,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[10px] font-semibold text-emerald-700 shrink-0">
                   <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-                  {tr('Read-Only 安全只读', 'Read-Only Safe')}
+                  {live ? tr('双向设计', 'Bidirectional design') : tr('Read-Only 安全只读', 'Read-Only Safe')}
                 </span>
                 <span className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-mono font-medium text-slate-600 shrink-0">
                   MCP 2025-06-18
@@ -840,7 +832,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                   ? usingHttpTransport
                     ? tr('云端无状态 Streamable HTTP · 零本地依赖', 'Stateless Streamable HTTP · Zero local setup')
                     : tr('本机进程桥接在线分享 · Stdio', 'Local process bridging online share · Stdio')
-                  : tr('本机文件监听直读 · 保存 .pflow 毫秒级热生效', 'Direct local file watch · Live updates on .pflow save')}
+                  : live ? tr('实时桌面画布 · Stdio', 'Live desktop canvas · Stdio') : tr('本机文件监听直读 · 保存 .pflow 毫秒级热生效', 'Direct local file watch · Live updates on .pflow save')}
               </span>
             </div>
 
@@ -900,14 +892,14 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       >
                         <HardDrive className="w-3.5 h-3.5" aria-hidden="true" />
                       </span>
-                      <span className="truncate">{tr('本地 .pflow 工程直连', 'Local .pflow File')}</span>
+                      <span className="truncate">{live ? tr('当前桌面工程', 'Active desktop project') : tr('本地 .pflow 工程直连', 'Local .pflow File')}</span>
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold shrink-0">
-                      {tr('离线实时热读', 'Offline Live')}
+                      {live ? tr('实时画布', 'Live canvas') : tr('离线实时热读', 'Offline Live')}
                     </span>
                   </div>
                   <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                    {tr('单机边改原型边写代码，自动检测磁盘 .pflow 修改时间并即时返回最新规格', 'Edit prototypes and code side-by-side on one machine with automatic .pflow hot-reload')}
+                    {live ? tr('通过桌面编辑器查看和修改当前工程', 'Read and edit the active project through Alex Desktop') : tr('单机边改原型边写代码，自动检测磁盘 .pflow 修改时间并即时返回最新规格', 'Edit prototypes and code side-by-side on one machine with automatic .pflow hot-reload')}
                   </p>
                 </button>
               </div>
@@ -1102,6 +1094,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
               </div>
             ) : (
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                {desktopInfo && <DesktopAuthoringControls />}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                     <FolderGit2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
@@ -1144,9 +1137,9 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     id={localPathCodeId}
                     className="font-mono text-[11px] text-slate-700 break-all"
                   >
-                    {resolvedLocalProjectPath}
+                    {resolvedLocalProjectPath ?? tr('请先打开已保存的本地工程', 'Open a saved local project first')}
                   </span>
-                  <McpCopyButton targetElementId={localPathCodeId} label={tr('复制路径', 'Copy Path')} />
+                  {resolvedLocalProjectPath && <McpCopyButton targetElementId={localPathCodeId} label={tr('复制路径', 'Copy Path')} />}
                 </div>
               </div>
             )}
@@ -1223,15 +1216,15 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     </span>
                   </div>
 
-                  <McpCopyButton
+                  {generatedConfig && <McpCopyButton
                     targetElementId={snippetCodeId}
                     label={tr('复制配置', 'Copy Config')}
                     variant="dark"
-                  />
+                  />}
                 </div>
 
                 <pre className="p-4 font-mono text-[11.5px] leading-relaxed text-slate-100 overflow-x-auto">
-                  <code id={snippetCodeId}>{generatedConfig}</code>
+                  <code id={snippetCodeId}>{generatedConfig ?? tr('请打开已保存的本地工程以生成配置', 'Open a saved project to generate a configuration')}</code>
                 </pre>
               </div>
             </div>
@@ -1271,9 +1264,9 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
             >
               <span className="font-semibold text-slate-800 flex items-center gap-2">
                 <Terminal className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                <span>{tr('渐进式规格能力清单', 'Progressive Spec Capabilities')}</span>
+                <span>{live ? tr('实时设计工具', 'Live design tools') : tr('渐进式规格能力清单', 'Progressive Spec Capabilities')}</span>
                 <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200/80 text-[10px] font-medium text-blue-700">
-                  6 Tools · 2 Prompts · 3 Resources
+                  {live ? '17 Tools · 6 Prompts · 4 Resources' : '6 Tools · 2 Prompts · 3 Resources'}
                 </span>
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
@@ -1287,7 +1280,11 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
               </span>
             </button>
 
-            {capabilitiesExpanded && (
+            {capabilitiesExpanded && live && <p className="p-3 text-xs">{tr(
+              '可编辑页面、组件、数据表、演示数据、便签和流程图。通过 tools/list 查看工具参数，或用 design-page、refine-page、design-database 和 design-full-project 开始设计。',
+              'Edit pages, components, schemas, rows, notes and flows. Read tools/list for parameters or use design-page, refine-page, design-database and design-full-project.'
+            )}</p>}
+            {capabilitiesExpanded && !live && (
               <div className="p-3.5 border-t border-slate-200 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {EXPOSED_MCP_TOOLS.map((tool) => (
@@ -1349,7 +1346,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
           <span className="text-[11px] text-slate-500 inline-flex items-center gap-1.5 min-w-0">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
             <span className="truncate">
-              {tr('严格只读隔离：外部 Agent 仅可读取原型规格与 DDL 草稿，无法修改工程数据', 'Strict read-only isolation: external agents can read specs and DDL drafts without modifying project data')}
+              {live ? tr('桌面修改支持撤销，并由工程自动保存', 'Desktop edits support undo and project autosave') : tr('严格只读隔离：外部 Agent 仅可读取原型规格与 DDL 草稿，无法修改工程数据', 'Strict read-only isolation: external agents can read specs and DDL drafts without modifying project data')}
             </span>
           </span>
           <button

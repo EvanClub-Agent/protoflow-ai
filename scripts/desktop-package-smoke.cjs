@@ -20,12 +20,15 @@ if (process.argv[2] === '--inspect-archive') {
   assert.ok(process.versions.electron, '必须使用安装包自带的 Electron 检查');
   const archive = process.argv[3];
   assert.ok(path.isAbsolute(archive), '必须提供绝对路径');
-  assert.deepEqual(fs.readdirSync(archive).sort(), ['dist', 'electron', 'package.json', 'public']);
+  assert.deepEqual(fs.readdirSync(archive).sort(), ['dist', 'electron', 'package.json', 'public', 'skills']);
   const files = fs.readdirSync(archive, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile())
     .map(entry => path.relative(archive, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'));
+  const skillFiles = ['SKILL.md', ...['axure-reshape', 'desktop-and-mobile', 'er-modeling-rules', 'full-project-workflow']
+    .map(name => 'references/' + name + '.md')].map(file => 'skills/alex-protoflow-designer/' + file);
+  assert.deepEqual(files.filter(file => file.startsWith('skills/')).sort(), skillFiles.sort());
   for (const file of files) {
-    assert.ok(/^(dist\/|electron\/.+\.cjs$|electron\/service-origin\.json$|electron\/hermes-(?:reasoning|context|rate-limit|recovery-gateway|acp-surface|acp-runtime)\.py$|public\/icon\.png$|package\.json$)/.test(file), `多余的打包文件：${file}`);
+    assert.ok(skillFiles.includes(file) || /^(dist\/|electron\/.+\.cjs$|electron\/service-origin\.json$|electron\/hermes-(?:reasoning|context|rate-limit|recovery-gateway|acp-surface|acp-runtime)\.py$|public\/icon\.png$|package\.json$)/.test(file), `多余的打包文件：${file}`);
     assert.ok(!/(^|\/)(\.env(?:\.|$)|[^/]+\.local$)|\.(pflow|map)$/.test(file), `不应包含本地配置、工程或 source map：${file}`);
   }
   for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/service-origin.json', 'electron/hermes-dashboard-preload.cjs', 'electron/hermes-reasoning.py', 'electron/hermes-context.py', 'electron/hermes-rate-limit.py', 'electron/hermes-recovery-gateway.py', 'electron/hermes-acp-surface.py', 'electron/hermes-acp-runtime.py', 'public/icon.png']) {
@@ -43,6 +46,8 @@ if (process.argv[2] === '--inspect-archive') {
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-package-smoke-'));
   try {
+    const skill = require(path.join(archive, 'electron/desktop-authoring.cjs')).installDesignerSkill('codex', dir, path.join(archive, 'skills/alex-protoflow-designer'));
+    assert.ok(fs.statSync(path.join(skill, 'references/full-project-workflow.md')).isFile());
     const channel = require(path.join(archive, 'electron/update-channel.cjs')).validateBundledUpdateChannel();
     const { DesktopUpdater } = require(path.join(archive, 'electron/updater.cjs'));
     const updater = new DesktopUpdater({ dataDir: dir, appVersion: require(path.join(archive, 'package.json')).version,

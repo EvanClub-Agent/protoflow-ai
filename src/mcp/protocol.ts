@@ -1,4 +1,15 @@
 import type { LosslessNumber } from 'lossless-json';
+import { tr } from '../i18n/runtime';
+import {
+  AUTHORING_MCP_PROMPTS,
+  AUTHORING_MCP_RESOURCES,
+  AUTHORING_MCP_TOOLS,
+  executeAuthoringTool,
+  getAuthoringPrompt,
+  isAuthoringToolName,
+  readAuthoringResource,
+} from './authoringCore';
+import { isAuthoringWorkspace } from './authoringTypes';
 import {
   executeSpecTool,
   getSpecPrompt,
@@ -44,6 +55,32 @@ const SERVER_INSTRUCTIONS = [
   '4. Call protoflow_get_implementation_checklist at the end to verify full-stack coverage.',
 ].join(' ');
 
+const authoringInstructions = (desktop: boolean) => [
+  'Alex (ProtoFlow AI) Read-Write Prototype Authoring MCP Server.',
+  desktop
+    ? '1. Use protoflow_workspace(action="status") for the live revision, activePageId and selectedPfId. Pass expectedRevision when writing. Open or create other projects in Alex.'
+    : '1. Call protoflow_workspace(action="status") first (and create_project / switch_project if no .pflow project is active), then inspect existing structure via protoflow_get_project_overview and protoflow_get_database_schema.',
+  '2. Before writing any TSX page, call protoflow_get_implementation_guide and protoflow_get_contracts to verify registered components, props, and runtime actions — never guess AntD props or write inline JS callbacks.',
+  '3. Create sitemap folders (protoflow_manage_sitemap), normalized shared ER tables (protoflow_upsert_db_tables), and coherent seed rows (protoflow_manage_table_rows) before writing pages.',
+  '4. Create/overwrite pages with protoflow_write_page or edit subtrees losslessly with protoflow_edit_page_block; never mix desktop <Page> and mobile <MobilePage> (M*) components.',
+  '5. Attach requirement pins (protoflow_manage_sticky_notes), optional notes/Mermaid flows (protoflow_manage_docs_and_flows), and finish with protoflow_audit_project until healthy is true.',
+].join(' ');
+
+const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
+  if (tool.name !== 'protoflow_workspace') return tool;
+  const { projectName, projectMode, activePageId, expectedRevision } = tool.inputSchema.properties as Record<string, object>;
+  return {
+    ...tool, description: 'Inspect the active desktop project or update its metadata.',
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: { action: { type: 'string', enum: ['status', 'update_project_meta'] }, projectName, projectMode, activePageId, expectedRevision },
+    },
+  };
+});
+
+const AUTHORING_PROMPT_NAMES = new Set(AUTHORING_MCP_PROMPTS.map((p) => p.name));
+const AUTHORING_RESOURCE_URIS = new Set(AUTHORING_MCP_RESOURCES.map((r) => r.uri));
+
 export async function handleSpecMcpRequest(
   loader: WorkspaceLoader,
   msg: unknown
@@ -75,6 +112,7 @@ export async function handleSpecMcpRequest(
 
   const id = req.id ?? null;
   const params = req.params && typeof req.params === 'object' ? req.params : {};
+  const isReadWrite = isAuthoringWorkspace(loader) && loader.mode === 'readwrite';
 
   try {
     switch (req.method) {
@@ -94,7 +132,7 @@ export async function handleSpecMcpRequest(
               name: SPEC_MCP_SERVER_NAME,
               version: SPEC_MCP_SERVER_VERSION,
             },
-            instructions: SERVER_INSTRUCTIONS,
+            instructions: isReadWrite ? authoringInstructions(loader.transport === 'desktop_bridge') : SERVER_INSTRUCTIONS,
           },
         };
       }
@@ -103,7 +141,13 @@ export async function handleSpecMcpRequest(
         return { jsonrpc: '2.0', id, result: {} };
 
       case 'tools/list':
-        return { jsonrpc: '2.0', id, result: { tools: SPEC_MCP_TOOLS } };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: isReadWrite ? [...SPEC_MCP_TOOLS, ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS)] : SPEC_MCP_TOOLS,
+          },
+        };
 
       case 'tools/call': {
         const toolName = typeof params.name === 'string' ? params.name : '';
@@ -119,8 +163,21 @@ export async function handleSpecMcpRequest(
             ? (params.arguments as Record<string, unknown>)
             : {};
         try {
-          const workspace = await loader.load();
-          const output = executeSpecTool(workspace, toolName, toolArgs);
+          let output: unknown;
+          if (isAuthoringToolName(toolName)) {
+            if (!isReadWrite) {
+              throw new Error(
+                tr(
+                  `当前 MCP 服务以只读模式（readonly）运行，工具 "${toolName}" 已禁用；如需编辑工程请使用 --mode readwrite 重启服务。`,
+                  `This MCP server is running in read-only mode; tool "${toolName}" is disabled. Restart with --mode readwrite to enable authoring.`
+                )
+              );
+            }
+            output = await executeAuthoringTool(loader, toolName, toolArgs);
+          } else {
+            const workspace = await loader.load();
+            output = executeSpecTool(workspace, toolName, toolArgs);
+          }
           return {
             jsonrpc: '2.0',
             id,
@@ -143,7 +200,13 @@ export async function handleSpecMcpRequest(
       }
 
       case 'prompts/list':
-        return { jsonrpc: '2.0', id, result: { prompts: SPEC_MCP_PROMPTS } };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            prompts: isReadWrite ? [...SPEC_MCP_PROMPTS, ...AUTHORING_MCP_PROMPTS] : SPEC_MCP_PROMPTS,
+          },
+        };
 
       case 'prompts/get': {
         const promptName = typeof params.name === 'string' ? params.name : '';
@@ -158,13 +221,27 @@ export async function handleSpecMcpRequest(
           params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments)
             ? (params.arguments as Record<string, string>)
             : undefined;
+        if (isReadWrite && AUTHORING_PROMPT_NAMES.has(promptName)) {
+          const workspace = loader.hasActiveProject() ? await loader.load() : null;
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: getAuthoringPrompt(workspace, promptName, promptArgs),
+          };
+        }
         const workspace = await loader.load();
         const prompt = getSpecPrompt(workspace, promptName, promptArgs);
         return { jsonrpc: '2.0', id, result: prompt };
       }
 
       case 'resources/list':
-        return { jsonrpc: '2.0', id, result: { resources: SPEC_MCP_RESOURCES } };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resources: isReadWrite ? [...SPEC_MCP_RESOURCES, ...AUTHORING_MCP_RESOURCES] : SPEC_MCP_RESOURCES,
+          },
+        };
 
       case 'resources/templates/list':
         return { jsonrpc: '2.0', id, result: { resourceTemplates: [] } };
@@ -176,6 +253,13 @@ export async function handleSpecMcpRequest(
             jsonrpc: '2.0',
             id,
             error: { code: -32602, message: 'Missing resource uri in resources/read' },
+          };
+        }
+        if (isReadWrite && AUTHORING_RESOURCE_URIS.has(uri)) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: readAuthoringResource(uri),
           };
         }
         const workspace = await loader.load();

@@ -1,4 +1,5 @@
 import { tr } from '../i18n/runtime';
+import { inspectPage } from '../proto/ai/pageInspection';
 import { verifiedAxureSourceId } from '../proto/axure/task';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
@@ -115,6 +116,14 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
         includeSource: {
           type: 'boolean',
           description: 'Include the full canonical TSX prototype source of the page (default: true).',
+        },
+        selectedPfId: {
+          type: 'string',
+          description: 'Optional exact component pfId to inspect its ancestors and subtree.',
+        },
+        includeInspection: {
+          type: 'boolean',
+          description: 'Include static contract validation, warnings, and saved preview-row binding status from inspectPage (default: false).',
         },
       },
       required: ['pageId'],
@@ -665,6 +674,27 @@ export function executeSpecTool(
 
       const axureSourcePageId = axureLineage.sourceByCopyId.get(pageId);
       const optimizedPageId = axureLineage.activeCopyBySourceId.get(pageId);
+      const requestedSelectedPfId =
+        typeof args.selectedPfId === 'string' && args.selectedPfId.trim().length > 0
+          ? args.selectedPfId.trim()
+          : undefined;
+      const shouldInspect = args.includeInspection === true || requestedSelectedPfId !== undefined;
+      let inspection: ReturnType<typeof inspectPage> | null | undefined;
+      if (shouldInspect) {
+        if (!source) {
+          if (requestedSelectedPfId !== undefined) {
+            throw new Error(
+              tr(
+                `页面 "${pageId}" 尚无保存源码，无法定位组件 ${requestedSelectedPfId}`,
+                `Page "${pageId}" has no saved source yet; cannot locate component ${requestedSelectedPfId}`
+              )
+            );
+          }
+          inspection = null;
+        } else {
+          inspection = inspectPage(source, s.dbTables, s.tableRows, requestedSelectedPfId);
+        }
+      }
 
       return {
         page: {
@@ -690,6 +720,7 @@ export function executeSpecTool(
         linkedMindmaps,
         componentOutline: parsed?.doc ? buildComponentOutline(parsed.doc.root) : null,
         ...(includeSource ? { pageSourceTsx: source ?? null } : {}),
+        ...(shouldInspect ? { inspection } : {}),
       };
     }
 

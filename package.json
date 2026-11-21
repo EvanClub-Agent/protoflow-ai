@@ -31,6 +31,7 @@
     "test": "node scripts/test.cjs",
     "test:package": "node scripts/desktop-package-smoke.cjs",
     "test:linux-icons": "python3 scripts/linux-icon-smoke.py",
+    "test:desktop-authoring": "npm run build && node scripts/desktop-authoring-smoke.cjs",
     "test:persistence": "node scripts/project-persistence-smoke.cjs",
     "test:hermes": "node scripts/hermes-smoke.cjs",
     "test:hermes-images": "node scripts/hermes-image-smoke.cjs",

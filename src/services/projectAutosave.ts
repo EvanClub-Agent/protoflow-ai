@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { newId } from '../utils/identity';
 import { tr } from '../i18n/runtime';
 import { captureRuntimeError } from './runtimeDiagnostics';
 import { encodePflowBinary, type PflowBinaryPayload, type PflowProjectMetadata } from '../utils/pflowBinaryCodec';
@@ -17,6 +18,7 @@ export interface ProjectSaveBridge {
 /** One writer per open project. A successful older write never marks newer edits saved. */
 export class ProjectAutosave {
   private meta: PflowProjectMetadata | null = null;
+  private openId: string | null = null;
   private revision = 0;
   private savedRevision = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -26,11 +28,13 @@ export class ProjectAutosave {
   constructor(private options: {
     capture: () => PflowBinaryPayload;
     write: ProjectSaveBridge['saveCurrentProject'];
-    onSaved: (payload: PflowBinaryPayload) => void;
+    onSaved: (payload: PflowBinaryPayload, isLatest: boolean) => void;
     delay?: number;
   }) {}
 
   get dirty() { return this.meta !== null && this.revision !== this.savedRevision; }
+  get fileSession() { return this.meta && !this.suspended ? this.openId : null; }
+  get liveRevision() { return this.fileSession ? this.fileSession + '/' + this.revision : null; }
   get projectId() { return this.meta?.projectId; }
 
   assertCanReplace() {
@@ -39,6 +43,7 @@ export class ProjectAutosave {
 
   opened(payload: PflowBinaryPayload) {
     this.assertCanReplace();
+    this.openId = newId('file-session');
     this.meta = payload.meta;
     this.revision = this.savedRevision = 0;
     useProjectSaveStore.setState({ status: 'saved', error: '', savedAt: payload.meta.updatedAt });
@@ -82,7 +87,7 @@ export class ProjectAutosave {
         const result = await this.options.write({ projectId: payload.meta.projectId, dirPath: payload.meta.storageDir, fileName: payload.meta.fileName, binaryBytes: encodePflowBinary(payload) });
         if (result.saved !== true) throw new Error(tr('工程未保存成功', 'Failed to save project'));
         this.savedRevision = revision;
-        this.options.onSaved(payload);
+        this.options.onSaved(payload, this.revision === revision);
         useProjectSaveStore.setState({ status: this.dirty ? 'pending' : 'saved', error: '', savedAt: payload.meta.updatedAt });
       }
     } catch (error) {

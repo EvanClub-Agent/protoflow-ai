@@ -9,7 +9,7 @@ module.exports = {
   asarUnpack: ['electron/generated/spec-mcp-server.cjs'],
   // Renderer dependencies are bundled by Vite; native code only uses Node/Electron.
   // Keep local projects, publishing credentials and the Go server out of releases.
-  files: ['dist/**/*', 'electron/**/*.cjs', 'electron/service-origin.json', 'electron/hermes-reasoning.py', 'electron/hermes-context.py', 'electron/hermes-rate-limit.py', 'electron/hermes-recovery-gateway.py', 'electron/hermes-acp-surface.py', 'electron/hermes-acp-runtime.py', 'public/icon.png', 'package.json', '!node_modules/**/*'],
+  files: ['dist/**/*', 'skills/alex-protoflow-designer/**/*.md', 'electron/**/*.cjs', 'electron/service-origin.json', 'electron/hermes-reasoning.py', 'electron/hermes-context.py', 'electron/hermes-rate-limit.py', 'electron/hermes-recovery-gateway.py', 'electron/hermes-acp-surface.py', 'electron/hermes-acp-runtime.py', 'public/icon.png', 'package.json', '!node_modules/**/*'],
   npmRebuild: false,
   publish: null,
   beforePack: async () => { require('./electron/update-channel.cjs').validateBundledUpdateChannel(); },

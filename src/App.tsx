@@ -1,3 +1,4 @@
+import { DesktopAuthoringNotice } from './components/DesktopAuthoringControls';
 import { ProjectAiView } from './components/ProjectAiView';
 import React, { useState } from 'react';
 import { useI18n } from './i18n';
@@ -146,6 +147,7 @@ export function App() {
 
       {/* Top Antigravity-style Single-Line Draggable Titlebar */}
       <GlobalToolbar />
+      {isDesktopApp && <DesktopAuthoringNotice />}
 
       {/* Classic Left-Center-Right Enterprise Prototype & Schema Workspace */}
       <div className="flex-1 flex overflow-hidden">

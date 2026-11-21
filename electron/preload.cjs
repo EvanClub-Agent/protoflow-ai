@@ -53,6 +53,17 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
   writeUnpackedGitTree: (payload) =>
     ipcRenderer.invoke('pflow:write-unpacked-git-tree', payload),
   readBinaryProject: (payload) => ipcRenderer.invoke('pflow:read-binary-project', payload),
+  liveAuthoring: {
+    open: input => ipcRenderer.invoke('pflow:mcp-live-open', input),
+    close: sessionId => ipcRenderer.invoke('pflow:mcp-live-close', sessionId),
+    reply: result => ipcRenderer.send('pflow:mcp-live-reply', result),
+    onRequest: listener => {
+      const handler = (_event, request) => listener(request);
+      ipcRenderer.on('pflow:mcp-live-request', handler);
+      return () => ipcRenderer.removeListener('pflow:mcp-live-request', handler);
+    },
+    installSkill: client => ipcRenderer.invoke('pflow:mcp-install-skill', client),
+  },
   mcpRuntimeInfo: () => ipcRenderer.invoke('pflow:mcp-runtime-info'),
   trashProject: (payload) => ipcRenderer.invoke('pflow:trash-project', payload),
   openBinaryProject: () => ipcRenderer.invoke('pflow:open-binary-project'),

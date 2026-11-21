@@ -45,8 +45,8 @@ export function startProjectPersistence(delay = 500) {
       if (disk.meta.projectId !== input.projectId) throw new Error(tr('该路径的工程 ID 已变化，未覆盖任何文件', 'Project ID at this path has changed; existing file was not overwritten'));
       return bridge.writeBinaryProject(input);
     },
-    onSaved: payload => {
-      useProtoStore.setState({ currentProjectMeta: payload.meta });
+    onSaved: (payload, isLatest) => {
+      if (isLatest) useProtoStore.setState({ currentProjectMeta: payload.meta });
       remember(payload);
     },
   });
@@ -85,6 +85,9 @@ export function startProjectPersistence(delay = 500) {
     if (autosave === controller) autosave = null;
   };
 }
+
+export function desktopFileSession() { return autosave?.fileSession ?? null; }
+export function desktopProjectRevision() { return autosave?.liveRevision ?? null; }
 
 export async function flushProjectChanges() { await autosave?.flush(); }
 export async function prepareProjectDeletion(projectId: string) { await autosave?.beforeDelete(projectId); }
@@ -713,6 +716,53 @@ export function applyProjectEditPayload(input: unknown) {
   if (payload.meta.projectId !== current.projectId || payload.meta.storageDir !== current.storageDir || payload.meta.fileName !== current.fileName) throw new Error(tr('当前工程已变化，无法应用修改', 'Current project changed; cannot apply edit'));
   applySnapshot(payload);
   autosave?.changed();
+}
+
+// Live edits update persisted fields in place so the inspector, open dialogs, and
+// page history for untouched pages survive a change elsewhere in the project.
+export function applyLiveProjectEdit(before: PflowBinaryPayload, next: PflowBinaryPayload) {
+  validateProjectPayload(next);
+  const current = useProtoStore.getState();
+  if (current.isProjectClosed || !autosave?.liveRevision || autosave.projectId !== next.meta.projectId ||
+      current.currentProjectMeta.projectId !== next.meta.projectId ||
+      current.currentProjectMeta.storageDir !== next.meta.storageDir || current.currentProjectMeta.fileName !== next.meta.fileName) {
+    throw new Error(tr('当前工程已变化，无法应用修改', 'Current project changed; cannot apply edit'));
+  }
+  const s = next.stateSnapshot;
+  const page = usePageStore.getState();
+  const changed = (key: keyof ProjectStateSnapshot) => JSON.stringify(before.stateSnapshot[key]) !== JSON.stringify(s[key]);
+  const pagePatch: Partial<typeof page> = {};
+  const protoPatch: Partial<typeof current> = {};
+  for (const key of ['pageSources', 'designerPages', 'designerFolders', 'sitemapOverrides', 'sitemapBase', 'tableRows'] as const) {
+    if (changed(key)) Object.assign(pagePatch, { [key]: s[key] });
+  }
+  if (pagePatch.pageSources) pagePatch.history = Object.fromEntries(Object.entries(page.history)
+    .filter(([id]) => before.stateSnapshot.pageSources[id] === s.pageSources[id]));
+  for (const key of ['activePageId', 'dbTables', 'stickyNotes', 'suppliers', 'purchaseOrderItems', 'acceptanceOrders',
+    'closedLoopIssues', 'widgets', 'draftAcceptanceHeader', 'draftAcceptanceLines', 'mindmaps'] as const) {
+    if (changed(key)) Object.assign(protoPatch, { [key]: s[key] });
+  }
+  if (changed('databaseRequirements')) protoPatch.databaseRequirements = s.databaseRequirements ?? [];
+  if (changed('projectAgreements')) protoPatch.projectAgreements = s.projectAgreements ?? [];
+  if (changed('projectPlan')) protoPatch.projectPlan = s.projectPlan ?? null;
+  if (changed('projectNotes')) protoPatch.projectNotes = s.projectNotes ?? emptyProjectNotes();
+  if (protoPatch.projectNotes) {
+    const exists = (id: string | null) => protoPatch.projectNotes!.nodes.some(n => n.id === id);
+    if (!exists(current.selectedNoteNodeId)) protoPatch.selectedNoteNodeId = null;
+    if (!exists(current.dockedNoteId)) protoPatch.dockedNoteId = null;
+  }
+  if (protoPatch.mindmaps && !s.mindmaps.nodes.some(n => n.id === current.selectedMindmapNodeId)) protoPatch.selectedMindmapNodeId = null;
+  if (protoPatch.dbTables && !s.dbTables.some(t => t.id === current.selectedTableId)) protoPatch.selectedTableId = '';
+  const metaChanged = before.meta.projectName !== next.meta.projectName || before.meta.projectMode !== next.meta.projectMode;
+  if (!metaChanged && !Object.keys(pagePatch).length && !Object.keys(protoPatch).length) return false;
+  protoPatch.currentProjectMeta = { ...next.meta, pageCount: Object.keys(s.pageSources).length, tableCount: s.dbTables.length, stickyCount: s.stickyNotes.length };
+  applyingSnapshot = true;
+  try {
+    if (Object.keys(pagePatch).length) usePageStore.setState(pagePatch);
+    useProtoStore.setState(protoPatch);
+  } finally { applyingSnapshot = false; }
+  autosave.changed();
+  return true;
 }
 
 function applySnapshot(payload: PflowBinaryPayload) {

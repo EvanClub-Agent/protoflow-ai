@@ -1,3 +1,4 @@
+import { publishCanvasSelection } from '../../services/desktopAuthoring';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   MousePointerClick,
@@ -282,6 +283,11 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
     }
   }, [pageId, doc.root.pfId]);
+
+  React.useLayoutEffect(() => publishCanvasSelection(
+    mode === 'design' && selectedPfId && parseResult.doc && findNode(parseResult.doc.root, selectedPfId)
+      ? { projectId: currentProjectMeta.projectId, pageId, source: rawSource, pfId: selectedPfId } : null
+  ), [mode, selectedPfId, parseResult.doc, currentProjectMeta.projectId, pageId, rawSource]);
 
   const isDesign = mode === 'design';
   const runtime = useRuntimeController(doc, pageId, isDesign);

@@ -4,6 +4,7 @@ import './index.css';
 import App from './App.tsx';
 import { syncDesktopBootLocale, type DesktopLocaleBridge } from './i18n';
 import { AccountGate } from './components/AccountGate';
+import { startDesktopAuthoring } from './services/desktopAuthoring';
 import { startProjectPersistence } from './services/projectStorage';
 import { ProjectSaveNotice } from './components/ProjectSaveStatus';
 import { ExitConfirmation } from './components/ExitConfirmation';
@@ -20,6 +21,8 @@ void syncDesktopBootLocale(
   (window as unknown as { protoflowDesktop?: DesktopLocaleBridge }).protoflowDesktop,
 );
 startProjectPersistence();
+const stopAuthoring = startDesktopAuthoring();
+if (import.meta.hot) import.meta.hot.dispose(stopAuthoring);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

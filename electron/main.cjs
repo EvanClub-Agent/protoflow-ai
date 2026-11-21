@@ -12,6 +12,7 @@ const { initMainI18n, getMainLocale, setMainLocale, isMainEn, tr } = require('./
 require('./app-identity.cjs').initializeApplicationIdentity(app);
 
 let mainWindow = null;
+let authoringBridge = null;
 let managedViteProcess = null;
 let publishingClient;
 let desktopUpdater;
@@ -272,6 +273,7 @@ async function createMainWindow() {
   const stopOrphanedTasks = () => {
     // No renderer remains to validate/apply the result. Do not keep an orphaned
     // prompt or power assertion alive after a crash, reload or window closure.
+    authoringBridge?.close();
     hermesRuntime?.close();
     aiBackground?.releaseOwner(rendererOwner);
   };
@@ -388,6 +390,34 @@ handleIpc('pflow:read-binary-project', async (_event, { dirPath, fileName }) => 
   if (typeof dirPath !== 'string' || !path.isAbsolute(dirPath) || typeof fileName !== 'string' ||
       !fileName || path.basename(fileName) !== fileName) throw new Error(tr('工程路径无效，请重新选择文件', 'Invalid project path. Please select the file again.'));
   return { binaryBytes: new Uint8Array(await fs.promises.readFile(path.join(dirPath, fileName))) };
+});
+
+function assertAuthoringRenderer(event) {
+  if (!isMainRendererEvent(event)) throw new Error('Unauthorized desktop authoring caller');
+  const page = new URL(event.senderFrame.url);
+  if (page.protocol === 'file:' && path.resolve(require('node:url').fileURLToPath(page)) === path.resolve(__dirname, '../dist/index.html')) return;
+  const dev = new URL(process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173');
+  if (!app.isPackaged && page.origin === dev.origin) return;
+  throw new Error('Desktop authoring requires the Alex editor');
+}
+handleIpc('pflow:mcp-live-open', (event, input) => {
+  assertAuthoringRenderer(event);
+  authoringBridge ??= require('./desktop-authoring.cjs').createDesktopAuthoringBridge(
+    path.join(app.getPath('userData'), 'authoring'), request => mainWindow.webContents.send('pflow:mcp-live-request', request)
+  );
+  return authoringBridge.open(input);
+});
+handleIpc('pflow:mcp-live-close', (event, sessionId) => {
+  assertAuthoringRenderer(event);
+  authoringBridge?.close(sessionId);
+});
+ipcMain.on('pflow:mcp-live-reply', (event, result) => {
+  if (isMainRendererEvent(event)) authoringBridge?.reply(result);
+});
+handleIpc('pflow:mcp-install-skill', (event, client) => {
+  assertAuthoringRenderer(event);
+  return require('./desktop-authoring.cjs').installDesignerSkill(client, os.homedir(),
+    path.join(__dirname, '../skills/alex-protoflow-designer'));
 });
 
 handleIpc('pflow:mcp-runtime-info', (event) => {
@@ -655,6 +685,7 @@ app.whenReady().then(() => {
 });
 
 function stopApplicationServices() {
+  authoringBridge?.close();
   aiBackground?.close();
   taskNotification?.close();
   diagnostics?.close();

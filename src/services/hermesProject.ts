@@ -1,3 +1,5 @@
+import { recordProjectUndo } from './projectUndo';
+export { canUndoProjectChange, undoProjectChange } from './projectUndo';
 import { preparePreviewScenario } from '../proto/database/previewScenario';
 import { tr } from '../i18n/runtime';
 import { generationEvidenceIssues, regressedPageDependencies } from './projectDependencies';
@@ -592,50 +594,6 @@ export function stageGeneratingCandidate(
   }
   return next;
 }
-const undoChanges = new Map<
-  string,
-  {
-    projectId: string;
-    before: PflowBinaryPayload;
-    scenarioTableIds: Set<string>;
-    afterRevision: string;
-    history: ReturnType<typeof usePageStore.getState>["history"];
-  }
->();
-export function canUndoProjectChange(id: string) {
-  const item = undoChanges.get(id);
-  return Boolean(
-    item &&
-      useProtoStore.getState().currentProjectMeta.projectId ===
-        item.projectId &&
-      projectRevision() === item.afterRevision,
-  );
-}
-export function undoProjectChange(id: string) {
-  const item = undoChanges.get(id);
-  if (!item || !canUndoProjectChange(id))
-    throw new Error(tr("工程已变更，不能再整体撤销这次 AI 修改", "Project has changed since then; cannot undo this AI change as a whole"));
-  const s = item.before.stateSnapshot;
-  usePageStore.setState({
-    pageSources: s.pageSources,
-    designerPages: s.designerPages,
-    designerFolders: s.designerFolders,
-    sitemapOverrides: s.sitemapOverrides,
-    history: item.history,
-    ...(item.scenarioTableIds.size ? {tableRows:Object.fromEntries(Object.entries(usePageStore.getState().tableRows).filter(([id]) => !item.scenarioTableIds.has(id)))} : {}),
-  });
-  useProtoStore.setState({
-    databaseRequirements: s.databaseRequirements ?? [],
-    projectPlan: s.projectPlan === undefined ? null : s.projectPlan,
-    projectAgreements: s.projectAgreements ?? [],
-    mindmaps: s.mindmaps,
-    dbTables: s.dbTables,
-    stickyNotes: s.stickyNotes,
-    closedLoopIssues: s.closedLoopIssues,
-    activePageId: s.activePageId,
-  });
-  undoChanges.delete(id);
-}
 export function applyProjectChanges(
   base: PflowBinaryPayload,
   revision: string,
@@ -744,14 +702,31 @@ export function applyProjectChanges(
     closedLoopIssues: s.closedLoopIssues,
   });
   if (changeId) {
-    for (const [id, item] of undoChanges)
-      if (item.projectId === base.meta.projectId) undoChanges.delete(id);
-    undoChanges.set(changeId, {
+    const afterRevision = projectRevision();
+    recordProjectUndo(changeId, {
       projectId: base.meta.projectId,
-      before: effectiveBase,
-      scenarioTableIds: result.scenarioTableIds,
-      afterRevision: projectRevision(),
-      history: pageStore.history,
+      canUndo: () => !useProtoStore.getState().isProjectClosed && useProtoStore.getState().currentProjectMeta.projectId === base.meta.projectId && projectRevision() === afterRevision,
+      undo: () => {
+        const s = effectiveBase.stateSnapshot;
+        usePageStore.setState({
+          pageSources: s.pageSources,
+          designerPages: s.designerPages,
+          designerFolders: s.designerFolders,
+          sitemapOverrides: s.sitemapOverrides,
+          history: pageStore.history,
+          ...(result.scenarioTableIds.size ? {tableRows:Object.fromEntries(Object.entries(usePageStore.getState().tableRows).filter(([id]) => !result.scenarioTableIds.has(id)))} : {}),
+        });
+        useProtoStore.setState({
+          databaseRequirements: s.databaseRequirements ?? [],
+          projectPlan: s.projectPlan === undefined ? null : s.projectPlan,
+          projectAgreements: s.projectAgreements ?? [],
+          mindmaps: s.mindmaps,
+          dbTables: s.dbTables,
+          stickyNotes: s.stickyNotes,
+          closedLoopIssues: s.closedLoopIssues,
+          activePageId: s.activePageId,
+        });
+      },
     });
   }
   return result;
