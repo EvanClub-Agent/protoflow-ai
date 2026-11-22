@@ -59,7 +59,7 @@ const SERVER_INSTRUCTIONS = [
 const authoringInstructions = (desktop: boolean, capture: boolean) => [
   'Alex (ProtoFlow AI) Read-Write Prototype Authoring MCP Server.',
   desktop
-    ? '1. Use protoflow_workspace(action="status") for the live revision, activePageId and selectedPfId. Pass expectedRevision when writing. Open or create other projects in Alex.'
+    ? '1. Use protoflow_workspace(action="status") to verify the intended projectId, activePageId and selectedPfId. Pass the status revision as expectedRevision on the first write. Send only one desktop write at a time, even across different tools, folders or pages. Wait for each successful write and pass its returned revision unchanged as expectedRevision on the next write. On a conflict, stop the sequence, verify the intended project and inspect the changed state before retrying. Open or create other projects in Alex.'
     : '1. Call protoflow_workspace(action="status") first (and create_project / switch_project if no .pflow project is active), then inspect existing structure via protoflow_get_project_overview and protoflow_get_database_schema.',
   '2. Before writing any TSX page, call protoflow_get_implementation_guide and protoflow_get_contracts to verify registered components, props, and runtime actions — never guess AntD props or write inline JS callbacks.',
   '3. Create sitemap folders (protoflow_manage_sitemap), normalized shared ER tables (protoflow_upsert_db_tables), and coherent seed rows (protoflow_manage_table_rows) before writing pages.',
@@ -69,13 +69,25 @@ const authoringInstructions = (desktop: boolean, capture: boolean) => [
 ].join(' ');
 
 const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
-  if (tool.name !== 'protoflow_workspace') return tool;
-  const { projectName, projectMode, activePageId, expectedRevision } = tool.inputSchema.properties as Record<string, object>;
+  const { properties, required = [] } = tool.inputSchema as { properties: Record<string, object>; required?: string[] };
+  if (!Object.hasOwn(properties, 'expectedRevision')) return tool;
+  const workspace = tool.name === 'protoflow_workspace';
+  const writeActions = workspace ? 'update_project_meta' :
+    tool.name === 'protoflow_manage_table_rows' ? 'seed and clear' : null;
+  const { projectName, projectMode, activePageId } = properties;
+  const expectedRevision = {
+    type: 'string', minLength: 1,
+    description: (writeActions ? `Required for ${writeActions}.` : 'Required for every write.') +
+      ' Use the revision from workspace status for the first write and from the previous successful write thereafter.',
+  };
   return {
-    ...tool, description: 'Inspect the active desktop project or update its metadata.',
+    ...tool,
+    description: workspace ? 'Inspect the active desktop project or update its metadata.' : tool.description,
     inputSchema: {
       ...tool.inputSchema,
-      properties: { action: { type: 'string', enum: ['status', 'update_project_meta'] }, projectName, projectMode, activePageId, expectedRevision },
+      properties: workspace ? { action: { type: 'string', enum: ['status', 'update_project_meta'] }, projectName, projectMode, activePageId, expectedRevision }
+        : { ...properties, expectedRevision },
+      ...(writeActions ? {} : { required: [...required, 'expectedRevision'] }),
     },
   };
 });

@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { McpConnectModal, shareUrlToMcpHttpUrl } from '../src/components/McpConnectModal';
+import { useDesktopAuthoring } from '../src/services/desktopAuthoring';
 import postgresColumnTypes from '../server/internal/publish/testdata/postgres-column-types.json';
 import { generateDatabaseDdl, mapColumnTypeForDialect } from '../src/mcp/ddl';
 import { handleSpecMcpPayload } from '../src/mcp/protocol';
@@ -1051,5 +1052,48 @@ test('Spec MCP: McpConnectModal renders accessible tablist/tabpanel, VS Code con
     );
   } finally {
     if (renderer) act(() => renderer.unmount());
+  }
+});
+
+test('Spec MCP: Live PM mode surfaces plain-language prompt templates and collapses developer JSON snippet by default', async () => {
+  installTestDom();
+  const prevState = useDesktopAuthoring.getState();
+  useDesktopAuthoring.setState({ enabled: true, connectionPath: '/tmp/authoring/live.json', connectionError: null });
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(McpConnectModal, {
+          open: true,
+          onClose() {},
+          initialTab: 'local',
+        })
+      );
+    });
+    const textOf = (inst: TestRenderer.ReactTestInstance | string): string =>
+      typeof inst === 'string' ? inst : inst.children.map((c) => textOf(c)).join('');
+
+    // Developer JSON snippet sits inside a collapsed <details> in live PM mode
+    const detailsList = renderer.root.findAllByType('details');
+    const devConfigDetails = detailsList.find((d) => d.findAllByType('pre').length > 0);
+    assert.ok(devConfigDetails, 'Developer config must be wrapped in native <details> in live mode');
+    assert.equal(Boolean(devConfigDetails.props.open), false);
+
+    // Starter prompt uses plain product language (no raw internal parameter names) and switches presets cleanly
+    const promptNode = renderer.root.find((n) => n.type === 'p' && String(n.props.id || '').endsWith('_prompt'));
+    assert.equal(/selectedPfId|expectedRevision/.test(textOf(promptNode)), false);
+    assert.match(textOf(promptNode), /中学图书管理系统|School Library/);
+
+    const refineBtn = renderer.root
+      .findAllByType('button')
+      .find((b) => /修改当前打开的页面|Refine active page/.test(textOf(b)));
+    assert.ok(refineBtn);
+    act(() => {
+      refineBtn.props.onClick();
+    });
+    assert.match(textOf(promptNode), /当前打开的页面|currently open on my Alex canvas/);
+  } finally {
+    if (renderer) act(() => renderer.unmount());
+    useDesktopAuthoring.setState(prevState);
   }
 });

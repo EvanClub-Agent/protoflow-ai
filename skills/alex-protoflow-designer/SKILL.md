@@ -9,7 +9,10 @@ Build and iterate interactive, data-driven business prototypes stored as `.pflow
 
 ## Seven Iron Rules
 
-1. **Workspace first**: Always start with `protoflow_workspace(action="status")`. With `transport: "desktop_bridge"`, use the live `activePageId` and `selectedPfId` for the requested canvas edit, inspect that page, and pass its current workspace revision as `expectedRevision`. If the editor reports a conflict, read the changed state before retrying. With `transport: "local_file"`, if no project is active, call `create_project` or `switch_project` before calling any project-scoped tool.
+1. **Workspace first**. Start with `protoflow_workspace(action="status")`.
+   - For `desktop_bridge`, verify the intended `projectId`. For a canvas edit, inspect the page identified by `activePageId` and the selection identified by `selectedPfId`.
+   - Send exactly one desktop write at a time across all tools, including edits to different folders or pages. Use the status `revision` as the first write's `expectedRevision`. Wait for each successful result and pass its exact `revision` as the next write's `expectedRevision`. On conflict, stop, re-read status and inspect the changed target before resuming on the intended project.
+   - For `local_file`, if no project is active, call `create_project` or `switch_project` before any project-scoped tool.
 2. **Never guess TSX props or write arbitrary React**: Alex page TSX is a strict material AST, not arbitrary React. Before writing or editing any page, call `protoflow_get_implementation_guide` and `protoflow_get_contracts`. Never invent Ant Design props, `style`, `className`, `import`s, or inline JS callbacks (`() => ...`).
 3. **Every component needs a unique explicit `pfId`**: Every JSX element in `protoflow_write_page` or `protoflow_edit_page_block` must carry a unique, stable `pfId` string.
 4. **Strict PC vs Mobile isolation**: Desktop pages use `<Page>` and desktop/universal materials only; mobile pages use `<MobilePage>` and `M*`/universal materials only. Never mix `<Table>`/`<Card>`/`<Modal>` into `<MobilePage>` or `M*` components into `<Page>`.

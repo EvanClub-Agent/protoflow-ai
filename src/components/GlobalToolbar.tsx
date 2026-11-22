@@ -23,6 +23,7 @@ import {
   Blocks,
 } from 'lucide-react';
 import { useProtoStore } from '../store/useProtoStore';
+import { useDesktopAuthoring } from '../services/desktopAuthoring';
 import { useHermesStore } from '../store/useHermesStore';
 import { useUpdateStore } from '../store/useUpdateStore';
 import { usePageStore } from '../proto/store/usePageStore';
@@ -80,6 +81,7 @@ export const GlobalToolbar: React.FC = () => {
   const activeDesignerPage = usePageStore(state => state.designerPages.find(page => page.pageId === activePageId));
 
   const { tr } = useI18n();
+  const liveCoDesign = useDesktopAuthoring((s) => Boolean(s.connectionPath));
   const theme = useThemePreference();
 
   const pageTitleMap: Record<string, string> = {
@@ -446,16 +448,28 @@ export const GlobalToolbar: React.FC = () => {
             type="button"
             aria-label={tr('MCP 接入配置', 'MCP Integration')}
             onClick={() => setMcpModalOpen(true)}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition"
+            className={`relative w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+              liveCoDesign
+                ? 'text-blue-600 bg-blue-50/80 hover:bg-blue-100/80'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
           >
-            <Blocks className="w-3.5 h-3.5" />
+            <Blocks className="w-3.5 h-3.5" aria-hidden="true" />
+            {liveCoDesign && (
+              <span
+                aria-hidden="true"
+                className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white"
+              />
+            )}
           </button>
           <div
             role="tooltip"
             className="pointer-events-none opacity-0 -translate-y-0.5 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 transition-all duration-150 ease-out absolute top-full right-0 mt-1.5 z-50 px-2.5 py-1 rounded-md bg-white border border-slate-200/90 text-slate-800 shadow-md whitespace-nowrap"
           >
             <span className="relative z-10 text-xs font-medium tracking-tight">
-              {tr('MCP 接入 (Coding Agent)', 'MCP Integration (Coding Agent)')}
+              {liveCoDesign
+                ? tr('AI 实时共创已连接 · 点击管理或移交研发', 'Live AI Co-Design Active · Manage or Hand Off')
+                : tr('连接外部 AI 画原型 / 移交研发', 'Connect External AI / Dev Handoff')}
             </span>
           </div>
         </div>

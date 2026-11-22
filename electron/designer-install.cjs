@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { isDeepStrictEqual } = require('node:util');
+const { claimDirectory } = require('./claim-directory.cjs');
 
 const receipt = '.alex-install.json';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -56,30 +57,6 @@ function checkInstalled(target, kind, expected, legacyBinding) {
   return false;
 }
 
-function acquire(transaction, work, owner) {
-  if (!stat(transaction)) {
-    const claim = path.join(work, 'claim');
-    fs.mkdirSync(claim);
-    fs.writeFileSync(path.join(claim, owner), '');
-    fs.renameSync(claim, transaction); // A second claim cannot replace a nonempty directory.
-    return;
-  }
-  if (!stat(transaction)?.isDirectory()) throw new Error('Invalid installer transaction: ' + transaction);
-  const old = fs.readdirSync(transaction).find(name => /^owner-\d+-[0-9a-f-]{36}$/.test(name));
-  if (!old) throw new Error('Unknown installer transaction: ' + transaction);
-  const pid = Number(old.split('-')[1]);
-  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('Invalid installer process');
-  try {
-    process.kill(pid, 0);
-  } catch (error) {
-    if (error.code !== 'ESRCH') throw error;
-    // Renaming the unique owner marker lets only one retry recover a dead writer.
-    fs.renameSync(path.join(transaction, old), path.join(transaction, owner));
-    return;
-  }
-  throw new Error('Installation already in progress: ' + transaction);
-}
-
 function installDesignerFiles(target, kind, files, legacyBinding) {
   const parent = path.dirname(target);
   fs.mkdirSync(parent, { recursive: true });
@@ -87,7 +64,7 @@ function installDesignerFiles(target, kind, files, legacyBinding) {
   const previous = path.join(transaction, 'previous');
   const work = fs.mkdtempSync(path.join(parent, '.alex-install-'));
   try {
-    acquire(transaction, work, 'owner-' + process.pid + '-' + randomUUID());
+    claimDirectory(transaction, work, 'owner-' + process.pid + '-' + randomUUID(), 'Installation already in progress: ' + transaction);
   } catch (error) {
     fs.rmSync(work, { recursive: true, force: true });
     throw error;

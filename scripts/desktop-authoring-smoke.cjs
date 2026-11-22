@@ -121,6 +121,7 @@ if (!process.versions.electron) {
     fs.mkdirSync(path.dirname(entry), { recursive: true });
     fs.writeFileSync(entry, extension[manifest.server.entry_point]);
     const connectionFile = config.args.at(-1);
+    assert.equal(path.basename(connectionFile), 'live.json');
     assert.equal(manifest.user_config.connection_file.default, connectionFile);
     const claude = manifest.server.mcp_config;
     claude.args = claude.args.map(arg => arg.replace('${__dirname}', extracted).replace('${user_config.connection_file}', connectionFile));
@@ -135,6 +136,9 @@ if (!process.versions.electron) {
     const ctx = await call(config, 'protoflow_workspace', { action: 'status' });
     assert.equal(ctx.activePageId, 'smoke-page');
     assert.equal(ctx.selectedPfId, 'smoke-tag');
+    await assert.rejects(call(plugin, 'protoflow_workspace', {
+      action: 'update_project_meta', projectName: ctx.projectName,
+    }), /expectedRevision/);
     await click("[...document.querySelectorAll('dialog button')].find(b => /^(完成|Done)$/.test(b.textContent))");
     await call(config, 'protoflow_edit_page_block', { pageId: ctx.activePageId, targetPfId: ctx.selectedPfId, expectedRevision: ctx.revision,
       mode: 'replace_node', tsx: '<Tag pfId="smoke-tag" color="blue">Live update</Tag>' });
@@ -195,15 +199,37 @@ if (!process.versions.electron) {
     assert.match(await text(), /Before/);
     await until(async () => (await diskSpec()).pageSourceTsx.includes('Before'), 'undo saved');
     if (process.platform === 'darwin') {
+      const afterUndo = await call(config, 'protoflow_workspace', { action: 'status' });
       await call(config, 'protoflow_edit_page_block', { pageId: 'smoke-page', targetPfId: 'smoke-tag', mode: 'replace_node',
-        tsx: '<Tag pfId="smoke-tag">Menu undo</Tag>' });
+        expectedRevision: afterUndo.revision, tsx: '<Tag pfId="smoke-tag">Menu undo</Tag>' });
       const menuUndo = require('electron').Menu.getApplicationMenu().getMenuItemById('alex-undo');
       assert.equal(menuUndo.accelerator, 'Command+Z');
       menuUndo.click(undefined, win);
       await until(async () => (await text())?.includes('Before'), 'AppKit menu command undo');
     }
+    let { revision } = await call(plugin, 'protoflow_workspace', { action: 'status' });
+    const folders = ['catalog', 'members', 'loans', 'reports'];
+    for (const id of folders) {
+      const result = await call(plugin, 'protoflow_manage_sitemap', {
+        action: 'upsert_folder', folder: { id, title: id, parentFolderId: null }, expectedRevision: revision,
+      });
+      revision = result.revision;
+    }
+    for (const [pageId, folderId] of [['books', 'catalog'], ['copies', 'catalog'], ['students', 'members'],
+      ['checkouts', 'loans'], ['returns', 'loans'], ['overdue', 'reports']]) {
+      const result = await call(plugin, 'protoflow_write_page', {
+        pageId, folderId, title: pageId, platform: 'desktop', expectedRevision: revision,
+        source: `export default function Page() { return (<Page pfId="${pageId}-root" title="${pageId}" />); }`,
+      });
+      revision = result.revision;
+    }
+    assert.equal((await call(plugin, 'protoflow_workspace', { action: 'status' })).revision, revision);
+    assert.match((await call(local, 'protoflow_get_page_spec', { pageId: 'overdue' })).pageSourceTsx, /overdue-root/);
+    console.log('PASS installed plugin chained four folder writes and six page writes using each returned revision');
     await click("document.querySelector('button[aria-label^=MCP]')");
     await click("[...document.querySelectorAll('label')].find(l => /只读规格|Read-only specs/.test(l.textContent))?.querySelector('input')");
+    assert.match((await request(plugin, 'initialize', {})).instructions, /protoflow_capture_preview/);
+    assert.ok((await request(plugin, 'tools/list', {})).tools.some(tool => tool.name === 'protoflow_capture_preview'));
     await assert.rejects(call(config, 'protoflow_workspace', { action: 'status' }), /connection unavailable/);
     console.log('PASS real Electron editor → stdio config → live selection → canvas edit → disk → undo → disconnect');
   }

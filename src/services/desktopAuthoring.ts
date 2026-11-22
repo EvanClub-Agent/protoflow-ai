@@ -12,6 +12,7 @@ import { useAccountStore } from '../store/useAccountStore';
 import { useHermesStore } from '../store/useHermesStore';
 import { useProtoStore } from '../store/useProtoStore';
 import { pendingProjectAiTasks } from './hermesTaskLock';
+import { useProjectSaveStore } from './projectAutosave';
 import { applyLiveProjectEdit, captureProjectPayload, desktopFileSession, desktopProjectRevision, flushProjectChanges } from './projectStorage';
 import { canUndoProjectChange, recordProjectUndo } from './projectUndo';
 
@@ -36,13 +37,16 @@ export function desktopAuthoringApi() {
 
 type ChangeNotice = { id: string; projectId: string; opened: string; summary: string };
 export const useDesktopAuthoring = create<{
+  enabled: boolean;
+  connectionError: string | null;
   connectionPath: string | null;
   notice: ChangeNotice | null;
   writing: boolean;
-}>(() => ({ connectionPath: null, notice: null, writing: false }));
+}>(() => ({ enabled: false, connectionError: null, connectionPath: null, notice: null, writing: false }));
 
 let session: Session | null = null;
 let projectPath: string | null = null;
+let opening: Promise<void> | null = null;
 type CanvasSelection = { projectId: string; pageId: string; source: string; pfId: string };
 let selection: CanvasSelection | null = null;
 export function publishCanvasSelection(next: CanvasSelection | null) {
@@ -50,12 +54,21 @@ export function publishCanvasSelection(next: CanvasSelection | null) {
   return () => { if (selection === next) selection = null; };
 }
 
-function projectOpen(target: Session) {
+function editableTarget(): (ProjectTarget & { opened: string }) | null {
+  const api = desktopAuthoringApi();
+  const opened = desktopFileSession();
+  if (!api || !opened) return null;
   const state = useProtoStore.getState(), meta = state.currentProjectMeta;
   const access = useAccountStore.getState().status;
-  return (access === 'local' || access === 'authenticated') && !state.isWelcomeScreenOpen && !state.isProjectClosed &&
-    !state.isWebPlayerMode && meta.projectId === target.projectId && meta.fileName === target.fileName &&
-    meta.storageDir === target.storageDir && desktopFileSession() === target.opened;
+  if ((access !== 'local' && access !== 'authenticated') || state.isWelcomeScreenOpen || state.isProjectClosed ||
+      state.isWebPlayerMode || !meta.projectId || !meta.storageDir || !meta.fileName) return null;
+  return { projectId: meta.projectId, storageDir: meta.storageDir, fileName: meta.fileName, opened };
+}
+
+function projectOpen(target: Session) {
+  const current = editableTarget();
+  return Boolean(current && current.projectId === target.projectId && current.fileName === target.fileName &&
+    current.storageDir === target.storageDir && current.opened === target.opened);
 }
 
 export function runClientIntegration(action: 'installPlugin' | 'exportExtension') {
@@ -64,32 +77,51 @@ export function runClientIntegration(action: 'installPlugin' | 'exportExtension'
   return api[action](session.sessionId);
 }
 
-export async function disableDesktopAuthoring() {
+async function closeSession() {
   const previous = session;
   session = null;
+  opening = null;
   projectPath = null;
   useDesktopAuthoring.setState({ connectionPath: null });
   if (previous) await desktopAuthoringApi()?.close(previous.sessionId);
+}
+
+export async function disableDesktopAuthoring() {
+  useDesktopAuthoring.setState({ enabled: false, connectionError: null });
+  await closeSession();
 }
 
 export async function enableDesktopAuthoring() {
   const api = desktopAuthoringApi();
   const opened = desktopFileSession();
   if (!api || !opened) throw new Error(tr('请在桌面端打开工程文件', 'Open a project file in Alex Desktop'));
-  const { projectId, storageDir, fileName } = useProtoStore.getState().currentProjectMeta;
-  const target = { projectId, storageDir, fileName, sessionId: newId('mcp-session'), opened };
-  if (!projectOpen(target)) throw new Error(tr('当前工程不可编辑', 'Current project is unavailable for editing'));
+  const current = editableTarget();
+  if (!current) throw new Error(tr('当前工程不可编辑', 'Current project is unavailable for editing'));
+  if (session && projectOpen(session) && useDesktopAuthoring.getState().connectionPath) return;
+  if (opening && session && projectOpen(session)) return opening;
+  const target: Session = { ...current, sessionId: newId('mcp-session') };
   session = target;
-  try {
-    const result = await api.open({ projectId, storageDir, fileName, sessionId: target.sessionId });
-    if (session !== target || !projectOpen(target)) throw new Error(tr('当前工程已切换', 'Current project changed'));
-    projectPath = result.projectPath;
-    useDesktopAuthoring.setState({ connectionPath: result.connectionPath });
-  } catch (error) {
-    if (session === target) await disableDesktopAuthoring();
-    else await api.close(target.sessionId);
-    throw error;
-  }
+  projectPath = null;
+  useDesktopAuthoring.setState({ enabled: true, connectionError: null, connectionPath: null });
+  opening = (async () => {
+    try {
+      const result = await api.open({ projectId: target.projectId, storageDir: target.storageDir, fileName: target.fileName, sessionId: target.sessionId });
+      if (session !== target || !projectOpen(target)) throw new Error(tr('当前工程已切换', 'Current project changed'));
+      projectPath = result.projectPath;
+      useDesktopAuthoring.setState({ connectionPath: result.connectionPath });
+    } catch (error) {
+      if (session === target) {
+        useDesktopAuthoring.setState({ enabled: false, connectionError: error instanceof Error ? error.message : String(error) });
+        await closeSession();
+      } else {
+        await api.close(target.sessionId);
+      }
+      throw error;
+    } finally {
+      if (session === target) opening = null;
+    }
+  })();
+  return opening;
 }
 
 function desktopWorkspace(target: Session, filePath: string, request: LiveRequest): AuthoringWorkspace {
@@ -142,7 +174,10 @@ function desktopWorkspace(target: Session, filePath: string, request: LiveReques
     },
     async mutate(mutator, options) {
       const current = revision();
-      if (options?.expectedRevision !== undefined && options.expectedRevision !== current) {
+      if (options?.expectedRevision === undefined) {
+        throw new Error(tr('桌面写入必须携带 expectedRevision，请先读取当前工程状态', 'Desktop writes require expectedRevision. Read the active workspace status first.'));
+      }
+      if (options.expectedRevision !== current) {
         throw new Error(tr('工程版本冲突，请重新读取后再试', 'Revision conflict. Read the project again.'));
       }
       const { projectId } = target;
@@ -202,13 +237,29 @@ function desktopWorkspace(target: Session, filePath: string, request: LiveReques
 export function startDesktopAuthoring() {
   const api = desktopAuthoringApi();
   if (!api) return () => {};
+  let disposed = false;
+  let microtaskScheduled = false;
   const checkProject = () => {
     const { notice } = useDesktopAuthoring.getState();
     if (notice && notice.opened !== desktopFileSession()) useDesktopAuthoring.setState({ notice: null });
-    if (session && !projectOpen(session)) void disableDesktopAuthoring().catch(console.error);
+    if (session && !projectOpen(session)) void closeSession().catch(console.error);
+    if (!useDesktopAuthoring.getState().enabled || session || microtaskScheduled) return;
+    microtaskScheduled = true;
+    queueMicrotask(() => {
+      microtaskScheduled = false;
+      if (!disposed && useDesktopAuthoring.getState().enabled && !session && editableTarget()) {
+        void enableDesktopAuthoring().catch(console.error);
+      }
+    });
   };
   const stopStore = useProtoStore.subscribe(checkProject);
-  const stopAccount = useAccountStore.subscribe(checkProject);
+  const stopAccount = useAccountStore.subscribe((next, previous) => {
+    if (useDesktopAuthoring.getState().enabled && (next.status !== previous.status ||
+        next.user?.id !== previous.user?.id || next.serverUrl !== previous.serverUrl)) {
+      void disableDesktopAuthoring().catch(console.error);
+    }
+  });
+  const stopSave = useProjectSaveStore.subscribe(checkProject);
   let queue = Promise.resolve();
   const stopRequests = api.onRequest(request => {
     const target = session, file = projectPath;
@@ -222,5 +273,12 @@ export function startDesktopAuthoring() {
       api.reply({ id: request.id, sessionId: request.sessionId, body: response === null ? null : stringify(response) });
     }).catch(() => api.reply({ id: request.id, sessionId: request.sessionId, failed: true }));
   });
-  return () => { stopRequests(); stopStore(); stopAccount(); void disableDesktopAuthoring().catch(console.error); };
+  return () => {
+    disposed = true;
+    stopRequests();
+    stopStore();
+    stopAccount();
+    stopSave();
+    void disableDesktopAuthoring().catch(console.error);
+  };
 }

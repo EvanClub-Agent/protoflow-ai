@@ -5,7 +5,7 @@ Use this workflow when asked to generate an entire prototype project (sitemap, E
 ## Step 1: Workspace Discovery
 
 1. Call `protoflow_workspace(action="status")`.
-2. If no `.pflow` file is active (or the user wants a new project), call `protoflow_workspace(action="create_project", ...)` with:
+2. For a new project, open or create the target in Alex when using `desktop_bridge`. With `local_file`, if no `.pflow` file is active or the user wants a new project, call `protoflow_workspace(action="create_project", ...)` with:
    - `filePath` ending in `.pflow`
    - `projectName`
    - `projectMode`: `'desktop'`, `'mobile'`, or `'hybrid'` (pick `'hybrid'` if the system has both admin/backoffice and mobile/mini-program screens)
@@ -21,6 +21,8 @@ Before designing tables or pages, check whether any core business facts are genu
 Ask concise targeted questions when missing facts would force guessing business rules; decide standard UI layout, columns, spacing, and icons autonomously.
 
 ## Step 3: Sitemap Folders + Shared ER Tables + Coherent Seed Data
+
+On `desktop_bridge`, serialize every write through Steps 3–5. To create several folders and pages, send the first folder with the verified project's status `revision` as `expectedRevision`. Wait for its result and pass the returned `revision` to the next folder, table, page or other write as `expectedRevision`. Only one write may be in flight. On a conflict, stop and inspect the active project and affected data before continuing.
 
 Always build the data backbone **before** writing pages:
 

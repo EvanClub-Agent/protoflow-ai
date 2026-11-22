@@ -5,7 +5,7 @@ import {
   Blocks,
   BookOpen,
   Check,
-  ChevronDown,
+  ChevronRight,
   Copy,
   Database,
   ExternalLink,
@@ -167,7 +167,7 @@ const McpCopyButton: React.FC<CopyButtonProps> = ({
     const text =
       target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
         ? target.value
-        : target.innerText.trim();
+        : (target.innerText || target.textContent || '').trim();
     if (!text) return;
 
     let ok = false;
@@ -431,7 +431,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   });
   const [showPassword, setShowPassword] = useState(false);
   const [remoteTransport, setRemoteTransport] = useState<'http' | 'stdio_local'>('http');
-  const [capabilitiesExpanded, setCapabilitiesExpanded] = useState(true);
+  const [promptPreset, setPromptPreset] = useState<'full_system' | 'refine_page' | 'prd_flows'>('full_system');
   const userEditedShareUrlRef = useRef(false);
 
   // Reset per-project and per-open state cleanly so old project links/credentials never carry over.
@@ -755,13 +755,70 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
   };
 
   const projectDisplayName = viewerShareContext?.title || currentProjectMeta.projectName;
-  const starterAgentPrompt = live ? tr(
-    '先调用 protoflow_workspace 获取当前工程的 revision、activePageId 和 selectedPfId。读取目标页面及物料契约后，携带 expectedRevision 修改，再审计结果。',
-    'Call protoflow_workspace for revision, activePageId and selectedPfId. Inspect the page and contracts, write with expectedRevision, then audit the result.'
-  ) : tr(
-    `请通过已连接的 protoflow MCP 工具读取原型工程「${projectDisplayName}」：先调用 protoflow_get_project_overview 和 protoflow_get_database_schema 对齐全局路由与数据库表结构，再逐页调用 protoflow_get_page_spec 还原前端交互、后端接口与组件便签规则，最后用 protoflow_get_implementation_checklist 逐项自检。`,
-    `Read the prototype project "${projectDisplayName}" using the connected protoflow MCP tools: first call protoflow_get_project_overview and protoflow_get_database_schema to align global routes and database schemas, then call protoflow_get_page_spec per page to implement UI interactions, backend APIs, and spec pin rules, and finally verify everything against protoflow_get_implementation_checklist.`
+  const livePromptTemplates = useMemo(
+    () => [
+      {
+        id: 'full_system' as const,
+        label: tr('从零生成整套系统', 'Build a full system'),
+        prompt: tr(
+          '请连接我当前打开的 Alex 原型工程，帮我设计一套完整的【在这里填写系统名称，例如：中学图书管理系统】原型：包含清晰的菜单目录、业务数据表与仿真演示数据、功能闭环的业务页面，以及工作台数据看板，完成后帮我全面检查页面交互与数据关联。',
+          'Connect to my open Alex prototype project and design a complete [System Name, e.g. School Library Management System]: create clear menu folders, shared business tables with realistic sample data, closed-loop workflow pages, and a dashboard with charts, then verify all interactions and data links.'
+        ),
+      },
+      {
+        id: 'refine_page' as const,
+        label: tr('修改当前打开的页面', 'Refine active page'),
+        prompt: tr(
+          '请查看我在 Alex 画布中当前打开的页面（及选中的组件），帮我按以下产品想法优化布局、字段和交互动作：【在这里写你想怎么改】，修改完成后截图检查一下实际视觉效果。',
+          'Check the page (and selected component) currently open on my Alex canvas, and refine its layout, fields, and interactions as follows: [describe your product changes], then capture a preview to verify the visual layout.'
+        ),
+      },
+      {
+        id: 'prd_flows' as const,
+        label: tr('补齐产品便签与流程图', 'Add PRD notes & flows'),
+        prompt: tr(
+          '请梳理当前 Alex 原型中的页面与业务数据表，在关键表单和按钮上帮我补齐严谨的产品规则便签（字段校验、状态流转、计算公式），并生成配套的业务流程图与需求说明文档。',
+          'Review the pages and tables in my open Alex prototype, attach clear product-rule sticky notes to key forms and buttons (validations, state transitions, formulas), and generate matching business flowcharts and PRD notes.'
+        ),
+      },
+    ],
+    [locale, tr]
   );
+
+  const liveDesignCapabilities = useMemo(
+    () => [
+      {
+        badge: tr('菜单与表结构', 'Menus & Data'),
+        title: tr('自动规划菜单目录与业务表', 'Plan Sitemap & Business Tables'),
+        desc: tr('根据业务描述自动搭建系统模块目录、多页共享的数据表结构，并填入逼真的业务演示数据。', 'Automatically organizes module folders, shared ER tables, and realistic sample records from your product goals.'),
+      },
+      {
+        badge: tr('桌面与移动端', 'PC & Mobile'),
+        title: tr('实时绘制高保真交互页面', 'Draw Interactive Pages Live'),
+        desc: tr('支持管理后台表格表单、ECharts 数据看板与手机端界面，按钮点击与弹框流转真实可用。', 'Builds admin tables/forms, ECharts dashboards, and mobile screens with working dialogs and actions.'),
+      },
+      {
+        badge: tr('便签与流程图', 'Notes & Flows'),
+        title: tr('自动挂载产品规则便签与流程图', 'Attach Sticky Specs & Flowcharts'),
+        desc: tr('在对应控件旁直接生成编号产品便签、PRD 需求文档与业务流转图，省去手写繁琐文档。', 'Pins numbered product rules onto widgets and drafts PRD notes and Mermaid flowcharts automatically.'),
+      },
+      {
+        badge: tr('视觉走查体检', 'Visual Check'),
+        title: tr('自动截图检查排版与漏项体检', 'Auto Preview Check & Health Audit'),
+        desc: tr('AI 改完页面后会自动截图检查文字折行与排版裁切，并核对所有跳转链接与字段绑定是否完整。', 'Captures rendered previews to inspect layout/wrapping and audits every page link and field binding.'),
+      },
+    ],
+    [locale, tr]
+  );
+
+  const activeLiveTemplate =
+    livePromptTemplates.find((item) => item.id === promptPreset) ?? livePromptTemplates[0];
+  const starterAgentPrompt = live
+    ? activeLiveTemplate.prompt
+    : tr(
+        `请通过已连接的 protoflow MCP 工具读取原型工程「${projectDisplayName}」：先对齐全局菜单路由与数据库表结构，再逐页还原前端界面交互、后端接口与组件上的产品便签规则，最后对照实现核对清单逐项自检。`,
+        `Read the prototype project "${projectDisplayName}" using the connected protoflow MCP tools: align global routes and database tables first, then implement each page's UI interactions, APIs, and product sticky-note rules, and verify against the implementation checklist.`
+      );
 
   const urlDescribedBy = parsedRemote.error
     ? urlAlertId
@@ -771,6 +828,205 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
 
   if (!open) return null;
 
+  const starterPromptSection = (
+    <div className="rounded-xl border border-blue-200/80 bg-blue-50/40 p-4 space-y-2.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-600 text-[10px] font-mono font-bold text-white">
+            3
+          </span>
+          <span className="font-bold text-slate-900 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
+            <span>
+              {live
+                ? tr('第三步：打开 AI 聊天框，复制一句大白话开始创作', 'Step 3: Open your AI chat and copy a plain-language prompt to start')
+                : tr('第三步：将这句提示词一并发给研发同学', 'Step 3: Share this starter prompt with your developer')}
+            </span>
+          </span>
+        </div>
+        <McpCopyButton targetElementId={promptCodeId} label={tr('复制提示词', 'Copy Prompt')} />
+      </div>
+
+      {live && (
+        <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label={tr('常用提需求模板', 'Prompt templates')}>
+          <span className="text-[11px] text-slate-500 mr-0.5">{tr('切换场景模板：', 'Scenario:')}</span>
+          {livePromptTemplates.map((tpl) => {
+            const active = tpl.id === activeLiveTemplate.id;
+            return (
+              <button
+                key={tpl.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setPromptPreset(tpl.id)}
+                className={`min-h-6 px-2.5 py-0.5 rounded-full border text-[11px] font-medium cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                  active
+                    ? 'border-blue-500 bg-blue-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {tpl.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <p
+        id={promptCodeId}
+        className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[11.5px] text-slate-700 leading-relaxed select-all shadow-2xs"
+      >
+        {starterAgentPrompt}
+      </p>
+    </div>
+  );
+
+  const clientConfigPanel = (
+    <div className="space-y-3">
+      {tab === 'local' && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+              <FolderGit2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
+              <span>{live ? tr('双向设计连接文件（自动复用）', 'Live connection file (reused automatically)') : tr('当前工程本地路径', 'Local Project File Path')}</span>
+            </span>
+            {desktopInfo ? (
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setLocalRunner('desktop_builtin')}
+                  className={`min-h-6 px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition ${
+                    localRunner === 'desktop_builtin'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tr('Alex 内置环境（免装 Node）', 'Alex Built-in Runtime (No Node needed)')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocalRunner('desktop_node')}
+                  className={`min-h-6 px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition ${
+                    localRunner === 'desktop_node'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tr('本机 Node 脚本', 'Local Node Script')}
+                </button>
+              </div>
+            ) : (
+              <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
+                {tr('开发态源码 CLI', 'Dev CLI')}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-2xs">
+            <span
+              id={localPathCodeId}
+              className="font-mono text-[11px] text-slate-700 break-all"
+            >
+              {live ? connectionPath : resolvedLocalProjectPath ?? tr('请先打开已保存的本地工程', 'Open a saved local project first')}
+            </span>
+            {(live || resolvedLocalProjectPath) && (
+              <McpCopyButton
+                targetElementId={localPathCodeId}
+                label={live ? tr('复制连接文件路径', 'Copy connection file path') : tr('复制路径', 'Copy Path')}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      <p className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-[11px] text-amber-900 leading-relaxed">
+        {live
+          ? tr(
+              '温馨提示：如果你已经点了上方的「安装 Antigravity 插件」或「导出 Claude Desktop 扩展」，就不需要下面这段代码了。请千万不要把下面这段配置代码直接发进 AI 聊天框里——它仅供研发同学填进 Cursor / VS Code / Codex 的软件设置中。',
+              'Note: If you already clicked "Install Antigravity plugin" or "Export Claude Desktop extension" above, skip this snippet. Never paste this JSON into an AI chat message — it goes into MCP settings files in Cursor, VS Code, or Codex.'
+            )
+          : tr(
+              '温馨提示：请复制下方配置发给研发同学，粘贴到其编程软件（Cursor / VS Code / Claude Code / Codex）的 MCP 设置中，请勿直接粘贴到 AI 聊天输入框里。',
+              'Tip: Copy and send the snippet below to your developer to add in their IDE’s MCP settings (Cursor, VS Code, Claude Code, or Codex) — do not paste it into the chat prompt.'
+            )}
+      </p>
+
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+        <div
+          role="tablist"
+          aria-label={tr('目标编程软件客户端', 'Target AI Clients')}
+          className="flex items-center overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-2 pt-1 gap-1"
+        >
+          {CLIENT_TARGETS.map((spec, idx) => {
+            const selected = clientTarget === spec.id;
+            return (
+              <button
+                key={spec.id}
+                ref={(el) => {
+                  tabRefs.current[spec.id] = el;
+                }}
+                id={`${baseId}_tab_${spec.id}`}
+                role="tab"
+                type="button"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setClientTarget(spec.id)}
+                onKeyDown={(e) => handleClientTabKeyDown(e, idx)}
+                className={`relative shrink-0 whitespace-nowrap px-3 py-2 text-[11px] font-semibold cursor-pointer transition rounded-t-lg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600 ${
+                  selected
+                    ? 'text-blue-700 bg-white after:content-[""] after:absolute after:inset-x-2 after:bottom-0 after:border-b-2 after:border-current'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <span>{spec.label}</span>
+                <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                  {spec.shortHint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          id={codePanelId}
+          role="tabpanel"
+          aria-labelledby={`${baseId}_tab_${activeClientSpec.id}`}
+          className="bg-slate-950"
+        >
+          <div className="flex items-center justify-between gap-3 px-3.5 py-2 border-b border-slate-800 bg-slate-900">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileCode2 className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+              <span className="font-mono text-[11px] text-slate-300 truncate">
+                {usingHttpTransport
+                  ? activeClientSpec.remoteHttpFileHint
+                  : activeClientSpec.stdioFileHint}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-sky-300 shrink-0">
+                {activeClientSpec.languageLabel}
+              </span>
+            </div>
+
+            {generatedConfig && (
+              <McpCopyButton
+                targetElementId={snippetCodeId}
+                label={tr('复制配置', 'Copy Config')}
+                variant="dark"
+              />
+            )}
+          </div>
+
+          <pre
+            role="region"
+            aria-label={tr('客户端接入配置代码', 'Client configuration snippet')}
+            tabIndex={0}
+            className="p-4 font-mono text-[11.5px] leading-relaxed text-slate-100 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+          >
+            <code id={snippetCodeId}>{generatedConfig ?? tr('请打开已保存的本地工程以生成配置', 'Open a saved project to generate a configuration')}</code>
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <dialog
       ref={dialogRef}
@@ -779,7 +1035,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
       className="m-auto w-[min(780px,calc(100vw-24px))] max-h-[calc(100vh-28px)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-800 shadow-2xl backdrop:bg-slate-950/50 backdrop:backdrop-blur-[3px] overflow-hidden"
     >
       <div className="flex flex-col max-h-[calc(100vh-28px)]">
-        {/* Studio Header */}
+        {/* Friendly PM Header */}
         <header className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4 shrink-0 bg-slate-50/80">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs border border-blue-500/30">
@@ -788,19 +1044,18 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 id={titleId} className="text-[15px] font-bold tracking-tight text-slate-900 truncate">
-                  {tr('MCP 开发接入中心', 'MCP Developer Integration')}
+                  {tr('连接外部 AI 助手 & 研发移交', 'Connect External AI & Dev Handoff')}
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[10px] font-semibold text-emerald-700 shrink-0">
                   <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-                  {live ? tr('双向设计', 'Bidirectional design') : tr('Read-Only 安全只读', 'Read-Only Safe')}
-                </span>
-                <span className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-mono font-medium text-slate-600 shrink-0">
-                  MCP 2025-06-18
+                  {live ? tr('AI 实时共创中', 'Live AI Co-Design') : tr('只读保护（不改原型）', 'Read-Only Protected')}
                 </span>
               </div>
               <p className="mt-0.5 text-[11px] text-slate-500 truncate">
-                {tr('当前工程：', 'Project: ')}<span className="font-medium text-slate-700">{projectDisplayName}</span>
-                {' · '}{tr('供 Coding Agent 按需读取 ER 物理表、页面契约与产品便签', 'Lets Coding Agents query ER schemas, page specs, and product pins on demand')}
+                {tr('当前工程：', 'Project: ')}
+                <span className="font-medium text-slate-700">{projectDisplayName}</span>
+                {' · '}
+                {tr('用大白话让外部 AI 直接帮你画原型，或将定稿需求无损交给研发写代码', 'Design prototypes by chatting in external AI apps, or hand off specs to developers')}
               </p>
             </div>
           </div>
@@ -817,105 +1072,116 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
         </header>
 
         {/* Scrollable Workspace Body */}
-        <div className="px-6 py-5 overflow-y-auto space-y-5 text-xs">
-          {/* Section 1: Source & Transport */}
-          <section className="space-y-3" aria-label={tr('数据源与传输方式', 'Spec Data Source & Transport')}>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
-                  1
-                </span>
-                <span className="text-xs font-bold text-slate-900">{tr('选择规格数据源', 'Select Spec Data Source')}</span>
-              </div>
-              <span className="text-[11px] text-slate-500">
-                {tab === 'remote'
-                  ? usingHttpTransport
-                    ? tr('云端无状态 Streamable HTTP · 零本地依赖', 'Stateless Streamable HTTP · Zero local setup')
-                    : tr('本机进程桥接在线分享 · Stdio', 'Local process bridging online share · Stdio')
-                  : live ? tr('实时桌面画布 · Stdio', 'Live desktop canvas · Stdio') : tr('本机文件监听直读 · 保存 .pflow 毫秒级热生效', 'Direct local file watch · Live updates on .pflow save')}
-              </span>
-            </div>
-
-            {/* Source Cards */}
+        <div className="px-6 py-5 overflow-y-auto space-y-4 text-xs">
+          {/* Scenario Picker */}
+          <div className="space-y-3">
             {!isViewerOnly && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setTab('remote')}
-                  aria-pressed={tab === 'remote'}
-                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
-                    tab === 'remote'
-                      ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
-                          tab === 'remote'
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'bg-slate-50 border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <Radio className="w-3.5 h-3.5" aria-hidden="true" />
-                      </span>
-                      <span className="truncate">{tr('远程在线链接直连', 'Remote Share URL')}</span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-100/80 border border-blue-200/70 text-blue-700 text-[10px] font-semibold shrink-0">
-                      {tr('团队协作推荐', 'Recommended')}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                    {tr('研发免装客户端与 Node 环境，凭已发布的在线链接直接挂载 HTTP MCP 服务', 'Mount HTTP MCP directly from a published share URL — no desktop app or Node required')}
-                  </p>
-                </button>
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-900">
+                    {tr('你想用它做什么？', 'What would you like to do?')}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {tab === 'local'
+                      ? live
+                        ? tr('已开启实时画布连接', 'Live canvas connected')
+                        : tr('连接本机工程文件', 'Connected to local project file')
+                      : tr('通过在线分享链接移交研发', 'Share specs via online link')}
+                  </span>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setTab('local')}
-                  aria-pressed={tab === 'local'}
-                  className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
-                    tab === 'local'
-                      ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
-                          tab === 'local'
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'bg-slate-50 border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <HardDrive className="w-3.5 h-3.5" aria-hidden="true" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setTab('local')}
+                    aria-pressed={tab === 'local'}
+                    className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
+                      tab === 'local'
+                        ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
+                        <span
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
+                            tab === 'local'
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'bg-slate-50 border-slate-200 text-slate-600'
+                          }`}
+                        >
+                          <HardDrive className="w-3.5 h-3.5" aria-hidden="true" />
+                        </span>
+                        <span className="truncate">
+                          {live
+                            ? tr('让外部 AI 帮我画原型', 'Let External AI Design Here')
+                            : tr('本机 AI 画原型 · 本地 .pflow 工程直连', 'Local AI Design · Local .pflow File')}
+                        </span>
                       </span>
-                      <span className="truncate">{live ? tr('当前桌面工程', 'Active desktop project') : tr('本地 .pflow 工程直连', 'Local .pflow File')}</span>
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold shrink-0">
-                      {live ? tr('实时画布', 'Live canvas') : tr('离线实时热读', 'Offline Live')}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                    {live ? tr('通过桌面编辑器查看和修改当前工程', 'Read and edit the active project through Alex Desktop') : tr('单机边改原型边写代码，自动检测磁盘 .pflow 修改时间并即时返回最新规格', 'Edit prototypes and code side-by-side on one machine with automatic .pflow hot-reload')}
-                  </p>
-                </button>
-              </div>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100/80 border border-blue-200/70 text-blue-700 text-[10px] font-semibold shrink-0">
+                        {live ? tr('实时共创中', 'Live Active') : tr('产品设计常用', 'For PM Design')}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-600 leading-relaxed">
+                      {tr(
+                        '在 Antigravity、Claude 等外部 AI 里直接聊天提需求，自动在当前画布生成目录、数据表、页面和便签',
+                        'Chat in Antigravity or Claude to create and edit menus, tables, pages, and sticky notes live on your canvas'
+                      )}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('remote')}
+                    aria-pressed={tab === 'remote'}
+                    className={`group relative text-left p-3.5 rounded-xl border transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 min-w-0 ${
+                      tab === 'remote'
+                        ? 'border-blue-500 bg-blue-50/50 shadow-2xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900 flex items-center gap-2 min-w-0">
+                        <span
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 ${
+                            tab === 'remote'
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'bg-slate-50 border-slate-200 text-slate-600'
+                          }`}
+                        >
+                          <Radio className="w-3.5 h-3.5" aria-hidden="true" />
+                        </span>
+                        <span className="truncate">{tr('把定稿原型交给研发写代码', 'Hand Off Prototype to Developers')}</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold shrink-0">
+                        {tr('研发协作推荐', 'For Dev Handoff')}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-600 leading-relaxed">
+                      {tr(
+                        '通过已发布的在线分享链接生成配置发给研发同学，免装客户端即可让编程 AI 精准还原你的原型与便签规则',
+                        'Generate a ready-to-use config from a published share link so developers can code directly from your specs'
+                      )}
+                    </p>
+                  </button>
+                </div>
+              </>
             )}
 
-            {/* Source Detail Configuration Box */}
+            {/* Mode Content */}
             {tab === 'remote' ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <label htmlFor="mcp-share-url-input" className="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <label htmlFor="mcp-share-url-input" className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
+                      1
+                    </span>
                     <Globe className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    <span>{isViewerOnly ? tr('当前在线原型分享地址', 'Current Online Share URL') : tr('在线分享链接 (/p/<shareId>)', 'Online Share URL (/p/<shareId>)')}</span>
+                    <span>{isViewerOnly ? tr('当前在线原型分享地址', 'Current Online Share URL') : tr('第一步：选择或粘贴已发布的原型分享链接', 'Step 1: Select or paste a published prototype share link')}</span>
                   </label>
                   {!isViewerOnly && publications.length > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-slate-500">{tr('快速载入已发布版本：', 'Load published share:')}</span>
+                      <span className="text-[11px] text-slate-500">{tr('选择已发布版本：', 'Published version:')}</span>
                       <select
                         aria-label={tr('选择已发布的分享链接', 'Select published share link')}
                         value={selectedPub?.shareUrl ?? ''}
@@ -926,7 +1192,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                             setScopedPassword({ targetShareUrl: '', value: '' });
                           }
                         }}
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-2xs cursor-pointer focus:border-blue-600 outline-none"
+                        className="min-h-6 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-2xs cursor-pointer focus:border-blue-600 outline-none"
                       >
                         {!selectedPub && <option value="">{tr(`-- 选择分享记录 (${publications.length}) --`, `-- Select share (${publications.length}) --`)}</option>}
                         {publications.map((pub) => (
@@ -976,27 +1242,25 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200/80 bg-emerald-50/60 px-3 py-1.5 text-[11px]"
                     >
                       <span className="flex items-center gap-1.5 min-w-0 text-emerald-800">
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 font-mono text-[10px] font-bold text-emerald-800 shrink-0">
-                          POST
-                        </span>
-                        <span className="truncate font-mono">{parsedRemote.mcpHttpUrl}</span>
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{tr('分享链接验证通过，已自动生成下方研发接入配置', 'Share link verified — developer config generated below')}</span>
                       </span>
-                      <span className="text-[10px] font-medium text-emerald-700 shrink-0">
-                        {tr('已解析标准端点', 'Resolved MCP Endpoint')}
+                      <span className="text-[10px] font-mono text-emerald-700 shrink-0 hidden sm:inline truncate max-w-56">
+                        {parsedRemote.mcpHttpUrl}
                       </span>
                     </div>
                   )}
 
                   {!isViewerOnly && !customShareUrl.trim() && onOpenPublishModal && (
                     <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800">
-                      <span>{tr('当前尚未填写在线分享链接，可先发布工程生成专属链接。', 'No share URL entered yet — publish your project first to generate a link.')}</span>
+                      <span>{tr('还没有在线分享链接？先发布一下当前原型就能生成专属链接发给研发。', 'No share link yet? Publish your prototype first to generate a link for developers.')}</span>
                       <button
                         type="button"
                         onClick={() => {
                           onClose();
                           onOpenPublishModal();
                         }}
-                        className="shrink-0 px-2.5 py-1 rounded-md bg-white border border-amber-300 font-semibold text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1 cursor-pointer transition"
+                        className="min-h-6 shrink-0 px-2.5 py-1 rounded-md bg-white border border-amber-300 font-semibold text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1 cursor-pointer transition"
                       >
                         <span>{tr('去发布生成链接', 'Publish & Get Link')}</span>
                         <ExternalLink className="w-3 h-3" aria-hidden="true" />
@@ -1011,12 +1275,12 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                       <label htmlFor="mcp-share-pw-input" className="text-[11px] font-medium text-slate-700 flex items-center gap-1">
                         <LockKeyhole className="w-3 h-3 text-slate-400" aria-hidden="true" />
                         <span>
-                          {tr('访问密码', 'Access Password')}{needsPasswordHint ? tr('（受密码保护）', ' (password-protected)') : tr('（公开链接留空）', ' (leave blank if public)')}
+                          {tr('访问密码', 'Access Password')}{needsPasswordHint ? tr('（该链接设有密码）', ' (password-protected)') : tr('（无密码留空即可）', ' (leave blank if public)')}
                         </span>
                       </label>
                       {passwordHeaderInfo?.isBase64 && (
                         <span className="text-[10px] font-medium text-blue-700">
-                          {tr('UTF-8 Base64 编码保真', 'UTF-8 Base64 encoded')}
+                          {tr('已自动安全编码特殊字符', 'Auto-encoded special characters')}
                         </span>
                       )}
                     </div>
@@ -1035,10 +1299,10 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                         }}
                         placeholder={
                           !parsedRemote.valid
-                            ? tr('请先输入有效的分享链接', 'Enter a valid share URL first')
+                            ? tr('请先选择或粘贴分享链接', 'Select or paste a share URL first')
                             : needsPasswordHint
-                              ? tr('输入分享密码自动注入鉴权头', 'Enter password to inject auth header')
-                              : tr('无密码留空即可', 'Leave blank if unprotected')
+                              ? tr('输入分享密码，将自动写入下方配置', 'Enter share password to include automatically')
+                              : tr('公开链接无需填写', 'Leave blank if public')
                         }
                         className="w-full rounded-lg border border-slate-200 bg-white pl-3 pr-9 py-1.5 text-xs text-slate-800 shadow-2xs outline-none focus:border-blue-600 disabled:bg-slate-100 disabled:text-slate-400"
                       />
@@ -1059,232 +1323,126 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                     </div>
                   </div>
 
-                  <div>
-                    <span className="block text-[11px] font-medium text-slate-700 mb-1">
-                      {tr('连接传输协议', 'Transport Protocol')}
-                    </span>
-                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5 w-full">
-                      <button
-                        type="button"
-                        onClick={() => setRemoteTransport('http')}
-                        className={`flex-1 py-1 px-2.5 rounded-md text-[11px] font-medium cursor-pointer transition ${
-                          remoteTransport === 'http'
-                            ? 'bg-white text-slate-900 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {tr('Streamable HTTP（推荐）', 'Streamable HTTP (Recommended)')}
-                      </button>
-                      {desktopInfo && (
+                  {desktopInfo && (
+                    <div>
+                      <span className="block text-[11px] font-medium text-slate-700 mb-1">
+                        {tr('连接方式（默认云端直连即可）', 'Connection mode (Cloud direct recommended)')}
+                      </span>
+                      <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5 w-full">
+                        <button
+                          type="button"
+                          onClick={() => setRemoteTransport('http')}
+                          className={`min-h-6 flex-1 py-1 px-2.5 rounded-md text-[11px] font-medium cursor-pointer transition ${
+                            remoteTransport === 'http'
+                              ? 'bg-white text-slate-900 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {tr('云端免安装直连（推荐）', 'Cloud Direct (Recommended)')}
+                        </button>
                         <button
                           type="button"
                           onClick={() => setRemoteTransport('stdio_local')}
-                          className={`flex-1 py-1 px-2.5 rounded-md text-[11px] font-medium cursor-pointer transition ${
+                          className={`min-h-6 flex-1 py-1 px-2.5 rounded-md text-[11px] font-medium cursor-pointer transition ${
                             remoteTransport === 'stdio_local'
                               ? 'bg-white text-slate-900 shadow-2xs'
                               : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          {tr('客户端内置 Stdio', 'Built-in Stdio')}
+                          {tr('本机中转（客户端内置 Stdio）', 'Via Local App (Built-in Stdio)')}
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-                {desktopInfo && <DesktopAuthoringControls />}
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-                    <FolderGit2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    <span>{live ? tr('双向设计连接文件', 'Bidirectional connection file') : tr('当前工程本地路径', 'Local Project File Path')}</span>
-                  </span>
-                  {desktopInfo ? (
-                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-200/70 p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setLocalRunner('desktop_builtin')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition ${
-                          localRunner === 'desktop_builtin'
-                            ? 'bg-white text-slate-900 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {tr('Alex 内置运行时（免装 Node）', 'Alex Built-in Runtime (No Node needed)')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLocalRunner('desktop_node')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition ${
-                          localRunner === 'desktop_node'
-                            ? 'bg-white text-slate-900 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        {tr('本机 Node 直连脚本', 'Local Node Script')}
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
-                      {tr('开发态源码 CLI（已随 build:contracts 生成）', 'Dev CLI (built via build:contracts)')}
-                    </span>
-                  )}
+              desktopInfo && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                  <DesktopAuthoringControls />
                 </div>
-
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-2xs">
-                  <span
-                    id={localPathCodeId}
-                    className="font-mono text-[11px] text-slate-700 break-all"
-                  >
-                    {live ? connectionPath : resolvedLocalProjectPath ?? tr('请先打开已保存的本地工程', 'Open a saved local project first')}
-                  </span>
-                  {(live || resolvedLocalProjectPath) && <McpCopyButton targetElementId={localPathCodeId} label={live ? tr('复制连接文件路径', 'Copy connection file path') : tr('复制路径', 'Copy Path')} />}
-                </div>
-              </div>
+              )
             )}
-          </section>
+          </div>
 
-          {/* Section 2: Target Client Tabs & Dark Studio Code Snippet */}
-          <section className="space-y-2.5" aria-label={tr('客户端接入配置', 'Client Configuration')}>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
-                  2
-                </span>
-                <span className="text-xs font-bold text-slate-900">{tr('选择客户端并复制接入配置', 'Choose Client & Copy Config')}</span>
-              </div>
-              <span className="text-[11px] text-slate-500 hidden sm:inline">
-                {tr('服务标识：', 'Server ID: ')}<code className="font-mono text-slate-700">protoflow</code>
-              </span>
-            </div>
+          {/* In Live PM Mode: Show Step 3 (Plain-Language Prompt) FIRST, and collapse Developer JSON behind <details>! */}
+          {live ? (
+            <>
+              {starterPromptSection}
 
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
-              {/* Accessible Single-Row Tablist with Non-Color Underline Indicator */}
-              <div
-                role="tablist"
-                aria-label={tr('目标 Coding Agent 客户端', 'Target Coding Agent Clients')}
-                className="flex items-center overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-2 pt-1 gap-1"
-              >
-                {CLIENT_TARGETS.map((spec, idx) => {
-                  const selected = clientTarget === spec.id;
-                  return (
-                    <button
-                      key={spec.id}
-                      ref={(el) => {
-                        tabRefs.current[spec.id] = el;
-                      }}
-                      id={`${baseId}_tab_${spec.id}`}
-                      role="tab"
-                      type="button"
-                      aria-selected={selected}
-                      tabIndex={selected ? 0 : -1}
-                      onClick={() => setClientTarget(spec.id)}
-                      onKeyDown={(e) => handleClientTabKeyDown(e, idx)}
-                      className={`relative shrink-0 whitespace-nowrap px-3 py-2 text-[11px] font-semibold cursor-pointer transition rounded-t-lg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600 ${
-                        selected
-                          ? 'text-blue-700 bg-white after:content-[""] after:absolute after:inset-x-2 after:bottom-0 after:border-b-2 after:border-current'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-                      }`}
-                    >
-                      <span>{spec.label}</span>
-                      <span className="ml-1.5 text-[10px] font-normal text-slate-400">
-                        {spec.shortHint}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Dark Studio Terminal Panel */}
-              <div
-                id={codePanelId}
-                role="tabpanel"
-                aria-labelledby={`${baseId}_tab_${activeClientSpec.id}`}
-                className="bg-slate-950"
-              >
-                <div className="flex items-center justify-between gap-3 px-3.5 py-2 border-b border-slate-800 bg-slate-900">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileCode2 className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
-                    <span className="font-mono text-[11px] text-slate-300 truncate">
-                      {usingHttpTransport
-                        ? activeClientSpec.remoteHttpFileHint
-                        : activeClientSpec.stdioFileHint}
+              <details className="group rounded-xl border border-slate-200 bg-white overflow-hidden">
+                <summary className="list-none px-4 py-3 bg-slate-50/80 hover:bg-slate-100/70 flex items-center justify-between gap-2 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600">
+                  <span className="font-semibold text-slate-800 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-90 shrink-0" aria-hidden="true" />
+                    <Terminal className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
+                    <span className="truncate">
+                      {tr('技术人员高级配置：连接 Cursor / VS Code / Codex 或查看文件路径', 'Developer options: Connect Cursor / VS Code / Codex or view file path')}
                     </span>
-                    <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-sky-300 shrink-0">
-                      {activeClientSpec.languageLabel} · {usingHttpTransport ? 'HTTP' : 'STDIO'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600 shrink-0">
+                    {tr('已装上方插件无需点开', 'Skip if using plugin above')}
+                  </span>
+                </summary>
+                <div className="p-4 border-t border-slate-200">
+                  {clientConfigPanel}
+                </div>
+              </details>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-blue-700">
+                      2
+                    </span>
+                    <span className="text-xs font-bold text-slate-900">
+                      {tr('第二步：选择研发使用的编程工具，复制配置发给开发同学', 'Step 2: Choose your developer’s coding tool & copy config')}
                     </span>
                   </div>
-
-                  {generatedConfig && <McpCopyButton
-                    targetElementId={snippetCodeId}
-                    label={tr('复制配置', 'Copy Config')}
-                    variant="dark"
-                  />}
-                </div>
-
-                <pre className="p-4 font-mono text-[11.5px] leading-relaxed text-slate-100 overflow-x-auto">
-                  <code id={snippetCodeId}>{generatedConfig ?? tr('请打开已保存的本地工程以生成配置', 'Open a saved project to generate a configuration')}</code>
-                </pre>
-              </div>
-            </div>
-          </section>
-
-          {/* Section 3: Recommended Starter Prompt */}
-          <section className="space-y-2" aria-label={tr('推荐首句开发提示词', 'Recommended Starter Prompt')}>
-            <div className="rounded-xl border border-blue-200/80 bg-blue-50/40 p-3.5 space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-blue-600 text-[10px] font-mono font-bold text-white">
-                    3
-                  </span>
-                  <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                    {tr('连接成功后发给 Coding Agent 的推荐首句指令', 'Recommended Starter Prompt for Your Coding Agent')}
+                  <span className="text-[11px] text-slate-500 hidden sm:inline">
+                    {tr('服务名：', 'Server: ')}<code className="font-mono text-slate-700">protoflow</code>
                   </span>
                 </div>
-                <McpCopyButton targetElementId={promptCodeId} label={tr('复制提示词', 'Copy Prompt')} />
+                {clientConfigPanel}
               </div>
-              <p
-                id={promptCodeId}
-                className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[11.5px] text-slate-700 leading-relaxed select-all shadow-2xs"
-              >
-                {starterAgentPrompt}
-              </p>
-            </div>
-          </section>
 
-          {/* Section 4: Progressive Read-Only Capability Matrix (6 Tools + 2 Prompts + 3 Resources) */}
-          <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <button
-              type="button"
-              aria-expanded={capabilitiesExpanded}
-              onClick={() => setCapabilitiesExpanded((prev) => !prev)}
-              className="w-full px-4 py-2.5 bg-slate-50/80 hover:bg-slate-100/70 flex items-center justify-between gap-2 text-left cursor-pointer transition"
-            >
-              <span className="font-semibold text-slate-800 flex items-center gap-2">
-                <Terminal className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                <span>{live ? tr('实时设计工具', 'Live design tools') : tr('渐进式规格能力清单', 'Progressive Spec Capabilities')}</span>
-                <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200/80 text-[10px] font-medium text-blue-700">
-                  {live ? '18 Tools · 6 Prompts · 4 Resources' : '6 Tools · 2 Prompts · 3 Resources'}
+              {starterPromptSection}
+            </>
+          )}
+
+          {/* Friendly Capability Disclosure */}
+          <details className="group rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <summary className="list-none px-4 py-2.5 bg-slate-50/80 hover:bg-slate-100/70 flex items-center justify-between gap-2 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600">
+              <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-90 shrink-0" aria-hidden="true" />
+                <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
+                <span>
+                  {live
+                    ? tr('了解连接后 AI 能帮你完成哪些原型设计工作', 'See what AI can build for you once connected')
+                    : tr('了解研发同学连接后能读取哪些原型与需求细节', 'See what prototype specs developers get after connecting')}
                 </span>
               </span>
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                <span>{tr('按需分片读取，不撑爆上下文', 'On-demand slices — keeps context lean')}</span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    capabilitiesExpanded ? 'rotate-180' : ''
-                  }`}
-                  aria-hidden="true"
-                />
+              <span className="text-[11px] text-slate-500 shrink-0">
+                {live ? tr('全流程原型共创', 'End-to-end co-design') : tr('按需精准读取，不漏便签规则', 'Reads pages, tables & sticky rules')}
               </span>
-            </button>
+            </summary>
 
-            {capabilitiesExpanded && live && <p className="p-3 text-xs">{tr(
-              '可编辑页面、组件、数据表、演示数据、便签和流程图。通过 tools/list 查看工具参数，或用 design-page、refine-page、design-database 和 design-full-project 开始设计。',
-              'Edit pages, components, schemas, rows, notes and flows. Read tools/list for parameters or use design-page, refine-page, design-database and design-full-project.'
-            )}</p>}
-            {capabilitiesExpanded && !live && (
+            {live ? (
+              <div className="p-3.5 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {liveDesignCapabilities.map((item) => (
+                  <div key={item.title} className="rounded-lg border border-slate-200/90 bg-slate-50/60 px-3 py-2.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800">{item.title}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-medium text-blue-700 shrink-0">
+                        {item.badge}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
               <div className="p-3.5 border-t border-slate-200 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {EXPOSED_MCP_TOOLS.map((tool) => (
@@ -1297,62 +1455,62 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
                           <span className="font-mono text-[10px] font-bold text-slate-400">
                             {tool.step}
                           </span>
-                          <code className="font-mono text-[11px] font-semibold text-blue-700 truncate">
-                            {tool.name}
-                          </code>
+                          <span className="text-[11px] font-semibold text-slate-800 truncate">
+                            {tool.badge}
+                          </span>
                         </div>
-                        <span className="px-1.5 py-0.2 rounded bg-white border border-slate-200 text-[10px] font-medium text-slate-600 shrink-0">
-                          {tool.badge}
-                        </span>
+                        <code className="px-1.5 py-0.2 rounded bg-white border border-slate-200 font-mono text-[10px] text-slate-500 shrink-0 truncate max-w-44">
+                          {tool.name}
+                        </code>
                       </div>
-                      <p className="text-[11px] text-slate-500 leading-snug">{tool.desc}</p>
+                      <p className="text-[11px] text-slate-600 leading-snug">{tool.desc}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Prompts & Direct URI Resources Strip */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
                   <div className="rounded-lg border border-slate-200/80 bg-white px-3 py-2 flex items-start gap-2">
                     <Workflow className="w-3.5 h-3.5 text-violet-600 mt-0.5 shrink-0" aria-hidden="true" />
                     <div className="min-w-0">
                       <span className="text-[11px] font-semibold text-slate-800 block">
-                        {tr('内置研发工作流 Prompts (2)', 'Built-in Dev Workflow Prompts (2)')}
+                        {tr('配套研发快捷指令', 'Built-in Dev Workflow Shortcuts')}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500 block mt-0.5">
-                        /implement-module · /generate-db-layer
+                      <span className="text-[11px] text-slate-500 block mt-0.5">
+                        {tr('一键按模块生成前后端代码与建表脚本', 'Generate module code and database layers in one step')}
                       </span>
                     </div>
                   </div>
                   <div className="rounded-lg border border-slate-200/80 bg-white px-3 py-2 flex items-start gap-2">
                     <Database className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" aria-hidden="true" />
                     <div className="min-w-0">
-                      <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
-                        <span>{tr('直读规格与 DDL Resources (3)', 'Direct Spec & DDL Resources (3)')}</span>
-                        <BookOpen className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                      <span className="text-[11px] font-semibold text-slate-800 block">
+                        {tr('自动导出标准建表 SQL 与需求文档', 'Ready-to-Use SQL Schemas & Clean PRD')}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500 block mt-0.5 truncate">
-                        protoflow://spec/markdown · schema.postgres.sql · schema.mysql.sql
+                      <span className="text-[11px] text-slate-500 block mt-0.5">
+                        {tr('研发可直接读取 PostgreSQL / MySQL 建表语句与 Markdown 规格', 'Direct access to PostgreSQL / MySQL DDL and Markdown specs')}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
             )}
-          </section>
+          </details>
         </div>
 
         {/* Sticky Studio Footer */}
         <footer className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between gap-3 shrink-0">
-          <span className="text-[11px] text-slate-500 inline-flex items-center gap-1.5 min-w-0">
+          <span className="text-[11px] text-slate-600 inline-flex items-center gap-1.5 min-w-0">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
             <span className="truncate">
-              {live ? tr('桌面修改支持撤销，并由工程自动保存', 'Desktop edits support undo and project autosave') : tr('严格只读隔离：外部 Agent 仅可读取原型规格与 DDL 草稿，无法修改工程数据', 'Strict read-only isolation: external agents can read specs and DDL drafts without modifying project data')}
+              {live
+                ? tr('安心保障：AI 修改内容自动保存，随时可按 ⌘Z / Ctrl+Z 一键撤销', 'Peace of mind: AI edits autosave and can be undone anytime with ⌘Z / Ctrl+Z')
+                : tr('安全保障：当前为只读模式，研发 AI 仅可读取需求与表结构，绝不会改动你的原型', 'Safe read-only mode: Developer AI can read specs & tables without ever changing your prototype')}
             </span>
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer transition shadow-2xs shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            className="min-h-7 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer transition shadow-2xs shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
             {tr('完成', 'Done')}
           </button>

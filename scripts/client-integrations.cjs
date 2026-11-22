@@ -7,7 +7,7 @@ const { installDesignerFiles, skillFiles } = require('../electron/designer-insta
 
 const name = 'alex-protoflow-designer';
 const fileTitle = 'Alex connection file';
-const fileDescription = 'In Alex Desktop, open your project and copy the connection file path from MCP → Bidirectional design.';
+const fileDescription = 'In Alex Desktop, open a project and copy the live.json connection file path from MCP → Bidirectional design (reused automatically across projects).';
 const json = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const args = (entry, connection) => [entry, '--mode', 'readwrite', '--desktop-bridge', connection];
 

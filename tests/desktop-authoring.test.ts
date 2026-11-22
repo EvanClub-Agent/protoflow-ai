@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { createDesktopRelay } from '../src/mcp/desktopRelay';
 import { parseCliArgs } from '../src/mcp/cli';
-import { desktopAuthoringApi, enableDesktopAuthoring, startDesktopAuthoring, useDesktopAuthoring, publishCanvasSelection } from '../src/services/desktopAuthoring';
+import { desktopAuthoringApi, disableDesktopAuthoring, enableDesktopAuthoring, startDesktopAuthoring, useDesktopAuthoring, publishCanvasSelection } from '../src/services/desktopAuthoring';
 import { createProjectPayload, flushProjectChanges, loadProjectFromBinaryPayload, startProjectPersistence } from '../src/services/projectStorage';
 import { pendingProjectAiTasks } from '../src/services/hermesTaskLock';
 import { canUndoProjectChange, undoProjectChange } from '../src/services/projectUndo';
@@ -24,6 +25,107 @@ test('capture options distinguish absent fields from invalid explicit values', (
   }
 });
 
+test('one bridge owns live.json until it closes, with recovery after process exit', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-live-owner-'));
+  const first = createDesktopAuthoringBridge(dir, () => {});
+  const second = createDesktopAuthoringBridge(dir, () => {});
+  const target = (id: string) => ({ sessionId: id, projectId: id, storageDir: dir, fileName: id + '.pflow' });
+  try {
+    const { connectionPath } = await first.open(target('first'));
+    const published = fs.readFileSync(connectionPath);
+    await assert.rejects(second.open(target('second')), /另一个 Alex 实例|other Alex instance/);
+    second.close();
+    assert.deepEqual(fs.readFileSync(connectionPath), published);
+    first.close();
+    await second.open(target('second'));
+    first.close();
+    assert.ok(fs.existsSync(connectionPath));
+    second.close();
+    fs.mkdirSync(connectionPath);
+    await assert.rejects(first.open(target('failed-publish')));
+    assert.ok(!fs.existsSync(path.join(dir, 'live.lock')));
+    fs.rmdirSync(connectionPath);
+
+    const child = spawnSync(process.execPath, ['-e', `
+      const { createDesktopAuthoringBridge } = require('./electron/desktop-authoring.cjs');
+      createDesktopAuthoringBridge(process.argv[1], () => {}).open(JSON.parse(process.argv[2]))
+        .then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); });
+    `, dir, JSON.stringify(target('exited'))], { encoding: 'utf8', timeout: 10_000 });
+    assert.equal(child.status, 0, child.error?.message ?? child.stderr);
+    const abandoned = fs.readFileSync(connectionPath);
+    await first.open(target('recovered'));
+    assert.notDeepEqual(fs.readFileSync(connectionPath), abandoned);
+  } finally {
+    first.close(); second.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('desktop reconnect follows the latest project and stops after revocation or open failure', async () => {
+  const restoreDom = installTestDom();
+  const previous = [useProtoStore.getState(), usePageStore.getState(), useAccountStore.getState()] as const;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-reconnect-'));
+  const connectionPath = path.join(dir, 'live.json');
+  const calls: string[] = [];
+  let finishOpen!: () => void;
+  let delayed = '';
+  let fail = false;
+  const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve));
+  Object.assign(window, { protoflowDesktop: { isElectron: true, saveCurrentProject: async () => ({ saved: true }),
+    liveAuthoring: {
+      async open({ projectId, fileName }: { projectId: string; fileName: string }) {
+        calls.push(projectId);
+        if (projectId === delayed) await new Promise<void>(resolve => { finishOpen = resolve; });
+        if (fail) throw new Error('open failed');
+        return { connectionPath, projectPath: path.join(dir, fileName) };
+      },
+      close: async () => {}, onRequest: () => () => {},
+    } } });
+  const stopPersistence = startProjectPersistence(), stopBridge = startDesktopAuthoring();
+  const openProject = (projectId: string) => loadProjectFromBinaryPayload(createProjectPayload({
+    projectId, projectName: projectId, templateId: 'blank_project', storageDir: dir, fileName: projectId + '.pflow',
+    pageCount: 0, tableCount: 0, stickyCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  }));
+  try {
+    useAccountStore.setState({ status: 'local' });
+    openProject('first');
+    delayed = 'first';
+    const stale = assert.rejects(enableDesktopAuthoring(), /切换|changed/);
+    openProject('second');
+    await nextTurn();
+    finishOpen();
+    await stale;
+    assert.deepEqual(calls, ['first', 'second']);
+    assert.equal(useDesktopAuthoring.getState().connectionPath, connectionPath);
+
+    useAccountStore.setState({ status: 'signedOut' });
+    useAccountStore.setState({ status: 'local' });
+    await nextTurn();
+    assert.equal(useDesktopAuthoring.getState().enabled, false);
+    delayed = 'second';
+    const cancelled = assert.rejects(enableDesktopAuthoring(), /切换|changed/);
+    await disableDesktopAuthoring();
+    finishOpen();
+    await cancelled;
+    assert.equal(useDesktopAuthoring.getState().connectionPath, null);
+
+    delayed = '';
+    fail = true;
+    await assert.rejects(enableDesktopAuthoring(), /open failed/);
+    fail = false;
+    openProject('third');
+    await nextTurn();
+    assert.equal(useDesktopAuthoring.getState().connectionError, 'open failed');
+    assert.equal(useDesktopAuthoring.getState().enabled, false);
+    assert.equal(useDesktopAuthoring.getState().connectionPath, null);
+    assert.ok(!calls.includes('third'));
+  } finally {
+    stopBridge(); stopPersistence();
+    useProtoStore.setState(previous[0]); usePageStore.setState(previous[1]); useAccountStore.setState(previous[2]);
+    fs.rmSync(dir, { recursive: true, force: true }); restoreDom();
+  }
+});
+
 test('Live MCP uses authenticated loopback, current editor selection, autosave revisions, Hermes lock and project undo', async () => {
   const restoreDom = installTestDom();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-desktop-authoring-'));
@@ -37,21 +139,27 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
   let failSave = false;
   const api: Api = { ...bridge, onRequest(callback) { receive = callback; return () => {}; } };
   Object.assign(window, { protoflowDesktop: { isElectron: true, liveAuthoring: api,
-    saveCurrentProject: async ({ binaryBytes }: { binaryBytes: Uint8Array }) => {
+    saveCurrentProject: async ({ dirPath, fileName, binaryBytes }: { dirPath: string; fileName: string; binaryBytes: Uint8Array }) => {
       if (waitForSave) await waitForSave;
       if (failSave) throw new Error('disk full');
-      fs.writeFileSync(target, binaryBytes);
+      fs.writeFileSync(path.join(dirPath, fileName), binaryBytes);
       return { saved: true };
     } } });
   const stopPersistence = startProjectPersistence(60_000);
   const stopBridge = startDesktopAuthoring();
   try {
+    const credentialsDir = path.join(dir, 'credentials');
+    fs.mkdirSync(credentialsDir, { recursive: true });
+    const legacyConnection = path.join(credentialsDir, '95fc06dd1411539458d091a5ff47733f8505f491d22fcac89313ad7453bf3233.json');
+    fs.writeFileSync(legacyConnection, '{}');
     const payload = createProjectPayload({ projectId: 'live-test', projectName: 'Before', templateId: 'mobile_starter', fileName: 'live.pflow',
       storageDir: dir, pageCount: 0, tableCount: 0, stickyCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     loadProjectFromBinaryPayload(payload);
     useAccountStore.setState({ status: 'local' });
     await enableDesktopAuthoring();
     const connection = useDesktopAuthoring.getState().connectionPath!;
+    assert.equal(path.basename(connection), 'live.json');
+    assert.ok(fs.existsSync(legacyConnection), 'Older instances retain ownership of their project-specific files');
     assert.equal(process.platform === 'win32' || (fs.statSync(connection).mode & 0o077) === 0, true);
     const { port, token } = JSON.parse(fs.readFileSync(connection, 'utf8'));
     const endpoint = 'http://127.0.0.1:' + port + '/mcp';
@@ -77,7 +185,7 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     assert.equal((await status()).selectedPfId, null);
     await assert.rejects(tool('protoflow_workspace', { action: 'switch_project', filePath: 'other.pflow' }), /Alex/);
     pendingProjectAiTasks.add('live-test');
-    await assert.rejects(rename('busy'), /AI/);
+    await assert.rejects(rename('busy', first.revision), /AI/);
     pendingProjectAiTasks.delete('live-test');
 
     useProtoStore.setState({ viewMode: 'db_designer' });
@@ -96,9 +204,9 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     usePageStore.getState().setPageSource(page, source + '\n\n');
     holdSave!(); waitForSave = undefined;
     await assert.rejects(changing, /冲突|conflict/);
-    await rename('First');
+    const firstEdit = await rename('First', (await status()).revision);
     const originalUndo = useDesktopAuthoring.getState().notice!.id;
-    await rename('Second');
+    await rename('Second', firstEdit.revision);
     const disk = () => decodePflowBinary(fs.readFileSync(target));
     assert.equal(disk().meta.projectName, 'Second');
     assert.equal(disk().stateSnapshot.pageSources[page], source + '\n\n');
@@ -111,16 +219,64 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     holdSave!(); waitForSave = undefined;
     await savingUndo;
     assert.equal(disk().meta.projectName, 'Before');
-    assert.equal((await rename('Before')).revision, (await status()).revision);
+    const restored = await status();
+    assert.equal((await rename('Before', restored.revision)).revision, restored.revision);
 
     failSave = true;
-    await assert.rejects(rename('Recoverable'), /已应用|applied/);
+    await assert.rejects(rename('Recoverable', restored.revision), /已应用|applied/);
     assert.equal(useProtoStore.getState().currentProjectMeta.projectName, 'Recoverable');
     failSave = false;
     await flushProjectChanges();
     assert.equal(disk().meta.projectName, 'Recoverable');
     useProtoStore.getState().setWelcomeScreenOpen(true);
     assert.equal(fs.existsSync(connection), false);
+    const offlineInit: any = await relay({ jsonrpc: '2.0', id: 20, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
+    assert.equal(offlineInit.error, undefined);
+    assert.match(offlineInit.result.instructions, /protoflow_capture_preview/);
+    const offlineTools: any = await relay({ jsonrpc: '2.0', id: 21, method: 'tools/list', params: {} });
+    assert.equal(offlineTools.error, undefined);
+    assert.equal(offlineTools.result.tools.some((t: { name: string }) => t.name === 'protoflow_capture_preview'), true);
+    const schemaFor = (name: string) => offlineTools.result.tools.find((tool: { name: string }) => tool.name === name).inputSchema;
+    assert.ok(schemaFor('protoflow_write_page').required.includes('expectedRevision'));
+    assert.ok(schemaFor('protoflow_upsert_db_tables').required.includes('expectedRevision'));
+    for (const name of ['protoflow_workspace', 'protoflow_manage_table_rows']) {
+      const schema = schemaFor(name);
+      assert.ok(!Object.hasOwn(schema, 'if') && !Object.hasOwn(schema, 'then'));
+      assert.ok(!schema.required?.includes('expectedRevision'));
+    }
+    assert.match(schemaFor('protoflow_workspace').properties.expectedRevision.description, /update_project_meta/);
+    assert.match(schemaFor('protoflow_manage_table_rows').properties.expectedRevision.description, /seed.*clear/);
+    assert.ok((await tool('protoflow_get_contracts')).components.desktop.length > 0);
+    await assert.rejects(status(), /unavailable/);
+
+    // Switching or creating another project reconnects automatically on the same live.json path.
+    const secondPayload = createProjectPayload({ projectId: 'switched-project', projectName: 'Switched Project', templateId: 'blank_project',
+      fileName: 'second.pflow', storageDir: dir, pageCount: 0, tableCount: 0, stickyCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    loadProjectFromBinaryPayload(secondPayload);
+    const reconnectDeadline = Date.now() + 5000;
+    while (!useDesktopAuthoring.getState().connectionPath && Date.now() < reconnectDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(useDesktopAuthoring.getState().connectionPath, connection);
+    const switchedStatus = await status();
+    assert.equal(switchedStatus.projectId, 'switched-project');
+    assert.equal(switchedStatus.projectName, 'Switched Project');
+    await assert.rejects(rename('Missing version'), /expectedRevision/);
+    await assert.rejects(rename('Old rev', first.revision), /冲突|conflict/);
+    assert.deepEqual(await status(), switchedStatus);
+    assert.equal(fs.existsSync(path.join(dir, 'second.pflow')), false);
+    await rename('Confirmed second project', switchedStatus.revision);
+    assert.equal(decodePflowBinary(fs.readFileSync(path.join(dir, 'second.pflow'))).meta.projectName, 'Confirmed second project');
+    assert.equal(disk().meta.projectName, 'Recoverable');
+
+    // Explicitly switching back to read-only prevents auto-reconnecting on subsequent projects.
+    await disableDesktopAuthoring();
+    assert.equal(fs.existsSync(connection), false);
+    const thirdPayload = createProjectPayload({ projectId: 'third-project', projectName: 'Third Project', templateId: 'blank_project',
+      fileName: 'third.pflow', storageDir: dir, pageCount: 0, tableCount: 0, stickyCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    loadProjectFromBinaryPayload(thirdPayload);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(useDesktopAuthoring.getState().connectionPath, null);
     await assert.rejects(status(), /unavailable/);
   } finally {
     holdSave?.();

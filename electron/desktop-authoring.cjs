@@ -2,6 +2,25 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { claimDirectory } = require('./claim-directory.cjs');
+const { tr } = require('./i18n.cjs');
+
+function claimConnectionFile(directory) {
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const lock = path.join(directory, 'live.lock');
+  const work = fs.mkdtempSync(path.join(directory, '.live-'));
+  try {
+    claimDirectory(lock, work, 'owner-' + process.pid + '-' + crypto.randomUUID(),
+      tr('另一个 Alex 实例已开启双向设计，请先在该实例中关闭。', 'Disable bidirectional design in the other Alex instance first.'));
+  } catch (error) {
+    fs.rmSync(work, { recursive: true, force: true });
+    throw error;
+  }
+  return () => {
+    fs.renameSync(lock, path.join(work, 'released'));
+    fs.rmSync(work, { recursive: true });
+  };
+}
 
 function createDesktopAuthoringBridge(directory, send) {
   let active = null;
@@ -24,7 +43,9 @@ function createDesktopAuthoringBridge(directory, send) {
     for (const id of pending.keys()) finish(id, '', 503);
     session.server.close();
     session.server.closeAllConnections();
-    if (session.published) fs.rmSync(session.connectionPath, { force: true });
+    try {
+      if (session.published) fs.rmSync(session.connectionPath, { force: true });
+    } finally { session.release?.(); }
   }
 
   async function open({ sessionId, projectId, storageDir, fileName }) {
@@ -35,8 +56,7 @@ function createDesktopAuthoringBridge(directory, send) {
     }
     close();
     const projectPath = path.join(storageDir, fileName);
-    const key = crypto.createHash('sha256').update(JSON.stringify([projectId, projectPath])).digest('hex');
-    const connectionPath = path.join(directory, key + '.json');
+    const connectionPath = path.join(directory, 'live.json');
     const token = crypto.randomBytes(32).toString('hex');
     const authorization = Buffer.from('Bearer ' + token);
     const server = http.createServer(async (req, res) => {
@@ -64,7 +84,7 @@ function createDesktopAuthoringBridge(directory, send) {
         catch { finish(id, '', 503); }
       } catch { if (!res.headersSent && !res.destroyed) reject(400); }
     });
-    const session = { sessionId, server, connectionPath, published: false };
+    const session = { sessionId, server, connectionPath, published: false, release: null };
     active = session;
     try {
       await new Promise((resolve, reject) => {
@@ -73,7 +93,7 @@ function createDesktopAuthoringBridge(directory, send) {
         server.listen(0, '127.0.0.1', resolve);
       });
       if (active !== session) throw new Error('Desktop connection closed');
-      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      session.release = claimConnectionFile(directory);
       const temporary = path.join(directory, crypto.randomUUID() + '.tmp');
       try {
         fs.writeFileSync(temporary, JSON.stringify({ port: server.address().port, token }), { flag: 'wx', mode: 0o600 });
