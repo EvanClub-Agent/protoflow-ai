@@ -2,6 +2,21 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.7] - 2026-11-22
+
+### Fixed & Improved
+
+- **Stable Single-Install Live Desktop Bridge (`live.json`) & Offline Handshake Resilience**:
+  - Replaced per-project SHA-256 bridge file paths with a stable `<userData>/authoring/live.json` endpoint protected by cross-instance directory locking (`live.lock` with automatic dead-owner recovery) and automatic project-switch reconnection while **Bidirectional design** is enabled — eliminating plugin reinstalls and MCP server restarts when creating or switching `.pflow` projects.
+  - Added local offline protocol fallback in `createDesktopRelay` so `initialize`, `ping`, `tools/list`, `prompts/list`, `resources/list`, and static contract tools (`protoflow_get_contracts` / `protoflow_get_implementation_guide`) succeed even when Alex Desktop is closed or on the launcher, keeping MCP tools registered across IDE restarts.
+- **Cross-Project Write Safety & Sequential Revision Guardrails**:
+  - Enforced mandatory `expectedRevision` verification on every desktop write mutation (`desktop_bridge`) before touching canvas or disk state, preventing in-flight edits from Project A from landing on Project B after switching projects, and automatically disabling write access upon account changes or connection errors.
+  - Updated MCP `authoringInstructions`, schema descriptions (without non-portable Draft-07 `if`/`then` keywords), and `alex-protoflow-designer` skill playbooks to enforce sequential single-in-flight desktop writes chaining each returned `revision`.
+- **Product-Manager-Friendly AI Connection & Dev Handoff UI**:
+  - Redesigned `McpConnectModal`, `DesktopAuthoringControls`, and `GlobalToolbar` around non-technical product manager workflows: plain-language scenario split (**Let External AI Design Here** vs **Hand Off Prototype to Developers**), guided 3-step setup with one-click **Antigravity** / **Claude Desktop** cards, 3 switchable plain-language prompt templates, native `<details>` progressive disclosure hiding raw developer JSON by default in live co-design mode, and live toolbar connection indicators.
+
+---
+
 ## [v0.0.6] - 2026-11-21
 
 ### Added

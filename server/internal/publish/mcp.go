@@ -20,7 +20,7 @@ import (
 
 const (
 	mcpServerName       = "protoflow-spec"
-	mcpServerVersion    = "0.0.6"
+	mcpServerVersion    = "0.0.7"
 	maxMcpRequestBytes  = 64 << 10 // 64 KiB cap for read-only MCP JSON-RPC request bodies
 	maxMcpBatchSize     = 16
 	maxMcpResponseBytes = 4 << 20 // 4 MiB cumulative response cap per HTTP request

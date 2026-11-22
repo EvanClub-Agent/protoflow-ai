@@ -23,7 +23,7 @@ import type { WorkspaceLoader } from './workspace';
 
 export const SUPPORTED_MCP_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 export const SPEC_MCP_SERVER_NAME = 'protoflow-spec';
-export const SPEC_MCP_SERVER_VERSION = '0.0.6';
+export const SPEC_MCP_SERVER_VERSION = '0.0.7';
 
 type RpcId = string | number | LosslessNumber | null;
 
