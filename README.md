@@ -9,8 +9,9 @@
 描述你的业务，AI 先澄清细节再规划目录、页面与共享物理表；<br/>
 在画布中精修 **PC 中后台** 与 **移动端真机视口**，让表单、列表、图表与审批真正流转起来，一键发布团队在线评审。
 
-**[加入 Alex Discord 社区](https://discord.gg/YDnKBhmsrR)** · 在 `#chinese` 用中文交流、分享原型，遇到问题可以到 `#help-and-bugs` 提问。
+**[访问官方网站](https://alex.xclubai.com/)** · **[MCP 接入指南](https://alex.xclubai.com/mcp/)** · **[加入 Discord 社区](https://discord.gg/YDnKBhmsrR)**（`#chinese` 中文交流 / `#help-and-bugs` 问题反馈）
 
+[![Website](https://img.shields.io/badge/Website-alex.xclubai.com-1D4ED8?style=flat-square)](https://alex.xclubai.com/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563EB?style=flat-square)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/EvanClub-Agent/protoflow-ai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/EvanClub-Agent/protoflow-ai/actions)
 [![Platform](https://img.shields.io/badge/Desktop-macOS_%7C_Windows_%7C_Linux-141413?style=flat-square)](https://github.com/EvanClub-Agent/protoflow-ai/releases)
@@ -20,7 +21,7 @@
 
 **简体中文** · [English](./README.en.md)
 
-[快速上手](#-60-秒快速上手) · [为什么选 Alex](#-为什么选择-alex) · [核心能力](#-核心能力矩阵) · [MCP 接入 Coding Agent](#-mcp-规格服务连接-claude-code--cursor--antigravity) · [Docker 私有化部署](#-docker-compose-私有化部署3-步启动) · [模型生态](#-支持的-ai-模型服务) · [参与贡献](#-参与贡献pr-友好)
+[快速上手](#-60-秒快速上手) · [为什么选 Alex](#-为什么选择-alex) · [核心能力](#-核心能力矩阵) · [MCP 接入 Coding Agent](#-mcp-双向设计与规格服务连接-codex--antigravity--claude) · [Docker 私有化部署](#-docker-compose-私有化部署3-步启动) · [模型生态](#-支持的-ai-模型服务) · [参与贡献](#-参与贡献pr-友好)
 
 <br/>
 
@@ -136,7 +137,7 @@ flowchart TB
 
 ### 方式 A：下载安装包或本地源码启动设计器（免登录开箱即用）
 
-- **直接安装桌面端**：前往 [**GitHub Releases**](https://github.com/EvanClub-Agent/protoflow-ai/releases) 下载对应系统的安装包（macOS Apple Silicon / Intel `.dmg`、Windows `.exe`、Linux `.deb` / `.AppImage`）。
+- **直接安装桌面端**：前往 [**Alex 官网下载页**](https://alex.xclubai.com/#download) 或 [**GitHub Releases**](https://github.com/EvanClub-Agent/protoflow-ai/releases) 下载对应系统的安装包（macOS Apple Silicon / Intel `.dmg`、Windows `.exe`、Linux `.deb` / `.AppImage`）。
 - **从源码极速运行**（仅需 **Node.js 22+**，无需安装 Go、无需数据库、无需预先配 AI）：
 
 ```bash
@@ -216,7 +217,7 @@ npm run build:linux      # Linux x64 (.deb + .AppImage + .tar.gz)
 
 ## 🔌 MCP 双向设计与规格服务（连接 Codex / Antigravity / Claude）
 
-Alex 内置 **MCP（Model Context Protocol）双向设计与只读规格服务**，打通从「AI 直接操控画布生成原型 & 数据库」到「研发阶段按需读取规格写生产代码」的完整闭环：
+Alex 内置 **MCP（Model Context Protocol）双向设计与只读规格服务**，打通从「AI 直接操控画布生成原型 & 数据库」到「研发阶段按需读取规格写生产代码」的完整闭环（完整配置与 18 个工具文档见官网 [**MCP 接入指南**](https://alex.xclubai.com/mcp/)，支持 **Claude Code**、**Cursor**、**Codex**、**Google Antigravity** 与 **Claude Desktop**）：
 
 - **桌面端双向实时设计（Live Canvas Bridge + 视觉截图复核）**：在桌面端打开 `.pflow` 工程，进入 **「MCP 接入 → 本地 → 双向设计」**，**Codex**、**Google Antigravity**、**Claude Desktop**、**Claude Code** 即可读取当前页面与画布选中组件（`selectedPfId`），调用 18 个契约受控工具直接建表、灌入外键自洽样例数据、生成或无损局部修改桌面/移动端页面、编写需求便签与流程图，并通过 `protoflow_capture_preview` 截取高清画布/手机视口 PNG（自动等待图表与自由组件首帧渲染，支持 `fullPage` 长页检查）自我复核排版；所有外部修改实时上屏落盘并支持顶部提示条与 `Cmd/Ctrl+Z` 逐步撤销。面板内置 **Antigravity 插件一键安装**、**Claude Desktop `.mcpb` 扩展导出** 及三端设计 Skill 安装。
 - **远程在线只读直连（研发零安装）**：产品发布 `/p/{id}` 评审链接后，研发无需安装 Alex 或下载 `.pflow` 文件，点击演示页顶部的 **「MCP 接入」** 即可复制远程 Streamable HTTP 配置读取路由树、ER 表、PostgreSQL/MySQL DDL、页面 TSX 与便签规则：

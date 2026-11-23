@@ -9,8 +9,9 @@
 Describe your business workflow — Alex clarifies edge cases first, plans your sitemap, pages, and shared relational tables,<br/>
 lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST canvas, and publishes interactive review links in one click.
 
-**[Join the Alex Discord](https://discord.gg/YDnKBhmsrR)** · Share your prototype in `#general` or ask a question in `#help-and-bugs`.
+**[Official Website](https://alex.xclubai.com/en/)** · **[MCP Docs](https://alex.xclubai.com/mcp/)** · **[Join Discord](https://discord.gg/YDnKBhmsrR)** (share prototypes in `#general` or ask in `#help-and-bugs`).
 
+[![Website](https://img.shields.io/badge/Website-alex.xclubai.com-1D4ED8?style=flat-square)](https://alex.xclubai.com/en/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563EB?style=flat-square)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/EvanClub-Agent/protoflow-ai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/EvanClub-Agent/protoflow-ai/actions)
 [![Platform](https://img.shields.io/badge/Desktop-macOS_%7C_Windows_%7C_Linux-141413?style=flat-square)](https://github.com/EvanClub-Agent/protoflow-ai/releases)
@@ -52,14 +53,14 @@ Product managers and engineering teams are often stuck between **static wirefram
 - **04 · 12 Native Apache ECharts + Mermaid Diagrams**: Bar, Line, Area, Pie, Donut, Scatter, Radar, Gauge, Funnel, Heatmap, Treemap, and Sankey charts bound directly to project tables, plus Mermaid architecture/sequence templates.
 - **05 · Component Sticky Specs & Closed-Loop Audit**: Pin requirement notes directly onto UI controls, trace schema change impact across menus, and audit broken links or unbound foreign keys.
 - **06 · Self-Hosted Online Sharing & Release Center**: Share password-protected, expiring, versioned `/p/{id}` interactive prototypes via a lightweight Go + PostgreSQL + Nginx stack.
-- **07 · Bidirectional MCP Authoring, Visual Capture & Read-Only Spec Server**: Let **Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**, or **Cursor** directly design and refine prototypes on the live Alex Desktop canvas (`--mode readwrite --desktop-bridge`) — modeling shared ER tables, seeding FK-valid rows, editing `<Page>` / `<MobilePage>` subtrees by `selectedPfId`, verifying rendered layouts via `protoflow_capture_preview` PNG screenshots, and supporting multi-step `Cmd/Ctrl+Z` undo, with one-click **Antigravity plugin** install and **Claude Desktop `.mcpb`** export. For engineering handoff, connect in read-only mode to any `/p/{id}` share URL over Streamable HTTP (zero local install) or local `.pflow` file.
+- **07 · Bidirectional MCP Authoring, Visual Capture & Read-Only Spec Server**: Let **Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**, or **Cursor** directly design and refine prototypes on the live Alex Desktop canvas (`--mode readwrite --desktop-bridge`) — modeling shared ER tables, seeding FK-valid rows, editing `<Page>` / `<MobilePage>` subtrees by `selectedPfId`, verifying rendered layouts via `protoflow_capture_preview` PNG screenshots, and supporting multi-step `Cmd/Ctrl+Z` undo, with one-click **Antigravity plugin** install and **Claude Desktop `.mcpb`** export. For engineering handoff, connect in read-only mode to any `/p/{id}` share URL over Streamable HTTP (zero local install) or local `.pflow` file. See the **[Official MCP Setup & Tools Guide](https://alex.xclubai.com/mcp/)**.
 - **08 · Native Axure (`.rp`) Binary Import & Controlled AI Flow Reshaping**: Drop Axure RP 9 or RP 11 `.rp` files directly into Alex locally without Axure installed. Edit imported pages visually or let Project AI reshape scattered wireframes and static grids into flow-layout `QueryForm` + `Table` + `Descriptions` backed by shared physical ER tables, with strict per-column mapping, row-action consistency checks, and itemized **Converted / Retained / Pending** confirmation reviews alongside the preserved original RP pages.
 
 ---
 
 ## 🚀 Quick Start in 60 Seconds
 
-No Go or PostgreSQL installation is required to run or develop the workbench locally — just **Node.js 22+**:
+Download desktop installers for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
 
 ```bash
 git clone https://github.com/EvanClub-Agent/protoflow-ai.git

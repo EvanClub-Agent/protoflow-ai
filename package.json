@@ -12,7 +12,7 @@
     "type": "git",
     "url": "https://github.com/EvanClub-Agent/protoflow-ai.git"
   },
-  "homepage": "https://github.com/EvanClub-Agent/protoflow-ai",
+  "homepage": "https://alex.xclubai.com",
   "desktopName": "protoflow-ai.desktop",
   "type": "module",
   "main": "electron/main.cjs",
