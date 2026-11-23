@@ -6,7 +6,7 @@
  *   npm run website:sync -- --no-copy --base-url https://cdn.example.com/alex/
  *                                            不复制文件，清单中的下载地址指向外部存储
  *
- * 官网会优先读取发行服务器的公开版本接口，此清单作为离线 / 静态托管时的下载来源。
+ * 官网会实时读取发行服务器的公开版本接口或 GitHub Releases，此清单仅用于构建产物本地核对与外部镜像记录。
  */
 const fs = require('node:fs');
 const path = require('node:path');

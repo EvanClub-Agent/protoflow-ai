@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#090d1a" />
+    <title>About Alex (ProtoFlow AI) — Open-Source AI Prototyping Workbench</title>
+    <meta
+      name="description"
+      content="About Alex (ProtoFlow AI): an Apache-2.0 open-source desktop workbench uniting clarify-first AI planning, shared ER tables, Axure .rp import, and MCP handoff."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://alex.xclubai.com/about/" />
+    <link rel="alternate" type="text/markdown" href="https://alex.xclubai.com/llms.txt" title="LLMs.txt Summary" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "AboutPage",
+        "name": "About Alex (ProtoFlow AI)",
+        "url": "https://alex.xclubai.com/about/",
+        "mainEntity": {
+          "@type": "Organization",
+          "@id": "https://alex.xclubai.com/#organization",
+          "name": "Alex (ProtoFlow AI)",
+          "url": "https://alex.xclubai.com/",
+          "email": "ai.agent.club@gmail.com",
+          "sameAs": [
+            "https://github.com/EvanClub-Agent/protoflow-ai",
+            "https://discord.gg/YDnKBhmsrR"
+          ]
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="site-header is-wide">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img src="/assets/logo.svg" alt="" width="30" height="30" />
+          <span>Alex</span>
+          <span class="brand-sub">ProtoFlow AI</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <ul class="site-menu">
+            <li><a href="/">Home (中文)</a></li>
+            <li><a href="/en/">English</a></li>
+            <li><a href="/mcp/">MCP &amp; API</a></li>
+            <li><a href="/about/" aria-current="page">About</a></li>
+            <li><a href="/privacy/">Privacy</a></li>
+            <li><a href="/contact/">Contact</a></li>
+          </ul>
+        </nav>
+        <div class="nav-actions">
+          <a class="btn btn-primary btn-sm" href="/#download">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="subpage-hero">
+        <div class="container">
+          <p class="kicker">About</p>
+          <h1>About Alex (ProtoFlow AI)</h1>
+          <p class="hero-lead">
+            Alex (ProtoFlow AI) is an Apache-2.0 open-source desktop prototyping and relational data modeling workbench built to bridge product requirements, interactive validation, and AI-assisted software delivery.
+          </p>
+        </div>
+      </section>
+
+      <section class="subpage-content">
+        <div class="container subpage-stack">
+          <article class="subpage-card">
+            <h2>Why We Built Alex</h2>
+            <p>
+              Product managers, business analysts, solution architects, and engineering teams routinely get stuck between static wireframes (where forms do not submit real rows and pages cannot share state) and one-shot AI HTML generators (which guess ambiguous business rules blindly, hardcode disconnected mock data per page, and break layouts whenever a field changes).
+            </p>
+            <p>
+              Alex resolves both gaps by keeping one shared physical ER schema, a bidirectional TSX AST canvas, component-level requirement sticky notes, and real cross-screen data flow inside a single local-first <code>.pflow</code> workspace.
+            </p>
+          </article>
+
+          <article class="subpage-card">
+            <h2>Core Open-Source Architecture</h2>
+            <ul>
+              <li><strong>Desktop Workbench (Electron + React + TypeScript)</strong>: Runs locally on macOS, Windows, and Linux with zero mandatory account login.</li>
+              <li><strong>Clarify-First Project AI (NousResearch Hermes)</strong>: Asks clarifying questions on business boundaries and proposes sitemaps + physical ER schemas before generating screens.</li>
+              <li><strong>Native Axure <code>.rp</code> Binary Parser</strong>: Parses Axure RP 9 and RP 11 files offline without installing Axure, preserving original pages alongside table-bound flow conversions.</li>
+              <li><strong>Model Context Protocol (<code>@protoflow-ai/mcp</code>)</strong>: Exposes 18 contract-validated authoring tools for live desktop co-design and 6 read-only specification tools for zero-install engineering handoff.</li>
+              <li><strong>Self-Hosted Publishing Stack (Go + PostgreSQL + Nginx)</strong>: Optional 3-command Docker Compose server for sharing password-protected, expiring <code>/p/{id}</code> team review links.</li>
+            </ul>
+          </article>
+
+          <article class="subpage-card">
+            <h2>Licensing &amp; Governance</h2>
+            <p>
+              All code in <a class="text-link" href="https://github.com/EvanClub-Agent/protoflow-ai" target="_blank" rel="noopener noreferrer">EvanClub-Agent/protoflow-ai</a> is released under the permissive <strong>Apache License 2.0</strong>. You can freely use Alex for personal study, commercial product prototyping, and private enterprise deployments with no seat limits or SaaS lock-in.
+            </p>
+            <p>
+              Explore the <a class="text-link" href="/mcp/">MCP Server &amp; API Docs</a>, review our <a class="text-link" href="/privacy/">Local-First Privacy Policy</a>, or reach out via <a class="text-link" href="/contact/">Contact &amp; Support</a>.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-bottom">
+        <p>© 2026 Alex (ProtoFlow AI) · Apache-2.0 Open Source</p>
+        <nav class="footer-locales" aria-label="Site links">
+          <a href="/">首页</a>
+          <span aria-hidden="true">·</span>
+          <a href="/en/">English</a>
+          <span aria-hidden="true">·</span>
+          <a href="/mcp/">MCP Docs</a>
+          <span aria-hidden="true">·</span>
+          <a href="/llms.txt">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

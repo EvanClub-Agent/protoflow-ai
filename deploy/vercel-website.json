@@ -1,0 +1,134 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/$",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/markdown.*"
+        }
+      ],
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Vary": "Accept",
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+        "Link": "<https://alex.xclubai.com/llms.txt>; rel=\"describedby\"; type=\"text/markdown\", <https://alex.xclubai.com/sitemap.xml>; rel=\"sitemap\"; type=\"application/xml\""
+      },
+      "dest": "/llms.txt"
+    },
+    {
+      "src": "^/(en|about|contact|privacy|mcp)/?$",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/markdown.*"
+        }
+      ],
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Vary": "Accept",
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+        "Link": "<https://alex.xclubai.com/llms-full.txt>; rel=\"describedby\"; type=\"text/markdown\", <https://alex.xclubai.com/sitemap.xml>; rel=\"sitemap\"; type=\"application/xml\""
+      },
+      "dest": "/llms-full.txt"
+    },
+    {
+      "src": "^/$",
+      "headers": {
+        "Content-Language": "zh-CN",
+        "Vary": "Accept",
+        "Link": "<https://alex.xclubai.com/llms.txt>; rel=\"describedby\"; type=\"text/markdown\", <https://alex.xclubai.com/sitemap.xml>; rel=\"sitemap\"; type=\"application/xml\""
+      },
+      "continue": true
+    },
+    {
+      "src": "^/en/?$",
+      "headers": {
+        "Content-Language": "en",
+        "Vary": "Accept",
+        "Link": "<https://alex.xclubai.com/llms-full.txt>; rel=\"describedby\"; type=\"text/markdown\", <https://alex.xclubai.com/sitemap.xml>; rel=\"sitemap\"; type=\"application/xml\""
+      },
+      "continue": true
+    },
+    {
+      "src": "^/llms\\.txt$",
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/llms-full\\.txt$",
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/sitemap\\.xml$",
+      "headers": {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=3600"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/robots\\.txt$",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "public, max-age=3600"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/assets/(.*)$",
+      "headers": {
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/markdown.*"
+        }
+      ],
+      "status": 404,
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Vary": "Accept"
+      },
+      "dest": "/404.md"
+    },
+    {
+      "src": "/(.*)",
+      "status": 404,
+      "headers": {
+        "Content-Type": "text/html; charset=utf-8",
+        "Vary": "Accept"
+      },
+      "dest": "/404.html"
+    }
+  ]
+}

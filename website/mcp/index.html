@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#090d1a" />
+    <title>Alex (ProtoFlow AI) MCP Server &amp; API Documentation</title>
+    <meta
+      name="description"
+      content="Official Alex (ProtoFlow AI) MCP server &amp; API docs: 18 live desktop authoring tools and 6 read-only Streamable HTTP tools for Claude Code, Cursor, and Codex."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://alex.xclubai.com/mcp/" />
+    <link rel="alternate" type="text/markdown" href="https://alex.xclubai.com/llms-full.txt" title="Full Markdown Documentation" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Alex (ProtoFlow AI) MCP Server & API Documentation",
+        "url": "https://alex.xclubai.com/mcp/",
+        "author": {
+          "@type": "Organization",
+          "@id": "https://alex.xclubai.com/#organization",
+          "name": "Alex (ProtoFlow AI)"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "@id": "https://alex.xclubai.com/#software",
+          "name": "Alex (ProtoFlow AI)"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="site-header is-wide">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img src="/assets/logo.svg" alt="" width="30" height="30" />
+          <span>Alex</span>
+          <span class="brand-sub">ProtoFlow AI</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <ul class="site-menu">
+            <li><a href="/">Home (中文)</a></li>
+            <li><a href="/en/">English</a></li>
+            <li><a href="/mcp/" aria-current="page">MCP &amp; API</a></li>
+            <li><a href="/about/">About</a></li>
+            <li><a href="/privacy/">Privacy</a></li>
+            <li><a href="/contact/">Contact</a></li>
+          </ul>
+        </nav>
+        <div class="nav-actions">
+          <a class="btn btn-primary btn-sm" href="/#download">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="subpage-hero">
+        <div class="container">
+          <p class="kicker">Developer &amp; Agent Docs</p>
+          <h1>Alex (ProtoFlow AI) MCP Server &amp; API</h1>
+          <p class="hero-lead">
+            Connect AI coding agents directly to Alex prototypes using the Model Context Protocol (MCP) — for live bidirectional canvas authoring or zero-install engineering specification handoff.
+          </p>
+        </div>
+      </section>
+
+      <section class="subpage-content">
+        <div class="container subpage-stack">
+          <article class="subpage-card">
+            <h2>1. Remote Zero-Install Spec API (<code>POST /api/v1/mcp/&lt;shareId&gt;</code>)</h2>
+            <p>
+              After publishing any prototype to a self-hosted <code>/p/{id}</code> URL, engineers paste one Streamable HTTP configuration block into their IDE to query database schemas, PostgreSQL/MySQL DDL, page TSX, and component sticky specs without installing Alex Desktop locally:
+            </p>
+            <pre><code>{
+  "mcpServers": {
+    "protoflow": {
+      "url": "https://protoflow.example.com/api/v1/mcp/&lt;shareId&gt;"
+    }
+  }
+}</code></pre>
+            <h3>6 Read-Only Specification Tools</h3>
+            <ul>
+              <li><code>protoflow_get_project_overview</code> — Project modules, sitemap tree, desktop/mobile pages, and table inventory.</li>
+              <li><code>protoflow_get_database_schema</code> — Normalized ER tables, foreign keys, unique constraints, sample rows, and PostgreSQL/MySQL DDL.</li>
+              <li><code>protoflow_get_page_spec</code> — Component hierarchy, TSX source, table bindings, actions, and pinned sticky-note constraints.</li>
+              <li><code>protoflow_get_docs_and_flows</code> — Project Markdown notes and Mermaid workflow diagrams.</li>
+              <li><code>protoflow_search_spec</code> — Full-text search across pages, fields, notes, and components.</li>
+              <li><code>protoflow_get_implementation_checklist</code> — Ordered implementation checklist derived from schemas, flows, and sticky notes.</li>
+            </ul>
+          </article>
+
+          <article class="subpage-card">
+            <h2>2. Bidirectional Live Canvas Co-Design (18 Authoring Tools)</h2>
+            <p>
+              Enable <strong>MCP → Local → Bidirectional design</strong> in Alex Desktop to expose the authenticated loopback bridge (<code>live.json</code>) with sequential <code>expectedRevision</code> concurrency guards and multi-step <code>Cmd/Ctrl+Z</code> undo:
+            </p>
+            <ul>
+              <li>Create or reorganize sitemap folders and pages (<code>protoflow_manage_sitemap</code>).</li>
+              <li>Design normalized ER tables with foreign keys and composite unique constraints (<code>protoflow_upsert_db_tables</code>) and seed coherent sample rows (<code>protoflow_manage_table_rows</code>).</li>
+              <li>Write or patch desktop (<code>&lt;Page&gt;</code>) and mobile (<code>&lt;MobilePage&gt;</code>) trees (<code>protoflow_write_page</code>, <code>protoflow_edit_page_block</code>), attach sticky-note rules (<code>protoflow_manage_sticky_notes</code>), author docs/Mermaid flows, and run closed-loop audits (<code>protoflow_audit_project</code>).</li>
+              <li>Capture offscreen high-DPI PNG previews via <code>protoflow_capture_preview</code> after ECharts and Freeform first paint to visually inspect layout quality.</li>
+            </ul>
+            <p>
+              Full CLI &amp; stdio documentation is available in <a class="text-link" href="https://github.com/EvanClub-Agent/protoflow-ai/blob/main/packages/protoflow-mcp/README.md" target="_blank" rel="noopener noreferrer">packages/protoflow-mcp/README.md</a>.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-bottom">
+        <p>© 2026 Alex (ProtoFlow AI) · Apache-2.0 Open Source</p>
+        <nav class="footer-locales" aria-label="Site links">
+          <a href="/">首页</a>
+          <span aria-hidden="true">·</span>
+          <a href="/en/">English</a>
+          <span aria-hidden="true">·</span>
+          <a href="/llms.txt">llms.txt</a>
+          <span aria-hidden="true">·</span>
+          <a href="/llms-full.txt">llms-full.txt</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

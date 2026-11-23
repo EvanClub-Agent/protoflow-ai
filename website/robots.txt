@@ -1,0 +1,43 @@
+# Alex (ProtoFlow AI) — Search Engine & AI Crawler Policy
+# Canonical domain: https://alex.xclubai.com/
+# LLMs Summary: https://alex.xclubai.com/llms.txt
+# LLMs Full Docs: https://alex.xclubai.com/llms-full.txt
+
+User-agent: *
+Allow: /
+
+# Explicitly welcome search & generative AI retrieval bots
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+Sitemap: https://alex.xclubai.com/sitemap.xml

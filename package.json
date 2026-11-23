@@ -69,6 +69,7 @@
     "test:mermaid-diagrams": "node scripts/mermaid-diagrams-smoke.cjs",
     "test:note-assistant": "npm run build && node scripts/note-assistant-smoke.cjs",
     "website:sync": "node scripts/website-sync-downloads.cjs",
+    "website:seo": "node scripts/website-build-seo.cjs",
     "website:preview": "python3 -m http.server 4173 --directory website"
   },
   "dependencies": {

@@ -1,9 +1,10 @@
-/* Alex 官网脚本：双语切换 + 设备识别 + 下载列表渲染。无第三方依赖。 */
+/* Alex (ProtoFlow AI) 官网脚本：双语切换 + 响应式导航 + Showcase Tabs + 设备识别 + 下载渲染。零第三方依赖。 */
 (() => {
   'use strict';
 
   const config = Object.assign(
-    { updateServer: '', channel: 'stable' },
+    // Older self-hosted config files predate releaseSource/discordUrl/demoUrl and use the release center.
+    { releaseSource: 'release-center', updateServer: '', channel: 'stable', discordUrl: '', demoUrl: '' },
     window.ALEX_SITE_CONFIG || {},
   );
 
@@ -13,6 +14,7 @@
   // Lower = shown first / preferred for recommendation.
   const PACKAGE_RANK = { dmg: 0, exe: 0, deb: 0, appimage: 1, zip: 2, 'tar.gz': 3 };
   const ARCH_RANK = { arm64: 0, universal: 1, x64: 2 };
+  const githubRepository = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/?$/.exec(config.repoUrl)?.[1];
 
   const $ = (sel, root = document) => (root && root.querySelector ? root.querySelector(sel) : null);
   const $$ = (sel, root = document) => (root && root.querySelectorAll ? Array.from(root.querySelectorAll(sel)) : []);
@@ -21,214 +23,282 @@
   // Bilingual i18n (zh-CN & en-US)
   // ---------------------------------------------------------------------------
   const EN_META = {
-    title: 'Alex — Turn Requirements into Working Business Prototypes',
+    title: 'Alex (ProtoFlow AI) — Turn Requirements into Runnable Prototypes',
     description:
-      'Alex is a desktop prototyping tool: describe your business to plan pages and database tables with Project AI, refine desktop and mobile screens on canvas, bind shared tables for real data flow, and publish interactive online demos. Available for macOS, Windows, and Linux.',
-    ogTitle: 'Alex — Turn Requirements into Working Business Prototypes',
-    ogDescription: 'Clickable, fillable prototypes with real data flow.',
+      'Alex (ProtoFlow AI) is an Apache-2.0 local-first desktop workbench for runnable business prototypes, shared ER tables, Axure .rp import, and MCP co-design.',
+    ogTitle: 'Alex (ProtoFlow AI) — Turn Requirements into Runnable Prototypes',
+    ogDescription:
+      'Shared ER tables · Clarify-first AI · Desktop & mobile sync · Axure .rp import · Bidirectional MCP for coding agents · Open source.',
   };
 
   const EN_TEXT = {
     skip: 'Skip to content',
+    'nav.brandAria': 'Alex (ProtoFlow AI) home',
     'nav.aria': 'Primary',
-    'nav.brandAria': 'Alex home',
-    'nav.features': 'Features',
-    'nav.workflow': 'Workflow',
+    'nav.menu': 'Menu',
+    'nav.compare': 'Why Alex',
+    'nav.features': 'Capabilities',
+    'nav.mcp': 'MCP Bridge',
+    'nav.scenarios': 'Templates',
     'nav.models': 'Models',
     'nav.download': 'Download',
     'nav.faq': 'FAQ',
+    'nav.githubAria': 'GitHub repository',
 
     'hero.desktop': 'Desktop',
+    'hero.openSource': 'Open Source',
+    'hero.localFirst': 'Local-first · No sign-in required',
     'hero.title': 'Turn requirements into<br />prototypes that actually run',
     'hero.lead':
-      'Describe your business and let Alex plan modules, pages, and database tables. Refine desktop admin and mobile screens on the canvas, bind shared tables so forms, lists, and approvals work end to end, and share a live link for team review.',
+      'Move beyond static wireframes and one-shot AI pages that guess blindly. Alex clarifies business rules before generating sitemaps, screens, and shared ER tables — with desktop + iPhone viewports, native Axure .rp import, and bidirectional MCP integration for coding agents.',
     'hero.primaryCta': 'Free Download',
-    'hero.secondaryCta': 'Explore Features',
+    'hero.secondaryCta': 'See Live Workbench',
+    'hero.sourceCta': 'GitHub Source & Docs →',
+    'hero.demoCta': 'Try Live Demo',
 
-    'mockup.aria': 'Alex application interface preview',
-    'mk.tab1': 'Canvas',
-    'mk.tab2': 'Database',
-    'mk.tab3': 'Cross-Module Flow',
-    'mk.tab4': 'Mindmaps',
-    'mk.title': 'Procurement System',
-    'mk.pagesLabel': 'Pages',
-    'mk.folder1': 'Suppliers',
-    'mk.page1': 'Supplier List',
-    'mk.folder2': 'Procurement',
-    'mk.page2': 'Purchase Orders',
-    'mk.page3': 'Approvals',
-    'mk.folder3': 'Warehouse',
-    'mk.page4': 'Goods Receipt',
-    'mk.page5': 'Scan Inbound <em>Mobile</em>',
-    'mk.tablesLabel': 'Tables',
-    'mk.pageHead': 'Purchase Orders',
-    'mk.newOrder': 'New Order',
-    'mk.qOrderNo': 'Order No.',
-    'mk.qSupplier': 'Supplier',
-    'mk.qStatus': 'Status',
-    'mk.qSearch': 'Search',
-    'mk.thOrderNo': 'Order No.',
-    'mk.thSupplier': 'Supplier',
-    'mk.thAmount': 'Amount',
-    'mk.thStatus': 'Status',
-    'mk.r1Vendor': 'Aurora Digital',
-    'mk.r1Amt': '$48,200',
-    'mk.statusApproved': 'Approved',
-    'mk.r2Vendor': 'Sinolink Tech',
-    'mk.r2Amt': '$12,860',
-    'mk.statusPending': 'Pending',
-    'mk.r3Vendor': 'Voyage Pack',
-    'mk.r3Amt': '$6,540',
-    'mk.statusDraft': 'Draft',
-    'mk.aiLabel': 'Project AI',
-    'mk.aiUser': 'Build a procurement system with suppliers, purchase approvals, and a mobile scan-to-stock page',
-    'mk.aiBotLead': 'Planned <b>3 modules, 6 pages, and 4 shared tables</b>:',
-    'mk.aiBotItem1': 'Supplier List (Desktop)',
-    'mk.aiBotItem2': 'Purchase Orders & Approvals',
-    'mk.aiBotItem3': 'Scan Inbound (Mobile)',
-    'mk.aiConfirm': 'Confirm & Generate',
+    'showcase.tablistAria': 'Product capability perspectives',
+    'showcase.srHeading': 'Interactive Workbench & Core Architecture Showcase',
+    'sc.tab1': 'Workbench',
+    'sc.tab2': 'Shared ER Data Flow',
+    'sc.tab3': 'MCP Co-Design & Handoff',
+    'sc.tab4': 'Axure .rp Import',
+    'sc.imgAlt':
+      'Alex (ProtoFlow AI) desktop workbench screenshot showing the multi-module sitemap tree with shared-table badges on the left, live ECharts and table bound to physical ER tables in the center, and bidirectional AST property inspector on the right',
+    'sc.hl1': 'Multi-module menu tree with live shared-table badges',
+    'sc.hl2': '12 native ECharts & tables bound directly to project data',
+    'sc.hl3': 'Bidirectional AST inspector, sticky specs & scoped Ask AI',
+    'sc.er1Tag': 'Desktop Admin · Form',
+    'sc.er1Title': 'New Purchase Order',
+    'sc.er1Desc':
+      'Form controls bind directly to table columns and foreign-key lookups, writing real rows and running 6-decimal tax rules.',
+    'sc.er2Tag': 'Shared Physical Table · ER Constraints',
+    'sc.er2Desc':
+      'Foreign keys to supplier, approval ENUM state machines, and composite unique constraints with cross-page impact tracking.',
+    'sc.er3Tag': 'iPhone Viewport · Mobile',
+    'sc.er3Title': 'Approvals & Scan Inbound',
+    'sc.er3Desc':
+      'Backed by the exact same dataset — approving or scanning stock updates order statuses and quantities on desktop immediately.',
+    'sc.mcp1Tag': 'Live Canvas Bridge · Design Time',
+    'sc.mcp1Title': 'Let Coding Agents Design Directly on Canvas',
+    'sc.mcp1Desc':
+      'Enable Bidirectional design in Alex Desktop so Codex, Google Antigravity, Claude Desktop, or Claude Code can model ER tables, edit selected subtrees, and inspect rendered screenshots.',
+    'sc.mcp1L1': '18 contract-enforced authoring tools with sequential revision checks',
+    'sc.mcp1L2': 'protoflow_capture_preview offscreen PNG capture for layout verification',
+    'sc.mcp1L3': 'One-click Antigravity plugin install, .mcpb export & Cmd/Ctrl+Z undo',
+    'sc.mcp2Tag': 'Remote Streamable HTTP · Engineering Handoff',
+    'sc.mcp2Title': 'Zero-Install Spec Access After Publishing /p/{id}',
+    'sc.mcp2Desc':
+      'Once a prototype is published for review, developers paste one remote MCP URL into their IDE to read the sitemap, PostgreSQL/MySQL DDL, TSX screens, and sticky-note rules.',
+    'sc.ax1Title': 'Parse .rp Locally Without Axure',
+    'sc.ax1Desc':
+      'Drop Axure RP 9 or RP 11 binaries into Alex. A local worker restores nested folders, groups, static table cells, master instances, and dynamic panel states offline.',
+    'sc.ax2Title': 'Preserve Originals & Map Fields',
+    'sc.ax2Desc':
+      'Run read-only inventories or migration drafts per page, folder, or project and verify column-to-schema mappings before modifying layouts.',
+    'sc.ax3Title': 'Reshape into Runnable Screens',
+    'sc.ax3Desc':
+      'Generate flow-layout QueryForm + Table + Descriptions pages backed by shared ER tables alongside untouched RP originals, complete with a Converted / Retained / Pending checklist.',
 
-    'facts.aria': 'Key highlights',
-    'fact.1.title': 'Desktop & Mobile',
-    'fact.1.desc': 'Designed in one project',
-    'fact.2.title': 'Shared Tables',
-    'fact.2.desc': 'Live data across screens',
-    'fact.3.title': '15+ AI Providers',
-    'fact.3.desc': 'Cloud or local Ollama',
-    'fact.4.title': 'Local-First Data',
-    'fact.4.desc': 'Only published demos upload',
+    'facts.aria': 'Key product facts',
+    'fact.1.title': 'Apache-2.0 Open Source',
+    'fact.1.desc': 'No sign-in required locally · Docker self-hostable',
+    'fact.2.title': '114+ Materials · 12 Charts',
+    'fact.2.desc': 'Desktop admin & iPhone viewports sharing ER tables',
+    'fact.3.title': '18 MCP Tools',
+    'fact.3.desc': 'Live canvas co-design + zero-install spec handoff',
+    'fact.4.title': '14+ AI Providers',
+    'fact.4.desc': 'Cloud accounts or offline local Ollama models',
 
-    'features.kicker': 'Features',
-    'features.title': 'From a plain-language brief to a review-ready system prototype',
-    'features.desc':
-      'Clarify requirements, design screens, model tables, connect workflows, and publish for review — all in one project.',
-    'f1.title': 'Project AI Planning',
+    'cmp.kicker': 'Why Alex',
+    'cmp.title': 'Bridge the gap between static wireframes and disposable AI webpages',
+    'cmp.desc': 'Not another click-only drawing board, and not a one-shot HTML generator that scrambles layouts on every tweak.',
+    'cmp.caption':
+      'Comparison of traditional static prototyping tools, one-shot AI web generators, and Alex (ProtoFlow AI)',
+    'cmp.colDim': 'Dimension',
+    'cmp.colStatic': 'Static Wireframing Tools',
+    'cmp.colAiWeb': 'One-Shot AI Web Tools',
+    'cmp.r1Dim': 'Cross-Page Data Flow',
+    'cmp.r1Static': 'Static placeholder text; submitted forms never appear in lists',
+    'cmp.r1AiWeb': 'Hardcoded per-page mocks; state resets across screens',
+    'cmp.r1Alex': 'Bound to real ER physical tables synced live across pages & viewports',
+    'cmp.r2Dim': 'AI Collaboration',
+    'cmp.r2Static': 'No project-level context; every screen assembled manually',
+    'cmp.r2AiWeb': 'Guesses ambiguous requirements and dumps a whole page at once',
+    'cmp.r2Alex': 'Clarifies edge cases first → proposes sitemap & ER plan → generates on approval',
+    'cmp.r3Dim': 'Iteration & Refinement',
+    'cmp.r3Static': 'Manual alignment across dozens of artboards',
+    'cmp.r3AiWeb': 'Small field edits frequently regenerate and break existing layouts',
+    'cmp.r3Alex': 'Bidirectional AST drag-and-drop + scoped non-destructive AI/MCP edits',
+    'cmp.r4Dim': 'Multi-Platform & Legacy',
+    'cmp.r4Static': 'Desktop & mobile split across files; legacy .rp stays static',
+    'cmp.r4AiWeb': 'Hard to share one backend relational dataset across desktop and mobile',
+    'cmp.r4Alex': 'Desktop admin + iPhone viewports in one project, plus native Axure .rp import',
+    'cmp.r5Dim': 'Engineering Handoff',
+    'cmp.r5Static': 'Relies on long offline PRDs and verbal field explanations',
+    'cmp.r5AiWeb': 'Lacks relational constraints, unique keys, and acceptance checklists',
+    'cmp.r5Alex': 'Component sticky specs, FK impact analysis & remote MCP DDL/TSX access',
+    'cmp.r6Dim': 'Data Sovereignty',
+    'cmp.r6Static': 'Cloud-locked accounts and per-seat SaaS subscriptions',
+    'cmp.r6AiWeb': 'Closed hosted sandboxes without private deployment',
+    'cmp.r6Alex': 'Apache-2.0 open source · Local-first .pflow files + 3-step Docker Compose',
+
+    'features.kicker': 'Capabilities',
+    'features.title': 'From requirement discovery to engineering handoff in one project',
+    'features.desc': 'Stop copying context across mindmaps, wireframing tools, schema editors, and scattered docs.',
+    'f1.title': 'Clarify-First Project AI',
     'f1.desc':
-      'Describe your business in plain language. AI asks clarifying questions first, proposes modules, pages, and database tables, and generates only after you confirm.',
-    'f2.title': 'Canvas & Material Library',
+      'The built-in Hermes engine asks about thresholds, approvals, and edge cases first, proposes a sitemap + ER blueprint, and supports scoped edits after confirmation.',
+    'f2.title': 'Bidirectional AST Canvas & 114+ Materials',
     'f2.desc':
-      'Widescreen grids, multi-column filters, data tables, ECharts visualizations, composite blocks, and page templates — drag and drop to assemble enterprise interfaces.',
-    'f3.title': 'Database & Shared-Table Sync',
+      'Widescreen grids, multi-column query bars, master-detail tables, drawers, composite blocks, and sandboxed freeform components synced losslessly with TSX DSL.',
+    'f3.title': 'Navicat-Style ER Modeling & Shared Tables',
     'f3.desc':
-      'Design physical schemas and relations, then bind pages directly to tables. Records created, edited, or approved stay in sync across every screen.',
-    'f4.title': 'Desktop & Mobile Together',
+      'Design physical tables, foreign keys, and composite unique constraints. Order creation, approval transitions, stock transfers, and 6-decimal tax rules work end to end.',
+    'f4.title': 'Desktop Admin & Mobile in One Project',
     'f4.desc':
-      'Design admin consoles and mobile or mini-app screens side by side with iPhone viewports and touch components, all backed by the same dataset.',
-    'f5.title': 'Cross-Module Flow & Impact Analysis',
+      'Author wide admin consoles alongside iPhone mobile viewports with bottom sheets, capsule tabs, and waterfall feeds backed by the exact same dataset.',
+    'f5.title': '12 Native ECharts & Mermaid Diagrams',
     'f5.desc':
-      'Map how business records move across modules. Change a table or column and immediately see every affected page and workflow.',
-    'f6.title': 'Requirement Audit & Acceptance',
+      'Bar, line, area, pie, scatter, radar, gauge, funnel, heatmap, treemap, and sankey charts bind directly to project tables alongside split-screen notes and mindmaps.',
+    'f6.title': 'Native Axure .rp Import & Reshaping',
     'f6.desc':
-      'Pin requirement sticky notes directly onto components, audit implementation coverage, and verify item by item during review.',
-    'f7.title': 'Project Notes & Mindmaps',
+      'Drop RP 9 / RP 11 binaries locally with no Axure installed. Preserve original pages while AI maps headers to physical columns and builds clean flow-layout screens.',
+    'f7.title': 'Sticky Specs, Impact Analysis & Audits',
     'f7.desc':
-      'Split-screen notes, Mermaid diagram templates, and mindmaps keep meeting minutes, domain models, and prototypes together in one workspace.',
-    'f8.title': 'Online Demo Publishing',
+      'Pin validation rules directly onto controls, trace every screen impacted by a schema edit, and audit broken links, unbound foreign keys, and acceptance items.',
+    'f8.title': 'Local .pflow Privacy + One-Click Online Review',
     'f8.desc':
-      'Publish to your team server to share an interactive browser link, or export local project archives for backup.',
+      'Projects stay on disk as .pflow archives or Git-friendly trees. Connect the open-source Docker server to publish password-protected, expiring /p/{id} review links.',
 
-    'd1.kicker': 'Runnable Prototypes',
-    'd1.title': 'Not just drawn —<br />built to run',
-    'd1.desc': 'Static mockups only show flat pictures. In Alex, screens bind to real relational table schemas:',
-    'd1.c1': 'Orders submitted in "New Order" appear immediately in the order list',
-    'd1.c2': 'Approved statuses sync straight to the mobile to-do queue',
-    'd1.c3': 'Master-detail queries and approval state transitions work out of the box',
-    'd1.c4': 'Walk stakeholders through complete business loops without hand-waving',
-    'd1.fn1Title': 'New Order',
-    'd1.fn1Sub': 'Desktop · Form',
-    'd1.fn2Sub': 'Shared Table',
-    'd1.fn3Title': 'Pending Approvals',
-    'd1.fn3Sub': 'Mobile · List',
+    'mcp.kicker': 'MCP Co-Design & Handoff',
+    'mcp.title': 'Let your coding agents build prototypes, read specs, and ship code',
+    'mcp.desc':
+      'Built-in Model Context Protocol (MCP) support bridges live AI-assisted prototyping in Alex Desktop with read-only spec handoff to your engineering team.',
+    'mcp.p1Title': 'Live Canvas Bridge (Desktop Co-Design)',
+    'mcp.p1Desc':
+      'Toggle Bidirectional design in Alex Desktop so external agents can model shared ER tables, seed FK-valid rows, patch selected components via 18 contract tools, verify layouts via screenshot capture, and support Cmd/Ctrl+Z undo.',
+    'mcp.p2Title': 'Remote /p/{id} Zero-Install Spec Server',
+    'mcp.p2Desc':
+      'Once you share an online review link, engineers copy one Streamable HTTP snippet into their IDE to inspect the full route tree, PostgreSQL/MySQL DDL, page TSX, and sticky-note rules.',
+    'mcp.agentsAria': 'Supported AI coding clients',
+    'mcp.copy': 'Copy JSON',
+    'mcp.foot':
+      'Includes 6 read-only spec tools for engineering handoff and 18 contract-validated write tools for live canvas co-design, with one-click setup inside the app.',
 
-    'd2.kicker': 'AI Collaboration',
-    'd2.title': 'Ask first,<br />build second',
-    'd2.desc': 'Powered by the built-in Hermes engine with full context across pages, components, tables, and sticky notes:',
-    'd2.c1': 'Asks clarifying questions when requirements are ambiguous instead of guessing',
-    'd2.c2': 'Proposes a structured plan first and generates only after confirmation',
-    'd2.c3': 'Edits targeted sections of a page without breaking existing layouts',
-    'd2.c4': 'Switch models and reasoning effort levels whenever needed',
-    'd2.b1': 'In "Purchase Approval", what amount triggers second-level approval?',
-    'd2.b2': 'Orders over $50,000 require CFO approval',
-    'd2.b3': 'Added the "CFO Approval" step to the workflow and added <code>approve_level</code> to purchase_order.',
+    'scn.kicker': 'Teams & Starter Templates',
+    'scn.title': 'Launch with 3 built-in industry templates and test a full loop in minutes',
+    'scn.desc': 'No sign-in wall, no blank-canvas paralysis, and no throwaway mockups.',
+    'scn.r1Kicker': 'Product Managers & Analysts',
+    'scn.r1Title': 'Turn ambiguous specs into verifiable loops',
+    'scn.r1Desc':
+      'Clarify business rules before generating screens, pin acceptance specs onto buttons and fields, and upgrade legacy Axure .rp files without starting over.',
+    'scn.r2Kicker': 'Solutions & Pre-Sales Architects',
+    'scn.r2Title': 'Demo real CRUD, approvals, and live charts',
+    'scn.r2Desc':
+      'Add a requested column or approval step on the spot, show desktop submissions arriving on mobile immediately, and send a /p/{id} link for customer sign-off.',
+    'scn.r3Kicker': 'Full-Stack & AI Coding Teams',
+    'scn.r3Title': 'Make the prototype the single source of truth',
+    'scn.r3Desc':
+      'Stream normalized ER DDL, foreign-key closures, page TSX, and sticky constraints straight into Claude Code or Cursor via MCP.',
+    'scn.tplHead': '3 built-in community starter templates (ready locally without login)',
+    'scn.t1Title': 'SaaS E-Commerce & Inventory Admin',
+    'scn.t1Desc':
+      'Supplier onboarding, purchase orders, master-detail inbound receipts, 4 shared ER tables, and 5 tax/over-receipt sticky specs.',
+    'scn.t2Title': 'CRM Sales & Contract Billing Dashboard',
+    'scn.t2Desc':
+      'Table-bound ECharts trend and regional ARR charts, customer opportunity CRUD, payment plans, and cross-platform billing views.',
+    'scn.t3Title': 'Modern Mobile & Cross-Platform App',
+    'scn.t3Desc':
+      'Consumer waterfall discovery feed, mobile approval drawers, AI assistant view, and live table sync with the desktop admin console.',
 
-    'd3.kicker': 'Publish & Update',
-    'd3.title': 'One link is all<br />your team needs',
-    'd3.desc': 'Publish prototypes to your LAN or team server so teammates can review them in any browser with zero setup:',
-    'd3.c1': 'Publishes pages, requirement notes, and the full sitemap together',
-    'd3.c2': 'Supports link expiration dates and password-protected access',
-    'd3.c3': 'Built-in one-click desktop updates verified by digital signatures',
-    'd3.published': 'Published',
-    'd3.m1': '6 pages',
-    'd3.m2': 'Expires in 7 days',
-    'd3.m3': 'Password protected',
-
-    'wf.kicker': 'Workflow',
-    'wf.title': 'Five steps to a complete requirement review',
-    'wf.s1Title': 'Describe',
-    'wf.s1Desc': 'Start from a template or blank project and tell AI what you need.',
-    'wf.s2Title': 'Confirm Plan',
-    'wf.s2Desc': 'AI clarifies details and proposes modules, pages, and database tables.',
-    'wf.s3Title': 'Refine on Canvas',
-    'wf.s3Desc': 'Polish layouts, copy, and interactions with components and composite blocks.',
-    'wf.s4Title': 'Connect Data',
-    'wf.s4Desc': 'Bind shared tables and verify cross-module flows and schema impact.',
-    'wf.s5Title': 'Publish & Review',
-    'wf.s5Desc': 'Share an interactive online demo for your team to test and sign off in the browser.',
-
-    'ai.kicker': 'Models',
-    'ai.title': 'Use the models you already trust',
+    'ai.kicker': 'Model Ecosystem',
+    'ai.title': 'Bring your own cloud model or Ollama — or run 100% without AI',
     'ai.desc':
-      'Configure accounts and models in the AI Management Center — connect leading cloud providers or run local models via Ollama. The canvas and database tools also work standalone without AI.',
+      'Alex Desktop ships a verified managed Hermes runtime so you can connect 14+ cloud providers or local Ollama models with adjustable reasoning effort. Every canvas, ER, and publishing tool also works standalone without AI.',
     'ai.listAria': 'Supported model providers',
     'ai.qwen': 'Qwen',
     'ai.zai': 'Z.ai (GLM)',
     'ai.ollama': 'Ollama (Local)',
     'ai.fine': 'Brand icons courtesy of LobeHub Icons (MIT). All trademarks belong to their respective owners.',
 
-    'dl.kicker': 'Download',
-    'dl.title': 'Download Alex',
+    'dl.kicker': 'Download & Self-Host',
+    'dl.title': 'Download Alex Desktop free, or self-host in 3 commands',
     'dl.latestPrefix': 'Latest release',
     'dl.recKicker': 'Recommended for your device',
-    'dl.macReq': 'macOS 13 or later',
+    'dl.macReq': 'macOS 13 or later · Apple Silicon / Intel',
     'dl.yourOs': 'Your OS',
     'dl.macTip':
-      'Open the .dmg and drag Alex to Applications. If macOS says the developer cannot be verified on first launch, go to System Settings → Privacy & Security and click "Open Anyway".',
+      'Open the .dmg and drag Alex to Applications. Community builds use local signing — on first launch, right-click Alex → Open or click "Open Anyway" in System Settings → Privacy & Security.',
     'dl.winTip':
-      'Run the installer to choose an install folder and create shortcuts. If Windows SmartScreen appears, click "More info → Run anyway".',
+      'Run the NSIS installer to pick an install folder and create shortcuts. If Windows SmartScreen appears, click "More info → Run anyway".',
     'dl.linuxTip':
       'Recommended .deb: <code>sudo apt install ./Alex-*-linux-amd64.deb</code> — supports one-click in-app updates afterward.',
-    'dl.fine':
-      'Every installer includes a SHA-256 checksum. After installation, check and apply digitally signed updates with one click in Updates.',
+    'dl.tr1Title': 'Apache-2.0 Open Source',
+    'dl.tr1Desc': 'Desktop workbench, web viewer & Go server are 100% auditable',
+    'dl.tr2Title': 'Built via GitHub Actions',
+    'dl.tr2Desc': 'Official installers compiled directly in CI with checksum manifests',
+    'dl.tr3Title': 'SHA-256 & Signed Updates',
+    'dl.tr3Desc': 'Every download lists its digest; in-app updates verify digital signatures',
+    'dl.tr4Title': 'Run Directly from Source',
+    'dl.tr4Desc': 'Developers can also launch locally in seconds with Node.js 22+',
+    'dl.devSummary': '60-second source launch & 3-step Docker Compose self-hosting commands',
+    'dl.devSrcTitle': 'Run from source locally (Node.js 22+ only)',
+    'dl.devDockerTitle': 'Self-host team sharing & remote MCP server (Docker Compose)',
 
     'faq.kicker': 'FAQ',
     'faq.title': 'Questions & Answers',
-    'faq.contact': 'Still have questions? Email <a class="text-link" href="mailto:ai.agent.club@gmail.com">ai.agent.club@gmail.com</a>.',
-    'faq.q1': 'Who is Alex built for?',
+    'faq.contact':
+      'Still have questions? Open an issue on <a class="text-link" data-repo-link data-repo-path="/issues" href="https://github.com/EvanClub-Agent/protoflow-ai/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> or email <a class="text-link" data-contact-email data-contact-email-text href="mailto:ai.agent.club@gmail.com">ai.agent.club@gmail.com</a>.',
+    'faq.q1': 'Is Alex free and open source? Can we use it commercially?',
     'faq.a1':
-      'Product managers, business analysts, solution consultants, and frontend engineers — especially teams building admin consoles, mobile approvals, or barcode workflows who want to demonstrate complete business loops during reviews.',
-    'faq.q2': 'Where is my project data stored?',
+      'Yes. Alex (ProtoFlow AI) is licensed under Apache-2.0 — free for personal learning, commercial prototyping, and private enterprise self-hosting with no seat limits. You connect your own model keys or local Ollama directly.',
+    'faq.q2': 'Where are my project files and model API keys stored?',
     'faq.a2':
-      'Projects are saved as local files on your computer and can be exported for backup. Data is uploaded to your configured server only when you explicitly publish an online demo.',
-    'faq.q3': 'What do I need to use Project AI?',
+      'Projects save locally on your disk as .pflow archives or unpacked directories, and model credentials are managed locally by Hermes without mandatory login. Snapshots upload to your configured server only when you explicitly click Publish.',
+    'faq.q3': 'How does Axure (.rp) import work?',
     'faq.a3':
-      'Sign in or configure your own model accounts (such as Claude, Gemini, OpenAI, DeepSeek, or Qwen) in the in-app AI Management Center, or connect local models via Ollama. The canvas and database features also work independently without AI.',
-    'faq.q4': 'How do I update to a new version?',
+      'Drag an Axure RP 9 or RP 11 .rp file into the launcher or workbench. A local worker parses folders, groups, static tables, masters, and dynamic panels offline without Axure installed, and lets AI map table headers to physical ER columns alongside untouched original pages.',
+    'faq.q4': 'How do I connect Claude Code, Cursor, Codex, or Antigravity via MCP?',
     'faq.a4':
-      'Open "Updates" inside the app and click "Check for Updates → Update Now". Alex automatically selects the right installer for your OS, verifies its digital signature and SHA-256 digest, saves your project, and restarts.',
-    'faq.q5': 'What if macOS says "developer cannot be verified"?',
+      'Click "MCP Connect" in the desktop toolbar to install the Antigravity plugin or export a Claude Desktop .mcpb bundle in one click for live canvas co-design. For engineering handoff, publish a /p/{id} demo and copy the remote Streamable HTTP URL into any MCP-compatible IDE.',
+    'faq.q5': 'Can I use Alex without configuring AI models or Docker?',
     'faq.a5':
-      'Open System Settings → Privacy & Security, scroll down to find Alex, and click "Open Anyway" — or right-click Alex in Applications and choose "Open". You only need to do this once.',
-    'faq.q6': 'Should I download Apple Silicon or Intel for my Mac?',
+      'Absolutely. Launch the desktop app without logging in to use the visual canvas, 114+ materials, ER database designer, 12 ECharts types, Mermaid notes, and local exports. Docker is only needed if you want to host interactive /p/{id} links for browser review.',
+    'faq.q6': 'What if macOS says "developer cannot be verified", and which Mac build should I pick?',
     'faq.a6':
-      'Click the Apple menu in the top-left corner → "About This Mac". Choose Apple Silicon (arm64) for Apple M-series chips, or Intel (x64) for Intel processors. This page also recommends the matching build automatically when possible.',
+      'Community builds use local signing: right-click Alex in Applications → Open (or click "Open Anyway" in System Settings → Privacy & Security once). Pick Apple Silicon (arm64) for Apple M-series Macs, or Intel (x64) for Intel Macs.',
 
     'cta.title': 'Make your prototypes<br />run today',
-    'cta.desc': 'Download Alex for free and build your first working business prototype in minutes.',
+    'cta.desc': 'Download the Apache-2.0 desktop workbench for free and build your first data-connected business prototype without signing in.',
     'cta.btn': 'Free Download',
+    'cta.discord': 'Join Discord Community',
 
-    'footer.aria': 'Footer',
+    'footer.brandAria': 'Alex (ProtoFlow AI) back to top',
+    'footer.tagline':
+      'Open-source, local-first AI business prototyping and ER modeling workbench connecting product requirements to AI engineering delivery.',
+    'footer.colProduct': 'Product',
+    'footer.colDocs': 'Docs & Guides',
+    'footer.quickStart': 'Quick Start (60s)',
+    'footer.selfHost': 'Docker Self-Hosting',
+    'footer.mcpDocs': 'MCP Spec Server',
+    'footer.changelog': 'Changelog',
+    'footer.mcpPage': 'MCP Server & API Docs',
+    'footer.llms': 'AI / llms.txt',
+    'footer.colCommunity': 'Community & Trust',
+    'footer.about': 'About Alex',
+    'footer.privacyPage': 'Privacy & Local-First',
+    'footer.contactPage': 'Support & Contact',
+    'footer.discord': 'Discord Community',
+    'footer.issues': 'Report Issues',
+    'footer.security': 'Security Policy',
     'footer.contact': 'Contact Us',
+    'footer.license': 'Apache-2.0 Open Source',
+    'footer.privacy': 'Projects stay local by default · No sign-in required',
+    'footer.localesAria': 'Language versions',
   };
+
+  const staticLocale =
+    (document.documentElement && document.documentElement.dataset && document.documentElement.dataset.staticLocale) || '';
 
   function readSavedLocale() {
     try {
@@ -236,6 +306,21 @@
       if (saved === 'zh-CN' || saved === 'en-US') return saved;
     } catch {
       /* ignore storage errors */
+    }
+    return null;
+  }
+
+  function readUrlLocale() {
+    try {
+      if (typeof location !== 'undefined' && location.search) {
+        const param = new URLSearchParams(location.search).get('lang');
+        if (param) {
+          if (/^en\b/i.test(param.trim())) return 'en-US';
+          if (/^zh\b/i.test(param.trim())) return 'zh-CN';
+        }
+      }
+    } catch {
+      /* ignore URL parsing errors */
     }
     return null;
   }
@@ -254,6 +339,9 @@
   }
 
   function detectInitialLocale() {
+    const urlLocale = readUrlLocale();
+    if (urlLocale) return urlLocale;
+    if (staticLocale === 'en') return 'en-US';
     const saved = readSavedLocale();
     if (saved) return saved;
     if (!hasExplicitOrRealBrowserLocale()) {
@@ -274,51 +362,135 @@
   const isEn = () => currentLocale === 'en-US';
   const tr = (zh, en) => (isEn() ? en : zh);
 
+  function safeUrl(raw, base) {
+    if (!raw) return null;
+    try {
+      const url = new URL(raw, base || document.baseURI);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applySiteConfigLinks() {
+    const repoBase = safeUrl(config.repoUrl);
+    if (repoBase) {
+      const cleanBase = repoBase.replace(/\/+$/, '');
+      for (const link of $$('[data-repo-link]')) {
+        const sub = link.dataset.repoPath || '';
+        link.href = sub ? `${cleanBase}${sub}` : cleanBase;
+      }
+    }
+
+    const email = typeof config.contactEmail === 'string' ? config.contactEmail.trim() : '';
+    if (email) {
+      for (const link of $$('[data-contact-email]')) {
+        link.href = `mailto:${email}`;
+        if (link.hasAttribute('data-contact-email-text')) {
+          link.textContent = email;
+        }
+      }
+    }
+
+    const discord = safeUrl(config.discordUrl);
+    for (const link of $$('[data-discord-link]')) {
+      if (discord) {
+        link.href = discord;
+        link.hidden = false;
+      } else {
+        link.hidden = true;
+      }
+    }
+
+    const secondary = $('[data-secondary-cta]');
+    if (secondary) {
+      const demo = safeUrl(config.demoUrl);
+      if (demo) {
+        secondary.href = demo;
+        secondary.target = '_blank';
+        secondary.rel = 'noopener noreferrer';
+        secondary.textContent = tr('在线体验原型', EN_TEXT['hero.demoCta']);
+      } else {
+        secondary.href = '#showcase';
+        secondary.removeAttribute('target');
+        secondary.removeAttribute('rel');
+      }
+    }
+  }
+
   let zhSnapshot = null;
   function captureInitialZhDom() {
     if (zhSnapshot) return;
     const descMeta = $('meta[name="description"]');
     const ogTitleMeta = $('meta[property="og:title"]');
     const ogDescMeta = $('meta[property="og:description"]');
+    const twTitleMeta = $('meta[name="twitter:title"]');
+    const twDescMeta = $('meta[name="twitter:description"]');
     zhSnapshot = {
       title: document.title,
       description: descMeta ? descMeta.getAttribute('content') : '',
       ogTitle: ogTitleMeta ? ogTitleMeta.getAttribute('content') : '',
       ogDescription: ogDescMeta ? ogDescMeta.getAttribute('content') : '',
+      twTitle: twTitleMeta ? twTitleMeta.getAttribute('content') : '',
+      twDescription: twDescMeta ? twDescMeta.getAttribute('content') : '',
       texts: $$('[data-i18n]').map((node) => ({ node, key: node.dataset.i18n, zh: node.textContent })),
       htmls: $$('[data-i18n-html]').map((node) => ({ node, key: node.dataset.i18nHtml, zh: node.innerHTML })),
       arias: $$('[data-i18n-aria]').map((node) => ({ node, key: node.dataset.i18nAria, zh: node.getAttribute('aria-label') || '' })),
+      alts: $$('[data-i18n-alt]').map((node) => ({ node, key: node.dataset.i18nAlt, zh: node.getAttribute('alt') || '' })),
     };
   }
 
   function applyStaticLocale() {
-    captureInitialZhDom();
     const en = isEn();
-    if (document.documentElement) {
-      document.documentElement.lang = en ? 'en' : 'zh-CN';
-    }
-    document.title = en ? EN_META.title : zhSnapshot.title;
-    const descMeta = $('meta[name="description"]');
-    if (descMeta) descMeta.setAttribute('content', en ? EN_META.description : zhSnapshot.description);
-    const ogTitleMeta = $('meta[property="og:title"]');
-    if (ogTitleMeta) ogTitleMeta.setAttribute('content', en ? EN_META.ogTitle : zhSnapshot.ogTitle);
-    const ogDescMeta = $('meta[property="og:description"]');
-    if (ogDescMeta) ogDescMeta.setAttribute('content', en ? EN_META.ogDescription : zhSnapshot.ogDescription);
+    if (staticLocale !== 'en') {
+      captureInitialZhDom();
+      if (document.documentElement) {
+        document.documentElement.lang = en ? 'en' : 'zh-CN';
+      }
+      document.title = en ? EN_META.title : zhSnapshot.title;
+      const descMeta = $('meta[name="description"]');
+      if (descMeta) descMeta.setAttribute('content', en ? EN_META.description : zhSnapshot.description);
+      const ogTitleMeta = $('meta[property="og:title"]');
+      if (ogTitleMeta) ogTitleMeta.setAttribute('content', en ? EN_META.ogTitle : zhSnapshot.ogTitle);
+      const ogDescMeta = $('meta[property="og:description"]');
+      if (ogDescMeta) ogDescMeta.setAttribute('content', en ? EN_META.ogDescription : zhSnapshot.ogDescription);
+      const twTitleMeta = $('meta[name="twitter:title"]');
+      if (twTitleMeta) twTitleMeta.setAttribute('content', en ? EN_META.ogTitle : zhSnapshot.twTitle);
+      const twDescMeta = $('meta[name="twitter:description"]');
+      if (twDescMeta) twDescMeta.setAttribute('content', en ? EN_META.ogDescription : zhSnapshot.twDescription);
 
-    for (const item of zhSnapshot.texts) {
-      // Dynamic primary download label is controlled by renderRelease once loaded.
-      if (item.node.hasAttribute('data-primary-label') && lastCatalog) continue;
-      if (item.node.hasAttribute('data-recommend-link') && lastCatalog) continue;
-      if (en && EN_TEXT[item.key] != null) item.node.textContent = EN_TEXT[item.key];
-      else item.node.textContent = item.zh;
+      for (const item of zhSnapshot.texts) {
+        // Dynamic primary download label is controlled by renderRelease once loaded.
+        if (item.node.hasAttribute('data-primary-label') && lastCatalog) continue;
+        if (item.node.hasAttribute('data-recommend-link') && lastCatalog) continue;
+        if (en && EN_TEXT[item.key] != null) item.node.textContent = EN_TEXT[item.key];
+        else item.node.textContent = item.zh;
+      }
+      for (const item of zhSnapshot.htmls) {
+        if (en && EN_TEXT[item.key] != null) item.node.innerHTML = EN_TEXT[item.key];
+        else item.node.innerHTML = item.zh;
+      }
+      for (const item of zhSnapshot.arias) {
+        if (en && EN_TEXT[item.key] != null) item.node.setAttribute('aria-label', EN_TEXT[item.key]);
+        else item.node.setAttribute('aria-label', item.zh);
+      }
+      for (const item of zhSnapshot.alts) {
+        if (en && EN_TEXT[item.key] != null) item.node.setAttribute('alt', EN_TEXT[item.key]);
+        else item.node.setAttribute('alt', item.zh);
+      }
     }
-    for (const item of zhSnapshot.htmls) {
-      if (en && EN_TEXT[item.key] != null) item.node.innerHTML = EN_TEXT[item.key];
-      else item.node.innerHTML = item.zh;
-    }
-    for (const item of zhSnapshot.arias) {
-      if (en && EN_TEXT[item.key] != null) item.node.setAttribute('aria-label', EN_TEXT[item.key]);
-      else item.node.setAttribute('aria-label', item.zh);
+
+    const compareTable = $('[data-compare-table]');
+    if (compareTable && compareTable.style) {
+      if (en) {
+        compareTable.style.setProperty('--col-1', '"Static Wireframing Tools"');
+        compareTable.style.setProperty('--col-2', '"One-Shot AI Web Tools"');
+        compareTable.style.setProperty('--col-3', '"Alex (ProtoFlow AI)"');
+      } else {
+        compareTable.style.setProperty('--col-1', '"传统静态原型工具"');
+        compareTable.style.setProperty('--col-2', '"一次性 AI 网页工具"');
+        compareTable.style.setProperty('--col-3', '"Alex (ProtoFlow AI)"');
+      }
     }
 
     const toggle = $('[data-lang-toggle]');
@@ -333,6 +505,8 @@
         toggle.setAttribute('aria-label', 'EN — Switch to English');
       }
     }
+
+    applySiteConfigLinks();
   }
 
   function packageLabel(pkg) {
@@ -367,6 +541,262 @@
           default: { arm64: 'ARM64', x64: 'x64', universal: '通用版' },
         };
     return (table[os] || table.default)[arch] || arch;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Responsive Popover Navigation Bar
+  // ---------------------------------------------------------------------------
+  function setupResponsiveNavbar() {
+    const header = $('[data-site-header]');
+    const inner = $('[data-header-inner]');
+    const menuBtn = $('[data-menu-button]');
+    const menu = $('[data-site-menu]');
+    if (!header || !inner || !menuBtn || !menu) return () => {};
+
+    const supportsPopover = Object.hasOwn(HTMLElement.prototype, 'popover');
+    if (!supportsPopover) {
+      header.classList.add('no-popover');
+    }
+
+    const isPopoverOpen = () => {
+      if (supportsPopover) {
+        try {
+          return menu.matches(':popover-open');
+        } catch {
+          return false;
+        }
+      }
+      return menu.classList.contains('is-open');
+    };
+
+    const closeMenu = () => {
+      if (supportsPopover) {
+        try {
+          if (menu.matches(':popover-open') && typeof menu.hidePopover === 'function') {
+            menu.hidePopover();
+          }
+        } catch {
+          /* ignore */
+        }
+      } else {
+        menu.classList.remove('is-open');
+      }
+      menuBtn.setAttribute('aria-expanded', 'false');
+    };
+
+    const openMenu = () => {
+      if (supportsPopover) {
+        try {
+          if (typeof menu.showPopover === 'function') menu.showPopover();
+        } catch {
+          /* ignore */
+        }
+      } else {
+        menu.classList.add('is-open');
+      }
+      menuBtn.setAttribute('aria-expanded', 'true');
+    };
+
+    if (supportsPopover) {
+      menu.addEventListener('toggle', (event) => {
+        menuBtn.setAttribute('aria-expanded', event.newState === 'open' ? 'true' : 'false');
+      });
+    } else {
+      menuBtn.addEventListener('click', () => {
+        if (isPopoverOpen()) closeMenu();
+        else openMenu();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isPopoverOpen()) {
+          closeMenu();
+          menuBtn.focus();
+        }
+      });
+      document.addEventListener('click', (event) => {
+        if (!header.classList.contains('is-wide') && isPopoverOpen()) {
+          if (!menu.contains(event.target) && !menuBtn.contains(event.target)) {
+            closeMenu();
+          }
+        }
+      });
+    }
+
+    for (const link of $$('a', menu)) {
+      link.addEventListener('click', () => {
+        if (!header.classList.contains('is-wide')) closeMenu();
+      });
+    }
+
+    let lastHeaderWidth = 0;
+    const syncNavLayout = () => {
+      const currentWidth = header.clientWidth;
+      // Avoid layout thrashing when hidden/unlaid-out (e.g. JSDOM clientWidth === 0).
+      if (!currentWidth) return;
+
+      const wasOpen = !header.classList.contains('is-wide') && isPopoverOpen();
+      header.classList.add('is-measuring', 'is-wide');
+      menu.removeAttribute('popover');
+      const wide = inner.scrollWidth <= inner.clientWidth;
+
+      if (wide) {
+        header.classList.add('is-wide');
+        menu.classList.remove('is-open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      } else {
+        header.classList.remove('is-wide');
+        if (supportsPopover) {
+          menu.setAttribute('popover', 'auto');
+        }
+        if (wasOpen) openMenu();
+        else menuBtn.setAttribute('aria-expanded', 'false');
+      }
+
+      lastHeaderWidth = currentWidth;
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => header.classList.remove('is-measuring'));
+      } else {
+        header.classList.remove('is-measuring');
+      }
+    };
+
+    if (typeof ResizeObserver === 'function') {
+      const headerObserver = new ResizeObserver(() => {
+        const w = header.clientWidth;
+        if (header.classList.contains('is-wide') || w > lastHeaderWidth) {
+          syncNavLayout();
+        }
+      });
+      headerObserver.observe(header);
+
+      const menuObserver = new ResizeObserver(() => {
+        if (header.classList.contains('is-wide')) {
+          syncNavLayout();
+        }
+      });
+      menuObserver.observe(menu);
+    }
+
+    syncNavLayout();
+    return syncNavLayout;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Accessible Showcase Tabs (selection follows focus + hidden="until-found")
+  // ---------------------------------------------------------------------------
+  function setupTabs() {
+    for (const root of $$('[data-tabs]')) {
+      const tablist = $('[role="tablist"]', root);
+      if (!tablist) continue;
+      const tabs = $$('[role="tab"]', tablist);
+      const panels = $$('[role="tabpanel"]', root);
+      if (!tabs.length || !panels.length) continue;
+
+      const pairFor = (tab) => panels.find((p) => p.getAttribute('aria-labelledby') === tab.id) || null;
+
+      const selectTab = (targetTab, { focus = false, scroll = true } = {}) => {
+        for (const tab of tabs) {
+          const selected = tab === targetTab;
+          tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+          tab.tabIndex = selected ? 0 : -1;
+          const panel = pairFor(tab);
+          if (panel) {
+            if (selected) {
+              panel.removeAttribute('hidden');
+              panel.tabIndex = 0;
+            } else {
+              panel.setAttribute('hidden', 'until-found');
+              panel.removeAttribute('tabindex');
+            }
+          }
+        }
+        if (scroll && typeof targetTab.scrollIntoView === 'function') {
+          try {
+            targetTab.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest' });
+          } catch {
+            try {
+              targetTab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            } catch {
+              /* ignore in minimal DOM environments */
+            }
+          }
+        }
+        if (focus && typeof targetTab.focus === 'function') {
+          targetTab.focus();
+        }
+      };
+
+      for (const tab of tabs) {
+        tab.addEventListener('click', () => selectTab(tab, { focus: false, scroll: true }));
+        const panel = pairFor(tab);
+        if (panel) {
+          panel.addEventListener('beforematch', () => selectTab(tab, { focus: false, scroll: true }));
+        }
+      }
+
+      tablist.addEventListener('keydown', (event) => {
+        const currentIndex = tabs.indexOf(event.target);
+        if (currentIndex < 0) return;
+        let nextIndex = -1;
+        if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = tabs.length - 1;
+        if (nextIndex >= 0) {
+          event.preventDefault();
+          selectTab(tabs[nextIndex], { focus: true, scroll: true });
+        }
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy MCP Configuration Snippet
+  // ---------------------------------------------------------------------------
+  function setupCopyButtons() {
+    const copyBtn = $('[data-copy-mcp]');
+    const codeNode = $('[data-mcp-code]');
+    const statusNode = $('[data-copy-status]');
+    if (!copyBtn || !codeNode) return;
+
+    let resetTimer = null;
+    copyBtn.addEventListener('click', async () => {
+      const text = codeNode.textContent || '';
+      let copied = false;
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch {
+        copied = false;
+      }
+      if (!copied) {
+        try {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.setAttribute('readonly', '');
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          copied = document.execCommand('copy');
+          area.remove();
+        } catch {
+          copied = false;
+        }
+      }
+
+      if (copied) {
+        const doneLabel = tr('已复制', 'Copied');
+        copyBtn.textContent = doneLabel;
+        if (statusNode) statusNode.textContent = tr('MCP 配置已复制到剪贴板', 'MCP config copied to clipboard');
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+          copyBtn.textContent = tr('复制配置', EN_TEXT['mcp.copy']);
+          if (statusNode) statusNode.textContent = '';
+        }, 2000);
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -415,18 +845,8 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Data sources
+  // Release data sources & strict provenance verification
   // ---------------------------------------------------------------------------
-  function safeUrl(raw, base) {
-    if (!raw) return null;
-    try {
-      const url = new URL(raw, base || document.baseURI);
-      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
-    } catch {
-      return null;
-    }
-  }
-
   function normalizeAsset(a, release, base) {
     if (!a || a.approved !== true || typeof a.signature !== 'string' || !a.signature) {
       throw new Error(tr('公开安装包缺少发布确认', 'Public installer is missing release approval'));
@@ -459,14 +879,14 @@
     };
   }
 
-  async function fetchJson(url, timeoutMs = 15000) {
+  async function fetchJson(url, cache = 'no-store') {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const res = await fetch(url, {
         headers: { Accept: 'application/json' },
         credentials: 'omit',
-        cache: 'no-store',
+        cache,
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -491,7 +911,6 @@
           !data.latest || data.latest.id !== data.items[0].id || data.latest.version !== data.items[0].version)) {
       throw new Error(tr('版本列表格式无效', 'Invalid release list format'));
     }
-    const platforms = {};
     // The public API orders releases by descending semantic version. Pick one
     // published release per OS so staggered platform releases keep their own version.
     const releases = data.items.map((release) => {
@@ -501,9 +920,58 @@
           typeof release.publishedAt !== 'string' || !formatDate(release.publishedAt) || !Array.isArray(release.assets)) {
         throw new Error(tr('已发布版本数据无效', 'Invalid published release data'));
       }
-      return { version: release.version, publishedAt: release.publishedAt,
-        assets: release.assets.map((a) => normalizeAsset(a, release, base)) };
+      return {
+        version: release.version,
+        publishedAt: release.publishedAt,
+        assets: release.assets.map((a) => normalizeAsset(a, release, base)),
+      };
     });
+    return catalogFromReleases(releases);
+  }
+
+  async function fromGitHub() {
+    if (!githubRepository || config.channel !== 'stable') throw new Error('Invalid GitHub release configuration');
+    const repoUrl = `https://github.com/${githubRepository}`;
+    const data = await fetchJson(`https://api.github.com/repos/${githubRepository}/releases/latest`, 'default');
+    const tag = /^v(\d+\.\d+\.\d+)$/.exec(data?.tag_name);
+    if (!tag || data.draft !== false || data.prerelease !== false ||
+        data.html_url !== `${repoUrl}/releases/tag/${tag[0]}` ||
+        typeof data.published_at !== 'string' || !formatDate(data.published_at) || !Array.isArray(data.assets)) {
+      throw new Error('Invalid stable GitHub release');
+    }
+
+    // electron-builder's artifactName carries the platform and architecture.
+    // Linux package formats spell the same CPU architecture differently.
+    const systems = { mac: 'macos', win: 'windows', linux: 'linux' };
+    const architectures = { arm64: 'arm64', aarch64: 'arm64', x64: 'x64', amd64: 'x64', x86_64: 'x64', universal: 'universal' };
+    const formats = { mac: ['dmg', 'zip'], win: ['exe'], linux: ['deb', 'AppImage', 'tar.gz'] };
+    const version = tag[1];
+    const assets = [];
+    for (const asset of data.assets) {
+      const match = /^Alex-(\d+\.\d+\.\d+)-(mac|win|linux)-(arm64|aarch64|x64|amd64|x86_64|universal)\.(dmg|zip|exe|deb|AppImage|tar\.gz)$/.exec(asset.name);
+      if (!match || asset.state !== 'uploaded') continue;
+      const [, fileVersion, platform, cpu, format] = match;
+      if (fileVersion !== version || !formats[platform].includes(format) ||
+          asset.browser_download_url !== `${repoUrl}/releases/download/${tag[0]}/${asset.name}` ||
+          !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^sha256:[a-f0-9]{64}$/.test(asset.digest)) {
+        throw new Error('Invalid GitHub installer metadata');
+      }
+      assets.push({
+        os: systems[platform],
+        arch: architectures[cpu],
+        packageType: format.toLowerCase(),
+        version,
+        fileName: asset.name,
+        sizeBytes: asset.size,
+        sha256: asset.digest.slice(7),
+        url: asset.browser_download_url,
+      });
+    }
+    return catalogFromReleases([{ version, publishedAt: data.published_at, assets }]);
+  }
+
+  function catalogFromReleases(releases) {
+    const platforms = {};
     for (const release of releases) {
       for (const os of Object.keys(OS_LABEL)) {
         const assets = release.assets.filter((a) => a.os === os);
@@ -515,7 +983,9 @@
 
   async function loadRelease() {
     try {
-      return await fromUpdateServer();
+      if (config.releaseSource === 'release-center') return await fromUpdateServer();
+      if (config.releaseSource === 'github') return await fromGitHub();
+      throw new Error('Unknown download source');
     } catch (err) {
       console.info(tr('[Alex] 版本服务不可用：', '[Alex] Release service unavailable:'), err && err.message);
       return { status: 'error', latest: null, platforms: {} };
@@ -584,7 +1054,7 @@
         'asset-name',
         status === 'error'
           ? tr('下载信息暂不可用', 'Download info unavailable')
-          : tr(`${OS_LABEL[os]} 安装包暂未发布`, `No ${OS_LABEL[os]} installer published yet`),
+          : tr(`此版本的 ${OS_LABEL[os]} 安装包暂未发布`, `No ${OS_LABEL[os]} installer in this release`),
       ),
     );
     main.append(
@@ -607,7 +1077,7 @@
   function renderSkeleton() {
     for (const card of $$('.platform')) {
       const list = $('[data-assets]', card);
-      list.replaceChildren(...[0, 1].map(() => el('li', 'asset skeleton')));
+      if (list) list.replaceChildren(...[0, 1].map(() => el('li', 'asset skeleton')));
     }
   }
 
@@ -615,10 +1085,11 @@
     for (const card of $$('.platform')) {
       const os = card.dataset.os;
       const list = $('[data-assets]', card);
+      const tip = $('.p-tip', card);
       const release = catalog.platforms[os];
       const assets = release ? sortAssets(release.assets) : [];
-      list.replaceChildren(...(assets.length ? assets.map(assetItem) : [unavailableItem(os, catalog.status)]));
-      $('.p-tip', card).hidden = !assets.length;
+      if (list) list.replaceChildren(...(assets.length ? assets.map(assetItem) : [unavailableItem(os, catalog.status)]));
+      if (tip) tip.hidden = !assets.length;
     }
   }
 
@@ -649,15 +1120,29 @@
           : tr('暂无发布', 'No release yet');
     }
 
+    // Never leave an alarming "暂不可用" / "Unavailable" badge above the Hero headline.
+    const heroVersion = $('[data-hero-version]');
+    if (heroVersion) heroVersion.hidden = !release;
+
     const date = release && formatDate(release.publishedAt);
     $('[data-release-date]').textContent = date ? tr(`· 发布于 ${date}`, `· Released ${date}`) : '';
     $('[data-source-note]').textContent = catalog.status === 'error'
       ? tr('· 版本信息加载失败，请重试', '· Failed to load release info. Please retry.')
       : release
-        ? tr('· 与版本中心同步，各平台可下载版本见下方', '· Synced with Release Center. Platform installers are listed below.')
+        ? (config.releaseSource === 'github'
+          ? tr('· 来自 GitHub 官方发行版', '· Published on GitHub Releases')
+          : tr('· 与版本中心同步，各平台可下载版本见下方', '· Synced with Release Center. Platform installers are listed below.'))
         : tr('· 正式发布后将在这里提供下载', '· Installers will appear here once officially published.');
+
     const actions = $('[data-release-actions]');
     actions.replaceChildren();
+    if (config.releaseSource === 'github' && githubRepository) {
+      const releasesLink = el('a', 'btn btn-quiet btn-sm', tr('前往 GitHub Releases', 'View GitHub Releases'));
+      releasesLink.href = `https://github.com/${githubRepository}/releases/latest`;
+      releasesLink.target = '_blank';
+      releasesLink.rel = 'noopener noreferrer';
+      actions.append(releasesLink);
+    }
     if (catalog.status === 'error') {
       const retry = el('button', 'btn btn-quiet btn-sm', tr('重新加载', 'Reload'));
       retry.type = 'button';
@@ -708,6 +1193,19 @@
   // ---------------------------------------------------------------------------
   let currentDevice = { os: null, arch: null };
   let lastCatalog = null;
+  let syncNavLayoutFn = () => {};
+
+  function syncLangQueryParam(nextLocale) {
+    try {
+      if (typeof history === 'undefined' || typeof history.replaceState !== 'function') return;
+      if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
+      const url = new URL(location.href);
+      url.searchParams.set('lang', nextLocale === 'en-US' ? 'en' : 'zh');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore history errors */
+    }
+  }
 
   function setLocale(nextLocale) {
     currentLocale = nextLocale === 'en-US' ? 'en-US' : 'zh-CN';
@@ -716,6 +1214,7 @@
     } catch {
       /* ignore storage errors */
     }
+    syncLangQueryParam(currentLocale);
     applyStaticLocale();
     if (lastCatalog) {
       renderPlatforms(lastCatalog);
@@ -725,6 +1224,7 @@
         node.textContent = tr('版本加载中', 'Loading version');
       }
     }
+    syncNavLayoutFn();
   }
 
   async function refreshRelease(device) {
@@ -732,6 +1232,8 @@
     $('[data-release-actions]').replaceChildren();
     $('[data-recommend]').hidden = true;
     $('[data-recommend-link]').removeAttribute('href');
+    const heroVersion = $('[data-hero-version]');
+    if (heroVersion) heroVersion.hidden = false;
     for (const node of $$('[data-version]')) node.textContent = tr('版本加载中', 'Loading version');
     $('[data-release-date]').textContent = '';
     $('[data-source-note]').textContent = '';
@@ -744,18 +1246,39 @@
 
   async function init() {
     applyStaticLocale();
+    syncNavLayoutFn = setupResponsiveNavbar();
+    setupTabs();
+    setupCopyButtons();
+
     const toggle = $('[data-lang-toggle]');
     if (toggle) {
       toggle.addEventListener('click', () => {
+        if (staticLocale === 'en') {
+          try {
+            if (window.localStorage) window.localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN');
+          } catch {
+            /* ignore storage errors */
+          }
+          if (typeof location !== 'undefined') {
+            location.href = `/?lang=zh${location.hash || ''}`;
+          }
+          return;
+        }
         setLocale(isEn() ? 'zh-CN' : 'en-US');
+      });
+    }
+    for (const link of $$('.footer-locales a[hreflang]')) {
+      link.addEventListener('click', () => {
+        const target = /^en\b/i.test(link.getAttribute('hreflang') || '') ? 'en-US' : 'zh-CN';
+        try {
+          if (window.localStorage) window.localStorage.setItem(LOCALE_STORAGE_KEY, target);
+        } catch {
+          /* ignore storage errors */
+        }
       });
     }
     const year = $('[data-year]');
     if (year) year.textContent = String(new Date().getFullYear());
-    if (config.repoUrl) {
-      const repo = $('[data-repo-link]');
-      if (repo) repo.href = config.repoUrl;
-    }
 
     currentDevice = await detectDevice();
     await refreshRelease(currentDevice);

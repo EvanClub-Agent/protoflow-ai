@@ -1,0 +1,160 @@
+# Alex (ProtoFlow AI) — Complete Product & Technical Reference
+
+> **Alex (ProtoFlow AI)** is an Apache-2.0 open-source, local-first desktop AI business prototyping and ER database modeling workbench for macOS, Windows, and Linux.
+
+- **Canonical Website (ZH)**: https://alex.xclubai.com/
+- **Canonical Website (EN)**: https://alex.xclubai.com/en/
+- **MCP Server & API Docs**: https://alex.xclubai.com/mcp/
+- **Trust Pages**: https://alex.xclubai.com/about/ · https://alex.xclubai.com/privacy/ · https://alex.xclubai.com/contact/
+- **Repository**: https://github.com/EvanClub-Agent/protoflow-ai
+- **Releases**: https://github.com/EvanClub-Agent/protoflow-ai/releases/latest
+- **Community Discord**: https://discord.gg/YDnKBhmsrR
+- **License**: Apache License 2.0 (free for personal, commercial, and private self-hosted deployments; no seat limits)
+
+---
+
+## When to Use Alex (ProtoFlow AI)
+
+- **Best-Fit Jobs**: Designing data-backed enterprise admin portals and paired iPhone mobile workflows, clarifying ambiguous specs before screen generation, migrating Axure `.rp` binaries locally into table-bound prototypes, letting coding agents co-design on a live canvas (`--mode readwrite --desktop-bridge`), and handing off normalized PostgreSQL/MySQL DDL + TSX + sticky-note rules to coding IDEs (`POST /api/v1/mcp/<shareId>`).
+- **Not Intended For**: Static brochure websites without business state, or running hosted production databases.
+
+---
+
+## 1. Product Summary & Entity Disambiguation
+
+- **Alex**: The desktop application (`productName: "Alex"`, built with Electron + React + TypeScript).
+- **ProtoFlow AI**: The platform, repository (`EvanClub-Agent/protoflow-ai`), MCP namespace (`protoflow_*`, `@protoflow-ai/mcp`), and self-hosted publishing stack.
+- **`.pflow`**: The local-first project archive format (and Git-friendly unpacked directory tree) containing pages (TSX DSL), physical ER database schemas, preview data rows, component sticky-note requirements, rich project notes, and mindmaps.
+
+**Core Value Proposition**:
+Alex bridges requirement engineering, relational data modeling, interactive multi-platform prototyping, and AI-assisted code generation in one local-first workspace. No sign-in is required to launch or design locally.
+
+---
+
+## 2. Positioning Comparison: Static Wireframes vs. One-Shot AI Web Generators vs. Alex
+
+| Dimension | Traditional Static Wireframing Tools (Axure, Figma, Modao) | One-Shot AI Web Generators (v0, Bolt, Lovable) | Alex (ProtoFlow AI) |
+| :--- | :--- | :--- | :--- |
+| **Cross-Page Data Flow** | Static placeholder text; submitting a form never creates a row in list pages | Hardcoded mock data per page; state resets across screens | **Bound to real shared ER physical tables; desktop & mobile read/write live** |
+| **AI Collaboration** | No project-level schema/flow context; manual assembly | Guesses ambiguous business rules blindly and outputs an entire page at once | **Clarifies edge cases first → proposes sitemap & ER plan → generates after confirmation** |
+| **Iteration & Refinement** | Manual alignment across dozens of static artboards | Small field edits frequently regenerate and break existing page layouts | **Bidirectional AST visual drag-and-drop + scoped non-destructive AI/MCP edits** |
+| **Multi-Platform & Legacy** | Desktop & mobile split into separate files; legacy `.rp` files stay static | Difficult to synchronize desktop admin and mobile screens on one relational dataset | **Wide admin consoles + iPhone viewports in one project, plus native Axure `.rp` local import** |
+| **Engineering Handoff** | Relies on long offline PRDs and verbal field constraints | Lacks relational constraints, unique keys, and acceptance checklists | **Component sticky specs, foreign-key impact analysis & zero-install remote MCP access to DDL/TSX** |
+| **Data Sovereignty & Hosting** | Cloud-locked accounts and per-seat SaaS subscriptions | Closed hosted sandboxes without private deployment | **Apache-2.0 open source · Local `.pflow` files by default + 3-step Docker Compose self-hosting** |
+
+---
+
+## 3. Eight Core Capabilities
+
+1. **Clarify-First Project AI (Hermes Engine)**
+   - Built-in managed NousResearch Hermes runtime (installed and verified by Alex Desktop).
+   - Actively asks clarifying questions about thresholds, approval rules, and edge cases before outputting a module sitemap, page list, and ER schema blueprint.
+   - Generates only after user confirmation, and supports scoped incremental edits on individual sections without overwriting existing page structure.
+2. **Bidirectional AST Canvas & 114+ Enterprise Materials**
+   - Widescreen grid layouts, multi-column `QueryForm` filters, master-detail `Table`s, `Descriptions`, drawers, modals, composite business blocks, and sandboxed Freeform components.
+   - Dragging on canvas, editing in the property inspector, and underlying TSX DSL stay losslessly synchronized.
+3. **Navicat-Style ER Database Designer & Shared Tables**
+   - Visual relational table editor supporting column types, `ENUM(...)` state machines, foreign keys (`REFERENCES`), single-column unique constraints, and composite unique constraints.
+   - Records created, edited, or approved on one screen immediately propagate to list tables, approval queues, charts, and mobile screens.
+4. **Desktop Admin + Mobile Viewports in One Project**
+   - Design wide enterprise admin portals alongside iPhone viewports (bottom capsule tabs, half-screen drawers, touch pickers, waterfall feeds) backed by the same physical ER tables.
+5. **12 Native Apache ECharts + Mermaid Diagrams & Notes**
+   - Native Bar, Line, Area, Pie, Donut, Scatter, Radar, Gauge, Funnel, Heatmap, Treemap, and Sankey charts bound directly to project physical tables.
+   - Split-screen Tiptap rich-text notes, Mermaid architecture/sequence/swimlane templates, and project mindmaps inside the same `.pflow` project.
+6. **Native Local Axure `.rp` Binary Import & Controlled AI Reshaping**
+   - Drag Axure RP 9 or RP 11 `.rp` files into Alex without installing Axure or uploading files to the cloud.
+   - Local worker restores nested sitemap folders, groups, static tables, master instances, multi-state dynamic panels, and unconditional links.
+   - Optional AI flow reshaping converts static grids into table-backed `QueryForm` + `Table` + `Descriptions` pages alongside untouched original RP pages, with column-mapping verification and Converted / Retained / Pending confirmation checklists.
+7. **Component Sticky Specs, Impact Analysis & Closed-Loop Audit**
+   - Pin business validation and tax/precision rules directly onto specific UI components as sticky specs.
+   - Changing a database column immediately highlights affected pages and cross-module workflows; automated audit checks detect broken jumps, unbound foreign keys, and incomplete acceptance items.
+8. **Local-First Privacy + 1-Click Self-Hosted Online Review (`/p/{id}`)**
+   - Projects save locally as `.pflow` archives or Git-friendly directory trees with zero mandatory login.
+   - Optional lightweight self-hosted stack (**Go 1.27 + Gin + PostgreSQL 18 + Nginx**) lets teams publish interactive, password-protected, expiring `/p/{id}` prototypes that open in any browser.
+
+---
+
+## 4. Model Context Protocol (MCP): Bidirectional Co-Design & Zero-Install Engineering Handoff
+
+Alex ships comprehensive MCP support across two workflows:
+
+### A. Live Canvas Co-Design (`--mode readwrite --desktop-bridge`)
+- Enable **MCP → Local → Bidirectional design** in Alex Desktop to connect **Codex**, **Google Antigravity**, **Claude Desktop** (`.mcpb` extension export), or **Claude Code** via a stable local loopback bridge (`live.json`) with sequential `expectedRevision` conflict protection and multi-step `Cmd/Ctrl+Z` undo.
+- Exposes **18 contract-enforced authoring tools**, including sitemap management, ER table creation/foreign-key validation, coherent preview row seeding, `<Page>` / `<MobilePage>` creation and block-level editing, sticky specs, docs/Mermaid flows, project audit (`protoflow_audit_project`), and offscreen PNG layout verification (`protoflow_capture_preview`).
+- Includes one-click Antigravity plugin installation and Claude Desktop `.mcpb` export right inside the app.
+
+### B. Remote Zero-Install Engineering Handoff (`POST /api/v1/mcp/<shareId>`)
+- Once a prototype is published to a `/p/{id}` URL, engineers connect **Claude Code**, **Cursor**, **Windsurf**, **Codex**, or **Google Antigravity** over Streamable HTTP with zero local installation:
+  ```json
+  {
+    "mcpServers": {
+      "protoflow": {
+        "url": "https://protoflow.example.com/api/v1/mcp/<shareId>"
+      }
+    }
+  }
+  ```
+- Provides **6 read-only specification tools** (`protoflow_get_project_overview`, `protoflow_get_database_schema` with PostgreSQL/MySQL DDL, `protoflow_get_page_spec` with TSX and pinned sticky specs, `protoflow_get_docs_and_flows`, `protoflow_search_spec`, and `protoflow_get_implementation_checklist`).
+
+---
+
+## 5. Supported AI Providers (14+ Services) & Standalone Mode
+
+Configure your own model accounts or API keys in the in-app **AI Management Center**, or run offline local models via Ollama. **All canvas, ER modeling, Axure import, and export features also work 100% standalone without AI.**
+
+Supported providers:
+Claude, Gemini, OpenAI, DeepSeek, Qwen (通义千问), Kimi, Z.ai (智谱 GLM), MiniMax, Mistral, Grok, OpenRouter, GitHub Copilot, Nous Research, and local Ollama.
+
+---
+
+## 6. Built-In Community Starter Templates
+
+1. **SaaS E-Commerce & Inventory Admin**: Supplier onboarding, purchase order approvals, master-detail inbound receipts, 4 shared ER tables, and 5 tax/over-receipt sticky specs.
+2. **CRM Sales & Contract Billing Dashboard**: Monthly contract trend and regional ARR ECharts bound to tables, customer opportunity CRUD, and payment plans (`examples/crm-contract-billing`, 5 ER tables, 4 desktop + 2 mobile pages).
+3. **Modern Mobile & Cross-Platform App**: Consumer discovery waterfall feed, B2B mobile approval half-sheet drawers, AI assistant view, and cross-platform table sync.
+
+---
+
+## 7. Quick Start & Self-Hosting Commands
+
+### Desktop Installers
+Download signed/checksummed installers (`SHA256SUMS.txt`) from https://github.com/EvanClub-Agent/protoflow-ai/releases/latest for:
+- **macOS 13+**: Apple Silicon (`arm64` `.dmg` / `.zip`) and Intel (`x64` `.dmg` / `.zip`)
+- **Windows 10/11**: `x64` NSIS installer (`.exe`)
+- **Linux**: `x64` `.deb` (`sudo apt install ./Alex-*-linux-amd64.deb`), `.AppImage`, `.tar.gz`
+
+### Run from Source (Node.js 22+ only)
+```bash
+git clone https://github.com/EvanClub-Agent/protoflow-ai.git
+cd protoflow-ai && npm install
+npm run dev              # Launch workbench in browser
+npm run electron:start   # Launch full Electron desktop workbench
+```
+
+### Self-Hosted Team Review & Remote MCP Server (Docker Compose)
+```bash
+cp deploy/.env.example deploy/.env
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
+curl -fsS http://127.0.0.1:8088/healthz
+```
+
+---
+
+## 8. Frequently Asked Questions (FAQ)
+
+- **Is Alex free and open source for commercial use?**
+  Yes. Licensed under Apache-2.0 with zero seat limits or forced SaaS lock-in.
+- **Where are my projects and API keys stored?**
+  Projects save locally as `.pflow` files or unpacked directories, and model credentials stay locally in Hermes. Data only uploads to your self-hosted server when you explicitly publish an online demo.
+- **Can I use Alex without configuring AI or Docker?**
+  Yes. Open the desktop app without logging in to use the visual canvas, 114+ materials, ER designer, 12 ECharts types, Mermaid diagrams, Axure `.rp` import, and local exports. Docker is only needed for team browser `/p/{id}` review links.
+- **How do I handle macOS "developer cannot be verified" on community builds?**
+  Right-click Alex in Applications and click Open, or go to System Settings → Privacy & Security → Open Anyway (needed once). Choose `arm64` for Apple M-series Macs and `x64` for Intel Macs.
+
+---
+
+## 中文摘要（Summary in Chinese）
+
+**Alex (ProtoFlow AI)** 是一款基于 Apache-2.0 协议开源、本机优先的桌面端 AI 业务原型设计与 ER 数据库建模工作台，支持 macOS、Windows 与 Linux：
+- **核心定位**：填补“点不动的静态线框图（Axure / Figma / 墨刀）”与“盲猜需求、改一处破整页的一次性 AI 网页工具”之间的断层。
+- **核心闭环**：项目 AI 先追问澄清规则并输出目录与表结构蓝图 → 双向 AST 画布精修 PC 后台与 iPhone 移动端视口 → 共享物理 ER 表（外键/唯一约束）驱动表单、列表、审批与 12 类 ECharts 真实流转 → 组件级黄色需求便签与闭环巡检 → 支持本地无损导入 Axure `.rp`、通过 MCP 让 Claude Code / Cursor / Codex / Antigravity 双向操控画布或零安装读取 DDL/TSX 规格，并可通过 Docker Compose 3 步私有化部署 `/p/{id}` 在线评审链接。
