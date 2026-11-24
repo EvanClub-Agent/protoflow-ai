@@ -5,7 +5,15 @@ image=$(realpath "$1")
 name=$(basename "$image" .AppImage)
 arch=${name##*-}
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+cleanup() {
+  cd /
+  for _ in 1 2 3 4 5; do
+    rm -rf "$work" 2>/dev/null && return 0
+    sleep 0.2
+  done
+  rm -rf "$work" || true
+}
+trap cleanup EXIT
 cd "$work"
 if readelf -dW "$image" | grep '(NEEDED)'; then
   echo 'The AppImage runtime has a dynamic library dependency' >&2
@@ -23,10 +31,20 @@ cmp "$image" verified.AppImage
 
 # Extraction runs the real launcher even on CI hosts without a /dev/fuse device.
 xvfb-run -a bash -eu -c '
-  export XDG_CONFIG_HOME="$PWD/config" XDG_CACHE_HOME="$PWD/cache"
-  "$1" --appimage-extract-and-run >desktop.log 2>&1 &
+  mkdir -p "$PWD/tmp"
+  export XDG_CONFIG_HOME="$PWD/config" XDG_CACHE_HOME="$PWD/cache" TMPDIR="$PWD/tmp"
+  setsid "$1" --appimage-extract-and-run >desktop.log 2>&1 &
   pid=$!
-  trap "kill $pid 2>/dev/null || true" EXIT
+  stop_app() {
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for ((j=0; j<25; j++)); do
+      kill -0 -- "-$pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  }
+  trap stop_app EXIT
   for ((i=0; i<90; i++)); do
     if xwininfo -root -tree | grep -F "\"protoflow-ai\" \"protoflow-ai\""; then exit 0; fi
     if ! kill -0 "$pid" 2>/dev/null; then break; fi
