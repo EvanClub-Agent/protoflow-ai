@@ -13,6 +13,16 @@ ProtoFlow AI（原名 Alex）桌面应用静态官网，提供在线浏览器交
 - **自托管官网**默认使用 `releaseSource: 'release-center'`，通过 `GET /api/v1/updates?channel=stable` 与桌面客户端共用版本中心公开数据。
   此模式下，各平台展示最近一次已审核并发布的安装包。配置 `updateServer: ''` 时，由同源 Nginx 代理公开查询和下载接口。
 
+### 部署到官网 Vercel 项目
+
+在仓库根目录运行以下命令。脚本使用 GitHub CLI 和 jq 从正式发行版生成下载清单，只复制 Git 跟踪的官网文件。部署副本通过同域路径 `/api/github/releases/latest` 查询最新版本。遇到网络超时、限流或上游服务故障时，页面会标注并展示部署时同步的发行版。两条路径共用仓库、版本、下载地址和 SHA-256 校验。
+
+```sh
+site=$(bash scripts/website-stage-vercel.sh) &&
+  vercel link "$site" --yes --project protoflow-alex-website --scope masterbans-projects &&
+  vercel deploy "$site" --prod
+```
+
 ## 配置项 (`config.js`)
 
 - `releaseSource`：`release-center` 或 `github`

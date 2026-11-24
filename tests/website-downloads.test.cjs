@@ -51,7 +51,9 @@ async function openSite(t, result, device = { os: 'linux', arch: 'x64' }, settin
   const calls = [];
   window.fetch = async (url, options) => {
     calls.push({ url, options });
-    return { ok: true, json: async () => typeof result === 'function' ? result(calls.length) : result };
+    const payload = typeof result === 'function' ? result(calls.length) : result;
+    if (payload instanceof Response) return payload;
+    return { ok: true, json: async () => payload };
   };
   window.eval(config);
   Object.assign(window.ALEX_SITE_CONFIG, settings);
@@ -184,6 +186,33 @@ test('GitHub lists the branded AppImage and omits its zsync control file', async
   const links = [...doc.querySelectorAll('[data-os="linux"] [data-assets] a[download]')];
   assert.equal(links.length, 3);
   assert.ok(links.some(link => link.href === old.browser_download_url));
+});
+
+test('public site uses same-origin GitHub data and recovers from a temporary outage with a labelled snapshot', async t => {
+  const settings = { releaseSource: 'github', githubReleaseProxy: true };
+  const data = githubLatest();
+  const { window, doc, calls } = await openSite(t, count => count === 1
+    ? new Response(null, { status: 403, headers: { 'x-ratelimit-remaining': '0' } })
+    : data, undefined, settings);
+  assert.deepEqual(calls.map(c => c.url), ['/api/github/releases/latest', '/release-snapshot.json']);
+  assert.equal(doc.querySelectorAll('[data-assets] a[download]').length, 6);
+  assert.match(doc.querySelector('[data-i18n="dl.latestPrefix"]').textContent, /上次同步/);
+  assert.match(doc.querySelector('[data-source-note]').textContent, /暂时无法查询最新版本/);
+  doc.querySelector('[data-release-actions] button').click();
+  await settled(window);
+  assert.equal(calls[2].url, '/api/github/releases/latest');
+  assert.match(doc.querySelector('[data-source-note]').textContent, /GitHub 官方发行版/);
+  assert.equal(doc.querySelector('[data-release-actions] button'), null);
+});
+
+test('public site rejects removed releases and invalid metadata from either source', async t => {
+  const invalid = { ...githubLatest(), draft: true };
+  for (const responses of [[new Response(null, { status: 404 })], [invalid], [new Response(null, { status: 503 }), invalid]]) {
+    const { doc, calls } = await openSite(t, n => responses[n - 1], undefined, { releaseSource: 'github', githubReleaseProxy: true });
+    assert.equal(calls.length, responses.length);
+    assert.equal(doc.querySelector('[data-version]').textContent, '暂不可用');
+    assert.equal(doc.querySelectorAll('[data-assets] a[download]').length, 0);
+  }
 });
 
 test('GitHub mode rejects invalid provenance and keeps the official release page available on failure', async t => {

@@ -916,7 +916,12 @@
         cache,
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.temporary = res.status >= 500 || res.status === 429 ||
+          (res.status === 403 && (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.has('retry-after')));
+        throw err;
+      }
       return await res.json();
     } finally {
       clearTimeout(timer);
@@ -959,7 +964,20 @@
   async function fromGitHub() {
     if (!githubRepository || config.channel !== 'stable') throw new Error('Invalid GitHub release configuration');
     const repoUrl = `https://github.com/${githubRepository}`;
-    const data = await fetchJson(`https://api.github.com/repos/${githubRepository}/releases/latest`, 'default');
+    let data;
+    let snapshot = false;
+    if (config.githubReleaseProxy === true) {
+      try {
+        data = await fetchJson('/api/github/releases/latest', 'default');
+      } catch (err) {
+        // Only transport failures and temporary upstream errors may use the deployment snapshot.
+        if (!(err instanceof TypeError || err.name === 'AbortError' || err.temporary)) throw err;
+        data = await fetchJson('/release-snapshot.json', 'no-cache');
+        snapshot = true;
+      }
+    } else {
+      data = await fetchJson(`https://api.github.com/repos/${githubRepository}/releases/latest`, 'default');
+    }
     const tag = /^v(\d+\.\d+\.\d+)$/.exec(data?.tag_name);
     if (!tag || data.draft !== false || data.prerelease !== false ||
         data.html_url !== `${repoUrl}/releases/tag/${tag[0]}` ||
@@ -997,7 +1015,7 @@
         url: asset.browser_download_url,
       });
     }
-    return catalogFromReleases([{ version, publishedAt: data.published_at, assets }]);
+    return { ...catalogFromReleases([{ version, publishedAt: data.published_at, assets }]), snapshot };
   }
 
   function catalogFromReleases(releases) {
@@ -1154,15 +1172,22 @@
     const heroVersion = $('[data-hero-version]');
     if (heroVersion) heroVersion.hidden = !release;
 
+    $('[data-i18n="dl.latestPrefix"]').textContent = catalog.snapshot
+      ? tr('上次同步', 'Last synced release')
+      : tr('最新发布', 'Latest release');
     const date = release && formatDate(release.publishedAt);
     $('[data-release-date]').textContent = date ? tr(`· 发布于 ${date}`, `· Released ${date}`) : '';
-    $('[data-source-note]').textContent = catalog.status === 'error'
+    const sourceNote = $('[data-source-note]');
+    sourceNote.textContent = catalog.status === 'error'
       ? tr('· 版本信息加载失败，请重试', '· Failed to load release info. Please retry.')
       : release
         ? (config.releaseSource === 'github'
           ? tr('· 来自 GitHub 官方发行版', '· Published on GitHub Releases')
           : tr('· 与版本中心同步，各平台可下载版本见下方', '· Synced with Release Center. Platform installers are listed below.'))
         : tr('· 正式发布后将在这里提供下载', '· Installers will appear here once officially published.');
+    if (catalog.snapshot) {
+      sourceNote.textContent = tr('· 暂时无法查询最新版本，可下载此发行版', '· Live lookup is unavailable. This release is available to download.');
+    }
 
     const actions = $('[data-release-actions]');
     actions.replaceChildren();
@@ -1173,7 +1198,7 @@
       releasesLink.rel = 'noopener noreferrer';
       actions.append(releasesLink);
     }
-    if (catalog.status === 'error') {
+    if (catalog.status === 'error' || catalog.snapshot) {
       const retry = el('button', 'btn btn-quiet btn-sm', tr('重新加载', 'Reload'));
       retry.type = 'button';
       retry.addEventListener('click', () => refreshRelease(device));

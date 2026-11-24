@@ -103,6 +103,13 @@
       "continue": true
     },
     {
+      "src": "^/api/github/releases/latest$",
+      "dest": "https://api.github.com/repos/EvanClub-Agent/protoflow-ai/releases/latest",
+      "headers": {
+        "Vercel-CDN-Cache-Control": "public, s-maxage=300, stale-while-revalidate=600"
+      }
+    },
+    {
       "handle": "filesystem"
     },
     {
