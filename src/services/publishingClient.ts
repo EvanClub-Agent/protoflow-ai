@@ -27,6 +27,7 @@ export interface PublishingDesktopApi {
   logout: () => Promise<PublishSettings>;
   legacyChoice: (input: { action: 'link' | 'skip' }) => Promise<PublishSettings>;
   request: (input: PublishRequest) => Promise<unknown>;
+  openPreview: (target: Pick<Publication, 'id' | 'shareUrl'>) => Promise<void>;
 }
 
 const BROWSER_SERVER_URL_KEY = 'protoflow_publishing_server_url';
@@ -72,7 +73,8 @@ async function unwrap<T>(reply: Promise<PublishingReply<T>>): Promise<T> {
   if (!result.ok) throw Object.assign(new Error(td(result.error.message)), { status: result.error.status });
   return result.value;
 }
-function desktop(): PublishingDesktopApi | undefined {
+export function desktopPublishing(): PublishingDesktopApi | undefined {
+  if (typeof window === 'undefined') return undefined;
   const bridge = (window as unknown as { protoflowDesktop?: { publishing?: PublishingBridge } }).protoflowDesktop?.publishing;
   if (!bridge) return undefined;
   const localizeNotice = (s: PublishSettings): PublishSettings => s.notice ? { ...s, notice: td(s.notice) } : s;
@@ -83,14 +85,18 @@ function desktop(): PublishingDesktopApi | undefined {
     logout: () => unwrap(bridge.logout()).then(localizeNotice),
     legacyChoice: input => unwrap(bridge.legacyChoice(input)).then(localizeNotice),
     request: input => unwrap(bridge.request(input)),
+    openPreview: async target => {
+      if (!bridge.openPreview) throw new Error(tr('请重启桌面应用后再打开预览。', 'Restart the desktop app to open the preview.'));
+      await unwrap(bridge.openPreview(target));
+    },
   };
 }
 export async function accountSettings(): Promise<PublishSettings> {
-  if (desktop()) return desktop()!.accountSettings();
+  if (desktopPublishing()) return desktopPublishing()!.accountSettings();
   return publishingSettings();
 }
 export async function publishingSettings(): Promise<PublishSettings> {
-  if (desktop()) return desktop()!.settings();
+  if (desktopPublishing()) return desktopPublishing()!.settings();
   if (!browserConnection) return signedOutPublishing();
   const connection = browserConnection, generation = browserGeneration;
   try {
@@ -113,7 +119,7 @@ async function http(url: string, token: string, route: string, method = 'GET', b
 }
 export async function authenticatePublishing(input: PublishingLogin): Promise<PublishSettings> {
   if (!input || !['login', 'register'].includes(input.mode) || typeof input.username !== 'string' || typeof input.password !== 'string') throw new Error(tr('请输入用户名与密码', 'Please enter username and password'));
-  if (desktop()) return desktop()!.authenticate(input);
+  if (desktopPublishing()) return desktopPublishing()!.authenticate(input);
   const rawUrl = typeof input.url === 'string' && input.url.trim() ? input.url.trim() : readBrowserServerUrl();
   if (!rawUrl) throw new Error(tr('请先填写自建发布服务地址', 'Please enter the self-hosted publishing server URL first'));
   const url = publishingOrigin(rawUrl);
@@ -128,7 +134,7 @@ export async function authenticatePublishing(input: PublishingLogin): Promise<Pu
   return { url, configured: true, user, legacy: null };
 }
 export async function logoutPublishing(): Promise<PublishSettings> {
-  if (desktop()) return desktop()!.logout();
+  if (desktopPublishing()) return desktopPublishing()!.logout();
   const connection = browserConnection; browserGeneration++; browserConnection = null;
   if (connection) {
     try { await http(connection.url, connection.token, '/api/v1/auth/logout', 'POST', {}); }
@@ -137,11 +143,11 @@ export async function logoutPublishing(): Promise<PublishSettings> {
   return signedOutPublishing();
 }
 export async function chooseLegacyPublishing(action: 'link' | 'skip'): Promise<PublishSettings> {
-  if (!desktop()) throw new Error(tr('请在原桌面客户端关联已有分享', 'Please link existing shares in the desktop app'));
-  return desktop()!.legacyChoice({ action });
+  if (!desktopPublishing()) throw new Error(tr('请在原桌面客户端关联已有分享', 'Please link existing shares in the desktop app'));
+  return desktopPublishing()!.legacyChoice({ action });
 }
 async function request(input: PublishRequest): Promise<any> {
-  if (desktop()) return desktop()!.request(input);
+  if (desktopPublishing()) return desktopPublishing()!.request(input);
   if (!browserConnection) throw Object.assign(new Error(tr('请先登录账号后再发布', 'Please sign in before publishing')), { status: 401 });
   const { url, token } = browserConnection, generation = browserGeneration;
   let result: unknown;

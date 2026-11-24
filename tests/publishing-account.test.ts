@@ -12,6 +12,22 @@ const storage = { isAsyncEncryptionAvailable: async () => true,
   encryptStringAsync: async (value: string) => Buffer.from(value.split('').reverse().join('')),
   decryptStringAsync: async (value: Buffer) => ({ result: value.toString().split('').reverse().join('') }) };
 const response = (body: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+test('desktop preview opens the published public URL for that exact record', async () => {
+  const opened: string[] = [];
+  const client = new PublishingClient({ dataDir: '', serviceUrl: url, openExternal: async (target: string) => { opened.push(target); } });
+  const id = 'FIRSTSHARE12345678901234';
+  const shareUrl = `https://share.example.com/p/${id}`;
+  await client.openPreview({ id, shareUrl });
+  for (const invalid of [
+    { id, shareUrl: shareUrl + 'another-record' },
+    { id, shareUrl: `file:///p/${id}` },
+    { id, shareUrl: `https://account@share.example.com/p/${id}` },
+    { id, shareUrl: shareUrl + '?source=private' },
+    { id, shareUrl: shareUrl.replace('https:', 'http:') },
+  ]) await assert.rejects(client.openPreview(invalid));
+  assert.deepEqual(opened, [shareUrl]);
+});
+
 function setup(t: any, handler?: (route: string, options: any) => any) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'publishing-account-test-')), calls: any[] = [];
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));

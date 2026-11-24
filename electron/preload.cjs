@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
     logout: () => publishingInvoke('logout'),
     legacyChoice: input => publishingInvoke('legacyChoice', input),
     request: input => publishingInvoke('request', input),
+    openPreview: target => publishingInvoke('openPreview', target),
   },
   updater: {
     state: () => ipcRenderer.invoke('pflow:updater-state'),

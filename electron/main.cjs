@@ -102,12 +102,15 @@ for (const method of ['begin', 'end', 'snapshot', 'configure']) {
   });
 }
 process.on('uncaughtExceptionMonitor', error => captureDiagnostic({source:'main',category:'main',code:'UNCAUGHT_EXCEPTION',stage:'process',message:error.message,stack:error.stack}));
-for (const method of ['settings', 'accountSettings', 'authenticate', 'logout', 'legacyChoice', 'request']) {
+for (const method of ['settings', 'accountSettings', 'authenticate', 'logout', 'legacyChoice', 'request', 'openPreview']) {
   handleIpc(`pflow:publishing-${method}`, (event, input) => {
     if (!isMainRendererEvent(event)) throw new Error(tr('不允许的发布调用', 'Unauthorized publishing call'));
     if (!publishingClient) {
       const { PublishingClient } = require('./publishing.cjs');
-      publishingClient = new PublishingClient({ dataDir: app.getPath('userData'), safeStorage: require('electron').safeStorage });
+      publishingClient = new PublishingClient({
+        dataDir: app.getPath('userData'), safeStorage,
+        openExternal: url => require('electron').shell.openExternal(url),
+      });
     }
     return publishingClient[method](input).then(value => ({ ok: true, value }), error => {
       captureDiagnostic({ source: 'main', category: 'network', code: 'PUBLISHING_FAILED', stage: `publishing-${method}`, message: error.message });

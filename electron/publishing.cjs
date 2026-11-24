@@ -17,11 +17,12 @@ function origin(input) {
   return url.origin;
 }
 class PublishingClient {
-  constructor({ dataDir, safeStorage, fetchImpl = fetch, serviceUrl = serviceOrigin }) {
+  constructor({ dataDir, safeStorage, openExternal, fetchImpl = fetch, serviceUrl = serviceOrigin }) {
     this.file = path.join(dataDir, 'publishing.json');
     this.configFile = path.join(dataDir, 'publishing-config.json');
     this.sessionFile = path.join(dataDir, 'publishing-session.json');
     this.safeStorage = safeStorage;
+    this.openExternal = openExternal;
     this.fetch = fetchImpl;
     const rawDefault = typeof serviceUrl === 'string' ? serviceUrl.trim() : '';
     this.defaultServiceUrl = rawDefault ? origin(rawDefault) : '';
@@ -242,6 +243,16 @@ class PublishingClient {
     }
     if (!result) throw new Error(tr('发布服务返回内容无效', 'Publishing server returned an invalid response'));
     return result;
+  }
+  async openPreview({ id, shareUrl }) {
+    const url = new URL(shareUrl);
+    origin(url.origin);
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{20,80}$/.test(id) ||
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username || url.password || url.search || url.hash || url.pathname !== '/p/' + id) {
+      throw new Error(tr('发布记录的预览地址无效', 'Invalid preview URL for this publication'));
+    }
+    await this.openExternal(url.href);
   }
   async request(input) {
     const generation = this.generation;

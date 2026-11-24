@@ -6,7 +6,7 @@ import { createPublishedSnapshot, publishablePages } from '../services/createPub
 import { useAccountStore } from '../store/useAccountStore';
 import { PublishingAccountPanel } from './PublishingAccountPanel';
 import { shareableNotes } from '../services/publishedNotes';
-import { chooseLegacyPublishing, signedOutPublishing, listPublications, publishingSettings, revokePublication, savePublication, type Publication, type PublishSettings } from '../services/publishingClient';
+import { chooseLegacyPublishing, desktopPublishing, signedOutPublishing, listPublications, publishingSettings, revokePublication, savePublication, type Publication, type PublishSettings } from '../services/publishingClient';
 import { useI18n } from '../i18n';
 
 function localDate(value: string | null) {
@@ -117,6 +117,9 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
   });
   const button =
     'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+  const desktop = desktopPublishing();
+  const previewLabel = <><ExternalLink size={12} />{tr('打开预览', 'Open Preview')}</>;
+  const previewClass = `${button} bg-white hover:bg-slate-50 border border-slate-200 text-slate-700`;
   return (
     <dialog
       ref={dialog}
@@ -330,15 +333,16 @@ export function OnlinePublishModal({ onClose, onOffline }: { onClose: () => void
                       <Copy size={12} />
                       {tr('复制链接', 'Copy Link')}
                     </button>
-                    <a
-                      href={selected.shareUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${button} bg-white hover:bg-slate-50 border border-slate-200 text-slate-700`}
-                    >
-                      <ExternalLink size={12} />
-                      {tr('打开预览', 'Open Preview')}
-                    </a>
+                    {desktop ? (
+                      <button type="button" className={previewClass} onClick={() => {
+                        setError('');
+                        void desktop.openPreview({ id: selected.id, shareUrl: selected.shareUrl }).catch(cause => {
+                          if (alive.current) setError(tr('无法打开系统浏览器：', 'Could not open the system browser: ') + td(cause instanceof Error ? cause.message : String(cause)));
+                        });
+                      }}>{previewLabel}</button>
+                    ) : (
+                      <a href={selected.shareUrl} target="_blank" rel="noopener noreferrer" className={previewClass}>{previewLabel}</a>
+                    )}
                     {recordState(selected) === 'active' && (
                       <button
                         type="button"
