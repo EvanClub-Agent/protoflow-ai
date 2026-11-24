@@ -1,7 +1,8 @@
 /*
- * Alex (ProtoFlow AI) 官网配置 / Website Configuration — 部署时只需修改这个文件。
+ * ProtoFlow AI（原名 Alex）官网配置 / Website Configuration — 部署时只需修改这个文件。
  *
  * 自托管官网可使用与客户端共用的版本中心；公网官网可选择 GitHub 稳定发行版。
+ * Note: window.ALEX_SITE_CONFIG global name is retained for backward compatibility with self-hosted deployments.
  */
 window.ALEX_SITE_CONFIG = {
   // release-center | github（读取 repoUrl 仓库最新的 GitHub Release）
@@ -14,12 +15,12 @@ window.ALEX_SITE_CONFIG = {
   // 发行通道 / Release channel: stable | beta
   channel: 'stable',
 
-  // 联系方式与社区入口 / Contact, repository, community, and optional live demo URL
+  // 联系方式与社区入口 / Contact, repository, community, and live browser demo URL
   contactEmail: 'ai.agent.club@gmail.com',
   repoUrl: 'https://github.com/EvanClub-Agent/protoflow-ai',
   discordUrl: 'https://discord.gg/YDnKBhmsrR',
 
-  // 可选：托管在线演示链接（例如 https://demo.example.com/p/crm-demo）；留空时首屏次要按钮跳转到实机展示区。
-  // Optional hosted interactive demo URL; when empty, the hero secondary button jumps to #showcase.
-  demoUrl: '',
+  // 在线交互演示地址（默认指向内置纯静态沙盒 /demo/；留空时首屏次要按钮跳转到实机展示区）。
+  // Hosted or bundled interactive live demo URL (defaults to static /demo/ sandbox; empty jumps to #showcase).
+  demoUrl: '/demo/',
 };

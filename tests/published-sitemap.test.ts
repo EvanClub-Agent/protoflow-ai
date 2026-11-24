@@ -10,6 +10,8 @@ import { useProtoStore } from '../src/store/useProtoStore';
 import { createPublishedSnapshot } from '../src/services/createPublishedSnapshot';
 import { normalizePublishedSnapshot } from '../src/services/publishedSnapshot';
 import { publishedMenuIndex } from '../src/services/publishedSitemap';
+import { LanguageSwitch } from '../src/components/LanguageSwitch';
+import { hydrateLocale, resetLocaleCache } from '../src/i18n/runtime';
 import { hydratePublishedSnapshot, PublishedViewer } from '../src/viewer/PublishedViewer';
 import { PublishedSitemap } from '../src/viewer/PublishedSitemap';
 
@@ -103,5 +105,61 @@ test('viewer document deep links, folder collapse, page navigation and browser b
     assert.ok(renderer!.root.findAllByType('button').some(button => button.props.title === '设计变更记录' && button.props['aria-current'] === 'page'));
   } finally {
     act(() => renderer?.unmount()); globalThis.window = originalWindow; globalThis.document = originalDocument; globalThis.fetch = originalFetch; restoreDom();
+  }
+});
+
+test('static demo mode loads manifest and zh/en snapshots without calling /api/v1/view/', async () => {
+  const restoreDom = installTestDom();
+  const zhSnapshot = createPublishDemo();
+  const enSnapshot = structuredClone(zhSnapshot);
+  enSnapshot.title = 'Interactive Prototype English Demo';
+  const originalWindow = globalThis.window, originalDocument = globalThis.document, originalFetch = globalThis.fetch;
+  const meta = globalThis.document.createElement('meta');
+  meta.setAttribute('name', 'protoflow-static-demo');
+  meta.setAttribute('content', './demo-manifest.json');
+  globalThis.document.head.appendChild(meta);
+  const location = { origin: 'https://alex.xclubai.com', pathname: '/demo/', href: 'https://alex.xclubai.com/demo/', hash: '' };
+  globalThis.window = {
+    document: globalThis.document,
+    matchMedia: originalWindow.matchMedia,
+    setTimeout: originalWindow.setTimeout,
+    clearTimeout: originalWindow.clearTimeout,
+    location,
+    history: { replaceState(_a: unknown, _b: unknown, hash: string) { location.hash = hash; } },
+    addEventListener() {},
+    removeEventListener() {},
+  } as any;
+  hydrateLocale('zh-CN');
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    requestedUrls.push(String(url));
+    assert.ok(!String(url).includes('/api/v1/view/'), `Unexpected view API request: ${url}`);
+    if (String(url).endsWith('demo-manifest.json')) {
+      return { ok: true, json: async () => ({ version: 1, snapshots: { zh: './snapshots/crm-zh.json', en: './snapshots/crm-en.json' } }) };
+    }
+    if (String(url).includes('crm-en.json')) {
+      return { ok: true, json: async () => enSnapshot };
+    }
+    return { ok: true, json: async () => zhSnapshot };
+  }) as any;
+  let renderer: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(PublishedViewer)); });
+    assert.ok(requestedUrls.some(u => u.includes('demo-manifest.json')));
+    assert.ok(requestedUrls.some(u => u.includes('crm-zh.json')));
+    assert.match(globalThis.document.title, /ProtoFlow AI/);
+    const langBtn = renderer!.root.findByType(LanguageSwitch).findByType('button');
+    await act(async () => { langBtn.props.onClick(); });
+    assert.ok(requestedUrls.some(u => u.includes('crm-en.json')));
+    assert.ok(JSON.stringify(renderer!.toJSON()).includes('Interactive Prototype English Demo'));
+  } finally {
+    act(() => renderer?.unmount());
+    meta.remove();
+    hydrateLocale('zh-CN');
+    resetLocaleCache();
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+    globalThis.fetch = originalFetch;
+    restoreDom();
   }
 });

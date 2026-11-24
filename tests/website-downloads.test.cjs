@@ -226,6 +226,14 @@ test('config links bind contactEmail, repoUrl, discordUrl, and optional demoUrl 
   assert.equal(secondary.href, 'https://demo.protoflow.example/p/crm-demo');
   assert.equal(secondary.textContent, '在线体验原型');
 
+  const defaultDemo = await openSite(t, listing(release('0.0.9', ['linux'])));
+  assert.equal(defaultDemo.doc.querySelector('[data-secondary-cta]').getAttribute('href'), '/demo/');
+  assert.equal(defaultDemo.doc.querySelector('[data-secondary-cta]').textContent, '在线体验原型');
+
+  const withoutDemo = await openSite(t, listing(release('0.0.9', ['linux'])), undefined, { demoUrl: '' });
+  assert.equal(withoutDemo.doc.querySelector('[data-secondary-cta]').getAttribute('href'), '#showcase');
+  assert.equal(withoutDemo.doc.querySelector('[data-secondary-cta]').textContent, '查看实机演示');
+
   const withoutDiscord = await openSite(t, listing(release('0.0.9', ['linux'])), undefined, { discordUrl: '' });
   for (const link of withoutDiscord.doc.querySelectorAll('[data-discord-link]')) {
     assert.equal(link.hidden, true);
@@ -235,9 +243,10 @@ test('config links bind contactEmail, repoUrl, discordUrl, and optional demoUrl 
 test('bilingual switching supports ?lang=en, toggle button, comparison headers, and covers all i18n keys', async t => {
   const { window, doc } = await openSite(t, listing(release('0.0.9', ['linux'])), undefined, {}, 'http://website.test/?lang=en');
   assert.equal(doc.documentElement.lang, 'en');
-  assert.match(doc.title, /Alex \(ProtoFlow AI\)/);
-  assert.match(doc.title, /Turn Requirements into Runnable Prototypes/);
+  assert.match(doc.title, /ProtoFlow AI/);
+  assert.match(doc.title, /Open-Source AI Prototyping Workbench That Runs/);
   assert.equal(doc.querySelector('[data-compare-table]').style.getPropertyValue('--col-1'), '"Static Wireframing Tools"');
+  assert.equal(doc.querySelector('[data-compare-table]').style.getPropertyValue('--col-3'), '"ProtoFlow AI"');
   assert.equal(doc.querySelector('[data-lang-toggle]').textContent, '中文');
 
   const keys = new Set();
@@ -253,6 +262,7 @@ test('bilingual switching supports ?lang=en, toggle button, comparison headers, 
   assert.equal(doc.documentElement.lang, 'zh-CN');
   assert.match(doc.title, /把需求做成能跑起来的业务原型/);
   assert.equal(doc.querySelector('[data-compare-table]').style.getPropertyValue('--col-1'), '"传统静态原型工具"');
+  assert.equal(doc.querySelector('[data-compare-table]').style.getPropertyValue('--col-3'), '"ProtoFlow AI"');
   assert.equal(doc.querySelector('[data-lang-toggle]').textContent, 'EN');
   assert.equal(window.location.search, '?lang=zh');
 });
@@ -296,6 +306,9 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
   for (const rel of [
     'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt',
     'en/index.html', 'about/index.html', 'contact/index.html', 'privacy/index.html', 'mcp/index.html',
+    'axure-import/index.html', 'compare/index.html',
+    'demo/index.html', 'demo/demo-manifest.json', 'demo/snapshots/crm-zh.json', 'demo/snapshots/crm-en.json',
+    'assets/workbench-screenshot.png', 'assets/mobile-preview.png', 'assets/social-preview.jpg',
     '404.html', '404.md',
   ]) {
     assert.ok(fs.existsSync(path.join(site, rel)), `Missing SEO/GEO file: website/${rel}`);
@@ -307,6 +320,7 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
   const fsIdx = vercelCfg.routes.findIndex(r => r.handle === 'filesystem');
   assert.ok(fsIdx > 0, 'Expected pre-filesystem routes before handle: filesystem');
   assert.ok(vercelCfg.routes.slice(0, fsIdx).some(r => r.dest === '/llms.txt'));
+  assert.ok(vercelCfg.routes.slice(0, fsIdx).some(r => String(r.src).includes('axure-import') && String(r.src).includes('compare')));
   assert.ok(vercelCfg.routes.slice(fsIdx + 1).some(r => r.status === 404 && r.dest === '/404.md'));
   assert.ok(vercelCfg.routes.slice(fsIdx + 1).some(r => r.status === 404 && r.dest === '/404.html'));
 
@@ -320,6 +334,9 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
   for (const locUrl of [
     'https://alex.xclubai.com/',
     'https://alex.xclubai.com/en/',
+    'https://alex.xclubai.com/demo/',
+    'https://alex.xclubai.com/compare/',
+    'https://alex.xclubai.com/axure-import/',
     'https://alex.xclubai.com/mcp/',
     'https://alex.xclubai.com/about/',
     'https://alex.xclubai.com/contact/',
@@ -332,16 +349,19 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
 
   const llms = fs.readFileSync(path.join(site, 'llms.txt'), 'utf8');
   const llmsFull = fs.readFileSync(path.join(site, 'llms-full.txt'), 'utf8');
-  assert.match(llms, /^# Alex \(ProtoFlow AI\)/);
-  assert.match(llms, /## When to Use Alex/);
-  assert.match(llmsFull, /## When to Use Alex/);
+  assert.match(llms, /^# ProtoFlow AI/);
+  assert.match(llms, /## When to Use ProtoFlow AI/);
+  assert.match(llms, /\/demo\//);
+  assert.match(llmsFull, /## When to Use ProtoFlow AI/);
   assert.match(llmsFull, /Apache License 2\.0/);
   assert.match(llmsFull, /https:\/\/alex\.xclubai\.com\/en\//);
+  assert.match(llmsFull, /OpenDesign/);
 
   const fourOhFourMd = fs.readFileSync(path.join(site, '404.md'), 'utf8');
   assert.ok(fourOhFourMd.trim().length >= 200);
   assert.match(fourOhFourMd, /llms\.txt/);
   assert.match(fourOhFourMd, /sitemap\.xml/);
+  assert.match(fourOhFourMd, /\/demo\//);
 
   const assertSequentialHeadings = (doc, fileLabel) => {
     const levels = [...doc.querySelectorAll('h1, h2, h3, h4, h5, h6')].map(h => Number(h.tagName.slice(1)));
@@ -373,9 +393,13 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
     const types = (ld['@graph'] || []).map(node => node['@type']);
     assert.deepEqual(types, ['Organization', 'WebSite', 'SoftwareApplication', 'FAQPage']);
     const orgNode = ld['@graph'].find(n => n['@type'] === 'Organization');
+    assert.equal(orgNode.name, 'ProtoFlow AI');
+    assert.ok(orgNode.alternateName.includes('Alex'));
     assert.equal(orgNode.contactPoint?.email, 'ai.agent.club@gmail.com');
     assert.ok(Array.isArray(orgNode.knowsAbout) && orgNode.knowsAbout.length >= 3);
     const appNode = ld['@graph'].find(n => n['@type'] === 'SoftwareApplication');
+    assert.equal(appNode.name, 'ProtoFlow AI');
+    assert.ok(appNode.alternateName.includes('Alex'));
     assert.equal(appNode.isAccessibleForFree, true);
     assert.equal(appNode.offers?.price, '0');
     const faqNode = ld['@graph'].find(n => n['@type'] === 'FAQPage');
@@ -383,7 +407,11 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
     dom.window.close();
   }
 
-  for (const pageFile of ['index.html', 'en/index.html', 'about/index.html', 'contact/index.html', 'privacy/index.html', 'mcp/index.html']) {
+  for (const pageFile of [
+    'index.html', 'en/index.html', 'demo/index.html',
+    'about/index.html', 'contact/index.html', 'privacy/index.html', 'mcp/index.html',
+    'axure-import/index.html', 'compare/index.html',
+  ]) {
     const dom = new JSDOM(fs.readFileSync(path.join(site, pageFile), 'utf8'));
     const doc = dom.window.document;
     const desc = (doc.querySelector('meta[name="description"]')?.getAttribute('content') || '').trim();
@@ -403,6 +431,7 @@ test('static English /en/ entry preserves English locale, loads English releases
   const enHtml = fs.readFileSync(path.join(site, 'en/index.html'), 'utf8');
   assert.doesNotMatch(enHtml, /(?:href|src)="(?:assets\/|styles\.css|config\.js|main\.js)"/);
   assert.doesNotMatch(enHtml, /url\(assets\//);
+  assert.doesNotMatch(enHtml, /website\.test/);
 
   const dom = new JSDOM(enHtml, { url: 'http://website.test/en/', runScripts: 'outside-only' });
   t.after(() => dom.window.close());
@@ -419,7 +448,7 @@ test('static English /en/ entry preserves English locale, loads English releases
 
   const doc = window.document;
   assert.equal(doc.documentElement.lang, 'en');
-  assert.match(doc.title, /Turn Requirements into Runnable Prototypes/);
+  assert.match(doc.title, /Open-Source AI Prototyping Workbench That Runs/);
   assert.deepEqual([...doc.querySelectorAll('[data-version]')].map(n => n.textContent), ['v0.0.9', 'v0.0.9']);
   assert.match(doc.querySelector('[data-os="linux"] [data-assets]').textContent, /Debian \/ Ubuntu \.deb/);
   assert.equal(doc.querySelector('[data-lang-toggle]').textContent, '中文');

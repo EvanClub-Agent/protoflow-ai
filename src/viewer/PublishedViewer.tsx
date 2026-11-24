@@ -228,8 +228,23 @@ export function PublishedViewer() {
   }} />;
 }
 
+function getStaticDemoManifestUrl(): string {
+  if (typeof document === 'undefined') return '';
+  return document.querySelector('meta[name="protoflow-static-demo"]')?.getAttribute('content')?.trim() || '';
+}
+
+interface StaticDemoManifest {
+  version?: number;
+  snapshots?: {
+    zh?: string;
+    en?: string;
+  };
+}
+
 function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: () => void }) {
-  const { tr } = useI18n();
+  const { tr, locale } = useI18n();
+  const staticDemoUrl = getStaticDemoManifestUrl();
+  const isStaticDemo = Boolean(staticDemoUrl);
   const theme = useThemePreference();
   const [publication, setPublication] = useState<Publication | null>(null);
   const [snapshot, setSnapshot] = useState<ReadablePublishedSnapshot | null>(null);
@@ -257,16 +272,64 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
     const abort = new AbortController(); let alive = true;
     const load = async () => {
       try {
+        if (isStaticDemo) {
+          setBusy(true);
+          setError('');
+          const manifestRes = await fetch(staticDemoUrl, { cache: 'no-cache', credentials: 'omit', signal: abort.signal });
+          if (!manifestRes.ok) throw new Error(trRuntime('无法加载演示清单，请稍后重试', 'Unable to load demo manifest. Please try again later.'));
+          const manifest = (await manifestRes.json()) as StaticDemoManifest;
+          const relSnapshot = locale === 'en-US'
+            ? (manifest?.snapshots?.en || manifest?.snapshots?.zh)
+            : (manifest?.snapshots?.zh || manifest?.snapshots?.en);
+          if (!relSnapshot || typeof relSnapshot !== 'string') {
+            throw new Error(trRuntime('演示清单缺少有效的快照地址', 'Demo manifest is missing a valid snapshot path'));
+          }
+          const resolvedManifest = new URL(staticDemoUrl, window.location.href);
+          const snapshotUrl = new URL(relSnapshot, resolvedManifest).toString();
+          const snapRes = await fetch(snapshotUrl, { cache: 'no-cache', credentials: 'omit', signal: abort.signal });
+          if (!snapRes.ok) throw new Error(trRuntime('无法加载演示快照，请稍后重试', 'Unable to load demo snapshot. Please try again later.'));
+          const rawSnapshot = await snapRes.json();
+          if (!alive) return;
+          const content = normalizePublishedSnapshot(rawSnapshot);
+          const previousActiveId = useProtoStore.getState().activePageId;
+          hydratePublishedSnapshot(content);
+          let hashPageId = '';
+          try { hashPageId = decodeURIComponent(window.location.hash.slice(1)); } catch { hashPageId = ''; }
+          const preservedPageId = hashPageId && canVisit(content, hashPageId)
+            ? hashPageId
+            : previousActiveId && canVisit(content, previousActiveId)
+              ? previousActiveId
+              : content.entryPageId;
+          if (preservedPageId) useProtoStore.getState().setActivePage(preservedPageId);
+          const nowIso = new Date().toISOString();
+          setPublication({
+            id: 'static-demo',
+            projectId: content.projectId,
+            title: content.title,
+            version: typeof manifest.version === 'number' ? manifest.version : 1,
+            passwordProtected: false,
+            expiresAt: null,
+            revokedAt: null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            shareUrl: `${window.location.origin}${window.location.pathname}`,
+          });
+          setSnapshot(content);
+          setExpanded({});
+          setPassword('');
+          document.title = `${content.title} · ProtoFlow AI`;
+          return;
+        }
         if (!id) throw new Error(trRuntime('分享链接无效，请使用发布者提供的完整链接', 'Invalid share link. Please use the complete URL provided by the publisher.'));
         const meta = await viewRequest(id, undefined, abort.signal);
         if (meta.id !== id || typeof meta.passwordProtected !== 'boolean') throw new Error(trRuntime('分享记录格式无效', 'Invalid share metadata format'));
         if (!alive) return; setPublication(meta);
         if (!meta.passwordProtected) { const data = await viewRequest(id, '', abort.signal); if (alive) accept(data); }
-      } catch (e) { if (alive) setError(e instanceof Error ? e.message : trRuntime('无法加载分享', 'Unable to load share')); }
+      } catch (e) { if (alive && !abort.signal.aborted) setError(e instanceof Error ? e.message : trRuntime('无法加载分享', 'Unable to load share')); }
       finally { if (alive) setBusy(false); }
     };
     void load(); return () => { alive = false; abort.abort(); };
-  }, [id]);
+  }, [id, isStaticDemo, staticDemoUrl, isStaticDemo ? locale : 'static']);
   useEffect(() => {
     if (!snapshot) return;
     const change = () => {
@@ -299,7 +362,9 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
             <div className="flex min-w-0 items-center gap-3">
               <AlexLogo size={40} className="rounded-xl shadow-xs shrink-0" />
               <div className="min-w-0">
-                <div className="text-xs font-extrabold text-slate-900 tracking-tight">Alex</div>
+                <div className="text-xs font-extrabold text-slate-900 tracking-tight">
+                  {isStaticDemo ? 'ProtoFlow AI' : 'Alex'}
+                </div>
                 <div className="text-[11px] text-slate-500">{tr('在线交互原型演示沙盒', 'Interactive Prototype Sandbox')}</div>
               </div>
             </div>
@@ -402,7 +467,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           )}
 
           <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
-            <span>{tr('Alex · 在线分享', 'Alex · Live Share')}</span>
+            <span>{isStaticDemo ? tr('ProtoFlow AI · 在线演示', 'ProtoFlow AI · Live Demo') : tr('Alex · 在线分享', 'Alex · Live Share')}</span>
             <div className="flex items-center gap-1.5">
               <ThemeSwitch {...theme} />
               <LanguageSwitch />
@@ -439,16 +504,36 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
 
             <div className="h-4 w-px bg-slate-200 shrink-0" />
 
-            <AlexLogo size={22} className="rounded-md shadow-2xs shrink-0" />
+            {isStaticDemo ? (
+              <a
+                href="/"
+                className="flex items-center gap-2 min-w-0 hover:opacity-85 transition"
+                title={tr('返回 ProtoFlow AI 官网', 'Back to ProtoFlow AI Home')}
+              >
+                <AlexLogo size={22} className="rounded-md shadow-2xs shrink-0" />
+                <div className="min-w-0 flex items-center gap-2">
+                  <h1 className="text-xs sm:text-[13px] font-bold text-slate-900 truncate max-w-[160px] sm:max-w-[280px]">
+                    {snapshot.title}
+                  </h1>
+                  <span className="hidden md:inline-flex items-center rounded-md bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0">
+                    {tr('在线交互沙盒', 'Live Sandbox')}
+                  </span>
+                </div>
+              </a>
+            ) : (
+              <>
+                <AlexLogo size={22} className="rounded-md shadow-2xs shrink-0" />
 
-            <div className="min-w-0 flex items-center gap-2">
-              <h1 className="text-xs sm:text-[13px] font-bold text-slate-900 truncate max-w-[160px] sm:max-w-[280px]">
-                {snapshot.title}
-              </h1>
-              <span className="hidden md:inline-flex items-center rounded-md bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0">
-                {tr(`版本 ${publication?.version ?? 1}`, `v${publication?.version ?? 1}`)}
-              </span>
-            </div>
+                <div className="min-w-0 flex items-center gap-2">
+                  <h1 className="text-xs sm:text-[13px] font-bold text-slate-900 truncate max-w-[160px] sm:max-w-[280px]">
+                    {snapshot.title}
+                  </h1>
+                  <span className="hidden md:inline-flex items-center rounded-md bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0">
+                    {tr(`版本 ${publication?.version ?? 1}`, `v${publication?.version ?? 1}`)}
+                  </span>
+                </div>
+              </>
+            )}
 
             {activeMenuTitle && (
               <>
@@ -463,10 +548,12 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           <div className="flex items-center gap-2 shrink-0">
             <p className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-400 mr-1 whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {tr(
-                `在线原型 · 版本 ${publication?.version} · 演示操作仅影响当前浏览`,
-                `Live Prototype · v${publication?.version} · Demo actions stay local`
-              )}
+              {isStaticDemo
+                ? tr('在线交互演示 · 零下载纯浏览器沙盒', 'Interactive Live Demo · Browser Sandbox')
+                : tr(
+                    `在线原型 · 版本 ${publication?.version} · 演示操作仅影响当前浏览`,
+                    `Live Prototype · v${publication?.version} · Demo actions stay local`
+                  )}
             </p>
             <ThemeSwitch {...theme} />
             <LanguageSwitch />
@@ -479,14 +566,34 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               }}
             />
             <PublishedNotesButton />
-            <button
-              type="button"
-              onClick={() => setMcpOpen(true)}
-              className="flex gap-1.5 items-center rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 font-medium px-2.5 py-1.5 text-xs shrink-0 cursor-pointer transition shadow-2xs"
-            >
-              <Blocks size={13.5} aria-hidden="true" />
-              <span>{tr('MCP 接入', 'MCP')}</span>
-            </button>
+            {isStaticDemo ? (
+              <>
+                <a
+                  href="/mcp/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden sm:inline-flex gap-1.5 items-center rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 font-medium px-2.5 py-1.5 text-xs shrink-0 transition shadow-2xs"
+                >
+                  <Blocks size={13.5} aria-hidden="true" />
+                  <span>{tr('MCP 接入指南', 'MCP Guide')}</span>
+                </a>
+                <a
+                  href="/#download"
+                  className="inline-flex gap-1.5 items-center rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1.5 text-xs shrink-0 transition shadow-2xs"
+                >
+                  <span>{tr('下载桌面端', 'Download App')}</span>
+                </a>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMcpOpen(true)}
+                className="flex gap-1.5 items-center rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100/80 text-blue-700 font-medium px-2.5 py-1.5 text-xs shrink-0 cursor-pointer transition shadow-2xs"
+              >
+                <Blocks size={13.5} aria-hidden="true" />
+                <span>{tr('MCP 接入', 'MCP')}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -537,16 +644,18 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
             </div>
           </main>
         </div>
-        <McpConnectModal
-          open={mcpOpen}
-          onClose={() => setMcpOpen(false)}
-          initialTab="remote"
-          viewerShareContext={{
-            title: snapshot.title,
-            shareUrl: publication?.shareUrl || `${window.location.origin}${window.location.pathname}`,
-            passwordProtected: Boolean(publication?.passwordProtected),
-          }}
-        />
+        {!isStaticDemo && (
+          <McpConnectModal
+            open={mcpOpen}
+            onClose={() => setMcpOpen(false)}
+            initialTab="remote"
+            viewerShareContext={{
+              title: snapshot.title,
+              shareUrl: publication?.shareUrl || `${window.location.origin}${window.location.pathname}`,
+              passwordProtected: Boolean(publication?.passwordProtected),
+            }}
+          />
+        )}
       </div>
     </PublishedNotesProvider>
   );

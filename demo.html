@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="protoflow-static-demo" content="./demo-manifest.json" />
+    <meta name="robots" content="index, follow" />
+    <meta
+      name="description"
+      content="ProtoFlow AI 在线交互原型演示：免下载在浏览器直接体验 CRM 合同与回款开票业财系统，含 4 个 PC 页、2 个 iPhone 视口页、5 张共享 ER 表与 9 条需求便签。"
+    />
+    <link rel="canonical" href="https://alex.xclubai.com/demo/" />
+    <link rel="alternate" type="text/markdown" href="https://alex.xclubai.com/llms-full.txt" title="Full Markdown Documentation" />
+    <title>ProtoFlow AI 在线交互演示 — 浏览器零下载体验可运行业务原型</title>
+  </head>
+  <body class="antialiased bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white"><div id="root"><main style="max-width:860px;margin:0 auto;padding:40px 24px;line-height:1.7">
+      <h1>Alex (ProtoFlow AI) 在线交互原型演示 — CRM 合同与回款开票业财系统</h1>
+      <p>
+        这是一个免下载、免登录的浏览器可运行业务原型沙盒，基于 Apache-2.0 开源工作台
+        <a href="https://alex.xclubai.com/">Alex (ProtoFlow AI)</a> 构建。启用 JavaScript 后，页面会自动加载实时交互工作台与持久化沙盒状态。
+      </p>
+      <section>
+        <h2>这个在线示例包含哪些可交互页面与共享数据表</h2>
+        <p>
+          当前示例工程完整演示了多页面、跨终端共享物理 ER 数据表的实时联动效果，包含 4 个 PC 中后台页面、2 个 iPhone 移动端视口页面、5 张共享物理数据表与 9 条组件级需求便签：
+        </p>
+        <ul>
+          <li>PC 管理端页面：业财经营与回款看板、企业客户与商机台账、销售合同审批与履约台账、回款核销与开票工作台。</li>
+          <li>iPhone 移动端视口页：移动审批与回款催办、客户拜访与移动开票。</li>
+          <li>共享物理 ER 数据表：<code>t_crm_customers</code>、<code>t_crm_contracts</code>、<code>t_crm_payment_plans</code>、<code>t_crm_invoices</code>、<code>t_crm_monthly_revenue</code>。</li>
+        </ul>
+      </section>
+      <section>
+        <h2>如何开始体验与完整桌面版能力</h2>
+        <p>
+          在浏览器中可直接切换左侧目录与 PC/移动端视口，在表单和台账中增删改查记录并查看多页面与图表联动，同时点击查看挂在控件上的黄色需求便签。
+          下载完整桌面端后，还可使用先追问澄清再规划蓝图的 Hermes AI、本地免装 Axure <code>.rp</code> 二进制导入、双向 AST 画布精修、18 个双向 MCP 协同工具，以及 3 步 Docker Compose 团队私有化发布服务。
+        </p>
+      </section>
+      <section>
+        <h2>官方文档、下载与开发者入口</h2>
+        <nav aria-label="官方文档与开发者资源">
+          <ul>
+            <li><a href="/">Alex (ProtoFlow AI) 官网首页与桌面端下载</a></li>
+            <li><a href="/en/">English Homepage (Alex / ProtoFlow AI)</a></li>
+            <li><a href="/mcp/">MCP Server 与 API 接入指南（Claude Code / Cursor / Codex）</a></li>
+            <li><a href="/axure-import/">Axure .rp 本地导入与迁移指南</a></li>
+            <li><a href="/compare/">原型工具对比：Axure / Figma / v0 vs ProtoFlow AI</a></li>
+            <li><a href="https://github.com/EvanClub-Agent/protoflow-ai">GitHub 开源仓库（EvanClub-Agent/protoflow-ai）</a></li>
+            <li><a href="/llms-full.txt">完整 Markdown 技术参考（llms-full.txt）</a></li>
+          </ul>
+        </nav>
+      </section>
+    </main></div><script type="module" src="/src/viewer/main.tsx"></script></body>
+</html>

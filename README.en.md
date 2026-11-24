@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="./public/logo.svg" width="92" height="92" alt="Alex Logo" />
+<img src="./public/logo.svg" width="92" height="92" alt="ProtoFlow AI Logo" />
 
-# Alex (ProtoFlow AI)
+# ProtoFlow AI (formerly Alex)
 
-### Turn Requirements into Runnable Business Prototypes
+### Open-Source AI Prototyping Workbench — Turn Requirements into Runnable Apps
 
-Describe your business workflow — Alex clarifies edge cases first, plans your sitemap, pages, and shared relational tables,<br/>
-lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST canvas, and publishes interactive review links in one click.
+Describe your business workflow — ProtoFlow AI clarifies edge cases first, plans your sitemap, pages, and shared relational ER tables,<br/>
+lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST canvas, imports Axure `.rp` binaries offline, and connects coding agents via MCP.
 
-**[Official Website](https://alex.xclubai.com/en/)** · **[MCP Docs](https://alex.xclubai.com/mcp/)** · **[Join Discord](https://discord.gg/YDnKBhmsrR)** (share prototypes in `#general` or ask in `#help-and-bugs`).
+**[Try Live Browser Demo](https://alex.xclubai.com/demo/)** · **[Official Website](https://alex.xclubai.com/en/)** · **[MCP Docs](https://alex.xclubai.com/mcp/)** · **[Join Discord](https://discord.gg/YDnKBhmsrR)** (share prototypes in `#general` or ask in `#help-and-bugs`).
 
 [![Website](https://img.shields.io/badge/Website-alex.xclubai.com-1D4ED8?style=flat-square)](https://alex.xclubai.com/en/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563EB?style=flat-square)](./LICENSE)
@@ -21,21 +21,21 @@ lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST 
 
 [简体中文](./README.md) · **English**
 
-[Quick Start](#-quick-start-in-60-seconds) · [Why Alex](#-why-alex) · [Key Features](#-key-features) · [Self-Host with Docker](#-self-hosted-deployment-docker-compose) · [Contributing](#-contributing)
+[Live Browser Demo](https://alex.xclubai.com/demo/) · [Quick Start](#-quick-start-in-60-seconds) · [Why ProtoFlow AI](#-why-protoflow-ai) · [Key Features](#-key-features) · [Self-Host with Docker](#-self-hosted-deployment-docker-compose) · [Contributing](#-contributing)
 
 <br/>
 
-<img src="./docs/assets/workbench-screenshot.png" width="100%" alt="Alex Desktop Workbench Screenshot" />
+<img src="./docs/assets/workbench-screenshot.png" width="100%" alt="ProtoFlow AI Desktop Workbench Screenshot showing the CRM Contracts & Billing suite" />
 
 </div>
 
 ---
 
-## 💡 Why Alex?
+## 💡 Why ProtoFlow AI?
 
 Product managers and engineering teams are often stuck between **static wireframing tools** (where forms don't submit and tables don't share data) and **one-shot AI HTML generators** (that guess requirements blindly, invent isolated mock data per page, and break layouts on follow-up edits).
 
-**Alex (ProtoFlow AI)** bridges requirement engineering, relational data modeling, and interactive prototyping in one local-first desktop workbench:
+**ProtoFlow AI (formerly Alex)** bridges requirement engineering, relational data modeling, and interactive prototyping in one local-first desktop workbench:
 
 - **Shared Physical Tables (ER) Across Pages**: Forms, tables, drawers, and ECharts bind to real project schemas — records created on an order form immediately flow into approval queues and mobile views.
 - **Clarify First, Generate Second**: Powered by **NousResearch Hermes Agent**, Project AI asks clarifying questions on ambiguous business rules and proposes a structured blueprint before generating pages.
@@ -60,7 +60,7 @@ Product managers and engineering teams are often stuck between **static wirefram
 
 ## 🚀 Quick Start in 60 Seconds
 
-Download desktop installers for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
+Download desktop installers (currently packaged under the `Alex-*` binary filename for upgrade continuity) for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, try the **[Browser Live Demo](https://alex.xclubai.com/demo/)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
 
 ```bash
 git clone https://github.com/EvanClub-Agent/protoflow-ai.git

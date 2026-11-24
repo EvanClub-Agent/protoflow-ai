@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => ({
   base: mode === 'viewer' ? '/' : './',
+  ...(mode === 'website-demo' ? { publicDir: false as const } : {}),
   plugins: [react(), tailwindcss()],
   server: {
     watch: {
@@ -12,5 +13,10 @@ export default defineConfig(({ mode }) => ({
       ignored: [/\.pflow$/i, /\.pflow\.[\da-f-]+\.tmp$/i],
     },
   },
-  build: mode === 'viewer' ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } } : { rollupOptions: { input: ['index.html', 'capture.html'] } },
+  build:
+    mode === 'viewer'
+      ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } }
+      : mode === 'website-demo'
+        ? { outDir: 'website/demo', emptyOutDir: true, rollupOptions: { input: 'demo.html' } }
+        : { rollupOptions: { input: ['index.html', 'capture.html'] } },
 }))

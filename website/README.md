@@ -1,6 +1,8 @@
-# Alex (ProtoFlow AI) 产品官网 (`website/`)
+# ProtoFlow AI（原名 Alex）产品官网 (`website/`)
 
-Alex (ProtoFlow AI) 桌面应用静态官网，提供产品定位对比、实机工作台展示、MCP 双向协同介绍、Axure `.rp` 导入说明以及 macOS、Windows、Linux 安装包下载入口。采用纯静态 HTML、CSS 和原生 JavaScript 编写，无需额外前端打包步骤。
+ProtoFlow AI（原名 Alex）桌面应用静态官网，提供在线浏览器交互演示（`website/demo/`）、竞品对比页（`website/compare/`）、Axure `.rp` 迁移专页（`website/axure-import/`）、MCP 双向协同文档（`website/mcp/`）以及 macOS、Windows、Linux 安装包下载入口。采用纯静态 HTML、CSS 和原生 JavaScript 编写，其中 `/demo/` 由 `npm run website:demo` 构建生成。
+
+> 说明：`config.js` 中的全局对象 `window.ALEX_SITE_CONFIG` 为兼容已有自托管部署而保留命名。
 
 ## 版本和下载数据机制
 
@@ -19,7 +21,7 @@ Alex (ProtoFlow AI) 桌面应用静态官网，提供产品定位对比、实机
 - `contactEmail`：联系邮箱（同时绑定 FAQ 与 Footer 中的 `mailto:` 链接）
 - `repoUrl`：GitHub 仓库地址（同时驱动导航、Hero、Footer 文档链接以及 GitHub Release 来源）
 - `discordUrl`：社区邀请链接（留空时自动隐藏 Discord 入口）
-- `demoUrl`：可选的在线只读原型演示链接（如 `https://demo.example.com/p/crm-demo`；留空时首屏次要按钮跳转到实机演示区）
+- `demoUrl`：在线交互原型演示链接（默认指向内置静态沙盒 `/demo/`；也可改为外链如 `https://demo.example.com/p/crm-demo`，留空时首屏次要按钮跳转到 `#showcase`）
 
 ## 上线 SEO / 社交卡片提醒
 
@@ -29,19 +31,22 @@ Alex (ProtoFlow AI) 桌面应用静态官网，提供产品定位对比、实机
 
 - `index.html`：简体中文主落地页结构、Schema.org `@graph` 结构化数据、`hreflang` 与 SEO/GEO 元数据
 - `en/index.html`：由 `npm run website:seo`（[scripts/website-build-seo.cjs](../scripts/website-build-seo.cjs)）自动预渲染生成的静态英文落地页
+- `demo/`：由 `npm run website:demo`（[scripts/website-build-demo.cjs](../scripts/website-build-demo.cjs)）生成的纯静态浏览器 CRM 交互演示沙盒
+- `compare/`、`axure-import/`、`mcp/`、`about/`、`contact/`、`privacy/`：面向高意图搜索与信任审查的静态专题页面
 - `robots.txt`、`sitemap.xml`、`llms.txt`、`llms-full.txt`：搜索引擎抓取策略、双语站点地图与大模型/AI Agent 检索说明
 - `styles.css`：品牌蓝冷灰样式表（含明暗双色适配、高对比度模式与响应式容器查询）
 - `main.js`：访客操作系统识别、响应式折叠导航、Showcase 标签页、双语切换、公开版本查询与下载卡片渲染
 - `config.js`：更新服务地址、发布通道、联系邮箱、社区与在线演示链接配置
-- `assets/`：品牌图标 (`logo.svg`、`icon.png`、`apple-touch-icon.png`)、工作台实机截图 (`workbench-screenshot.png`)、社交分享图 (`social-preview.jpg`) 与模型服务商图标 (`assets/providers/`)
+- `assets/`：品牌图标 (`logo.svg`、`icon.png`、`apple-touch-icon.png`)、CRM 工作台截图 (`workbench-screenshot.png`)、iPhone 移动端视口截图 (`mobile-preview.png`)、社交分享图 (`social-preview.jpg`) 与模型服务商图标 (`assets/providers/`)
 - Vercel 边缘配置模板：[deploy/vercel-website.json](../deploy/vercel-website.json)（提供 `Accept: text/markdown` 内容协商、`Link` 发现头、安全头与静态资源缓存策略）
 
 ## 本地预览与语法检查
 
 ```sh
+npm run website:demo
+npm run website:seo
 node --check website/main.js
 node --check scripts/website-build-seo.cjs
-npm run website:seo
 node --test tests/website-downloads.test.cjs
 npm run website:preview
 ```

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#090d1a" />
+    <title>2026 AI 原型设计工具对比：ProtoFlow AI vs 主流竞品</title>
+    <meta
+      name="description"
+      content="客观对比 2026 主流 AI 原型设计工具：传统画板 AI（墨刀/Pixso/Paico/Calicat）、AI 网页生成（GemDesign/UXBot/Uizard）、OpenDesign 与开源数据驱动的 ProtoFlow AI。"
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="keywords" content="AI原型设计工具对比, 2026 AI原型测评, ProtoFlow AI, 墨刀AI, Pixso, Paico, Calicat, GemDesign, UXBot, OpenDesign, 开源AI原型" />
+    <link rel="canonical" href="https://alex.xclubai.com/compare/" />
+    <link rel="alternate" type="text/markdown" href="https://alex.xclubai.com/llms-full.txt" title="Full Markdown Documentation" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Article",
+            "headline": "2026 AI 原型设计工具全景对比：静态画板、一次性生成、Vibe Design 与数据驱动原型",
+            "url": "https://alex.xclubai.com/compare/",
+            "inLanguage": "zh-CN",
+            "author": {
+              "@type": "Organization",
+              "@id": "https://alex.xclubai.com/#organization",
+              "name": "ProtoFlow AI"
+            },
+            "about": {
+              "@type": "SoftwareApplication",
+              "@id": "https://alex.xclubai.com/#software",
+              "name": "ProtoFlow AI"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "ProtoFlow AI 与 OpenDesign 都是开源本地优先，核心区别是什么？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "OpenDesign 主打面向创意落地页、幻灯片与视觉设计的 Vibe Design 工作空间（Claude Design 开源替代）；ProtoFlow AI（原名 Alex）则专注于需要多页面跨端共享 ER 物理表、主子表审批流、Axure .rp 存量导入以及研发直接读取 SQL DDL 与 TSX 的复杂 B 端业务系统原型。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "ProtoFlow AI 和墨刀 AI、Pixso、Paico、Calicat 相比有什么不同？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "墨刀、Pixso、Paico 与 Calicat 擅长纯浏览器免装即用的视觉画板与矢量图层设计，但数据多为静态演示；ProtoFlow AI 内置 Navicat 级 ER 物理表设计器与双向 AST 画布，表单提交真实写入数据集并联动 PC 表格、ECharts 图表与 iPhone 视口，且支持 Apache-2.0 开源离线部署。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "什么时候不适合用 ProtoFlow AI，而应该选其他工具？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "如果你只需要纯品牌营销落地页、海报、PPT 或像素级设计系统规范，建议选用 OpenDesign、Figma 或 Pixso/Paico；如果你想在浏览器里几秒内生成带云端托管的 C 端全栈 Demo 网站，可以选用秒悟 Meoo 或 Lovable；需要设计复杂中后台、多端共表、Axure 迁移和 AI 研发交接时再选 ProtoFlow AI。"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <header class="site-header is-wide">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img src="/assets/logo.svg" alt="" width="30" height="30" />
+          <span>ProtoFlow AI</span>
+          <span class="brand-sub">原 Alex</span>
+        </a>
+        <nav class="site-nav" aria-label="主导航">
+          <ul class="site-menu">
+            <li><a href="/">首页</a></li>
+            <li><a href="/demo/">在线体验</a></li>
+            <li><a href="/compare/" aria-current="page">竞品对比</a></li>
+            <li><a href="/axure-import/">Axure 导入</a></li>
+            <li><a href="/mcp/">MCP 协同</a></li>
+            <li><a href="/about/">关于</a></li>
+          </ul>
+        </nav>
+        <div class="nav-actions">
+          <a class="btn btn-quiet btn-sm" href="/en/">English</a>
+          <a class="btn btn-primary btn-sm" href="/#download">免费下载</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="subpage-hero">
+        <div class="container">
+          <p class="kicker">2026 AI 原型工具选型参考</p>
+          <h1>2026 主流 AI 原型设计工具怎么选？四条技术路线客观拆解</h1>
+          <p class="hero-lead">
+            同样叫「AI 原型设计」，市面上的产品实际上走了完全不同的四条路线。先把每类工具擅长的边界看清楚，再决定团队把时间押在哪个工作流上。
+          </p>
+          <div class="subpage-cta-row">
+            <a class="btn btn-primary btn-lg" href="/demo/">5 秒体验 ProtoFlow AI 在线沙盒</a>
+            <a class="btn btn-quiet btn-lg" href="/#download">免费下载桌面端</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="subpage-content">
+        <div class="container subpage-stack subpage-wide">
+          <article class="subpage-card">
+            <h2>一、2026 年 AI 原型设计的四条主流路线</h2>
+            <ul>
+              <li><strong>路线 1 · 传统原型/设计平台的 AI 升级派</strong>（如 <strong>墨刀 AI、Pixso、Paico、Calicat</strong>）：优势是纯 Web 打开即用、设计稿颜值高、支持在线多人画布协同和矢量图层编辑；但底层仍以静态页面/假数据为主，复杂业务多页共表与主子表真实流转能力有限。</li>
+              <li><strong>路线 2 · AI 原生多页原型生成派</strong>（如 <strong>GemDesign、UXBot、Uizard、Visily</strong>）：优势是一句话或长篇 PRD 几分钟生成整套高保真页面，或将手绘草图/截图快速还原成界面；但在处理深层业务逻辑、复杂后期字段微调与本地代码规范时往往容易走偏或需反复抽卡。</li>
+              <li><strong>路线 3 · 开源本地 Vibe Design / Coding Agent 派</strong>（如 <strong>OpenDesign、Claude Code + Figma、Cursor</strong>）：优势是开源或直接绑定编码代理，打破官方云端额度墙，在落地页、视觉稿与前端代码还原上极强；但通常不具备关系型业务数据库（ER）可视化建模与需求便签审计。</li>
+              <li><strong>路线 4 · 数据驱动的开源业务原型工作台</strong>（<strong>ProtoFlow AI，原名 Alex</strong>）：将<strong>共享 ER 物理表 + 双向 TSX AST 画布 + Axure <code>.rp</code> 离线迁移 + 18 个双向 MCP 协同工具</strong>合一，专门解决 B 端系统“表单真流转、多端共用表、需求规格无损交接给 AI 写代码”的难题。</li>
+            </ul>
+          </article>
+
+          <article class="subpage-card">
+            <h2 id="landscape-matrix-heading">二、核心工程与协作维度横向对比</h2>
+            <div tabindex="0" role="region" aria-labelledby="landscape-matrix-heading" class="table-wrapper">
+              <table
+                class="compare-table compare-table-wide"
+                style="--col-1: '传统画板 + AI (墨刀/Pixso/Paico/Calicat)'; --col-2: 'AI 多页生成 (GemDesign/UXBot/Uizard)'; --col-3: '开源 Vibe Design (OpenDesign / Agent)'; --col-4: 'ProtoFlow AI (原 Alex)';"
+              >
+                <thead>
+                  <tr>
+                    <th scope="col">关键维度</th>
+                    <th scope="col">传统画板 + AI<br /><small>墨刀 / Pixso / Paico / Calicat</small></th>
+                    <th scope="col">AI 多页生成<br /><small>GemDesign / UXBot / Uizard</small></th>
+                    <th scope="col">开源 Vibe Design<br /><small>OpenDesign / Coding Agent</small></th>
+                    <th scope="col" class="col-alex">ProtoFlow AI<br /><small>原 Alex · Apache-2.0</small></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">跨页真实数据流转</th>
+                    <td>主要为静态假字与简单跳转连线</td>
+                    <td>单页或局部预设 Mock，复杂主子表弱</td>
+                    <td>视生成代码而定，无统一 ER 画布</td>
+                    <td class="col-alex">共享 ER 物理表（FK + 复合唯一），新增/审批/图表实时同步</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">AI 协作与后期精修</th>
+                    <td>图层可拖拽精修，组件生态成熟</td>
+                    <td>一句话出稿快，但大改字段易破坏排版</td>
+                    <td>Prompt + 源码直改，非技术人员门槛偏高</td>
+                    <td class="col-alex">先追问澄清 → 确认蓝图后生成 → 双向 AST 拖拽 + 局部无损精修</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">PC + 移动端共表协同</th>
+                    <td>通常拆文件设计，数据互相隔离</td>
+                    <td>按端分别生成，共享状态链路有限</td>
+                    <td>需自行编写前后端或共享状态代码</td>
+                    <td class="col-alex">同一工程混排 PC 宽屏与 iPhone 视口，天然共表联动</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Axure (.rp) 存量迁移</th>
+                    <td>部分支持文件导入为静态组件页</td>
+                    <td>偏文字/截图识别，不支持直接拆 .rp</td>
+                    <td>不支持解析 Axure 二进制文件</td>
+                    <td class="col-alex">免装 Axure 本机离线解析 RP 9/11，支持核对表头映射到 ER 表</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Coding Agent MCP 闭环</th>
+                    <td>多围绕内部画布与传统切图交付</td>
+                    <td>部分支持导出 HTML / 前端代码片段</td>
+                    <td>天然支持本地 Coding Agent（BYOA）</td>
+                    <td class="col-alex">18 个受控画布工具（含截图自检）+ 远程只读 DDL/TSX MCP 服务</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">开源协议与数据主权</th>
+                    <td>商业闭源 SaaS，按席位或云存储计费</td>
+                    <td>闭源云端 SaaS，工程托管在厂商服务器</td>
+                    <td>开源本地优先，文件存本地仓库</td>
+                    <td class="col-alex">Apache-2.0 开源 · 本机 .pflow 免登录可用 + Docker 3 步私有化</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="subpage-card">
+            <h2>三、坦诚选型建议：什么时候该选谁？</h2>
+            <ul>
+              <li><strong>选 Pixso / Paico / Figma</strong>：如果你的团队核心诉求是精细像素级 UI 视觉规范、设计系统资产沉淀和设计师在线协作。</li>
+              <li><strong>选 OpenDesign</strong>：如果你主要制作官网落地页、营销页、PPT 演示或 HTML 动效视频，希望直接用自己的 Coding Agent 做视觉创作。</li>
+              <li><strong>选 墨刀 AI / Calicat / GemDesign / UXBot</strong>：如果你需要零安装直接在浏览器里画通用线框图、草图转界面，或与轻量看板任务绑定。</li>
+              <li><strong>选 秒悟 Meoo / Lovable / Bolt</strong>：如果你想在云端直接生成带托管数据库的 C 端小应用或可公开访问的轻量全栈站点。</li>
+              <li><strong>选 ProtoFlow AI（原名 Alex）</strong>：如果你正在做<strong>复杂 B 端中后台 / ERP / CRM / 业财审批系统</strong>，需要在评审时真正跑通“表单新建 → 主子表扣减 → 移动端审批 → ECharts 联动”；手里有存量 <strong>Axure <code>.rp</code> 需要安全离线升级</strong>；或想让 <strong>Claude Code / Cursor / Codex / Antigravity</strong> 先按规范画好可运行原型，再直接读取标准化的 PostgreSQL/MySQL DDL 与 TSX 写生产代码。</li>
+            </ul>
+            <div class="subpage-cta-row">
+              <a class="btn btn-primary" href="/demo/">直接进浏览器试玩 CRM 活原型 →</a>
+              <a class="btn btn-quiet" href="/axure-import/">查看 Axure .rp 迁移指南</a>
+              <a class="btn btn-quiet" href="/mcp/">查看 MCP 工具与配置文档</a>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-bottom">
+        <p>© 2026 ProtoFlow AI (formerly Alex) · Apache-2.0 Open Source</p>
+        <nav class="footer-locales" aria-label="站点链接">
+          <a href="/">首页</a>
+          <span aria-hidden="true">·</span>
+          <a href="/demo/">在线体验</a>
+          <span aria-hidden="true">·</span>
+          <a href="/axure-import/">Axure 导入</a>
+          <span aria-hidden="true">·</span>
+          <a href="/mcp/">MCP 文档</a>
+          <span aria-hidden="true">·</span>
+          <a href="/llms.txt">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-/* Alex (ProtoFlow AI) 官网脚本：双语切换 + 响应式导航 + Showcase Tabs + 设备识别 + 下载渲染。零第三方依赖。 */
+/* ProtoFlow AI（原名 Alex）官网脚本：双语切换 + 响应式导航 + Showcase Tabs + 设备识别 + 下载渲染。零第三方依赖。 */
 (() => {
   'use strict';
 
@@ -23,20 +23,24 @@
   // Bilingual i18n (zh-CN & en-US)
   // ---------------------------------------------------------------------------
   const EN_META = {
-    title: 'Alex (ProtoFlow AI) — Turn Requirements into Runnable Prototypes',
+    title: 'ProtoFlow AI — Open-Source AI Prototyping Workbench That Runs',
     description:
-      'Alex (ProtoFlow AI) is an Apache-2.0 local-first desktop workbench for runnable business prototypes, shared ER tables, Axure .rp import, and MCP co-design.',
-    ogTitle: 'Alex (ProtoFlow AI) — Turn Requirements into Runnable Prototypes',
+      'ProtoFlow AI (formerly Alex) is an Apache-2.0 local-first AI prototyping tool with shared ER tables, desktop + iPhone sync, Axure .rp import, and MCP.',
+    ogTitle: 'ProtoFlow AI — Open-Source AI Prototyping Workbench That Runs',
     ogDescription:
       'Shared ER tables · Clarify-first AI · Desktop & mobile sync · Axure .rp import · Bidirectional MCP for coding agents · Open source.',
   };
 
   const EN_TEXT = {
     skip: 'Skip to content',
-    'nav.brandAria': 'Alex (ProtoFlow AI) home',
+    'nav.brandAria': 'ProtoFlow AI home',
+    'nav.brandSub': 'ex-Alex',
     'nav.aria': 'Primary',
     'nav.menu': 'Menu',
-    'nav.compare': 'Why Alex',
+    'nav.demo': 'Live Demo',
+    'nav.compareLink': 'Compare',
+    'nav.axureLink': 'Axure Import',
+    'nav.compare': 'Why ProtoFlow',
     'nav.features': 'Capabilities',
     'nav.mcp': 'MCP Bridge',
     'nav.scenarios': 'Templates',
@@ -48,9 +52,9 @@
     'hero.desktop': 'Desktop',
     'hero.openSource': 'Open Source',
     'hero.localFirst': 'Local-first · No sign-in required',
-    'hero.title': 'Turn requirements into<br />prototypes that actually run',
+    'hero.title': 'Open-Source AI Prototyping<br />Turn Specs into Runnable Apps',
     'hero.lead':
-      'Move beyond static wireframes and one-shot AI pages that guess blindly. Alex clarifies business rules before generating sitemaps, screens, and shared ER tables — with desktop + iPhone viewports, native Axure .rp import, and bidirectional MCP integration for coding agents.',
+      'Shared ER physical tables powering desktop admin + iPhone viewports (with offline Axure .rp import) — paired with a bidirectional MCP canvas and SQL DDL spec hub for Claude Code and Cursor.',
     'hero.primaryCta': 'Free Download',
     'hero.secondaryCta': 'See Live Workbench',
     'hero.sourceCta': 'GitHub Source & Docs →',
@@ -63,25 +67,33 @@
     'sc.tab3': 'MCP Co-Design & Handoff',
     'sc.tab4': 'Axure .rp Import',
     'sc.imgAlt':
-      'Alex (ProtoFlow AI) desktop workbench screenshot showing the multi-module sitemap tree with shared-table badges on the left, live ECharts and table bound to physical ER tables in the center, and bidirectional AST property inspector on the right',
+      'ProtoFlow AI desktop workbench screenshot showing the CRM Contracts & Billing suite with shared-table badges on the left, live ECharts and table bound to physical ER tables in the center, sticky specs at the bottom, and bidirectional AST property inspector on the right',
     'sc.hl1': 'Multi-module menu tree with live shared-table badges',
     'sc.hl2': '12 native ECharts & tables bound directly to project data',
     'sc.hl3': 'Bidirectional AST inspector, sticky specs & scoped Ask AI',
+    'sc.demoBanner': 'No download needed — explore this 6-page desktop + iPhone CRM prototype live in your browser in 5 seconds.',
+    'sc.demoBannerBtn': 'Launch Browser Live Demo →',
     'sc.er1Tag': 'Desktop Admin · Form',
-    'sc.er1Title': 'New Purchase Order',
+    'sc.er1Title': 'New Sales Contract / Account',
     'sc.er1Desc':
-      'Form controls bind directly to table columns and foreign-key lookups, writing real rows and running 6-decimal tax rules.',
+      'Form controls bind directly to table columns and foreign-key lookups, writing real rows and running tax ID and over-billing guards.',
     'sc.er2Tag': 'Shared Physical Table · ER Constraints',
     'sc.er2Desc':
-      'Foreign keys to supplier, approval ENUM state machines, and composite unique constraints with cross-page impact tracking.',
+      'Foreign keys to customers, ENUM status machines, and composite unique payment-plan keys with cross-page impact tracking.',
     'sc.er3Tag': 'iPhone Viewport · Mobile',
-    'sc.er3Title': 'Approvals & Scan Inbound',
+    'sc.er3Title': 'Mobile Approvals & Invoicing',
     'sc.er3Desc':
-      'Backed by the exact same dataset — approving or scanning stock updates order statuses and quantities on desktop immediately.',
+      'Backed by the exact same dataset — approving contracts or filing field invoices updates desktop ledgers immediately.',
+    'sc.erMobImgAlt':
+      'ProtoFlow AI browser sandbox iPhone mobile approval viewport sharing the t_crm_contracts ER table with desktop admin',
+    'sc.erMobTitle': 'Real Desktop ↔ Mobile Data Sync in Your Browser',
+    'sc.erMobDesc':
+      'No separate mobile file required. Forms, tables, ECharts, and iPhone viewports read and write the same ER physical tables inside one .pflow project.',
+    'sc.erMobBtn': 'Try Mobile Approvals Live →',
     'sc.mcp1Tag': 'Live Canvas Bridge · Design Time',
     'sc.mcp1Title': 'Let Coding Agents Design Directly on Canvas',
     'sc.mcp1Desc':
-      'Enable Bidirectional design in Alex Desktop so Codex, Google Antigravity, Claude Desktop, or Claude Code can model ER tables, edit selected subtrees, and inspect rendered screenshots.',
+      'Enable Bidirectional design in the desktop app so Codex, Google Antigravity, Claude Desktop, or Claude Code can model ER tables, edit selected subtrees, and inspect rendered screenshots.',
     'sc.mcp1L1': '18 contract-enforced authoring tools with sequential revision checks',
     'sc.mcp1L2': 'protoflow_capture_preview offscreen PNG capture for layout verification',
     'sc.mcp1L3': 'One-click Antigravity plugin install, .mcpb export & Cmd/Ctrl+Z undo',
@@ -91,7 +103,7 @@
       'Once a prototype is published for review, developers paste one remote MCP URL into their IDE to read the sitemap, PostgreSQL/MySQL DDL, TSX screens, and sticky-note rules.',
     'sc.ax1Title': 'Parse .rp Locally Without Axure',
     'sc.ax1Desc':
-      'Drop Axure RP 9 or RP 11 binaries into Alex. A local worker restores nested folders, groups, static table cells, master instances, and dynamic panel states offline.',
+      'Drop Axure RP 9 or RP 11 binaries into ProtoFlow AI. A local worker restores nested folders, groups, static table cells, master instances, and dynamic panel states offline.',
     'sc.ax2Title': 'Preserve Originals & Map Fields',
     'sc.ax2Desc':
       'Run read-only inventories or migration drafts per page, folder, or project and verify column-to-schema mappings before modifying layouts.',
@@ -109,11 +121,11 @@
     'fact.4.title': '14+ AI Providers',
     'fact.4.desc': 'Cloud accounts or offline local Ollama models',
 
-    'cmp.kicker': 'Why Alex',
+    'cmp.kicker': 'Why ProtoFlow AI',
     'cmp.title': 'Bridge the gap between static wireframes and disposable AI webpages',
     'cmp.desc': 'Not another click-only drawing board, and not a one-shot HTML generator that scrambles layouts on every tweak.',
     'cmp.caption':
-      'Comparison of traditional static prototyping tools, one-shot AI web generators, and Alex (ProtoFlow AI)',
+      'Comparison of traditional static prototyping tools, one-shot AI web generators, and ProtoFlow AI (formerly Alex)',
     'cmp.colDim': 'Dimension',
     'cmp.colStatic': 'Static Wireframing Tools',
     'cmp.colAiWeb': 'One-Shot AI Web Tools',
@@ -141,28 +153,34 @@
     'cmp.r6Static': 'Cloud-locked accounts and per-seat SaaS subscriptions',
     'cmp.r6AiWeb': 'Closed hosted sandboxes without private deployment',
     'cmp.r6Alex': 'Apache-2.0 open source · Local-first .pflow files + 3-step Docker Compose',
+    'cmp.allToolsLink': 'Read full 2026 comparison (vs. Modao, Pixso, GemDesign & OpenDesign) →',
 
     'features.kicker': 'Capabilities',
-    'features.title': 'From requirement discovery to engineering handoff in one project',
-    'features.desc': 'Stop copying context across mindmaps, wireframing tools, schema editors, and scattered docs.',
+    'features.title': 'Two core tracks uniting product validation and AI engineering',
+    'features.desc': 'Stop copying context across mindmaps, wireframing tools, schema editors, and coding IDEs.',
+    'features.p1Tag': 'Track 1 · Prototypes Backed by Real Data',
+    'features.p1Title': 'Shared ER Physical Tables + Offline Axure .rp Upgrade',
+    'features.p1Desc':
+      'Model foreign keys and composite unique constraints visually so form writes update desktop ledgers, charts, and iPhone screens live — and parse Axure RP 9/11 .rp binaries offline without Axure installed.',
+    'features.p1DemoLink': 'Try Live CRM Demo →',
+    'features.p1AxureLink': 'Axure .rp Migration Guide →',
+    'features.p2Tag': 'Track 2 · Built for Coding Agents',
+    'features.p2Title': 'Bidirectional MCP Live Canvas + Zero-Install DDL/TSX Handoff',
+    'features.p2Desc':
+      'Let Claude Code, Cursor, Codex, or Google Antigravity co-design on your desktop canvas with 18 contract tools + screenshot self-checks — then publish /p/{id} so engineers stream SQL DDL, TSX, and sticky rules via remote MCP.',
+    'features.p2McpLink': 'Explore MCP Server & Tools →',
     'f1.title': 'Clarify-First Project AI',
     'f1.desc':
       'The built-in Hermes engine asks about thresholds, approvals, and edge cases first, proposes a sitemap + ER blueprint, and supports scoped edits after confirmation.',
     'f2.title': 'Bidirectional AST Canvas & 114+ Materials',
     'f2.desc':
       'Widescreen grids, multi-column query bars, master-detail tables, drawers, composite blocks, and sandboxed freeform components synced losslessly with TSX DSL.',
-    'f3.title': 'Navicat-Style ER Modeling & Shared Tables',
-    'f3.desc':
-      'Design physical tables, foreign keys, and composite unique constraints. Order creation, approval transitions, stock transfers, and 6-decimal tax rules work end to end.',
     'f4.title': 'Desktop Admin & Mobile in One Project',
     'f4.desc':
       'Author wide admin consoles alongside iPhone mobile viewports with bottom sheets, capsule tabs, and waterfall feeds backed by the exact same dataset.',
     'f5.title': '12 Native ECharts & Mermaid Diagrams',
     'f5.desc':
       'Bar, line, area, pie, scatter, radar, gauge, funnel, heatmap, treemap, and sankey charts bind directly to project tables alongside split-screen notes and mindmaps.',
-    'f6.title': 'Native Axure .rp Import & Reshaping',
-    'f6.desc':
-      'Drop RP 9 / RP 11 binaries locally with no Axure installed. Preserve original pages while AI maps headers to physical columns and builds clean flow-layout screens.',
     'f7.title': 'Sticky Specs, Impact Analysis & Audits',
     'f7.desc':
       'Pin validation rules directly onto controls, trace every screen impacted by a schema edit, and audit broken links, unbound foreign keys, and acceptance items.',
@@ -173,10 +191,10 @@
     'mcp.kicker': 'MCP Co-Design & Handoff',
     'mcp.title': 'Let your coding agents build prototypes, read specs, and ship code',
     'mcp.desc':
-      'Built-in Model Context Protocol (MCP) support bridges live AI-assisted prototyping in Alex Desktop with read-only spec handoff to your engineering team.',
+      'Built-in Model Context Protocol (MCP) support in ProtoFlow AI bridges live AI-assisted prototyping on desktop with read-only spec handoff to your engineering team.',
     'mcp.p1Title': 'Live Canvas Bridge (Desktop Co-Design)',
     'mcp.p1Desc':
-      'Toggle Bidirectional design in Alex Desktop so external agents can model shared ER tables, seed FK-valid rows, patch selected components via 18 contract tools, verify layouts via screenshot capture, and support Cmd/Ctrl+Z undo.',
+      'Toggle Bidirectional design in the desktop app so external agents can model shared ER tables, seed FK-valid rows, patch selected components via 18 contract tools, verify layouts via screenshot capture, and support Cmd/Ctrl+Z undo.',
     'mcp.p2Title': 'Remote /p/{id} Zero-Install Spec Server',
     'mcp.p2Desc':
       'Once you share an online review link, engineers copy one Streamable HTTP snippet into their IDE to inspect the full route tree, PostgreSQL/MySQL DDL, page TSX, and sticky-note rules.',
@@ -207,6 +225,7 @@
     'scn.t2Title': 'CRM Sales & Contract Billing Dashboard',
     'scn.t2Desc':
       'Table-bound ECharts trend and regional ARR charts, customer opportunity CRUD, payment plans, and cross-platform billing views.',
+    'scn.t2Cta': 'Launch Live Demo in Browser →',
     'scn.t3Title': 'Modern Mobile & Cross-Platform App',
     'scn.t3Desc':
       'Consumer waterfall discovery feed, mobile approval drawers, AI assistant view, and live table sync with the desktop admin console.',
@@ -214,7 +233,7 @@
     'ai.kicker': 'Model Ecosystem',
     'ai.title': 'Bring your own cloud model or Ollama — or run 100% without AI',
     'ai.desc':
-      'Alex Desktop ships a verified managed Hermes runtime so you can connect 14+ cloud providers or local Ollama models with adjustable reasoning effort. Every canvas, ER, and publishing tool also works standalone without AI.',
+      'ProtoFlow AI Desktop ships a verified managed Hermes runtime so you can connect 14+ cloud providers or local Ollama models with adjustable reasoning effort. Every canvas, ER, and publishing tool also works standalone without AI.',
     'ai.listAria': 'Supported model providers',
     'ai.qwen': 'Qwen',
     'ai.zai': 'Z.ai (GLM)',
@@ -222,17 +241,17 @@
     'ai.fine': 'Brand icons courtesy of LobeHub Icons (MIT). All trademarks belong to their respective owners.',
 
     'dl.kicker': 'Download & Self-Host',
-    'dl.title': 'Download Alex Desktop free, or self-host in 3 commands',
+    'dl.title': 'Download ProtoFlow AI Desktop free, or self-host in 3 commands',
     'dl.latestPrefix': 'Latest release',
     'dl.recKicker': 'Recommended for your device',
     'dl.macReq': 'macOS 13 or later · Apple Silicon / Intel',
     'dl.yourOs': 'Your OS',
     'dl.macTip':
-      'Open the .dmg and drag Alex to Applications. Community builds use local signing — on first launch, right-click Alex → Open or click "Open Anyway" in System Settings → Privacy & Security.',
+      'Desktop packages currently use the Alex app name (Alex-*.dmg). Drag Alex to Applications; on first launch, right-click → Open or click "Open Anyway" in Privacy & Security once.',
     'dl.winTip':
-      'Run the NSIS installer to pick an install folder and create shortcuts. If Windows SmartScreen appears, click "More info → Run anyway".',
+      'Run the NSIS installer (Alex-*-win-x64.exe) to pick an install folder and create shortcuts. If Windows SmartScreen appears, click "More info → Run anyway".',
     'dl.linuxTip':
-      'Recommended .deb: <code>sudo apt install ./Alex-*-linux-amd64.deb</code> — supports one-click in-app updates afterward.',
+      'Recommended .deb: <code>sudo apt install ./Alex-*-linux-amd64.deb</code> (retains Alex package name) — supports one-click in-app updates afterward.',
     'dl.tr1Title': 'Apache-2.0 Open Source',
     'dl.tr1Desc': 'Desktop workbench, web viewer & Go server are 100% auditable',
     'dl.tr2Title': 'Built via GitHub Actions',
@@ -249,9 +268,9 @@
     'faq.title': 'Questions & Answers',
     'faq.contact':
       'Still have questions? Open an issue on <a class="text-link" data-repo-link data-repo-path="/issues" href="https://github.com/EvanClub-Agent/protoflow-ai/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> or email <a class="text-link" data-contact-email data-contact-email-text href="mailto:ai.agent.club@gmail.com">ai.agent.club@gmail.com</a>.',
-    'faq.q1': 'Is Alex free and open source? Can we use it commercially?',
+    'faq.q1': 'Is ProtoFlow AI free and open source? Can we use it commercially?',
     'faq.a1':
-      'Yes. Alex (ProtoFlow AI) is licensed under Apache-2.0 — free for personal learning, commercial prototyping, and private enterprise self-hosting with no seat limits. You connect your own model keys or local Ollama directly.',
+      'Yes. ProtoFlow AI (formerly Alex) is licensed under Apache-2.0 — free for personal learning, commercial prototyping, and private enterprise self-hosting with no seat limits. You connect your own model keys or local Ollama directly.',
     'faq.q2': 'Where are my project files and model API keys stored?',
     'faq.a2':
       'Projects save locally on your disk as .pflow archives or unpacked directories, and model credentials are managed locally by Hermes without mandatory login. Snapshots upload to your configured server only when you explicitly click Publish.',
@@ -261,21 +280,21 @@
     'faq.q4': 'How do I connect Claude Code, Cursor, Codex, or Antigravity via MCP?',
     'faq.a4':
       'Click "MCP Connect" in the desktop toolbar to install the Antigravity plugin or export a Claude Desktop .mcpb bundle in one click for live canvas co-design. For engineering handoff, publish a /p/{id} demo and copy the remote Streamable HTTP URL into any MCP-compatible IDE.',
-    'faq.q5': 'Can I use Alex without configuring AI models or Docker?',
+    'faq.q5': 'Can I use ProtoFlow AI without configuring AI models or Docker?',
     'faq.a5':
       'Absolutely. Launch the desktop app without logging in to use the visual canvas, 114+ materials, ER database designer, 12 ECharts types, Mermaid notes, and local exports. Docker is only needed if you want to host interactive /p/{id} links for browser review.',
-    'faq.q6': 'What if macOS says "developer cannot be verified", and which Mac build should I pick?',
+    'faq.q6': 'Why do desktop installers still use "Alex" in filenames, and how do I open on macOS?',
     'faq.a6':
-      'Community builds use local signing: right-click Alex in Applications → Open (or click "Open Anyway" in System Settings → Privacy & Security once). Pick Apple Silicon (arm64) for Apple M-series Macs, or Intel (x64) for Intel Macs.',
+      'The desktop binaries currently preserve the Alex package identifier (Alex-*.dmg / Alex-*.exe / Alex-*.deb) for seamless in-app upgrades. Community builds use local signing: on macOS right-click Alex in Applications → Open once (Apple Silicon = arm64, Intel = x64).',
 
     'cta.title': 'Make your prototypes<br />run today',
-    'cta.desc': 'Download the Apache-2.0 desktop workbench for free and build your first data-connected business prototype without signing in.',
-    'cta.btn': 'Free Download',
+    'cta.desc': 'Try the interactive live demo in your browser, or download the Apache-2.0 desktop workbench for free with no sign-in required.',
+    'cta.btn': 'Download ProtoFlow AI',
     'cta.discord': 'Join Discord Community',
 
-    'footer.brandAria': 'Alex (ProtoFlow AI) back to top',
+    'footer.brandAria': 'ProtoFlow AI back to top',
     'footer.tagline':
-      'Open-source, local-first AI business prototyping and ER modeling workbench connecting product requirements to AI engineering delivery.',
+      'Open-source, local-first AI prototyping and ER modeling workbench connecting product specs to AI engineering delivery.',
     'footer.colProduct': 'Product',
     'footer.colDocs': 'Docs & Guides',
     'footer.quickStart': 'Quick Start (60s)',
@@ -285,7 +304,7 @@
     'footer.mcpPage': 'MCP Server & API Docs',
     'footer.llms': 'AI / llms.txt',
     'footer.colCommunity': 'Community & Trust',
-    'footer.about': 'About Alex',
+    'footer.about': 'About ProtoFlow AI',
     'footer.privacyPage': 'Privacy & Local-First',
     'footer.contactPage': 'Support & Contact',
     'footer.discord': 'Discord Community',
@@ -404,16 +423,24 @@
 
     const secondary = $('[data-secondary-cta]');
     if (secondary) {
-      const demo = safeUrl(config.demoUrl);
+      const rawDemo = typeof config.demoUrl === 'string' ? config.demoUrl.trim() : '';
+      const demo = safeUrl(rawDemo);
       if (demo) {
-        secondary.href = demo;
-        secondary.target = '_blank';
-        secondary.rel = 'noopener noreferrer';
+        const isRelativeSameOrigin = rawDemo.startsWith('/');
+        secondary.href = isRelativeSameOrigin ? rawDemo : demo;
+        if (isRelativeSameOrigin) {
+          secondary.removeAttribute('target');
+          secondary.removeAttribute('rel');
+        } else {
+          secondary.target = '_blank';
+          secondary.rel = 'noopener noreferrer';
+        }
         secondary.textContent = tr('在线体验原型', EN_TEXT['hero.demoCta']);
       } else {
         secondary.href = '#showcase';
         secondary.removeAttribute('target');
         secondary.removeAttribute('rel');
+        secondary.textContent = tr('查看实机演示', EN_TEXT['hero.secondaryCta']);
       }
     }
   }
@@ -485,11 +512,11 @@
       if (en) {
         compareTable.style.setProperty('--col-1', '"Static Wireframing Tools"');
         compareTable.style.setProperty('--col-2', '"One-Shot AI Web Tools"');
-        compareTable.style.setProperty('--col-3', '"Alex (ProtoFlow AI)"');
+        compareTable.style.setProperty('--col-3', '"ProtoFlow AI"');
       } else {
         compareTable.style.setProperty('--col-1', '"传统静态原型工具"');
         compareTable.style.setProperty('--col-2', '"一次性 AI 网页工具"');
-        compareTable.style.setProperty('--col-3', '"Alex (ProtoFlow AI)"');
+        compareTable.style.setProperty('--col-3', '"ProtoFlow AI"');
       }
     }
 

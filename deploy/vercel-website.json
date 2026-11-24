@@ -29,7 +29,7 @@
       "dest": "/llms.txt"
     },
     {
-      "src": "^/(en|about|contact|privacy|mcp)/?$",
+      "src": "^/(en|demo|about|contact|privacy|mcp|axure-import|compare)/?$",
       "has": [
         {
           "type": "header",

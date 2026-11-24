@@ -86,15 +86,16 @@ async function buildEnglishHtml() {
   };
   setMeta(
     'meta[name="keywords"]',
-    'Alex, ProtoFlow AI, AI prototyping workbench, runnable business prototype, shared ER database modeling, Axure .rp import, MCP prototyping server, open source prototyping, Apache-2.0',
+    'ProtoFlow AI, AI prototyping tool, open source prototyping, runnable business prototype, shared ER database modeling, Axure .rp import, MCP prototyping server, Claude Code prototype, Alex, Apache-2.0',
   );
   const canonical = doc.querySelector('link[rel="canonical"]');
   if (canonical) canonical.setAttribute('href', 'https://alex.xclubai.com/en/');
   setMeta('meta[property="og:url"]', 'https://alex.xclubai.com/en/');
+  setMeta('meta[property="og:site_name"]', 'ProtoFlow AI');
   setMeta('meta[property="og:locale"]', 'en_US');
   setMeta('meta[property="og:locale:alternate"]', 'zh_CN');
-  setMeta('meta[property="og:image:alt"]', 'Alex (ProtoFlow AI) Desktop Prototyping and Shared ER Database Workbench Preview');
-  setMeta('meta[name="twitter:image:alt"]', 'Alex (ProtoFlow AI) Desktop Prototyping and Shared ER Database Workbench Preview');
+  setMeta('meta[property="og:image:alt"]', 'ProtoFlow AI Open-Source AI Prototyping and Shared ER Database Workbench Preview');
+  setMeta('meta[name="twitter:image:alt"]', 'ProtoFlow AI Open-Source AI Prototyping and Shared ER Database Workbench Preview');
 
   // Build English Schema.org @graph matching visible English #faq copy verbatim.
   const faqQuestions = [];
@@ -117,8 +118,8 @@ async function buildEnglishHtml() {
         {
           '@type': 'Organization',
           '@id': 'https://alex.xclubai.com/#organization',
-          name: 'Alex (ProtoFlow AI)',
-          alternateName: ['Alex', 'ProtoFlow AI'],
+          name: 'ProtoFlow AI',
+          alternateName: ['ProtoFlow', 'Alex', 'Alex (ProtoFlow AI)'],
           url: 'https://alex.xclubai.com/',
           logo: 'https://alex.xclubai.com/assets/icon.png',
           email: 'ai.agent.club@gmail.com',
@@ -130,7 +131,7 @@ async function buildEnglishHtml() {
             availableLanguage: ['zh-CN', 'en'],
           },
           knowsAbout: [
-            'AI Business Prototyping',
+            'AI Prototyping Tools',
             'Shared ER Database Modeling',
             'Axure RP Import',
             'Model Context Protocol (MCP)',
@@ -144,7 +145,7 @@ async function buildEnglishHtml() {
         {
           '@type': 'WebSite',
           '@id': 'https://alex.xclubai.com/#website',
-          name: 'Alex (ProtoFlow AI)',
+          name: 'ProtoFlow AI',
           url: 'https://alex.xclubai.com/',
           inLanguage: ['zh-CN', 'en'],
           publisher: { '@id': 'https://alex.xclubai.com/#organization' },
@@ -152,11 +153,11 @@ async function buildEnglishHtml() {
         {
           '@type': 'SoftwareApplication',
           '@id': 'https://alex.xclubai.com/#software',
-          name: 'Alex (ProtoFlow AI)',
-          alternateName: ['Alex', 'ProtoFlow AI'],
+          name: 'ProtoFlow AI',
+          alternateName: ['ProtoFlow', 'Alex', 'Alex (ProtoFlow AI)'],
           url: 'https://alex.xclubai.com/en/',
           applicationCategory: 'DeveloperApplication',
-          applicationSubCategory: 'Business Prototyping & ER Database Modeling Workbench',
+          applicationSubCategory: 'AI Business Prototyping & ER Database Modeling Workbench',
           operatingSystem: 'macOS 13+, Windows 10/11, Linux',
           isAccessibleForFree: true,
           offers: {
@@ -170,7 +171,7 @@ async function buildEnglishHtml() {
           screenshot: 'https://alex.xclubai.com/assets/workbench-screenshot.png',
           image: 'https://alex.xclubai.com/assets/social-preview.jpg',
           description:
-            'Apache-2.0 open-source, local-first desktop AI business prototyping and ER database modeling workbench supporting desktop admin + iPhone viewports, native Axure .rp import, bidirectional MCP co-design and engineering spec server, and Docker Compose online review publishing.',
+            'ProtoFlow AI (formerly Alex) is an Apache-2.0 open-source, local-first AI prototyping tool backed by shared ER tables, desktop + iPhone viewports, offline Axure .rp import, 18 bidirectional MCP co-design tools, and Docker self-hosted /p/{id} review links.',
           featureList: [
             'Clarify-first Project AI proposing sitemaps, pages, and shared ER tables before generating',
             'Bidirectional AST canvas with 114+ enterprise desktop and mobile materials synced with TSX DSL',
@@ -199,17 +200,24 @@ async function buildEnglishHtml() {
     else link.removeAttribute('aria-current');
   }
 
-  // Rewrite relative asset/script/style paths to root-relative for /en/ subpath safety.
+  // Rewrite relative asset/script/style paths to root-relative for /en/ subpath safety,
+  // and strip any JSDOM synthetic origin (http://website.test) back to root-relative paths.
   for (const node of doc.querySelectorAll('[href]')) {
     const val = node.getAttribute('href');
+    if (!val) continue;
     if (val === 'styles.css' || val.startsWith('assets/')) {
       node.setAttribute('href', `/${val}`);
+    } else if (val.startsWith('http://website.test/')) {
+      node.setAttribute('href', val.slice('http://website.test'.length) || '/');
     }
   }
   for (const node of doc.querySelectorAll('[src]')) {
     const val = node.getAttribute('src');
+    if (!val) continue;
     if (val === 'config.js' || val === 'main.js' || val.startsWith('assets/')) {
       node.setAttribute('src', `/${val}`);
+    } else if (val.startsWith('http://website.test/')) {
+      node.setAttribute('src', val.slice('http://website.test'.length) || '/');
     }
   }
   for (const node of doc.querySelectorAll('[style]')) {
@@ -223,11 +231,14 @@ async function buildEnglishHtml() {
   window.close();
 
   // Verify invariants on generated HTML.
-  if (!doc.title.includes('Turn Requirements into Runnable Prototypes')) {
+  if (!doc.title.includes('Open-Source AI Prototyping Workbench That Runs')) {
     throw new Error(`Expected translated English <title>, got: ${doc.title}`);
   }
-  if (!faqQuestions.length || !faqQuestions[0].name.includes('Is Alex free')) {
+  if (!faqQuestions.length || !faqQuestions[0].name.includes('Is ProtoFlow AI free')) {
     throw new Error('Expected translated English FAQ entries in generated HTML');
+  }
+  if (out.includes('website.test')) {
+    throw new Error('Generated /en/index.html leaked synthetic http://website.test URL');
   }
   if (/\bno-popover\b|\bis-current\b|class="[^"]*\bskeleton\b/.test(out)) {
     throw new Error('Generated /en/index.html leaked runtime classes');

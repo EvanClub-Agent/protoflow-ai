@@ -1,4 +1,4 @@
-# Alex (ProtoFlow AI) — Search Engine & AI Crawler Policy
+# ProtoFlow AI (formerly Alex) — Search Engine & AI Crawler Policy
 # Canonical domain: https://alex.xclubai.com/
 # LLMs Summary: https://alex.xclubai.com/llms.txt
 # LLMs Full Docs: https://alex.xclubai.com/llms-full.txt
