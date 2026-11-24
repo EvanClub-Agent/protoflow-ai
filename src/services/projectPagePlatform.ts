@@ -22,7 +22,12 @@ function existingPlatform(state: PlatformContext, pageId: string): PagePlatform 
   const saved = state.designerPages?.find(page => page.pageId === pageId)?.platform;
   const source = state.pageSources?.[pageId];
   const root = source && parsePageSource(source).doc?.root;
-  if (!root) return saved;
+  if (!root) {
+    if (saved) return saved;
+    const figOpt = /^fig-optimized-([a-z0-9_-]{4,48})$/.exec(pageId);
+    if (figOpt) return existingPlatform(state, `fig-page-${figOpt[1]}`);
+    return undefined;
+  }
   // Old plan confirmations created this empty desktop placeholder for every platform.
   if (!saved && root.type === 'Page' && root.pfId === 'project-root' && !root.children.length) return undefined;
   if (root.type === 'MobilePage') return 'mobile';

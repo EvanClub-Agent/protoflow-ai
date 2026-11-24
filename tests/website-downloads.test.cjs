@@ -174,6 +174,18 @@ test('GitHub mode renders stable desktop assets and uses the actual architecture
   assert.equal(doc.querySelector('[data-release-actions] a').href, repo + '/releases/latest');
 });
 
+test('GitHub lists the branded AppImage and omits its zsync control file', async t => {
+  const data = githubLatest();
+  const old = data.assets.find(a => a.name.endsWith('.AppImage'));
+  old.name = 'ProtoFlow_AI-1.2.3-x86_64.AppImage';
+  old.browser_download_url = repo + '/releases/download/v1.2.3/' + old.name;
+  data.assets.push({ ...old, name: old.name + '.zsync', browser_download_url: old.browser_download_url + '.zsync' });
+  const { doc } = await openSite(t, data, undefined, { releaseSource: 'github' });
+  const links = [...doc.querySelectorAll('[data-os="linux"] [data-assets] a[download]')];
+  assert.equal(links.length, 3);
+  assert.ok(links.some(link => link.href === old.browser_download_url));
+});
+
 test('GitHub mode rejects invalid provenance and keeps the official release page available on failure', async t => {
   for (const change of [
     r => { r.draft = true; }, r => { r.prerelease = true; }, r => { r.tag_name = 'v1.2.4'; },

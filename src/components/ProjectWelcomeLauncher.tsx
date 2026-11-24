@@ -30,6 +30,8 @@ import { AppUpdatePanel } from './AppUpdateModal';
 import { AccountButton } from './AccountButton';
 import { LanguageSwitch } from './LanguageSwitch';
 import { AlexLogo } from './AlexLogo';
+import { AxureBrandLogo, FigmaBrandLogo } from './DesignToolLogos';
+import type { FigmaImportTab } from './FigmaImportDialog';
 import { DeleteConfirmation } from './DeleteConfirmation';
 import { deleteProject, projectTrashApi } from '../services/projectDeletion';
 import { useI18n } from '../i18n';
@@ -55,7 +57,8 @@ export const ProjectWelcomeLauncher: React.FC<{
   /** Desktop app: the launcher fills its own compact native window (no outer backdrop / fake window chrome) */
   standalone?: boolean;
   onImportRp?: () => void;
-}> = ({ standalone = false, onImportRp }) => {
+  onImportFigma?: (tab?: FigmaImportTab) => void;
+}> = ({ standalone = false, onImportRp, onImportFigma }) => {
   const { isEn, tr, td } = useI18n();
   const {
     recentProjects,
@@ -63,13 +66,14 @@ export const ProjectWelcomeLauncher: React.FC<{
     isProjectClosed,
   } = useProtoStore();
 
-  const [activeNav, setActiveNav] = useState<'projects' | 'new_project' | 'hermes_engine' | 'app_update'>(() => {
+  const [activeNav, setActiveNav] = useState<'projects' | 'new_project' | 'import_design' | 'hermes_engine' | 'app_update'>(() => {
     if (typeof window !== 'undefined') {
       const wt = new URLSearchParams(window.location.search).get('welcomeTab');
-      if (wt === 'new_project' || wt === 'hermes_engine' || wt === 'projects' || wt === 'app_update') return wt;
+      if (wt === 'new_project' || wt === 'import_design' || wt === 'hermes_engine' || wt === 'projects' || wt === 'app_update') return wt;
     }
     return 'projects';
   });
+  const [dragHoverTarget, setDragHoverTarget] = useState<'figma' | 'axure' | null>(null);
   const {
     status: hermesStatus,
     currentVersion: hermesVer,
@@ -467,6 +471,30 @@ export const ProjectWelcomeLauncher: React.FC<{
 
                 <button
                   type="button"
+                  onClick={() => setActiveNav('import_design')}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl font-semibold flex items-center justify-between gap-2 min-w-0 transition cursor-pointer ${
+                    activeNav === 'import_design'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{tr('导入设计稿', 'Import Designs')}</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                      activeNav === 'import_design'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-violet-100 text-violet-700'
+                    }`}
+                  >
+                    Figma · RP
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveNav('hermes_engine')}
                   className={`w-full text-left px-3 py-2.5 rounded-xl font-semibold flex items-center justify-between gap-2 transition cursor-pointer ${
                     activeNav === 'hermes_engine'
@@ -601,10 +629,80 @@ export const ProjectWelcomeLauncher: React.FC<{
                   </div>
                 </div>
 
-                <button type="button" disabled={isWorking} onClick={onImportRp}
-                  className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-left text-xs text-slate-600 hover:border-blue-400 hover:bg-blue-50">
-                  <strong className="mr-2 text-slate-800">{tr('导入 Axure 原型', 'Import Axure RP')}</strong>{tr('拖入 RP 9 或 11 的 .rp 文件，或点击选择', 'Drop an RP 9 or 11 .rp file here, or click to browse')}
-                </button>
+                {/* Separated Professional Brand Import Cards (Figma & Axure RP) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+                  {/* Figma Branded Card */}
+                  <div
+                    onDragEnter={() => setDragHoverTarget('figma')}
+                    onDragLeave={() => setDragHoverTarget((prev) => (prev === 'figma' ? null : prev))}
+                    onDrop={() => setDragHoverTarget(null)}
+                    className={`group relative rounded-2xl border p-3.5 transition flex items-center justify-between gap-3 ${
+                      dragHoverTarget === 'figma'
+                        ? 'border-violet-500 bg-violet-50/70 shadow-sm'
+                        : 'border-slate-200/90 bg-gradient-to-br from-white via-white to-violet-50/35 hover:border-violet-300 hover:shadow-xs'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => onImportFigma?.('file')}
+                      className="flex flex-1 items-center gap-3 min-w-0 text-left cursor-pointer disabled:opacity-50"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-[1.03] transition">
+                        <FigmaBrandLogo className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-slate-900">{tr('导入 Figma 设计稿', 'Import Figma')}</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-violet-100 text-violet-700 font-semibold">.fig</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-sky-700 font-semibold">API</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {tr('拖入 .fig 或通过链接同步多端画板', 'Drop .fig or sync frames via link')}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => onImportFigma?.('url')}
+                      className="shrink-0 rounded-lg border border-violet-200 bg-white hover:bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {tr('链接导入', 'URL Sync')}
+                    </button>
+                  </div>
+
+                  {/* Axure RP Branded Card */}
+                  <button
+                    type="button"
+                    disabled={isWorking}
+                    onClick={onImportRp}
+                    onDragEnter={() => setDragHoverTarget('axure')}
+                    onDragLeave={() => setDragHoverTarget((prev) => (prev === 'axure' ? null : prev))}
+                    onDrop={() => setDragHoverTarget(null)}
+                    className={`group rounded-2xl border p-3.5 text-left transition cursor-pointer flex items-center justify-between gap-3 ${
+                      dragHoverTarget === 'axure'
+                        ? 'border-sky-500 bg-sky-50/70 shadow-sm'
+                        : 'border-slate-200/90 bg-gradient-to-br from-white via-white to-sky-50/35 hover:border-sky-300 hover:shadow-xs'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="shrink-0 group-hover:scale-[1.03] transition">
+                        <AxureBrandLogo className="w-10 h-10" />
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-slate-900">{tr('导入 Axure 原型', 'Import Axure RP')}</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 font-semibold">.rp</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {tr('拖入或选择 RP 9 / 11 原型文件', 'Drop or browse RP 9 / 11 .rp archive')}
+                        </p>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 group-hover:translate-x-0.5 transition shrink-0" />
+                  </button>
+                </div>
                 {/* Project Cards List */}
                 <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
                   {filteredRecent.length === 0 && <p className="py-8 text-center text-sm text-slate-500">{tr('暂无最近项目，请新建项目或打开本地工程文件。', 'No recent projects. Create a new project or open a local .pflow file.')}</p>}
@@ -948,6 +1046,149 @@ export const ProjectWelcomeLauncher: React.FC<{
                   </button>
                 </div>
               </form>
+            )}
+
+            {/* ===============================================================
+                TAB 2.5: DEDICATED DESIGN IMPORT HUB (FIGMA & AXURE RP)
+               =============================================================== */}
+            {activeNav === 'import_design' && (
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                <div className="space-y-1">
+                  <h2 className="text-base font-bold text-slate-900">
+                    {tr('从专业设计工具导入工程', 'Import from Design & Prototyping Tools')}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    {tr(
+                      '支持将 Figma 设计稿与 Axure RP 原型高保真转换为可编辑的 .pflow 工程，并配合 AI 助手完成数据表建模与标准业务组件重构。',
+                      'Convert Figma designs and Axure RP archives into editable .pflow projects, ready for AI schema modeling and semantic component reshaping.',
+                    )}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Figma Studio Card */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-violet-50/45 via-white to-white p-5 flex flex-col justify-between gap-5 shadow-2xs">
+                    <div className="space-y-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center shadow-sm">
+                            <FigmaBrandLogo className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold text-slate-900">Figma</h3>
+                              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                {tr('双通道支持', 'Dual Mode')}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {tr('本地 .fig 归档 & 官方 REST API', 'Local .fig Archive & REST API')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2 text-xs text-slate-600">
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-violet-600 shrink-0 mt-0.5" />
+                          <span>{tr('完整还原 Auto Layout 弹性排布、富文本样式、渐变阴影与内嵌图片', 'Preserves Auto Layout flex containers, rich text, gradients, shadows & images')}</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-violet-600 shrink-0 mt-0.5" />
+                          <span>{tr('按画板尺寸自动识别桌面端 / 移动端 / 多端混合工程', 'Auto-detects Desktop, Mobile, or Hybrid project modes from frame dimensions')}</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-violet-600 shrink-0 mt-0.5" />
+                          <span>{tr('支持按画布树勾选要导入的画板，智能跳过组件库规范页', 'Interactive frame tree picker that auto-skips design system & icon sheets')}</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        disabled={isWorking}
+                        onClick={() => onImportFigma?.('file')}
+                        className="flex-1 min-w-[130px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold text-center cursor-pointer transition"
+                      >
+                        {tr('导入本地 .fig 文件', 'Import Local .fig')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isWorking}
+                        onClick={() => onImportFigma?.('url')}
+                        className="flex-1 min-w-[130px] px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50/70 hover:bg-violet-100/80 text-violet-800 text-xs font-semibold text-center cursor-pointer transition"
+                      >
+                        {tr('粘贴 Figma 链接', 'Import via Link')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Axure RP Studio Card */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-sky-50/45 via-white to-white p-5 flex flex-col justify-between gap-5 shadow-2xs">
+                    <div className="space-y-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <AxureBrandLogo className="w-12 h-12" />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold text-slate-900">Axure RP</h3>
+                              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                                RP 9 / 11
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {tr('本机离线二进制解析 (.rp)', 'Local Offline Binary Parser (.rp)')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2 text-xs text-slate-600">
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                          <span>{tr('无需导出 HTML，直接本机读取 .rp 源文件页面目录与母版结构', 'Reads native .rp sitemaps and masters directly without HTML export')}</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                          <span>{tr('保留静态表格各单元格、动态面板多状态、树形目录与表单控件', 'Preserves static table cells, multi-state dynamic panels, trees & form widgets')}</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                          <span>{tr('自动转换跨页面点击跳转交互，支持 AI 映射真实业务数据表', 'Converts click page links and supports AI table column binding & reshaping')}</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        disabled={isWorking}
+                        onClick={onImportRp}
+                        className="w-full px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold text-center cursor-pointer transition"
+                      >
+                        {tr('选择本地 .rp 原型文件', 'Select Local .rp File')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Workflow Note */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-start gap-3 text-xs text-slate-600">
+                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-semibold text-slate-800">
+                      {tr('两阶段无损迁移闭环', 'Two-Stage Non-Destructive Migration')}
+                    </div>
+                    <p className="leading-relaxed">
+                      {tr(
+                        '导入后的原始设计画板会完整保留在工程目录中供视觉核对；需要转化为流式业务系统时，可在右侧「AI 助手」发起重构，自动在同目录生成绑定 ER 数据表的标准业务页面副本。',
+                        'Original imported pages remain intact as visual references. Whenever ready, trigger AI Reshaping in the workspace to generate standard flow-layout copies bound to shared ER database tables.',
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* ===============================================================

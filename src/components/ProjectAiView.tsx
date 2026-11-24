@@ -45,6 +45,7 @@ import { useAiPreviewStore } from '../store/useAiPreviewStore';
 import { AiStreamingPreview } from '../proto/designer/AiStreamingPreview';
 import { conversationKey, type HermesProjectConversation } from '../services/hermesConversation';
 import { axureCatalog, applyRpTaskDraft, clearRpTaskDraft, resolveSubmittedRpMigration, axureScopeFocus, type AxureScope } from '../proto/axure/task';
+import { figmaCatalog, applyFigmaTaskDraft, clearFigmaTaskDraft, resolveSubmittedFigmaMigration, figmaScopeFocus, type FigmaScope } from '../proto/figma/task';
 import { formatRpReviewArgs } from '../proto/axure/reviewSource';
 import { ProjectContextPanel, type ProjectContextFocus } from './ProjectContextPanel';
 import { discussProject, generateProject, projectPlanProgress, resolveProjectReview, resumePriorPlan, useProjectWorkflow } from '../services/projectWorkflow';
@@ -143,19 +144,30 @@ function ProjectChatPane({scope,index}: {
   const sitemapBase = usePageStore(s => s.sitemapBase);
   const catalog = useMemo(() => axureCatalog({designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources}),
     [designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources]);
+  const figCatalog = useMemo(() => figmaCatalog({designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources}),
+    [designerPages,designerFolders,sitemapOverrides,sitemapBase,pageSources]);
   const [focusChosen,setFocusChosen] = useState(false);
   const selectFocus = (focus:ProjectContextFocus) => { setFocusChosen(true); setContextFocus(focus); };
-  const effectiveFocus = draft.rpTask ? axureScopeFocus(draft.rpTask.scope) : contextFocus;
+  const effectiveFocus = draft.rpTask ? axureScopeFocus(draft.rpTask.scope) : draft.figmaTask ? figmaScopeFocus(draft.figmaTask.scope) : contextFocus;
   const rpScopeId = effectiveFocus.pageId ? 'page:' + effectiveFocus.pageId : effectiveFocus.folderId ? 'folder:' + effectiveFocus.folderId
     : !draft.rpTask && !focusChosen && catalog.pages.some(p=>p.pageId === activePageId) ? 'page:' + activePageId : 'project';
+  const figScopeId = effectiveFocus.pageId ? 'page:' + effectiveFocus.pageId : effectiveFocus.folderId ? 'folder:' + effectiveFocus.folderId
+    : !draft.figmaTask && !focusChosen && figCatalog.pages.some(p=>p.pageId === activePageId) ? 'page:' + activePageId : 'project';
   const rpOptions = useMemo(() => [
     {value:'project',label:tr(`全工程（${catalog.pages.length} 页）`, `Full project (${catalog.pages.length} pages)`),scope:{kind:'project'} as AxureScope},
     ...catalog.folders.map(f=>({value:'folder:'+f.folderId,label:tr(`${f.path}（${f.pageCount} 页）`, `${f.path} (${f.pageCount} pages)`),scope:{kind:'folder',folderId:f.folderId} as AxureScope})),
     ...catalog.pages.map(p=>({value:'page:'+p.pageId,label:p.path,scope:{kind:'page',pageId:p.pageId} as AxureScope})),
   ],[catalog, locale, tr]);
+  const figOptions = useMemo(() => [
+    {value:'project',label:tr(`全工程（${figCatalog.pages.length} 页）`, `Full project (${figCatalog.pages.length} pages)`),scope:{kind:'project'} as FigmaScope},
+    ...figCatalog.folders.map(f=>({value:'folder:'+f.folderId,label:tr(`${f.path}（${f.pageCount} 页）`, `${f.path} (${f.pageCount} pages)`),scope:{kind:'folder',folderId:f.folderId} as FigmaScope})),
+    ...figCatalog.pages.map(p=>({value:'page:'+p.pageId,label:`${p.path} (${p.platform === 'mobile' ? 'Mobile' : 'Desktop'})`,scope:{kind:'page',pageId:p.pageId} as FigmaScope})),
+  ],[figCatalog, locale, tr]);
   const starterTemplates = useMemo(() => getStarterTemplates(tr), [locale, tr]);
   const rpSelection = rpOptions.find(option=>option.value === rpScopeId);
+  const figSelection = figOptions.find(option=>option.value === figScopeId);
   const rpScopeControlId = useId();
+  const figScopeControlId = useId();
   const updateDraft = (change: (current: ProjectDraft) => ProjectDraft) => setDrafts(previous =>
     new Map(previous).set(key, change(previous.get(key) ?? emptyDraft)));
   const setPrompt = (text: string) => updateDraft(current => ({ ...current, text }));
@@ -181,7 +193,14 @@ function ProjectChatPane({scope,index}: {
     if (!selection) return;
     const {scope:target,label} = selection;
     selectFocus(axureScopeFocus(target));
-    updateDraft(current => applyRpTaskDraft(current, target, label, readOnly));
+    updateDraft(current => applyRpTaskDraft(clearFigmaTaskDraft(current), target, label, readOnly));
+    textareaRef.current?.focus();
+  }
+  function prepareFigmaTask(readOnly:boolean, selection = figSelection) {
+    if (!selection) return;
+    const {scope:target,label} = selection;
+    selectFocus(figmaScopeFocus(target));
+    updateDraft(current => applyFigmaTaskDraft(clearRpTaskDraft(current), target, label, readOnly));
     textareaRef.current?.focus();
   }
   function changeContext(focus:ProjectContextFocus) {
@@ -190,6 +209,12 @@ function ProjectChatPane({scope,index}: {
       const selected = rpOptions.find(option => option.value === id);
       if (selected) { prepareRpTask(draft.rpTask.readOnly,selected); return; }
       updateDraft(clearRpTaskDraft);
+    }
+    if (draft.figmaTask) {
+      const id = focus.pageId ? 'page:' + focus.pageId : focus.folderId ? 'folder:' + focus.folderId : 'project';
+      const selected = figOptions.find(option => option.value === id);
+      if (selected) { prepareFigmaTask(draft.figmaTask.readOnly,selected); return; }
+      updateDraft(clearFigmaTaskDraft);
     }
     selectFocus(focus);
   }
@@ -291,18 +316,19 @@ function ProjectChatPane({scope,index}: {
       if (mounted.current) setPreparing(false);
     }
   };
-  const hasDraft = Boolean(prompt.trim() || draft.rpTask || images.length || mindmapIds.length);
+  const hasDraft = Boolean(prompt.trim() || draft.rpTask || draft.figmaTask || images.length || mindmapIds.length);
   const handleSubmit = () => {
     if (busy || !connected || reading.current || !hasDraft) return;
     if (useAiChatStore.getState().projectIndexes[projectId]?.activeId !== index.activeId) return;
     const submitted = draft;
     const rpMigration = resolveSubmittedRpMigration(submitted.rpTask, questionMessage?.rpQuestionScope);
-    const submitText = submitted.text.trim() || submitted.rpTask?.text || '';
-    const submitFocus = rpMigration ? axureScopeFocus(rpMigration.scope) : contextFocus;
+    const figmaMigration = resolveSubmittedFigmaMigration(submitted.figmaTask, !rpMigration ? questionMessage?.figmaQuestionScope : undefined);
+    const submitText = submitted.text.trim() || submitted.rpTask?.text || submitted.figmaTask?.text || '';
+    const submitFocus = rpMigration ? axureScopeFocus(rpMigration.scope) : figmaMigration ? figmaScopeFocus(figmaMigration.scope) : contextFocus;
     const cleared: ProjectDraft = { text: '', images: [], mindmapIds: [] };
     updateDraft(() => cleared);
     void run(async () => {
-      try { await discussProject(projectId, submitText, submitted.images, submitted.mindmapIds, submitFocus, undefined, rpMigration); }
+      try { await discussProject(projectId, submitText, submitted.images, submitted.mindmapIds, submitFocus, undefined, rpMigration, figmaMigration); }
       catch (cause) {
         // A delayed failure may restore only its own untouched draft.
         setDrafts(previous => previous.get(key) === cleared ? new Map(previous).set(key, submitted) : previous);
@@ -322,9 +348,11 @@ function ProjectChatPane({scope,index}: {
       return tr(`${idx + 1}. 针对「${q.question}」：${ans}`, `${idx + 1}. Regarding "${q.question}": ${ans}`);
     });
     setReopenedQuestionId(null);
-    const target = questionMessage?.rpQuestionScope;
-    void run(() => discussProject(projectId, lines.join('\n'), [], [], target ? axureScopeFocus(target) : contextFocus,
-      undefined, target ? {scope:target,readOnly:false} : undefined));
+    const rpTarget = questionMessage?.rpQuestionScope;
+    const figmaTarget = !rpTarget ? questionMessage?.figmaQuestionScope : undefined;
+    const answerFocus = rpTarget ? axureScopeFocus(rpTarget) : figmaTarget ? figmaScopeFocus(figmaTarget) : contextFocus;
+    void run(() => discussProject(projectId, lines.join('\n'), [], [], answerFocus,
+      undefined, rpTarget ? { scope: rpTarget, readOnly: false } : undefined, figmaTarget ? { scope: figmaTarget, readOnly: false } : undefined));
   };
   const totalPages = plan?.pages.length ?? 0;
   const progressPct = totalPages > 0 ? Math.round((completed.length / totalPages) * 100) : 0;
@@ -514,7 +542,7 @@ function ProjectChatPane({scope,index}: {
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        updateDraft(current => ({ ...current, text: tpl.prompt, rpTask: undefined }));
+                        updateDraft(current => ({ ...current, text: tpl.prompt, rpTask: undefined, figmaTask: undefined }));
                         textareaRef.current?.focus();
                       }}
                       className="group min-w-0 text-left rounded-2xl border border-slate-200/90 bg-white p-3.5 hover:border-blue-400 hover:bg-blue-50/30 transition shadow-2xs flex flex-col justify-between gap-2.5 cursor-pointer disabled:opacity-50"
@@ -1092,6 +1120,39 @@ function ProjectChatPane({scope,index}: {
                   onClick={() => updateDraft(clearRpTaskDraft)}>
                   <X size={13} />
                   <span>{draft.rpTask.readOnly ? tr('取消只读任务', 'Cancel Read-only Task') : tr('取消转换任务', 'Cancel Conversion Task')}</span>
+                </button>
+              </div>}
+              {figCatalog.pages.length > 0 && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                <label htmlFor={figScopeControlId} className="whitespace-nowrap font-medium text-violet-800">{tr('Figma 重构范围', 'Figma Reshape Scope')}</label>
+                <select id={figScopeControlId} className="max-w-60 rounded border border-slate-300 bg-white px-2 py-1"
+                  disabled={running || Boolean(otherRunning)} value={figSelection?.value ?? ''}
+                  onChange={event => {
+                    const selected = figOptions.find(option=>option.value === event.target.value);
+                    if (!selected) return;
+                    if (draft.figmaTask) prepareFigmaTask(draft.figmaTask.readOnly,selected);
+                    else selectFocus(figmaScopeFocus(selected.scope));
+                  }}>
+                  <option value="" disabled>{tr('选择重构范围', 'Select reshape scope')}</option>
+                  <option value="project">{figOptions[0].label}</option>
+                  <optgroup label={tr('目录', 'Folders')}>{figOptions.filter(o=>o.scope.kind === 'folder').map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+                  <optgroup label={tr('画板页面', 'Frame Pages')}>{figOptions.filter(o=>o.scope.kind === 'page').map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+                </select>
+                <button type="button" className="rounded border bg-white px-2 py-1 disabled:opacity-40 whitespace-nowrap shrink-0 cursor-pointer" disabled={!figSelection || running || Boolean(otherRunning)}
+                  onClick={() => prepareFigmaTask(true)}>{tr('只读盘点', 'Read-only Analysis')}</button>
+                <button type="button" className="rounded border border-violet-200 bg-violet-50/60 px-2 py-1 text-violet-700 font-medium disabled:opacity-40 whitespace-nowrap shrink-0 cursor-pointer"
+                  disabled={!figSelection || running || Boolean(otherRunning)} onClick={() => prepareFigmaTask(false)}>{tr('重塑业务页并生成表结构', 'Reshape Pages & Generate Schema')}</button>
+              </div>}
+              {draft.figmaTask && <div role="status" className={`mb-2 flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${draft.figmaTask.readOnly ? 'border-amber-200 bg-amber-50/80 text-amber-900' : 'border-violet-200 bg-violet-50/80 text-violet-900'}`}>
+                <span className="min-w-0 truncate">
+                  <strong>{draft.figmaTask.readOnly ? tr('Figma 只读盘点', 'Figma Read-only Analysis') : tr('Figma 流式重塑与建表', 'Figma Reshape & Schema')}</strong>
+                  {' · '}
+                  {figSelection?.label ?? draft.figmaTask.label ?? tr('已选范围', 'Selected scope')}
+                  <span className="ml-2 opacity-75">{tr('（下方提示词可自由修改）', '(Prompt below can be edited freely)')}</span>
+                </span>
+                <button type="button" disabled={running || Boolean(otherRunning)} className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-black/5 disabled:opacity-40 whitespace-nowrap cursor-pointer"
+                  onClick={() => updateDraft(clearFigmaTaskDraft)}>
+                  <X size={13} />
+                  <span>{draft.figmaTask.readOnly ? tr('取消只读任务', 'Cancel Read-only Task') : tr('取消重塑任务', 'Cancel Reshape Task')}</span>
                 </button>
               </div>}
               {!!mindmapIds.length && <ul aria-label={tr('待发送脑图', 'Attached Mindmaps')} className="mb-2 flex flex-wrap gap-1.5">

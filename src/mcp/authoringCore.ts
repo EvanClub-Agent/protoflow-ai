@@ -3,6 +3,7 @@ import { getImplementationGuide } from '../proto/ai/implementationGuide';
 import { pageContractErrors } from '../proto/ai/pageContract';
 import { inspectPage } from '../proto/ai/pageInspection';
 import { isAxureMaterial } from '../proto/axure/metadata';
+import { isFigmaMaterial } from '../proto/figma/metadata';
 import { reviewDatabaseChanges, reviewDatabaseDesign } from '../proto/database/designReview';
 import { previewRelationIssues } from '../proto/database/previewRelations';
 import { preparePreviewScenario } from '../proto/database/previewScenario';
@@ -184,6 +185,10 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         includeAxure: {
           type: 'boolean',
           description: 'Include legacy Axure compatibility component names when listing catalog (default: false).',
+        },
+        includeFigma: {
+          type: 'boolean',
+          description: 'Include Figma restoration primitive component names when listing catalog (default: false).',
         },
       },
       additionalProperties: false,
@@ -663,12 +668,13 @@ export const AUTHORING_MCP_RESOURCES: McpResourceDefinition[] = [
   },
 ];
 
-function summarizeContractCatalog(includeAxure: boolean) {
+function summarizeContractCatalog(includeAxure: boolean, includeFigma = false) {
   const all = getMaterialContracts();
   const desktop: { name: string; title: string; category: string; description: string }[] = [];
   const mobile: { name: string; title: string; category: string; description: string }[] = [];
   const universal: { name: string; title: string; category: string; description: string }[] = [];
   const axure: { name: string; title: string; category: string; description: string }[] = [];
+  const figma: { name: string; title: string; category: string; description: string }[] = [];
 
   for (const item of all) {
     const entry = {
@@ -679,6 +685,8 @@ function summarizeContractCatalog(includeAxure: boolean) {
     };
     if (isAxureMaterial(item.name)) {
       if (includeAxure) axure.push(entry);
+    } else if (isFigmaMaterial(item.name)) {
+      if (includeFigma) figma.push(entry);
     } else if (UNIVERSAL_COMPONENT_NAMES.has(item.name)) {
       universal.push(entry);
     } else if (MOBILE_COMPONENT_NAMES.has(item.name)) {
@@ -695,12 +703,14 @@ function summarizeContractCatalog(includeAxure: boolean) {
       mobile: mobile.length,
       universal: universal.length,
       ...(includeAxure ? { axure: axure.length } : {}),
+      ...(includeFigma ? { figma: figma.length } : {}),
     },
     components: {
       desktop,
       mobile,
       universal,
       ...(includeAxure ? { axure } : {}),
+      ...(includeFigma ? { figma } : {}),
     },
     actions: getActionContracts(),
   };
@@ -1729,11 +1739,12 @@ export async function executeAuthoringTool(
 
     case 'protoflow_get_contracts': {
       const includeAxure = args.includeAxure === true;
+      const includeFigma = args.includeFigma === true;
       const requestedNames = Array.isArray(args.componentNames)
         ? args.componentNames.map((n, i) => requireNonEmptyString(n, `componentNames[${i}]`))
         : undefined;
       if (!requestedNames || requestedNames.length === 0) {
-        return summarizeContractCatalog(includeAxure);
+        return summarizeContractCatalog(includeAxure, includeFigma);
       }
       const all = getMaterialContracts();
       const byName = new Map(all.map((c) => [c.name, c]));

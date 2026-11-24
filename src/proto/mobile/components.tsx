@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useId, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertCircle,
@@ -3057,6 +3057,298 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
   );
 };
 
+const MOBILE_BANNER_GRADIENTS: Record<string, string> = {
+  gemini: 'from-blue-600 via-indigo-600 to-violet-600 text-white',
+  blue: 'from-blue-600 via-sky-500 to-cyan-500 text-white',
+  violet: 'from-violet-600 via-purple-600 to-fuchsia-500 text-white',
+  emerald: 'from-emerald-600 via-teal-500 to-cyan-600 text-white',
+  amber: 'from-amber-500 via-orange-500 to-rose-500 text-white',
+};
+
+const MBannerCarousel: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
+  const trackRef = useRef<HTMLDivElement>(null);
+  const height = Math.min(360, Math.max(100, Math.round(Number(p.height ?? 164))));
+  const loop = p.loop !== false;
+  const rawItems = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+  const slides = rawItems.length
+    ? rawItems
+    : [{ title: tr('AI 智能随行助手', 'AI Companion'), subtitle: tr('多模态识别与实时摘要', 'Multimodal live insights'), badge: 'NEW', tone: 'gemini' }];
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [settledText, setSettledText] = useState('');
+  const settledRef = useRef(0);
+
+  const computeNearest = useCallback(() => {
+    const el = trackRef.current;
+    if (!el || !el.clientWidth) return 0;
+    return Math.max(0, Math.min(slides.length - 1, Math.round(el.scrollLeft / el.clientWidth)));
+  }, [slides.length]);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    let raf = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hasScrollEnd: boolean = 'onscrollend' in (el as object);
+    const onSettle = () => {
+      const next = computeNearest();
+      setActiveIndex(next);
+      if (next !== settledRef.current) {
+        settledRef.current = next;
+        setSettledText(tr(`第 ${next + 1} 张，共 ${slides.length} 张`, `Slide ${next + 1} of ${slides.length}`));
+      }
+    };
+    const onScroll = () => {
+      if (!raf) {
+        raf = window.requestAnimationFrame(() => {
+          raf = 0;
+          const next = computeNearest();
+          setActiveIndex((prev) => (prev === next ? prev : next));
+        });
+      }
+      if (!hasScrollEnd) {
+        clearTimeout(timer);
+        timer = setTimeout(onSettle, 120);
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    if (hasScrollEnd) el.addEventListener('scrollend', onSettle);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      el.removeEventListener('scroll', onScroll);
+      if (hasScrollEnd) el.removeEventListener('scrollend', onSettle);
+    };
+  }, [computeNearest, slides.length, tr]);
+
+  const scrollToSlide = (idx: number) => {
+    const count = slides.length;
+    if (!count) return;
+    const target = loop ? ((idx % count) + count) % count : Math.max(0, Math.min(count - 1, idx));
+    setActiveIndex(target);
+    const el = trackRef.current;
+    if (el) {
+      const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      el.scrollTo({ left: target * el.clientWidth, behavior: reduced ? 'auto' : 'smooth' });
+    }
+  };
+
+  return (
+    <section
+      {...rootWith(root, { className: 'relative overflow-clip rounded-[22px] select-none' })}
+      aria-roledescription="carousel"
+      aria-label={String(p.title || tr('精选活动海报', 'Featured banners'))}
+    >
+      <div
+        ref={trackRef}
+        tabIndex={0}
+        role="group"
+        aria-label={tr('海报列表', 'Banner slides')}
+        className="flex w-full overflow-x-auto"
+        style={{
+          height,
+          scrollSnapType: 'x mandatory',
+          overscrollBehaviorX: 'contain',
+          scrollbarWidth: 'none',
+          touchAction: 'manipulation',
+        }}
+      >
+        {slides.map((slide, idx) => {
+          const tone = MOBILE_BANNER_GRADIENTS[String(slide.tone ?? '')] ?? MOBILE_BANNER_GRADIENTS[['gemini', 'violet', 'emerald', 'amber'][idx % 4]];
+          const clickable = Boolean(slide.onClick) && !rt.isDesign;
+          return (
+            <div
+              key={idx}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={tr(`${idx + 1} / ${slides.length}`, `${idx + 1} of ${slides.length}`)}
+              onClick={() => {
+                if (clickable) void rt.run(slide.onClick as PropValue, scope);
+              }}
+              className={cx(
+                'relative flex h-full shrink-0 basis-full flex-col justify-between p-4 bg-gradient-to-br',
+                tone,
+                clickable && 'cursor-pointer',
+              )}
+              style={{ scrollSnapAlign: 'center' }}
+            >
+              {Boolean(slide.image) && (
+                <img src={String(slide.image)} alt="" className="absolute inset-0 block h-full w-full object-cover opacity-35" />
+              )}
+              <div className="relative z-[1]">
+                {Boolean(slide.badge) && (
+                  <span className="inline-block rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold backdrop-blur-xs">
+                    {String(slide.badge)}
+                  </span>
+                )}
+              </div>
+              <div className="relative z-[1] space-y-0.5 pb-3">
+                <div className="text-[16px] font-bold leading-snug">{String(slide.title ?? tr(`活动海报 ${idx + 1}`, `Banner ${idx + 1}`))}</div>
+                {Boolean(slide.subtitle) && <div className="text-[12px] text-white/85 truncate">{String(slide.subtitle)}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{settledText}</p>
+      {slides.length > 1 && (
+        <nav aria-label={tr('选择海报', 'Choose slide')} className="absolute inset-x-0 bottom-1.5 z-10 flex items-center justify-center gap-1">
+          {slides.map((slide, idx) => {
+            const active = idx === activeIndex;
+            return (
+              <button
+                key={idx}
+                type="button"
+                aria-label={tr(`切换到第 ${idx + 1} 张：${String(slide.title ?? '')}`, `Go to slide ${idx + 1}: ${String(slide.title ?? '')}`)}
+                aria-current={active ? 'true' : undefined}
+                onClick={() => scrollToSlide(idx)}
+                style={{ touchAction: 'manipulation' }}
+                className="inline-flex h-6 min-w-6 items-center justify-center cursor-pointer"
+              >
+                <span className={cx('block h-1.5 rounded-full transition-all', active ? 'w-5 bg-white' : 'w-1.5 bg-white/55')} />
+              </button>
+            );
+          })}
+        </nav>
+      )}
+    </section>
+  );
+};
+
+const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td } = useI18n();
+  const theme = useMobileTheme();
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const rawRows = useTableDataRows(tableId);
+  const { row: sourceRow, tableId: sourceTableId } = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const bindingErrors = sourceForeignKeyErrors(p, tables);
+  const runtimeFilter = rt.filters[node.pfId];
+  const cols = Math.min(2, Math.max(1, Math.round(Number(p.cols ?? 2))));
+
+  const titleKey = p.titleField, subKey = p.subtitleField, imgKey = p.imageField, priceKey = p.priceField, tagKey = p.tagField;
+  const cell = (row: Row, key: unknown) => (typeof key === 'string' && row[key] != null ? String(row[key]) : '');
+
+  const cards = useMemo(() => {
+    if (tableId) {
+      const records =
+        typeof p.sourceForeignKey === 'string'
+          ? rowsForSource(rawRows, p.sourceForeignKey, tableId, { row: sourceRow, tableId: sourceTableId }, tables)
+          : rawRows;
+      return records
+        .filter((r) => matchesFilter(r, p.filter, runtimeFilter))
+        .map((r) => ({
+          id: r.id,
+          row: r,
+          title: cell(r, titleKey) || tr('未命名内容', 'Untitled'),
+          subtitle: cell(r, subKey),
+          image: cell(r, imgKey),
+          price: cell(r, priceKey),
+          tag: cell(r, tagKey),
+        }));
+    }
+    const items = (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[];
+    return items
+      .filter((it) =>
+        matchesFilter(
+          {
+            id: '',
+            title: String(it.title ?? ''),
+            subtitle: String(it.subtitle ?? ''),
+            price: String(it.price ?? ''),
+            tag: String(it.tag ?? ''),
+          },
+          p.filter,
+          runtimeFilter,
+        ),
+      )
+      .map((it, idx) => ({
+        id: `mcard-${idx}`,
+        row: { id: `mcard-${idx}`, ...it } as Row,
+        title: String(it.title || tr(`卡片项 ${idx + 1}`, `Card ${idx + 1}`)),
+        subtitle: String(it.subtitle || ''),
+        image: String(it.image || ''),
+        price: String(it.price || ''),
+        tag: String(it.tag || ''),
+      }));
+  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, imgKey, priceKey, tagKey, tr]);
+
+  if (bindingErrors.length) {
+    return (
+      <div {...rootWith(root, { className: 'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">
+        {td(bindingErrors[0])}
+      </div>
+    );
+  }
+
+  if (cards.length === 0) {
+    return (
+      <div {...rootWith(root, { className: cx('rounded-[22px] py-10 text-center', theme.cardBg, theme.textMuted) })}>
+        <Inbox className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden="true" />
+        <div className="text-[13px]">{tr('暂无匹配的卡片内容', 'No matching items')}</div>
+      </div>
+    );
+  }
+
+  const actionText = typeof p.actionText === 'string' && p.actionText ? p.actionText : tr('查看', 'View');
+
+  return (
+    <div
+      {...rootWith(root, { className: 'grid gap-2.5' })}
+      style={{ ...root.style, gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
+      {cards.map((c, idx) => {
+        const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
+        const activate = () => void rt.run(p.onItemClick as PropValue, { ...scope, row: c.row, tableId });
+        return (
+          <div
+            key={c.id}
+            onClick={activate}
+            {...interactiveBoxProps(Boolean(p.onItemClick) && !rt.isDesign, activate)}
+            className={cx(
+              'overflow-clip rounded-[20px] flex flex-col justify-between cursor-pointer transition-transform active:scale-[0.99] min-w-0',
+              theme.cardBg,
+            )}
+          >
+            <div>
+              {c.image ? (
+                <img src={c.image} alt={c.title} className="block w-full object-cover" style={{ aspectRatio: '4 / 3' }} />
+              ) : (
+                <div
+                  className={cx(
+                    'w-full bg-gradient-to-br flex items-center justify-between px-3',
+                    grad,
+                    theme.isDark ? 'text-white/80' : 'text-slate-700/70',
+                  )}
+                  style={{ aspectRatio: '16 / 10' }}
+                >
+                  <ShoppingBag className="w-5 h-5" aria-hidden="true" />
+                  {c.tag && (
+                    <span className={cx('px-2 py-0.5 rounded-full text-[10px] font-medium backdrop-blur-xs', theme.isDark ? 'bg-black/35 text-white' : 'bg-white/85 text-slate-700')}>
+                      {c.tag}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="p-3 pb-2 space-y-1 min-w-0">
+                <div className={cx('text-[13px] font-semibold truncate', theme.textPrimary)}>{c.title}</div>
+                {c.subtitle && <div className={cx('text-[11px] truncate', theme.textMuted)}>{c.subtitle}</div>}
+              </div>
+            </div>
+            <div className="px-3 pb-3 pt-1 flex items-center justify-between gap-1.5">
+              <span className={cx('text-[13.5px] font-bold tabular-nums truncate', theme.accentText)}>{c.price || c.tag}</span>
+              <span className={cx('shrink-0 px-2.5 py-1 rounded-full text-[10.5px] font-semibold', theme.subtleBg, theme.textPrimary)}>
+                {actionText}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MobilePage,
   MSurface,
@@ -3069,6 +3361,8 @@ export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MSearchPill,
   MHeroHeader,
   MFeedList,
+  MBannerCarousel,
+  MCardGrid,
   MTaskList,
   MListGroup,
   MListItem,

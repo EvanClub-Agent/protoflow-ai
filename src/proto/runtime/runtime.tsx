@@ -1,6 +1,7 @@
 import { diagramRelations } from '../database/relations';
 import { readPageHeader } from '../dsl/header';
 import { axureSourcePagePattern, axureCopyId, verifiedAxureSourceId } from '../axure/task';
+import { figmaSourcePagePattern, figmaCopyId, verifiedFigmaSourceId } from '../figma/task';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActionChain, PropValue, ProtoDoc, ProtoNode } from '../types';
 import { isActionChain, isNode } from '../types';
@@ -586,6 +587,13 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               const header = canNavigate ? publishedHeader?.(optimizedTarget)
                 : Object.hasOwn(pages.pageSources,optimizedTarget) ? readPageHeader(pages.pageSources[optimizedTarget]) : undefined;
               if (verifiedAxureSourceId(optimizedTarget,header) === rawTarget && isAvailable(optimizedTarget)) {
+                target = optimizedTarget;
+              }
+            } else if (verifiedFigmaSourceId(pageId,docRef.current?.header) && figmaSourcePagePattern.test(rawTarget)) {
+              const optimizedTarget = figmaCopyId(rawTarget);
+              const header = canNavigate ? publishedHeader?.(optimizedTarget)
+                : Object.hasOwn(pages.pageSources,optimizedTarget) ? readPageHeader(pages.pageSources[optimizedTarget]) : undefined;
+              if (verifiedFigmaSourceId(optimizedTarget,header) === rawTarget && isAvailable(optimizedTarget)) {
                 target = optimizedTarget;
               }
             }

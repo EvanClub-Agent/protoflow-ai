@@ -2,7 +2,7 @@
 
 <img src="./public/logo.svg" width="92" height="92" alt="ProtoFlow AI Logo" />
 
-# ProtoFlow AI (formerly Alex)
+# ProtoFlow AI
 
 ### Open-Source AI Prototyping Workbench — Turn Requirements into Runnable Apps
 
@@ -60,7 +60,7 @@ Product managers and engineering teams are often stuck between **static wirefram
 
 ## 🚀 Quick Start in 60 Seconds
 
-Download desktop installers (currently packaged under the `Alex-*` binary filename for upgrade continuity) for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, try the **[Browser Live Demo](https://alex.xclubai.com/demo/)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
+Download desktop installers (new AppImages use `ProtoFlow_AI-*` and other installers retain the `Alex-*` filename) for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, try the **[Browser Live Demo](https://alex.xclubai.com/demo/)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
 
 ```bash
 git clone https://github.com/EvanClub-Agent/protoflow-ai.git

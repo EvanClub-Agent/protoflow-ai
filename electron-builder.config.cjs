@@ -5,6 +5,9 @@ module.exports = {
   productName: 'Alex',
   directories: { output: 'release', buildResources: 'build' },
   artifactName: 'Alex-${version}-${os}-${arch}.${ext}',
+  toolsets: { appimage: '1.0.3' },
+  appImage: { artifactName: 'ProtoFlow_AI-${version}-${arch}.${ext}' },
+  artifactBuildCompleted: require('./scripts/appimage-update.cjs'),
   asar: true,
   asarUnpack: ['electron/generated/spec-mcp-server.cjs'],
   // Renderer dependencies are bundled by Vite; native code only uses Node/Electron.
@@ -41,6 +44,7 @@ module.exports = {
     icon: 'build/icon.icns',
     executableName: 'protoflow-ai',
     syncDesktopName: true,
+    desktop: { entry: { Name: 'ProtoFlow AI' } },
     category: 'Development',
     target: ['deb', 'AppImage', 'tar.gz'],
   },

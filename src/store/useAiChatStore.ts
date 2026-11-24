@@ -2,6 +2,7 @@ import { validateRequirementRecords } from '../proto/database/requirementReview'
 import { cachedProjectChatIndex, chatStorageKey as storageKey, chatTitle, newProjectChat, notifyChatPurged, projectChatScope, readProjectChatIndex, writeProjectChatIndex, type ProjectChatId, type ProjectChatIndex } from '../services/projectChatHistory';
 import { validateProjectQuestions, type ProjectQuestion } from '../services/projectQuestions';
 import type { AxureScope, RpTaskState } from '../proto/axure/task';
+import { figmaSourcePagePattern, type FigmaScope, type FigmaTaskState } from '../proto/figma/task';
 import type { ProjectChangeReview } from '../services/projectChangeReview';
 import { create } from 'zustand';
 import { useProtoStore } from './useProtoStore';
@@ -20,6 +21,7 @@ export type AiChatMessage = HermesChatConversation & {
   mindmaps?: ChatMindmap[];
   projectQuestions?: ProjectQuestion[];
   rpQuestionScope?: AxureScope;
+  figmaQuestionScope?: FigmaScope;
   projectChangeReview?: ProjectChangeReview;
   requirementAudit?: import('../proto/database/requirementReview').RequirementAudit;
   projectReviewDecision?: 'applied' | 'discarded' | 'undone';
@@ -74,6 +76,12 @@ function validMessage(m: any, scope: HermesChatConversation): m is AiChatMessage
       (target.kind === 'folder' && typeof target.folderId === 'string' && target.folderId.length > 0) ||
       (target.kind === 'page' && typeof target.pageId === 'string' && /^rp-page-[a-f0-9]{32}$/.test(target.pageId)))) return false;
   }
+  if (m?.figmaQuestionScope !== undefined) {
+    const target = m.figmaQuestionScope;
+    if (!m.projectQuestions || !target || !(target.kind === 'project' ||
+      (target.kind === 'folder' && typeof target.folderId === 'string' && target.folderId.length > 0) ||
+      (target.kind === 'page' && typeof target.pageId === 'string' && figmaSourcePagePattern.test(target.pageId)))) return false;
+  }
   return m && m.projectId === scope.projectId && m.pageId === scope.pageId && m.kind === scope.kind && m.threadId === scope.threadId &&
     typeof m.id === 'string' && m.id.length > 0 && typeof m.text === 'string' &&
     typeof m.time === 'string' && ['user', 'assistant'].includes(m.role) && ['pending', 'done', 'error'].includes(m.status) &&
@@ -97,7 +105,7 @@ function read(scope: HermesChatConversation): { messages: AiChatMessage[]; error
     return { messages, error: legacy ? persist(scope, messages) : null };
   } catch { return { messages: [], error: tr('读取当前菜单的聊天记录失败，原记录未覆盖。', 'Failed to read chat history for this menu; existing data was preserved.') }; }
 }
-export interface ProjectDraft { text: string; images: ChatImageDraft[]; mindmapIds: string[]; rpTask?: RpTaskState }
+export interface ProjectDraft { text: string; images: ChatImageDraft[]; mindmapIds: string[]; rpTask?: RpTaskState; figmaTask?: FigmaTaskState }
 type ProjectDrafts = Map<string, ProjectDraft>;
 export interface PageChatDraft { text: string; images: ChatImageDraft[]; excludedNoteIds: string[] }
 export const EMPTY_PAGE_CHAT_DRAFT: PageChatDraft = { text: '', images: [], excludedNoteIds: [] };

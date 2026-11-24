@@ -1,5 +1,7 @@
 import { AXURE_MATERIALS } from '../axure/metadata';
+import { FIGMA_MATERIALS } from '../figma/metadata';
 import { createAntdMaterials, ANTD_EXTRA_PROPS, ANTD_INPUT_APPEARANCE } from './antdMeta';
+import { MODERN_DESKTOP_MATERIALS } from './modernMeta';
 import { CELL_EDITORS } from '../table/model';
 import { FREEFORM_MATERIAL } from '../freeform/metadata';
 import { CHART_MATERIALS } from '../charts/metadata';
@@ -356,7 +358,7 @@ export const COMPONENTS: ComponentMeta[] = [
     icon: 'SlidersHorizontal',
     description: '紧凑查询条件区（ProTable QueryFilter），自带查询/重置与展开收起。cols 是每行最大列数，窄容器自动换行；普通控件默认不超过 240px，日期范围不超过 320px。target 指向要过滤的 Table 的 pfId。',
     props: [
-      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table'] },
+      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid'] },
       { name: 'fields', label: '查询条件', kind: 'list', itemFields: FIELD_ITEM.filter((p) => !['required', 'span'].includes(p.name)) },
       { name: 'cols', label: '每行最多列数(cols)', kind: 'number', default: 3 },
       { name: 'controlMaxWidth', label: '普通控件最大宽度(px)', kind: 'number', default: 240, description: '限制查询输入框、下拉等控件的宽度，不包含标签；空间不足时自动缩小。' },
@@ -394,7 +396,7 @@ export const COMPONENTS: ComponentMeta[] = [
     inline: true,
     props: [
       { name: 'placeholder', label: '占位提示', kind: 'string' },
-      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table'] },
+      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid'] },
       { name: 'enterButton', label: '显示右侧搜索按钮', kind: 'boolean' },
       { name: 'allowClear', label: '允许清空', kind: 'boolean', default: true },
       { name: 'size', label: '尺寸(size)', kind: 'select', options: ['small', 'middle', 'large'], default: 'middle' },
@@ -998,6 +1000,7 @@ const FIELD_COMPONENT_NAMES_WITHOUT_CLEAR = new Set(['NumberInput', 'Radio', 'Ch
 
 // All consumers (palette, inspector, AI contract, viewer) use the same expanded metadata.
 COMPONENTS.push(...createAntdMaterials(fieldBase));
+COMPONENTS.push(...MODERN_DESKTOP_MATERIALS);
 COMPONENTS.push(FREEFORM_MATERIAL);
 COMPONENTS.push(...CHART_MATERIALS);
 for (const component of COMPONENTS) {
@@ -1018,6 +1021,7 @@ for (const component of COMPONENTS) {
 
 COMPONENTS.push(...MOBILE_COMPONENTS);
 COMPONENTS.push(...AXURE_MATERIALS);
+COMPONENTS.push(...FIGMA_MATERIALS);
 
 export const COMPONENT_MAP: Record<string, ComponentMeta> = Object.fromEntries(COMPONENTS.map((c) => [c.name, c]));
 

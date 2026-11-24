@@ -477,8 +477,56 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
     title: 'Glass Dialog',
     description: 'In-frame centered 24px frosted confirmation dialog; opened via openModal(id).',
   },
+  MBannerCarousel: {
+    title: 'Banner Carousel',
+    description: '22px rounded mobile swipeable banner carousel with pill indicators and navigation actions.',
+  },
+  MCardGrid: {
+    title: 'Card Grid',
+    description: 'Two-column mobile product or content card grid supporting bound physical tables and real-time search/pill filtering.',
+  },
+  NavMenu: {
+    title: 'Nav Menu',
+    description: 'Sidebar or horizontal navigation menu bar supporting brand title, collapse mode, badges, and page navigation.',
+  },
+  CardGrid: {
+    title: 'Card Grid',
+    description: 'Multi-column media and business card grid supporting physical table bindings, QueryForm filtering, and row actions.',
+  },
+  Dropdown: {
+    title: 'Dropdown Menu',
+    description: 'Ant Design Dropdown action menu wrapping custom triggers or rendering a built-in action button.',
+  },
+  Carousel: {
+    title: 'Carousel Banner',
+    description: 'Scroll-snapping hero banner carousel with previous/next controls and slide indicators.',
+  },
+  Icon: {
+    title: 'Semantic Icon',
+    description: 'Configurable semantic vector icon supporting size, tone badge, custom color, and click actions.',
+  },
 
   // Axure Compatibility Materials
+  FigmaCanvas: {
+    title: 'Figma Artboard Host',
+    description: 'Hosts a top-level imported Figma frame preserving dimensions, fills, and Auto Layout or free-positioned layers.',
+  },
+  FigmaFrame: {
+    title: 'Figma Frame',
+    description: 'Composite container supporting Figma Auto Layout flex flow and relative positioning with gradients, radii, borders, shadows, and blur.',
+  },
+  FigmaText: {
+    title: 'Figma Text',
+    description: 'Editable Figma text layer preserving rich-text style runs, font size, weight, line height, and alignment.',
+  },
+  FigmaVector: {
+    title: 'Figma Vector & Shape',
+    description: 'Editable Figma shape, boolean vector, or SVG icon path.',
+  },
+  FigmaImage: {
+    title: 'Figma Image',
+    description: 'Editable Figma embedded bitmap or rendered image layer.',
+  },
   AxureCanvas: {
     title: 'Free-Position Canvas',
     description: 'Arranges editable widgets by exact pixel coordinates.',
@@ -1337,7 +1385,40 @@ const EN_COMPONENT_SNIPPETS: Record<string, string> = {
   MBottomDock: '<MBottomDock mode="action" secondaryText="Save Draft" primaryText="Submit" />',
   MBottomSheet: '<MBottomSheet id="sheet-detail" title="Details" size="medium"><MListGroup items={[{ title: "Status", value: "Normal" }]} /></MBottomSheet>',
   MDialog: '<MDialog id="dlg-confirm" title="Confirm this action?" description="Submitting will update related records." confirmText="Confirm" />',
+  MBannerCarousel: `<MBannerCarousel height={164} items={[
+  { title: 'AI Companion 2.0', subtitle: 'Multimodal vision & live summaries', badge: 'New', tone: 'gemini' },
+  { title: 'Member Exclusive Perks', subtitle: 'Curated smart gear offers', badge: 'Promo', tone: 'violet' }
+]} />`,
+  MCardGrid: `<MCardGrid cols={2} actionText="View" items={[
+  { title: 'Ultralight GPS Watch', subtitle: 'Dual-band GPS · 14d Battery', price: '$129', tag: 'Popular' },
+  { title: 'Portable Acoustic Speaker', subtitle: 'IP67 Waterproof · Rich Bass', price: '$59', tag: 'New' }
+]} />`,
+  NavMenu: `<NavMenu brandTitle="Operations" mode="inline" activeKey="overview" items={[
+  { key: 'overview', title: 'Overview', icon: 'LayoutGrid' },
+  { key: 'orders', title: 'Orders', icon: 'ShoppingBag', badge: '12' },
+  { key: 'customers', title: 'Customers', icon: 'Users' }
+]} />`,
+  CardGrid: `<CardGrid cols={3} items={[
+  { title: 'Enterprise Knowledge Hub', subtitle: 'Multi-source vector search & RBAC', tag: 'Live', price: '$299/yr' },
+  { title: 'Omnichannel Service Desk', subtitle: 'Automated ticket routing & AI assist', tag: 'Popular', price: '$159/yr' },
+  { title: 'Executive Analytics Suite', subtitle: 'Live conversion & inventory KPIs', tag: 'Featured', price: '$99/yr' }
+]} />`,
+  Dropdown: `<Dropdown label="More Actions" items={[
+  { key: 'export', title: 'Export Selected' },
+  { key: 'archive', title: 'Batch Archive' },
+  { key: 'delete', title: 'Delete Record', danger: true }
+]} />`,
+  Carousel: `<Carousel height={220} items={[
+  { title: 'Collaborative AI Workspace', subtitle: 'Design import, ER modeling & multi-platform flows', tag: 'New Release', tone: 'blue' },
+  { title: 'Enterprise Data Panorama', subtitle: 'Real-time KPI rollups & drill-downs', tag: 'Featured', tone: 'violet' }
+]} />`,
+  Icon: '<Icon name="Sparkles" size={20} tone="blue" boxed={true} />',
   OutlineTree: '<OutlineTree width={180} height={100}><TreeItem text="Directory" /></OutlineTree>',
+  FigmaCanvas: '<FigmaCanvas frameWidth={1440} frameHeight={900} background="#FFFFFF" />',
+  FigmaFrame: '<FigmaFrame layoutMode="row" gap={12} padding="12px 16px" width={320} height={64} />',
+  FigmaText: '<FigmaText text="Heading" fontSize={16} fontWeight={600} color="#0F172A" width={120} height={24} />',
+  FigmaVector: '<FigmaVector width={24} height={24} fill="#2563EB" viewBox="0 0 24 24" svgPath="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z" />',
+  FigmaImage: '<FigmaImage width={160} height={120} objectFit="cover" radius={12} alt="Media" />',
   TreeItem: '<TreeItem text="Node" />',
   DynamicPanel: '<DynamicPanel width={120} height={40} activeState={1}><PanelState label="Initial State" /></DynamicPanel>',
   PanelState: '<PanelState label="State" />',

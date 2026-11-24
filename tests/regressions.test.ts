@@ -1,4 +1,5 @@
 import './axure-import.test';
+import './figma-import.test';
 import './ai-recovery.test';
 import './stage2-recovery.test';
 import "./project-accuracy.test";

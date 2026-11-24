@@ -184,7 +184,7 @@ export function extractPageActionSemantics(
     if (node.props.disabled !== true) {
       const handledProps = new Set<string>();
       const boundRowTable =
-        (node.type === 'Table' || node.type === 'MTaskList' || node.type === 'MFeedList') &&
+        (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'MTaskList' || node.type === 'MFeedList' || node.type === 'MCardGrid') &&
         typeof node.props.table === 'string' &&
         tableMap.has(node.props.table)
           ? node.props.table
@@ -298,8 +298,8 @@ export function extractPageActionSemantics(
         );
       }
 
-      if (node.type === 'Table' || node.type === 'MTaskList') {
-        const rowClickKey = node.type === 'Table' ? 'onRowClick' : 'onCardClick';
+      if (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'MTaskList') {
+        const rowClickKey = node.type === 'Table' ? 'onRowClick' : node.type === 'CardGrid' ? 'onItemClick' : 'onCardClick';
         handledProps.add(rowClickKey);
         handledProps.add('rowActions');
         addSlot(
@@ -327,7 +327,7 @@ export function extractPageActionSemantics(
             );
           });
         }
-      } else if (node.type === 'MFeedList') {
+      } else if (node.type === 'MFeedList' || node.type === 'MCardGrid') {
         handledProps.add('onItemClick');
         addSlot(
           node,
@@ -341,7 +341,7 @@ export function extractPageActionSemantics(
       }
 
       if (
-        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup') &&
+        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup' || node.type === 'NavMenu' || node.type === 'Dropdown' || node.type === 'Carousel' || node.type === 'MBannerCarousel') &&
         Array.isArray(node.props.items)
       ) {
         handledProps.add('items');

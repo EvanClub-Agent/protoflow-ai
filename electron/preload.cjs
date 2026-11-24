@@ -76,6 +76,12 @@ contextBridge.exposeInMainWorld('protoflowDesktop', {
   setWindowMode: (mode) => ipcRenderer.invoke('pflow:set-window-mode', mode),
   getLocale: () => ipcRenderer.invoke('pflow:get-locale'),
   setLocale: (locale) => ipcRenderer.invoke('pflow:set-locale', locale),
+  figma: {
+    getToken: () => ipcRenderer.invoke('pflow:figma-get-token'),
+    setToken: (token) => ipcRenderer.invoke('pflow:figma-set-token', token),
+    fetchJson: (input) => ipcRenderer.invoke('pflow:figma-fetch', input),
+    fetchImage: (input) => ipcRenderer.invoke('pflow:figma-fetch-image', input),
+  },
   publishing: {
     settings: () => publishingInvoke('settings'),
     accountSettings: () => publishingInvoke('accountSettings'),

@@ -70,6 +70,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { isAxureMaterial } from '../axure/metadata';
+import { isFigmaMaterial } from '../figma/metadata';
 import {
   COMPONENTS,
   COMPONENT_MAP,
@@ -372,17 +373,19 @@ export const MaterialsAndOutlinePane: React.FC<MaterialsAndOutlinePaneProps> = (
   const { dbTables } = useProtoStore();
   const isMobilePage = root.type === 'MobilePage';
   const hasAxureCanvas = root.children.some((c) => isNode(c) && c.type === 'AxureCanvas');
+  const hasFigmaCanvas = root.children.some((c) => isNode(c) && c.type === 'FigmaCanvas');
   const platformComponents = React.useMemo(
     () =>
       COMPONENTS.filter(
         (c) =>
           !PAGE_ROOT_TYPES.has(c.name) &&
           (hasAxureCanvas || !isAxureMaterial(c.name)) &&
+          (hasFigmaCanvas || !isFigmaMaterial(c.name)) &&
           (isMobilePage
             ? MOBILE_COMPONENT_NAMES.has(c.name) || UNIVERSAL_COMPONENT_NAMES.has(c.name)
             : !MOBILE_COMPONENT_NAMES.has(c.name)),
       ).map((c) => localizeComponentMeta(c, locale)),
-    [isMobilePage, hasAxureCanvas, locale],
+    [isMobilePage, hasAxureCanvas, hasFigmaCanvas, locale],
   );
   const platformComposites = React.useMemo(
     () =>

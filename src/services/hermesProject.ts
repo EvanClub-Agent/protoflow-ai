@@ -35,6 +35,7 @@ import { checkAiPagePlatform, type RequestedPage } from './projectPagePlatform';
 import { OVERLAY_TYPES } from '../proto/registry/meta';
 import { verifyDependencyFootprint, type DependencyFootprintV3 } from './dependencyFootprint';
 import { reshapeAxurePage } from '../proto/axure/optimization';
+import { reshapeFigmaPage } from '../proto/figma/optimization';
 
 export function projectContext(requestedPage?: RequestedPage, payloadOverride?: PflowBinaryPayload) {
   const p = payloadOverride ?? captureProjectPayload();
@@ -429,6 +430,21 @@ export function prepareProjectChanges(
     const srcPageId = 'rp-page-' + match[1];
     if (Object.hasOwn(s.pageSources, srcPageId) && Object.hasOwn(s.pageSources, copyId)) {
       reshapeAxurePage(s, srcPageId, s.pageSources[copyId], rpCoverage);
+    }
+  }
+  const latestFigmaCoverageByCopy = new Map<string, unknown>();
+  for (const op of operations) {
+    if (op.tool === 'protoflow_apply_tsx_patch' && typeof op.args.pageId === 'string') {
+      if (op.args.figmaCoverage !== undefined) latestFigmaCoverageByCopy.set(op.args.pageId, op.args.figmaCoverage);
+      else latestFigmaCoverageByCopy.delete(op.args.pageId);
+    }
+  }
+  for (const [copyId, figmaCoverage] of latestFigmaCoverageByCopy) {
+    const match = /^fig-optimized-([a-z0-9_-]{4,48})$/.exec(copyId);
+    if (!match) continue;
+    const srcPageId = 'fig-page-' + match[1];
+    if (Object.hasOwn(s.pageSources, srcPageId) && Object.hasOwn(s.pageSources, copyId)) {
+      reshapeFigmaPage(s, srcPageId, s.pageSources[copyId], figmaCoverage);
     }
   }
   for (const op of operations)

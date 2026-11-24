@@ -1,5 +1,7 @@
 import { AXURE_LEAF_KINDS } from '../axure/metadata';
 import { AxureCanvas, AxureWidget, DynamicPanel, OutlineTree, TreeItem, StaticTable, textFrameStyle } from '../axure/materials';
+import { FIGMA_COMPONENTS } from '../figma/materials';
+import { MODERN_DESKTOP_COMPONENTS } from './modernComponents';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
 import { useSourceRow } from '../runtime/sourceRow';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -1925,8 +1927,10 @@ const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind
 export const REGISTRY: Record<string, React.FC<CompProps>> = {
   AxureCanvas, AxureWidget, PositionedGroup: AxureCanvas, PanelState: AxureCanvas, DynamicPanel, OutlineTree, TreeItem, StaticTable,
   ...Object.fromEntries(Object.keys(AXURE_LEAF_KINDS).map(name => [name, AxureWidget])),
+  ...FIGMA_COMPONENTS,
   Freeform: FreeformMaterial,
   ...ANTD_COMPONENTS,
+  ...MODERN_DESKTOP_COMPONENTS,
   Page,
   Card,
   Row: Row_,

@@ -967,7 +967,6 @@
       throw new Error('Invalid stable GitHub release');
     }
 
-    // electron-builder's artifactName carries the platform and architecture.
     // Linux package formats spell the same CPU architecture differently.
     const systems = { mac: 'macos', win: 'windows', linux: 'linux' };
     const architectures = { arm64: 'arm64', aarch64: 'arm64', x64: 'x64', amd64: 'x64', x86_64: 'x64', universal: 'universal' };
@@ -975,9 +974,13 @@
     const version = tag[1];
     const assets = [];
     for (const asset of data.assets) {
-      const match = /^Alex-(\d+\.\d+\.\d+)-(mac|win|linux)-(arm64|aarch64|x64|amd64|x86_64|universal)\.(dmg|zip|exe|deb|AppImage|tar\.gz)$/.exec(asset.name);
-      if (!match || asset.state !== 'uploaded') continue;
-      const [, fileVersion, platform, cpu, format] = match;
+      if (asset.state !== 'uploaded') continue;
+      const appImage = /^ProtoFlow_AI-(\d+\.\d+\.\d+)-(x86_64|arm64|aarch64)\.AppImage$/.exec(asset.name);
+      const legacy = /^Alex-(\d+\.\d+\.\d+)-(mac|win|linux)-(arm64|aarch64|x64|amd64|x86_64|universal)\.(dmg|zip|exe|deb|AppImage|tar\.gz)$/.exec(asset.name);
+      if (!appImage && !legacy) continue;
+      const [fileVersion, platform, cpu, format] = appImage
+        ? [appImage[1], 'linux', appImage[2], 'AppImage']
+        : legacy.slice(1);
       if (fileVersion !== version || !formats[platform].includes(format) ||
           asset.browser_download_url !== `${repoUrl}/releases/download/${tag[0]}/${asset.name}` ||
           !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^sha256:[a-f0-9]{64}$/.test(asset.digest)) {

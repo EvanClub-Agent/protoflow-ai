@@ -29,6 +29,7 @@ import { InspectorSidebar } from './components/InspectorSidebar';
 import { DesktopBundleModal } from './components/DesktopBundleModal';
 import { McpConnectModal } from './components/McpConnectModal';
 import { useAxureImport } from './components/AxureImportDialog';
+import { useFigmaImport } from './components/FigmaImportDialog';
 import { ProjectWelcomeLauncher } from './components/ProjectWelcomeLauncher';
 import { WebPublishModal } from './components/WebPublishModal';
 import { HermesEngineModal } from './components/HermesEngineModal';
@@ -42,6 +43,7 @@ import { usePageStore } from './proto/store/usePageStore';
 export function App() {
   const { tr } = useI18n();
   const axure = useAxureImport();
+  const figma = useFigmaImport();
   const {
     activePageId,
     currentProjectMeta,
@@ -131,7 +133,8 @@ export function App() {
     return (
       <>
         {axure.ui}
-        <ProjectWelcomeLauncher standalone onImportRp={axure.pick} />
+        {figma.ui}
+        <ProjectWelcomeLauncher standalone onImportRp={axure.pick} onImportFigma={figma.openFigma} />
         <HermesEngineModal />
         <AppUpdateModal />
         {!isProjectClosed && <DesktopBundleModal />}
@@ -143,7 +146,8 @@ export function App() {
     <div className="h-screen w-screen flex flex-col bg-[#F3F5F8] text-slate-900 overflow-hidden">
       {/* IntelliJ IDEA-style Welcome Launcher Modal when opening the tool or switching projects */}
       {axure.ui}
-      {isWelcomeScreenOpen && <ProjectWelcomeLauncher onImportRp={axure.pick} />}
+      {figma.ui}
+      {isWelcomeScreenOpen && <ProjectWelcomeLauncher onImportRp={axure.pick} onImportFigma={figma.openFigma} />}
 
       {/* Top Antigravity-style Single-Line Draggable Titlebar */}
       <GlobalToolbar />

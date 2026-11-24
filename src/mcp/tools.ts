@@ -1,6 +1,7 @@
 import { tr } from '../i18n/runtime';
 import { inspectPage } from '../proto/ai/pageInspection';
 import { verifiedAxureSourceId } from '../proto/axure/task';
+import { verifiedFigmaSourceId } from '../proto/figma/task';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import { readPageHeader } from '../proto/dsl/header';
@@ -349,6 +350,26 @@ function resolveAxureLineage(
   return { sourceByCopyId, activeCopyBySourceId };
 }
 
+function resolveFigmaLineage(
+  pages: readonly { pageId: string; deprecated: boolean }[],
+  pageSources: Record<string, string>
+): { sourceByCopyId: Map<string, string>; activeCopyBySourceId: Map<string, string> } {
+  const sourceByCopyId = new Map<string, string>();
+  const activeCopyBySourceId = new Map<string, string>();
+  const pageIdSet = new Set(pages.map((p) => p.pageId));
+  for (const p of pages) {
+    const rawSource = pageSources[p.pageId];
+    if (!rawSource) continue;
+    const sourceId = verifiedFigmaSourceId(p.pageId, readPageHeader(rawSource));
+    if (!sourceId) continue;
+    sourceByCopyId.set(p.pageId, sourceId);
+    if (!p.deprecated && pageIdSet.has(sourceId)) {
+      activeCopyBySourceId.set(sourceId, p.pageId);
+    }
+  }
+  return { sourceByCopyId, activeCopyBySourceId };
+}
+
 function pagePlatform(source: string | undefined): 'desktop' | 'mobile' | 'unknown' {
   if (!source) return 'unknown';
   const parsed = parsePageSource(source);
@@ -367,6 +388,7 @@ export function executeSpecTool(
   const analysis = analyzeProject(s);
   const tableById = new Map(s.dbTables.map((t) => [t.id, t]));
   const axureLineage = resolveAxureLineage(analysis.pages, s.pageSources);
+  const figmaLineage = resolveFigmaLineage(analysis.pages, s.pageSources);
 
   switch (name) {
     case 'protoflow_get_project_overview': {
@@ -382,7 +404,9 @@ export function executeSpecTool(
         );
         const stickyCount = s.stickyNotes.filter((n) => n.pageId === p.pageId && n.active).length;
         const axureSourcePageId = axureLineage.sourceByCopyId.get(p.pageId);
-        const optimizedPageId = axureLineage.activeCopyBySourceId.get(p.pageId);
+        const figmaSourcePageId = figmaLineage.sourceByCopyId.get(p.pageId);
+        const optimizedPageId =
+          axureLineage.activeCopyBySourceId.get(p.pageId) ?? figmaLineage.activeCopyBySourceId.get(p.pageId);
         return {
           pageId: p.pageId,
           title: p.title,
@@ -391,6 +415,7 @@ export function executeSpecTool(
           hasSource: p.hasSource,
           deprecated: p.deprecated,
           ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(figmaSourcePageId ? { figmaSourcePageId } : {}),
           ...(optimizedPageId ? { optimizedPageId } : {}),
           boundTables,
           activeStickyCount: stickyCount,
@@ -673,7 +698,9 @@ export function executeSpecTool(
       const agreements = (s.projectAgreements ?? []).filter((a) => a.pageIds.includes(pageId));
 
       const axureSourcePageId = axureLineage.sourceByCopyId.get(pageId);
-      const optimizedPageId = axureLineage.activeCopyBySourceId.get(pageId);
+      const figmaSourcePageId = figmaLineage.sourceByCopyId.get(pageId);
+      const optimizedPageId =
+        axureLineage.activeCopyBySourceId.get(pageId) ?? figmaLineage.activeCopyBySourceId.get(pageId);
       const requestedSelectedPfId =
         typeof args.selectedPfId === 'string' && args.selectedPfId.trim().length > 0
           ? args.selectedPfId.trim()
@@ -705,6 +732,7 @@ export function executeSpecTool(
           hasSource: pageEntry.hasSource,
           deprecated: pageEntry.deprecated,
           ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(figmaSourcePageId ? { figmaSourcePageId } : {}),
           ...(optimizedPageId ? { optimizedPageId } : {}),
         },
         tableBindings,
@@ -1017,7 +1045,9 @@ export function executeSpecTool(
         }
 
         const axureSourcePageId = axureLineage.sourceByCopyId.get(p.pageId);
-        const supersededByOptimizedPageId = axureLineage.activeCopyBySourceId.get(p.pageId);
+        const figmaSourcePageId = figmaLineage.sourceByCopyId.get(p.pageId);
+        const supersededByOptimizedPageId =
+          axureLineage.activeCopyBySourceId.get(p.pageId) ?? figmaLineage.activeCopyBySourceId.get(p.pageId);
 
         return {
           pageId: p.pageId,
@@ -1025,6 +1055,7 @@ export function executeSpecTool(
           routePath: p.path,
           platform: pagePlatform(s.pageSources[p.pageId]),
           ...(axureSourcePageId ? { axureSourcePageId } : {}),
+          ...(figmaSourcePageId ? { figmaSourcePageId } : {}),
           ...(supersededByOptimizedPageId ? { supersededByOptimizedPageId } : {}),
           inferredBackendOperations: Array.from(inferredEndpoints),
           interactiveActionCount: pageActions.length,

@@ -48,7 +48,8 @@ export function platformStatus(release: DesktopRelease, os: ReleaseOS) {
 export function assetVersionIssue(fileName: string, version: string): string | null {
   // Only the documented Alex / ProtoFlow artifact naming convention establishes
   // a version here. Arbitrary filenames are not treated as package metadata.
-  const named = /^(?:Alex|ProtoFlow-AI)-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(?:linux|win|mac|darwin)-/i.exec(fileName)?.[1];
+  const appImage = /^ProtoFlow_AI-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)-(?:x86_64|aarch64|arm64)\.AppImage$/.exec(fileName);
+  const named = appImage ? appImage[1] : /^(?:Alex|ProtoFlow-AI)-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(?:linux|win|mac|darwin)-/i.exec(fileName)?.[1];
   return named && named !== version
     ? tr(
         `文件名中的版本号 ${named} 与当前版本 ${version} 不一致，请选择对应版本的安装包。`,

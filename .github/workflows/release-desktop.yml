@@ -45,9 +45,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm libfuse2t64 || sudo apt-get install -y rpm libfuse2
+          sudo apt-get install -y rpm binutils zsync xvfb xauth x11-utils
       - run: npm ci
       - run: npm run ${{ matrix.script }}
+      - name: Verify portable AppImage and update file
+        if: matrix.name == 'linux-x64'
+        shell: bash
+        run: |
+          image="$PWD/release/ProtoFlow_AI-$(node -p "require('./package.json').version")-x86_64.AppImage"
+          bash scripts/verify-appimage.sh "$image"
       - name: Build Client Integration Bundles
         if: matrix.name == 'linux-x64'
         run: |
@@ -63,6 +69,7 @@ jobs:
             release/*.exe
             release/*.deb
             release/*.AppImage
+            release/*.AppImage.zsync
             release/*.tar.gz
             release/*.mcpb
 
@@ -81,6 +88,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Alex ${{ github.ref_name }}
+          name: ProtoFlow AI ${{ github.ref_name }}
           generate_release_notes: true
           files: artifacts/*

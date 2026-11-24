@@ -3114,8 +3114,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               );
             })}
 
-            {/* Row actions for tables and mobile task cards */}
-            {(selectedNode.type === 'Table' || selectedNode.type === 'MTaskList') && (
+            {/* Row actions for tables, desktop card grids, and mobile task cards */}
+            {(selectedNode.type === 'Table' || selectedNode.type === 'CardGrid' || selectedNode.type === 'MTaskList') && (
               <div className="space-y-2.5 pt-2 border-t border-slate-200">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -3242,6 +3242,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
             {eventSpecs.length === 0 &&
               selectedNode.type !== 'Table' &&
+              selectedNode.type !== 'CardGrid' &&
               selectedNode.type !== 'MTaskList' && (
                 <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400">
                   {doc.root.type === 'MobilePage'

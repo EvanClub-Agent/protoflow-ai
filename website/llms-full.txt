@@ -26,7 +26,7 @@
 ## 1. Product Summary & Entity Disambiguation
 
 - **ProtoFlow AI**: Primary product, platform, repository (`EvanClub-Agent/protoflow-ai`), MCP namespace (`protoflow_*`, `@protoflow-ai/mcp`), and self-hosted publishing stack.
-- **Alex**: Original application name (`productName: "Alex"`). Desktop installer binaries currently keep the `Alex-*` filename (`Alex-*.dmg`, `Alex-*.exe`, `Alex-*.deb`) for seamless upgrade compatibility.
+- **Alex**: Original application name (`productName: "Alex"`). The macOS, Windows, and DEB installer binaries keep the `Alex-*` filename (`Alex-*.dmg`, `Alex-*.exe`, `Alex-*.deb`) for seamless upgrade compatibility.
 - **`.pflow`**: The local-first project archive format (and Git-friendly unpacked directory tree) containing pages (TSX DSL), physical ER database schemas, preview data rows, component sticky-note requirements, rich project notes, and mindmaps.
 
 **Core Value Proposition**:
@@ -119,7 +119,7 @@ Claude, Gemini, OpenAI, DeepSeek, Qwen (通义千问), Kimi, Z.ai (智谱 GLM), 
 ## 7. Quick Start & Self-Hosting Commands
 
 ### Desktop Installers
-Download signed/checksummed installers (`SHA256SUMS.txt`) from https://github.com/EvanClub-Agent/protoflow-ai/releases/latest (currently packaged under the `Alex-*` binary name) for:
+Download signed/checksummed installers (`SHA256SUMS.txt`) from https://github.com/EvanClub-Agent/protoflow-ai/releases/latest (new AppImages use `ProtoFlow_AI-*`, other installers use `Alex-*`) for:
 - **macOS 13+**: Apple Silicon (`arm64` `.dmg` / `.zip`) and Intel (`x64` `.dmg` / `.zip`)
 - **Windows 10/11**: `x64` NSIS installer (`.exe`)
 - **Linux**: `x64` `.deb` (`sudo apt install ./Alex-*-linux-amd64.deb`), `.AppImage`, `.tar.gz`

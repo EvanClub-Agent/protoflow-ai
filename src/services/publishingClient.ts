@@ -171,9 +171,23 @@ export async function listPublications(projectId: string): Promise<Publication[]
   if (!Array.isArray(result.items)) throw new Error(tr('发布记录列表无效', 'Invalid publication list'));
   return result.items.map((value: unknown) => validatePublication(value, projectId));
 }
+/** Size of the JSON body sent by both transports, including access settings and update version. */
+export function publicationSizeWarning(input: PublishInput): string | undefined {
+  const bytes = new TextEncoder().encode(JSON.stringify(input)).byteLength;
+  if (bytes <= 20 * 1024 * 1024) return;
+  const size = bytes.toLocaleString();
+  return tr(
+    `发布请求为 ${size} 字节，超过 20 MiB 上限。请减少画板、矢量路径或内嵌图片后再发布。`,
+    `The publication request is ${size} bytes and exceeds the 20 MiB limit. Reduce frames, vector paths, or embedded images before publishing.`,
+  );
+}
+
 export async function savePublication(input: PublishInput, existing?: Publication): Promise<Publication> {
   if (existing && existing.projectId !== input.snapshot.projectId) throw new Error(tr('发布记录不属于当前项目', 'Publication does not belong to the current project'));
-  const value = await request(existing ? { action: 'update', id: existing.id, input: { ...input, expectedVersion: existing.version } } : { action: 'create', input });
+  const body = existing ? { ...input, expectedVersion: existing.version } : input;
+  const warning = publicationSizeWarning(body);
+  if (warning) throw new Error(warning);
+  const value = await request(existing ? { action: 'update', id: existing.id, input: body } : { action: 'create', input: body });
   return validatePublication(value, input.snapshot.projectId);
 }
 export async function revokePublication(existing: Publication): Promise<Publication> {

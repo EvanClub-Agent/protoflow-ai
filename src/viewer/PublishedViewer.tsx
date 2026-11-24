@@ -480,7 +480,9 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
   }
 
   const page = snapshot.pages.find(p => p.pageId === activeId);
-  const hasAxureCanvas = page?.doc.root.children.some(c => c.kind === 'node' && c.type === 'AxureCanvas');
+  const hasAxureCanvas = page?.doc.root.children.some(
+    c => c.kind === 'node' && (c.type === 'AxureCanvas' || c.type === 'FigmaCanvas'),
+  );
   const activeMenuTitle = page?.title ?? menuIndex.get(activeId)?.item.title;
 
   return (

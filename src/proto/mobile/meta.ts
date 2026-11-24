@@ -1,5 +1,6 @@
 import type { ComponentMeta, ListFieldSpec, PropSpec } from '../registry/meta';
 import { CHART_TYPES } from '../charts/model';
+import { FIGMA_MATERIAL_NAMES } from '../figma/metadata';
 
 const OPTION_LIST_PROP: PropSpec = {
   name: 'options',
@@ -239,7 +240,7 @@ export const MOBILE_COMPONENTS: ComponentMeta[] = [
         name: 'target',
         label: '关联筛选列表',
         kind: 'nodeRef',
-        refTypes: ['MFeedList', 'MTaskList'],
+        refTypes: ['MFeedList', 'MTaskList', 'MCardGrid'],
         description: '可选：选中胶囊时按 filterField 实时筛选目标移动列表',
       },
       { name: 'filterField', label: '筛选字段名', kind: 'column' },
@@ -286,7 +287,7 @@ export const MOBILE_COMPONENTS: ComponentMeta[] = [
         name: 'target',
         label: '实时过滤列表',
         kind: 'nodeRef',
-        refTypes: ['MFeedList', 'MTaskList'],
+        refTypes: ['MFeedList', 'MTaskList', 'MCardGrid'],
       },
       { name: 'showVoice', label: '显示语音图标', kind: 'boolean', default: false },
       { name: 'showFilter', label: '显示筛选按钮', kind: 'boolean', default: true },
@@ -399,6 +400,74 @@ export const MOBILE_COMPONENTS: ComponentMeta[] = [
     snippet: `<MTaskList items={[
   { title: '年度云资源扩容采购申请', status: '待审批', summary: '申请部门：AI 平台研发部 · 供应商：优选云科技', meta: '¥128,000 · 10分钟前' },
   { title: '华东智能仓首批设备到货验收', status: '已通过', summary: '验收人：林峰 · 共 12 项标准硬件明细', meta: '¥64,500 · 今天 09:30' }
+]} />`,
+  },
+  {
+    name: 'MBannerCarousel',
+    title: '轮播海报栏',
+    category: 'data',
+    icon: 'GalleryHorizontal',
+    description: '22px 大圆角移动端横滑轮播海报，支持触控滑动吸附、圆点胶囊指示器与点击跳转。',
+    props: [
+      { name: 'title', label: '无障碍区域名称', kind: 'string', default: '精选活动海报' },
+      { name: 'height', label: '海报高度(px)', kind: 'number', default: 164 },
+      { name: 'loop', label: '循环切换', kind: 'boolean', default: true },
+      {
+        name: 'items',
+        label: '轮播海报项',
+        kind: 'list',
+        itemFields: [
+          { name: 'title', label: '主标题', kind: 'string' },
+          { name: 'subtitle', label: '副文案', kind: 'string' },
+          { name: 'badge', label: '左上角胶囊', kind: 'string' },
+          { name: 'image', label: '背景图地址', kind: 'string' },
+          { name: 'tone', label: '渐变色调', kind: 'select', options: ['gemini', 'blue', 'violet', 'emerald', 'amber'] },
+          { name: 'onClick', label: '点击动作', kind: 'actions' },
+        ],
+      },
+    ],
+    snippet: `<MBannerCarousel height={164} items={[
+  { title: 'AI 智能随行助手 2.0', subtitle: '全新多模态识别与实时摘要', badge: '新品发布', tone: 'gemini' },
+  { title: '春季会员专享礼遇', subtitle: '精选智能好物限时直降', badge: '限时特惠', tone: 'violet' },
+  { title: '高效移动协同指南', subtitle: '随时随地完成审批与数据洞察', badge: '精选专题', tone: 'emerald' }
+]} />`,
+  },
+  {
+    name: 'MCardGrid',
+    title: '双列图文卡片流',
+    category: 'data',
+    icon: 'LayoutGrid',
+    description: '支持绑定物理表或静态配置的移动端双列商品/内容图文卡片网格，兼容 MSearchPill 与 MPillTabs 联动筛选。',
+    props: [
+      { name: 'table', label: '关联数据表', kind: 'table' },
+      { name: 'sourceForeignKey', label: '当前来源行的外键', kind: 'column', description: '按当前来源记录过滤子表卡片时填写明细表真实外键字段名。' },
+      { name: 'cols', label: '列数(1-2)', kind: 'number', default: 2 },
+      { name: 'titleField', label: '标题字段', kind: 'column' },
+      { name: 'subtitleField', label: '副文案字段', kind: 'column' },
+      { name: 'imageField', label: '图片地址字段', kind: 'column' },
+      { name: 'priceField', label: '价格/指标字段', kind: 'column' },
+      { name: 'tagField', label: '角标字段', kind: 'column' },
+      { name: 'filter', label: '默认过滤条件', kind: 'json' },
+      { name: 'actionText', label: '右下角按钮文案', kind: 'string', default: '查看' },
+      {
+        name: 'items',
+        label: '静态演示卡片(未绑表时生效)',
+        kind: 'list',
+        itemFields: [
+          { name: 'title', label: '标题', kind: 'string' },
+          { name: 'subtitle', label: '副文案', kind: 'string' },
+          { name: 'image', label: '图片地址', kind: 'string' },
+          { name: 'price', label: '价格/数字', kind: 'string' },
+          { name: 'tag', label: '角标', kind: 'string' },
+        ],
+      },
+    ],
+    events: [{ name: 'onItemClick', label: '点击卡片或按钮时(注入当前行 row)' }],
+    snippet: `<MCardGrid cols={2} actionText="选购" items={[
+  { title: '超轻智能运动手表', subtitle: '双频 GPS · 14天续航', price: '¥899', tag: '热卖' },
+  { title: '便携声学蓝牙音箱', subtitle: 'IP67 防水 · 浑厚低音', price: '¥399', tag: '新品' },
+  { title: '氮化镓极速充电器', subtitle: '65W 三口同充', price: '¥129', tag: '口碑' },
+  { title: '人体工学护颈靠枕', subtitle: '慢回弹记忆棉', price: '¥169', tag: '精选' }
 ]} />`,
   },
   {
@@ -702,4 +771,4 @@ export const MOBILE_COMPONENT_NAMES = new Set(MOBILE_COMPONENTS.map((c) => c.nam
 export const MOBILE_OVERLAY_TYPES = new Set(['MBottomSheet', 'MDialog']);
 export const MOBILE_FIELD_TYPES = new Set(['MField', 'MSheetPicker', 'MChipSelect', 'MMediaInput']);
 export const MOBILE_BOTTOM_ANCHORED_TYPES = new Set(['MTabBar', 'MBottomDock', 'MComposerBar']);
-export const UNIVERSAL_COMPONENT_NAMES = new Set(['Freeform', ...CHART_TYPES]);
+export const UNIVERSAL_COMPONENT_NAMES = new Set(['Freeform', ...CHART_TYPES, ...FIGMA_MATERIAL_NAMES]);

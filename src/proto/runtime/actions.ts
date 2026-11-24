@@ -77,7 +77,7 @@ export const ACTIONS: ActionSpec[] = [
     name: 'refresh',
     title: '刷新列表/表格',
     description: '重新加载表格或移动列表数据（回到第一页）。',
-    args: [{ name: 'table', label: '表格/列表', kind: 'nodeRef', refTypes: ['Table', 'MFeedList', 'MTaskList'] }],
+    args: [{ name: 'table', label: '表格/列表', kind: 'nodeRef', refTypes: ['Table', 'CardGrid', 'MFeedList', 'MTaskList', 'MCardGrid'] }],
   },
   {
     name: 'deleteRow',

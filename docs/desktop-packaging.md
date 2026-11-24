@@ -12,23 +12,29 @@
 | `npm run build:mac` | macOS，默认当前电脑架构 | `.dmg`、`.zip` |
 | `npm run build:mac:arm64` | macOS Apple Silicon | `.dmg`、`.zip` |
 | `npm run build:mac:x64` | macOS Intel | `.dmg`、`.zip` |
-| `npm run build:linux` | Linux x64 | `.deb`、`.AppImage`、`.tar.gz` |
+| `npm run build:linux` | Linux x64 | `.deb`、`.AppImage`、`.AppImage.zsync`、`.tar.gz` |
 | `npm run build:linux:deb` | Linux x64（Debian 架构名 `amd64`） | 仅 `.deb` 安装包 |
 | `npm run build:unpacked` | 当前系统 / 架构 | 解包应用目录，用于快速检查，不生成安装程序 |
 
-以上命令会先执行 TypeScript 检查和桌面 React 构建，再打包 Electron。所有桌面产物放在 `release/`，安装包命名为 `Alex-<版本>-<系统>-<架构>.<扩展名>`。版本来自根目录 `package.json`。
+以上命令会先执行 TypeScript 检查和桌面 React 构建，再打包 Electron。所有桌面产物放在 `release/`，AppImage 使用 `ProtoFlow_AI-<版本>-<架构>.AppImage`，其他安装包使用 `Alex-<版本>-<系统>-<架构>.<扩展名>`。版本来自根目录 `package.json`。
 
 `npm run build` 仍然只生成桌面 renderer 的 `dist/`，不生成安装包；`npm run build:viewer` 仍然只生成远程演示网站的 `dist-viewer/`。
 
 ## Alex 改名兼容（0.1.3 起）
 
-项目名称与桌面显示名称统一为 **Alex**，安装包使用 `Alex-<版本>-<系统>-<架构>`。仓库 URL 和既有服务器部署路径保持原样。
+Linux 应用菜单显示 **ProtoFlow AI**，桌面入口文件仍为 `protoflow-ai.desktop`。仓库 URL 和既有服务器部署路径保持原样。
 
-为让现有用户继续使用项目、更新配置与发布凭证，应用 ID `com.protoflow.ai`、内部 Electron 名称 `protoflow-ai`、用户数据和浏览器会话目录均保留。内部名称还关联 macOS Keychain / Linux 密钥存储，不能随显示名称直接替换；窗口、菜单、关于面板与安装包元数据使用 Alex。参见 [Electron 应用路径文档](https://www.electronjs.org/docs/latest/api/app) 与 [当前 Electron 版本的密钥存储初始化](https://github.com/electron/electron/blob/v45.1.0/shell/browser/electron_browser_main_parts.cc#L610)。
+为让现有用户继续使用项目、更新配置与发布凭证，应用 ID `com.protoflow.ai`、内部 Electron 名称 `protoflow-ai`、用户数据和浏览器会话目录均保留。内部名称还关联 macOS Keychain / Linux 密钥存储，不能随显示名称直接替换；应用窗口与关于面板沿用 Alex。参见 [Electron 应用路径文档](https://www.electronjs.org/docs/latest/api/app) 与 [当前 Electron 版本的密钥存储初始化](https://github.com/electron/electron/blob/v45.1.0/shell/browser/electron_browser_main_parts.cc#L610)。
 
 Linux 保留 Debian 包名、桌面入口 ID 与可执行文件名 `protoflow-ai`，由包管理器覆盖原安装。新文件安装到 `/opt/Alex`，包内保留旧绝对路径的兼容启动脚本，使 0.1.2 更新器安装后仍能自动重启。macOS 新包为 `Alex.app`；从旧名称首次升级时，安装后退出旧应用并打开 Alex。
 
 `.pflow` 格式、MCP 工具名、IPC 通道、浏览器存储键与服务端协议标识保持兼容。在线演示端和版本中心源码已统一名称，服务机需在发布时同步 `build:viewer` 产物；本次改名不自动切换线上版本。
+
+## AppImage 与增量更新
+
+Linux 构建机需要 `binutils`（`readelf`）和 `zsync`（`zsyncmake`）。在 macOS 上交叉打包时可用 `brew install binutils zsync` 安装工具，并将 Homebrew 的 binutils/bin 目录加入 `PATH`。AppImage 使用静态链接的 Type 2 运行时，挂载时无需系统提供 `libfuse2`。Electron 仍使用目标发行版的系统库。
+
+将 AppImage 与同名 `.zsync` 上传到同一个 GitHub Release 后，AppImageUpdate 会按架构在最新稳定版中查找更新。旧版 `Alex-*.AppImage` 缺少更新地址，用户首次迁移可使用应用内更新或手动下载。应用内更新继续使用版本中心的签名清单。
 
 ## Debian / Ubuntu 安装
 

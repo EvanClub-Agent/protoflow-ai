@@ -204,9 +204,12 @@ type mcpRequestContext struct {
 	fkIssues          []mcpFkIssue
 	axureSourceByCopy map[string]string
 	axureCopyBySource map[string]string
+	figmaSourceByCopy map[string]string
+	figmaCopyBySource map[string]string
 }
 
 var remoteAxureCopyRe = regexp.MustCompile(`^rp-optimized-([a-f0-9]{32})$`)
+var remoteFigmaCopyRe = regexp.MustCompile(`^fig-optimized-([a-z0-9_-]{4,48})$`)
 
 func verifiedRemoteAxureSourceID(copyID string, header []string) string {
 	m := remoteAxureCopyRe.FindStringSubmatch(copyID)
@@ -219,6 +222,29 @@ func verifiedRemoteAxureSourceID(copyID string, header []string) string {
 	for _, line := range header {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "// @alex-axure-source ") {
+			if trimmed != expected {
+				return ""
+			}
+			matched++
+		}
+	}
+	if matched == 1 {
+		return sourceID
+	}
+	return ""
+}
+
+func verifiedRemoteFigmaSourceID(copyID string, header []string) string {
+	m := remoteFigmaCopyRe.FindStringSubmatch(copyID)
+	if m == nil || len(header) == 0 {
+		return ""
+	}
+	sourceID := "fig-page-" + m[1]
+	expected := "// @alex-figma-source " + sourceID
+	matched := 0
+	for _, line := range header {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "// @alex-figma-source ") {
 			if trimmed != expected {
 				return ""
 			}
@@ -307,6 +333,8 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 	rc.allFKs, rc.fkIssues = extractForeignKeys(rc.snap.Tables, tableByName, tableNameCount, rc.en)
 	rc.axureSourceByCopy = make(map[string]string)
 	rc.axureCopyBySource = make(map[string]string)
+	rc.figmaSourceByCopy = make(map[string]string)
+	rc.figmaCopyBySource = make(map[string]string)
 	deprecatedByID := make(map[string]bool, len(rc.catalog))
 	for _, entry := range rc.catalog {
 		deprecatedByID[entry.PageID] = entry.Deprecated
@@ -316,6 +344,12 @@ func (rc *mcpRequestContext) ensureLoaded() error {
 			rc.axureSourceByCopy[p.PageID] = srcID
 			if !deprecatedByID[p.PageID] && validPageIDs[srcID] {
 				rc.axureCopyBySource[srcID] = p.PageID
+			}
+		}
+		if srcID := verifiedRemoteFigmaSourceID(p.PageID, p.Doc.Header); srcID != "" {
+			rc.figmaSourceByCopy[p.PageID] = srcID
+			if !deprecatedByID[p.PageID] && validPageIDs[srcID] {
+				rc.figmaCopyBySource[srcID] = p.PageID
 			}
 		}
 	}
@@ -1779,7 +1813,12 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			if srcID := rc.axureSourceByCopy[entry.PageID]; srcID != "" {
 				pageItem["axureSourcePageId"] = srcID
 			}
+			if srcID := rc.figmaSourceByCopy[entry.PageID]; srcID != "" {
+				pageItem["figmaSourcePageId"] = srcID
+			}
 			if optID := rc.axureCopyBySource[entry.PageID]; optID != "" {
+				pageItem["optimizedPageId"] = optID
+			} else if optID := rc.figmaCopyBySource[entry.PageID]; optID != "" {
 				pageItem["optimizedPageId"] = optID
 			}
 			pagesOut = append(pagesOut, pageItem)
@@ -2102,7 +2141,12 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		if srcID := rc.axureSourceByCopy[pageID]; srcID != "" {
 			pageMeta["axureSourcePageId"] = srcID
 		}
+		if srcID := rc.figmaSourceByCopy[pageID]; srcID != "" {
+			pageMeta["figmaSourcePageId"] = srcID
+		}
 		if optID := rc.axureCopyBySource[pageID]; optID != "" {
+			pageMeta["optimizedPageId"] = optID
+		} else if optID := rc.figmaCopyBySource[pageID]; optID != "" {
 			pageMeta["optimizedPageId"] = optID
 		}
 		res := gin.H{
@@ -2294,7 +2338,12 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 			if srcID := rc.axureSourceByCopy[entry.PageID]; srcID != "" {
 				taskItem["axureSourcePageId"] = srcID
 			}
+			if srcID := rc.figmaSourceByCopy[entry.PageID]; srcID != "" {
+				taskItem["figmaSourcePageId"] = srcID
+			}
 			if optID := rc.axureCopyBySource[entry.PageID]; optID != "" {
+				taskItem["supersededByOptimizedPageId"] = optID
+			} else if optID := rc.figmaCopyBySource[entry.PageID]; optID != "" {
 				taskItem["supersededByOptimizedPageId"] = optID
 			}
 			pageTasks = append(pageTasks, taskItem)

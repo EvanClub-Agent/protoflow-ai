@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, powerSaveBlocker, powerMonitor, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, powerSaveBlocker, powerMonitor, Notification, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +14,7 @@ require('./app-identity.cjs').initializeApplicationIdentity(app);
 let mainWindow = null;
 let authoringBridge = null;
 let managedViteProcess = null;
+let activeDevServerUrl = null;
 let publishingClient;
 let desktopUpdater;
 let diagnostics;
@@ -206,30 +207,80 @@ function isPortListening(port, host = '127.0.0.1') {
   });
 }
 
-async function ensureDevServerReady(port = 5173) {
-  if (await isPortListening(port, '127.0.0.1')) return true;
-  if (await isPortListening(port, 'localhost')) return true;
+async function probeAlexDevServer(url) {
+  try {
+    const res = await require('electron').net.fetch(url, {
+      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return false;
+    const html = await res.text();
+    return html.includes('<meta name="protoflow-app" content="alex-protoflow-ai"');
+  } catch {
+    return false;
+  }
+}
 
-  // Auto-spawn Vite dev server when running `npm run electron:start` standalone
+async function resolveAlexDevServerUrl(preferredPort = 5173) {
+  if (process.env.VITE_DEV_SERVER_URL) {
+    const configured = process.env.VITE_DEV_SERVER_URL;
+    if (!await probeAlexDevServer(configured)) {
+      throw new Error(tr('VITE_DEV_SERVER_URL 未指向可用的 Alex 编辑器', 'VITE_DEV_SERVER_URL does not serve an available Alex editor'));
+    }
+    activeDevServerUrl = configured;
+    return configured;
+  }
+  if (activeDevServerUrl && await probeAlexDevServer(activeDevServerUrl)) {
+    return activeDevServerUrl;
+  }
+
+  // Keep existing localhost-scoped editor settings when that origin serves Alex.
+  const preferredUrl = `http://localhost:${preferredPort}`;
+  if (await probeAlexDevServer(preferredUrl)) {
+    activeDevServerUrl = preferredUrl;
+    return preferredUrl;
+  }
+
+  // Check if an existing Vite server for THIS project is already running on 5173..5183
+  let freePort = null;
+  for (let p = preferredPort; p <= preferredPort + 10; p++) {
+    const busy127 = await isPortListening(p, '127.0.0.1');
+    const busyLocal = !busy127 && await isPortListening(p, 'localhost');
+    if (busy127 || busyLocal) {
+      const candidate = `http://${busy127 ? '127.0.0.1' : 'localhost'}:${p}`;
+      if (await probeAlexDevServer(candidate)) {
+        activeDevServerUrl = candidate;
+        return candidate;
+      }
+      // Port is occupied by another unrelated project (e.g. another Vite app on 5173) — skip it!
+    } else if (freePort === null) {
+      freePort = p;
+    }
+  }
+
+  const targetPort = freePort ?? preferredPort + 11;
   const projectRoot = path.resolve(__dirname, '..');
   const viteBin = path.join(projectRoot, 'node_modules', '.bin', 'vite');
   if (fs.existsSync(viteBin) && !managedViteProcess) {
-    managedViteProcess = spawn(viteBin, ['--port', String(port)], {
+    managedViteProcess = spawn(viteBin, ['--port', String(targetPort), '--strictPort', '--host', '127.0.0.1'], {
       cwd: projectRoot,
       stdio: 'ignore',
       env: process.env,
     });
     managedViteProcess.on('exit', () => {
       managedViteProcess = null;
+      activeDevServerUrl = null;
     });
   }
 
-  for (let i = 0; i < 30; i++) {
+  const spawnedUrl = `http://127.0.0.1:${targetPort}`;
+  for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 250));
-    if (await isPortListening(port, '127.0.0.1')) return true;
-    if (await isPortListening(port, 'localhost')) return true;
+    if (await probeAlexDevServer(spawnedUrl)) {
+      activeDevServerUrl = targetPort === preferredPort && await probeAlexDevServer(preferredUrl) ? preferredUrl : spawnedUrl;
+      return activeDevServerUrl;
+    }
   }
-  return false;
+  return null;
 }
 
 async function createMainWindow() {
@@ -298,21 +349,21 @@ async function createMainWindow() {
     return { action: 'deny' };
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
   const distIndex = path.join(__dirname, '../dist/index.html');
-
-  if (!app.isPackaged) {
-    const devReady = await ensureDevServerReady(5173);
-    if (devReady) {
-      await mainWindow.loadURL(devServerUrl);
-      return;
+  try {
+    if (!app.isPackaged) {
+      const resolvedDevUrl = await resolveAlexDevServerUrl(5173);
+      if (win.isDestroyed()) return;
+      if (resolvedDevUrl) {
+        await win.loadURL(resolvedDevUrl);
+        return;
+      }
     }
-  }
-
-  if (fs.existsSync(distIndex)) {
-    await mainWindow.loadFile(distIndex);
-  } else {
-    await mainWindow.loadURL(devServerUrl);
+    await win.loadFile(distIndex);
+  } catch (error) {
+    if (win.isDestroyed()) return;
+    dialog.showErrorBox(tr('Alex 启动失败', 'Alex could not start'), error.message);
+    win.destroy();
   }
 }
 
@@ -396,8 +447,7 @@ function assertAuthoringRenderer(event) {
   if (!isMainRendererEvent(event)) throw new Error('Unauthorized desktop authoring caller');
   const page = new URL(event.senderFrame.url);
   if (page.protocol === 'file:' && path.resolve(require('node:url').fileURLToPath(page)) === path.resolve(__dirname, '../dist/index.html')) return;
-  const dev = new URL(process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173');
-  if (!app.isPackaged && page.origin === dev.origin) return;
+  if (!app.isPackaged && activeDevServerUrl && page.origin === new URL(activeDevServerUrl).origin) return;
   throw new Error('Desktop authoring requires the Alex editor');
 }
 handleIpc('pflow:mcp-live-open', (event, input) => {
@@ -514,6 +564,38 @@ handleIpc('pflow:set-locale', async (event, locale) => {
     await syncHermesDashboardWindowLocale(hermesManagementWindow, next);
   }
   return next;
+});
+
+const { createFigmaBridge } = require('./figma-bridge.cjs');
+let figmaBridgeInstance = null;
+function figmaBridge() {
+  if (!figmaBridgeInstance) {
+    figmaBridgeInstance = createFigmaBridge({
+      dataDir: app.getPath('userData'),
+      safeStorage,
+    });
+  }
+  return figmaBridgeInstance;
+}
+
+handleIpc('pflow:figma-get-token', async (event) => {
+  if (!isMainRendererEvent(event)) return '';
+  return figmaBridge().getToken();
+});
+
+handleIpc('pflow:figma-set-token', async (event, rawToken) => {
+  if (!isMainRendererEvent(event)) return { saved: false, persisted: false };
+  return figmaBridge().setToken(rawToken);
+});
+
+handleIpc('pflow:figma-fetch', async (event, input) => {
+  if (!isMainRendererEvent(event)) return { ok: false, status: 403, error: 'Unauthorized IPC caller' };
+  return figmaBridge().fetchJson(input);
+});
+
+handleIpc('pflow:figma-fetch-image', async (event, input) => {
+  if (!isMainRendererEvent(event)) return { ok: false, error: 'Unauthorized IPC caller' };
+  return figmaBridge().fetchImage(input);
 });
 
 // Native OS theme synchronization

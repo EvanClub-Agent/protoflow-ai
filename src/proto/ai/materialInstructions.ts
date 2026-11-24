@@ -8,7 +8,7 @@ export const DESKTOP_MATERIAL_RULES = `桌面端页面（<Page>）专属规范�
 - 桌面端普通表、树形表、行内展开详情、合并行列和可编辑单元格都优先使用 Table 物料。遇到这些需求，读取 protoflow_get_implementation_guide 的 list 场景和 protoflow_get_contracts({componentNames:["Table"]}) 的 examples 与列契约。绑定业务表时，通过 protoflow_get_db_table 和 protoflow_get_table_rows 核对字段、原始值和行 ID，再配置层级、合并区域或编辑器。严禁混用 M* 移动端物料。
 - 桌面端栅格布局分两层：Row 内 Col.span 决定列宽（每行共 24 格），列内组件 width="full" 仅填满本列。没有明确留白需求时，同一行各列 span 合计应为 24，例如左右各 12 或 16+8；不能只设置图表 width="full" 就声称整行已铺满。Card.cols/Form.cols 会影响未显式设置 width 的子组件占宽。Modal/Drawer 声明在 Page 根部，width 为数字像素；普通组件的 width 是画布占宽枚举。表单字段绑定显式 name；Form 的 fields 与子字段组件不能同时使用。
 - 桌面端查询区优先使用 QueryForm.fields，通常 cols={3} 或 cols={4}、layout="horizontal"、size="small" 或 "middle"、defaultExpanded={false}。普通查询控件 controlMaxWidth 默认 240px，日期范围 rangeMaxWidth 默认 320px；除非用户明确要求宽大输入，不要增大上限或使用 size="large"。width="full" 只表示查询区容器占满一行，不代表其中的控件也要拉满。保留所有查询字段，更多条件通过展开显示；不要靠删除字段变紧凑。
-- Axure 兼容物料（AxureCanvas、PositionedGroup、StaticTable、DynamicPanel、OutlineTree 等）仅用于保留已导入的 RP 页面，新建业务页面或将 RP 区块重塑为标准物料时必须使用 Table、Form、QueryForm、Tabs 等高语义物料。`;
+- Axure 兼容物料（AxureCanvas、PositionedGroup、StaticTable、DynamicPanel、OutlineTree 等）与 Figma 还原物料（FigmaCanvas、FigmaFrame、FigmaText、FigmaVector、FigmaImage）仅用于保留已导入的外部设计稿源页面；新建业务页面或将导入页重塑为标准物料时必须使用 Table、CardGrid、Form、QueryForm、NavMenu、Tabs 等高语义物料（移动端使用 MobilePage 及 M* 物料）。`;
 
 export const MOBILE_MATERIAL_RULES = `移动端页面（<MobilePage>）专属规范：
 - 移动端页面根组件必须使用 MobilePage，严禁使用桌面端 Table、QueryForm、Card、Row/Col、Modal、Drawer。开始实现前读取 protoflow_get_implementation_guide({scenarioIds:["mobile"]}) 及对应 M* 组件契约。

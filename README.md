@@ -2,7 +2,7 @@
 
 <img src="./public/logo.svg" width="92" height="92" alt="ProtoFlow AI Logo" />
 
-# ProtoFlow AI（原名 Alex）
+# ProtoFlow AI
 
 ### 开源 AI 原型设计工具 · 把需求做成能跑起来的业务原型
 
@@ -137,7 +137,7 @@ flowchart TB
 
 ### 方式 A：下载安装包或本地源码启动设计器（免登录开箱即用）
 
-- **直接安装桌面端**：前往 [**ProtoFlow AI 官网下载页**](https://alex.xclubai.com/#download) 或 [**GitHub Releases**](https://github.com/EvanClub-Agent/protoflow-ai/releases) 下载对应系统的安装包（当前安装包文件沿用 `Alex-*` 命名，支持 macOS Apple Silicon / Intel `.dmg`、Windows `.exe`、Linux `.deb` / `.AppImage`）；或直接打开 [**浏览器在线沙盒**](https://alex.xclubai.com/demo/) 免下载体验 CRM 样板。
+- **直接安装桌面端**：前往 [**ProtoFlow AI 官网下载页**](https://alex.xclubai.com/#download) 或 [**GitHub Releases**](https://github.com/EvanClub-Agent/protoflow-ai/releases) 下载对应系统的安装包（新版 AppImage 使用 `ProtoFlow_AI-*` 命名，其他安装包沿用 `Alex-*`，支持 macOS Apple Silicon / Intel `.dmg`、Windows `.exe`、Linux `.deb` / `.AppImage`）；或直接打开 [**浏览器在线沙盒**](https://alex.xclubai.com/demo/) 免下载体验 CRM 样板。
 - **从源码极速运行**（仅需 **Node.js 22+**，无需安装 Go、无需数据库、无需预先配 AI）：
 
 ```bash

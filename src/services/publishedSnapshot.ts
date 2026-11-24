@@ -172,7 +172,7 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
         const issues = tableBindingErrors(node.props, value.tables as DBTableSchema[], value.tableRows);
         if (issues.length) throw new Error(tr(`表格 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Table ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }
-      if (node.type === 'MTaskList' || node.type === 'MFeedList') {
+      if (node.type === 'MTaskList' || node.type === 'MFeedList' || node.type === 'MCardGrid' || node.type === 'CardGrid') {
         const issues = sourceForeignKeyErrors(node.props, value.tables as DBTableSchema[]);
         if (issues.length) throw new Error(tr(`移动列表 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Mobile list ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }

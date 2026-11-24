@@ -49,7 +49,7 @@ export function pageContractErrors(
       }
     }
     if (n.type === 'Table') errors.push(...tableBindingErrors(n.props, tables, data?.tableRows).map(message => `${n.pfId}:${message}`));
-    if (n.type === 'MTaskList' || n.type === 'MFeedList') errors.push(...sourceForeignKeyErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
+    if (n.type === 'MTaskList' || n.type === 'MFeedList' || n.type === 'MCardGrid' || n.type === 'CardGrid') errors.push(...sourceForeignKeyErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
     if (n.type === 'Freeform') errors.push(...freeformBindingErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
     if (
       typeof n.props.table === "string" &&
@@ -83,12 +83,12 @@ export function pageContractErrors(
           field(f.name);
       });
     if (
-      (n.type === "MFeedList" || n.type === "MTaskList" || n.type === "MSheetPicker") &&
+      (n.type === "MFeedList" || n.type === "MCardGrid" || n.type === "CardGrid" || n.type === "MTaskList" || n.type === "MSheetPicker") &&
       typeof n.props.table === "string"
     ) {
       const bound = tables.find((t) => t.id === n.props.table);
       if (bound) {
-        for (const key of ["titleField", "subtitleField", "priceField", "tagField", "statusField", "labelField", "valueField"]) {
+        for (const key of ["titleField", "subtitleField", "imageField", "priceField", "tagField", "statusField", "labelField", "valueField"]) {
           const val = n.props[key];
           if (typeof val === "string" && val && !bound.columns.some((col) => col.name === val)) {
             errors.push(`${n.pfId}:未知字段 ${bound.id}.${val}`);
@@ -112,7 +112,7 @@ export function pageContractErrors(
       const targetNode = nodesByPfId.get(n.props.target);
       if (
         targetNode &&
-        (targetNode.type === "MFeedList" || targetNode.type === "MTaskList") &&
+        (targetNode.type === "MFeedList" || targetNode.type === "MTaskList" || targetNode.type === "MCardGrid") &&
         typeof targetNode.props.table === "string"
       ) {
         const bound = tables.find((t) => t.id === targetNode.props.table);

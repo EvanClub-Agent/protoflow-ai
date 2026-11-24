@@ -163,6 +163,31 @@ function treeBranches(records: Row[], key: string, parent: string) {
   return { roots, ordered };
 }
 
+/**
+ * Shared exact-match static filter rule for both Table and CardGrid:
+ * - Explicit `null` (e.g. root foreign key `parent_id: null`) matches ONLY records that own the field with value `null`,
+ *   never records where the field is missing or `undefined`.
+ * - Non-null scalars (`string`, `number`, `boolean`, including `""`) match ONLY records that own a non-null value
+ *   with exact stringified equality.
+ */
+export function matchesStaticRowFilter(row: Row, staticFilter: unknown): boolean {
+  if (!staticFilter || typeof staticFilter !== 'object' || Array.isArray(staticFilter)) return true;
+  for (const [k, v] of Object.entries(staticFilter as Record<string, unknown>)) {
+    if (v === undefined || Array.isArray(v)) continue;
+    if (!Object.prototype.hasOwnProperty.call(row, k)) return false;
+    const cell = row[k];
+    if (cell === undefined) return false;
+    if (v === null) {
+      if (cell !== null) return false;
+      continue;
+    }
+    if (cell === null || String(cell) !== String(v)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function prepareTableRows(records: Row[], props: Record<string, unknown>, query: Record<string, unknown>, sort: TableSort | null) {
   const seen = new Set<string>();
   for (const row of records) {
@@ -178,8 +203,7 @@ export function prepareTableRows(records: Row[], props: Record<string, unknown>,
   const matches = (r: Row) => conditions.every(([k, v]) => k === '__keyword'
     ? Object.values(r).some(x => String(x ?? '').includes(String(v)))
     : String(r[k] ?? '').includes(String(v)));
-  const fixed = Object.entries(props.filter ?? {});
-  const allowed = (r: Row) => fixed.every(([k, v]) => String(r[k] ?? '') === String(v));
+  const allowed = (r: Row) => matchesStaticRowFilter(r, props.filter);
   const forcedOpen = new Set<string>();
   if (props.rowMode !== 'tree') return { roots: sorted.filter(r => allowed(r) && matches(r)).map(row => ({ row, children: [] } as Branch)), forcedOpen };
   const nodeKey = props.treeKeyField === undefined ? 'id' : props.treeKeyField;

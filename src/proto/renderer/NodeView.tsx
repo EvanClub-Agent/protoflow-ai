@@ -1,4 +1,5 @@
 import { isAxureMaterial } from '../axure/metadata';
+import { isFigmaMaterial } from '../figma/metadata';
 import React, { createContext, useContext, useLayoutEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, BookmarkPlus, Copy, CornerLeftUp, Trash2 } from 'lucide-react';
 import type { PropValue, ProtoNode } from '../types';
@@ -237,7 +238,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
 
   // Freeform source/CSS/data and event placeholders are opaque values. They
   // must survive verbatim until the isolated runtime or event bridge reads them.
-  const resolvedProps = isAxureMaterial(node.type) || literalContent || node.type === 'Freeform' || isChartType(node.type) ? { ...node.props } : resolveProps(node.props, scope, rt.vars);
+  const resolvedProps = isAxureMaterial(node.type) || isFigmaMaterial(node.type) || literalContent || node.type === 'Freeform' || isChartType(node.type) ? { ...node.props } : resolveProps(node.props, scope, rt.vars);
   // When placed inside Toolbar / horizontal Space, or when width === 'auto', force compact inline mode on FieldControl
   if ((inFlexRow || rawWidth === 'auto') && FIELD_CONTROL_TYPES.has(node.type)) {
     resolvedProps.width = 'auto';

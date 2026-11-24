@@ -16,7 +16,7 @@ interface Scenario {
 export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
   {
     id: 'list', title: '查询与业务表格', when: '普通列表、树形表、展开行详情、合并行或列、单元格编辑，以及筛选、排序、分页和行操作。',
-    components: ['QueryForm', 'SearchInput', 'Table', 'Toolbar', 'Button', 'Modal', 'Drawer', 'Pagination'],
+    components: ['QueryForm', 'SearchInput', 'Table', 'CardGrid', 'Toolbar', 'Button', 'Dropdown', 'Modal', 'Drawer', 'Pagination'],
     actions: ['openModal', 'openDrawer', 'confirm', 'deleteRow', 'refresh'],
     implementation: [
       '普通表省略 rowMode，Table.table 填工程表 ID，columns[].dataIndex 填该表的字段名。QueryForm.target / SearchInput.target 指向 Table 的 pfId。表格自带分页。',
@@ -72,7 +72,7 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
   },
   {
     id: 'layout', title: '页面结构与视觉组织', when: '调整层级、对齐、间距、密度、导航和区域结构。',
-    components: ['Page', 'PageHeader', 'Breadcrumb', 'Card', 'Row', 'Col', 'Flex', 'Space', 'Divider', 'Tabs', 'Tab', 'Collapse', 'CollapsePanel', 'Toolbar'],
+    components: ['Page', 'PageHeader', 'NavMenu', 'Breadcrumb', 'Card', 'Carousel', 'Icon', 'Row', 'Col', 'Flex', 'Space', 'Divider', 'Tabs', 'Tab', 'Collapse', 'CollapsePanel', 'Toolbar'],
     actions: [],
     implementation: ['先用标准布局组合；调整间距、分组、密度不需要自由组件。保留已有业务组件、绑定和 pfId。', '从已有复合块复用时检查依赖与参数；保留项目视觉习惯，局部修改不重建整页。'],
     acceptance: ['信息层级清楚；内容宽度适配；表单和列表不被不必要地拆进多个自由组件。'],
@@ -80,7 +80,7 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
   },
   {
     id: 'mobile', title: '现代移动端界面（Gemini 现代风 · C端/B端通用）', when: '移动端 App、小程序、消费级内容/电商流、移动审批待办、现场扫码录入或移动 AI 助手页面。',
-    components: ['MobilePage', 'MTopBar', 'MTabBar', 'MPillTabs', 'MTab', 'MSearchPill', 'MSurface', 'MBentoGrid', 'MScrollRow', 'MHeroHeader', 'MFeedList', 'MTaskList', 'MListGroup', 'MListItem', 'MStatCard', 'MChatStream', 'MComposerBar', 'MForm', 'MField', 'MSheetPicker', 'MChipSelect', 'MMediaInput', 'MButton', 'MBottomDock', 'MBottomSheet', 'MDialog', 'Freeform'],
+    components: ['MobilePage', 'MTopBar', 'MTabBar', 'MPillTabs', 'MTab', 'MSearchPill', 'MSurface', 'MBentoGrid', 'MScrollRow', 'MBannerCarousel', 'MHeroHeader', 'MFeedList', 'MCardGrid', 'MTaskList', 'MListGroup', 'MListItem', 'MStatCard', 'MChatStream', 'MComposerBar', 'MForm', 'MField', 'MSheetPicker', 'MChipSelect', 'MMediaInput', 'MButton', 'MBottomDock', 'MBottomSheet', 'MDialog', 'Freeform'],
     actions: ['openDrawer', 'openModal', 'closeOverlay', 'submitForm', 'resetForm', 'updateRow', 'deleteRow', 'navigate', 'switchTab', 'toast'],
     implementation: [
       '移动端页面根组件必须使用 MobilePage，严禁混用 PC 管理端组件（如 Table、QueryForm、Card、Modal、Drawer）。',
@@ -99,6 +99,18 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     implementation: ['优化副本默认以标准流式 <Page> 为目标：先调用 protoflow_inspect_axure_project 盘点，再用 protoflow_inspect_page(view="axure") 核对控件、nearbyLabel、grid.columnActions 行动作一致性与 importNotes。', '调用 protoflow_reshape_axure_page 传入源页 rp-page-... ID（由宿主确定副本 ID 与来源标记）：将平铺的查询标签/输入框/按钮合并为 QueryForm（target 指向 Table）；将 StaticTable 转为 Table 时，coverage.converted 须直接指向 Table 的 pfId 并提交 tableId 与逐列 columnMappings（headerPfId → field/columnId、index、checkbox、radio、actions 或 pending），确保 Table.columns 与已确认映射一致且不颠倒字段；仅在 grid.columnActions 显示逐行一致且无需额外确认时迁入 Table.rowActions，并保持源单元格动作链、目标页及当前行参数（如 navigate(目标页ID,"row") 或 openDrawer），单行样例里的“删除”等不得推广到全表。', 'coverage.retained 仅用于保持原物料类型、内容、面板状态和交互不变的区块（仅允许流式排版调整坐标）；发生物料或语义变化的区块、侧栏 OutlineTree、隐藏 DynamicPanel、未支持占位或条件点击警告不得静默删除或虚假声明为保留，须据实列为 converted 或 pending。局部原位微调仍可用 protoflow_bind_axure_table 或 protoflow_optimize_axure_block。'],
     acceptance: ['QueryForm 能按字段实际筛选目标 Table；行操作“查看”从被点击的具体行打开正确目标记录；确认单完整展示已转换、保留与待确认项。'],
     limits: ['未支持元件和条件/多分支点击在导入时仅保留占位或说明，重塑时须显式列为待确认。'],
+  },
+  {
+    id: 'figma', title: '编辑与重塑导入的 Figma 设计画板', when: '从 Figma (.fig 或 REST API) 导入后，将画板重塑为标准桌面/移动流式业务页并建立 ER 数据表。',
+    components: ['Page', 'PageHeader', 'NavMenu', 'Card', 'Carousel', 'Toolbar', 'QueryForm', 'Table', 'CardGrid', 'Form', 'Descriptions', 'Dropdown', 'Modal', 'Drawer', 'MobilePage', 'MTopBar', 'MBannerCarousel', 'MSearchPill', 'MPillTabs', 'MCardGrid', 'MFeedList', 'MTaskList', 'MTabBar', 'MBottomSheet', 'FigmaCanvas', 'FigmaFrame', 'FigmaText', 'FigmaVector', 'FigmaImage'],
+    actions: ['navigate', 'openDrawer', 'openModal', 'submitForm', 'updateRow', 'deleteRow', 'switchTab'],
+    implementation: [
+      '先调用 protoflow_get_project 读取完整表目录，再用 protoflow_inspect_figma_project 和 protoflow_inspect_page(view="figma") 查看源画板的 platform（desktop 或 mobile）、Auto Layout repeatingGroups（重复行/卡片组）、semanticBlocks 与跨页跳转。',
+      '调用 protoflow_reshape_figma_page 传入源画板 fig-page-... ID（宿主自动生成同目录 fig-optimized-... 副本并保留原始 Figma 画板不变）：桌面画板必须重塑为 <Page> 搭配 NavMenu、PageHeader、QueryForm、Table / CardGrid、Form 等标准组件；移动画板必须重塑为 <MobilePage> 搭配 MTopBar、MBannerCarousel、MCardGrid / MFeedList / MTaskList、MTabBar 等移动物料。',
+      '在 coverage.converted 中准确列出每组源图层 sourcePfIds 对应的目标标准组件 targetPfId（绑定数据表时附上 tableId），未确定或暂不转换的区域在 coverage.pending 中说明原因，不得静默丢弃业务模块。',
+    ],
+    acceptance: ['重塑副本符合对应端型的物料契约且不含 FigmaCanvas/FigmaFrame 等还原层物料；绑表列表与筛选联动一致；跨页跳转自动指向已生成的标准版页面。'],
+    limits: ['纯装饰性复杂矢量插画或未绑定语义的散落图形可在 coverage.pending 中标注说明或精简为标准 Icon / Banner。'],
   },
   {
     id: 'custom', title: '独特展示与局部交互', when: '座位图、拖拽看板、日历排程、关系图、特殊动效等标准组合难以表达的区域。',

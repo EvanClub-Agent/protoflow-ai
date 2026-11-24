@@ -2,6 +2,8 @@ export { axureCatalog, axureScopePages } from '../axure/task';
 export { checkRpTableExtension } from '../axure/schema';
 export { inspectAxureProject, bindAxureTable } from '../axure/migration';
 export { inspectAxurePage, optimizeAxureBlock, reshapeAxurePage, retargetOptimizedPageSource, evaluateAxureMigrationProgress } from '../axure/optimization';
+export { figmaCatalog, figmaScopePages } from '../figma/task';
+export { inspectFigmaProject, inspectFigmaPage, reshapeFigmaPage, retargetFigmaOptimizedPageSource, isFigmaOptimizedCopyId } from '../figma/optimization';
 export * from './materialContract';
 export { editPageBlock } from '../dsl/editBlock';
 export { pageContractErrors } from '../ai/pageContract';

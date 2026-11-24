@@ -1,4 +1,5 @@
 import { appearanceSpecs, frameSpecs, isAxureMaterial, positionedNativeTypes } from '../axure/metadata';
+import { isFigmaMaterial } from '../figma/metadata';
 import {
   COMPONENTS,
   DESKTOP_OVERLAY_TYPES,
@@ -48,9 +49,10 @@ const controlWidth: PropSpec = { name: 'controlWidth', label: '行内控件宽�
 
 export function materialPropSpecs(component: ComponentMeta): PropSpec[] {
   const isMobile = MOBILE_COMPONENT_NAMES.has(component.name);
+  const isFigma = isFigmaMaterial(component.name);
   return [...component.props,
     ...(positionedNativeTypes.has(component.name) ? [{ name: 'layoutFrame', label: '自由定位与外观', kind: 'json' as const }] : []),
-    ...(PAGE_ROOT_TYPES.has(component.name) || isMobile || OVERLAY_TYPES.has(component.name) ? [] : COMMON_LAYOUT_PROPS.filter((p) => !component.props.some((own) => own.name === p.name))),
+    ...(PAGE_ROOT_TYPES.has(component.name) || isMobile || isFigma || OVERLAY_TYPES.has(component.name) ? [] : COMMON_LAYOUT_PROPS.filter((p) => !component.props.some((own) => own.name === p.name))),
     ...(FIELD_TYPES.has(component.name) && !isMobile ? [controlWidth] : []),
   ];
 }
@@ -101,6 +103,24 @@ export function materialPropSchema(component: ComponentMeta, prop: PropSpec): Va
     return object(fields);
   }
   if (isAxureMaterial(component.name) && prop.name === 'runs') return { type: 'array', items: object({ text: string, color: string, fontSize: number, fontWeight: number, fontFamily: string }, ['text']) };
+  if (component.name === 'FigmaText' && prop.name === 'runs') {
+    return {
+      type: 'array',
+      items: object(
+        { text: string, color: string, fontSize: number, fontWeight: number, fontFamily: string, italic: boolean, underline: boolean, lineThrough: boolean },
+        ['text'],
+      ),
+    };
+  }
+  if (component.name === 'FigmaVector' && prop.name === 'paths') {
+    return {
+      type: 'array',
+      items: object(
+        { d: string, fill: string, stroke: string, strokeWidth: number, fillRule: enumeration('nonzero', 'evenodd') },
+        ['d'],
+      ),
+    };
+  }
   if (component.name === 'StaticTable' && ['columnWidths', 'rowHeights'].includes(prop.name)) return { type: 'array', items: { type: 'number', minimum: 0 } };
   if (isAxureMaterial(component.name) && prop.name === 'selectedOptions') return { type: 'array', items: nonnegativeInteger };
   if (component.name === 'Table' && prop.name === 'cellMerges') {
@@ -116,7 +136,8 @@ export function materialPropSchema(component: ComponentMeta, prop: PropSpec): Va
   if (prop.name === 'fields' && ['Form', 'QueryForm'].includes(component.name)) return fieldListSchema(component.name);
   if (prop.name === 'value' && component.name === 'Statistic') return optionValue;
   if (prop.name === 'span') return { ...positiveInteger, maximum: component.name === 'Col' ? 24 : 4 };
-  if (prop.name === 'size' && component.name === 'Avatar') return positiveInteger;
+  if (prop.name === 'size' && (component.name === 'Avatar' || component.name === 'Icon')) return positiveInteger;
+  if (prop.name === 'height' && (component.name === 'Carousel' || component.name === 'MBannerCarousel')) return { type: 'number', integer: true, minimum: 100, maximum: 640 };
   if (prop.name === 'width' && OVERLAY_TYPES.has(component.name)) return positiveInteger;
   if (prop.name === 'count' && component.name === 'Rate') return positiveInteger;
   if (prop.name === 'options' || (component.name === 'Table' && prop.name === 'editorOptions')) {

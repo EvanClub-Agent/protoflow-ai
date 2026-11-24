@@ -6,6 +6,7 @@ import { flushProjectChanges, loadProjectFromBinaryPayload } from '../services/p
 import { createAxureProject } from '../services/axureProject';
 import { encodePflowBinary } from '../utils/pflowBinaryCodec';
 import { useI18n, tr as syncTr } from '../i18n';
+import { AxureBrandLogo } from './DesignToolLogos';
 
 interface ImportBridge {
   isElectron?: boolean;
@@ -73,9 +74,14 @@ function ImportDialog({ files, close }: { files: File[]; close: () => void }) {
   const warningPages = project ? project.report.filter(p => p.warnings.length > 0).length : 0;
 
   return <dialog ref={dialog} aria-labelledby="rp-import-title" onCancel={e => { e.preventDefault(); if (!busy.current) close(); }}
-    className="m-auto w-[520px] max-w-[94vw] max-h-[85vh] overscroll-contain rounded-2xl border border-slate-200 bg-white p-5 text-slate-800 shadow-xl backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-slate-900/40">
-    <h2 id="rp-import-title" className="text-base font-semibold">{tr('导入 Axure 原型', 'Import Axure Prototype')}</h2>
-    <p className="mt-1 break-all text-xs text-slate-500">{files.map(f => f.name).join(tr('、', ', '))}</p>
+    className="m-auto w-[540px] max-w-[94vw] max-h-[85vh] overscroll-contain rounded-2xl border border-slate-200 bg-white p-5 text-slate-800 shadow-xl backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-slate-900/40">
+    <div className="flex items-center gap-3">
+      <AxureBrandLogo className="w-9 h-9" />
+      <div className="min-w-0">
+        <h2 id="rp-import-title" className="text-base font-bold text-slate-900">{tr('导入 Axure RP 原型', 'Import Axure RP Prototype')}</h2>
+        <p className="mt-0.5 truncate text-xs text-slate-500">{files.map(f => f.name).join(tr('、', ', '))}</p>
+      </div>
+    </div>
     {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{td(error)}</p>}
     {!project && !error && <p role="status" className="mt-4 text-sm">{tr('正在本机解析 RP 文件…', 'Parsing .rp file locally…')}</p>}
     {project && <div className="my-4 space-y-2 text-sm tabular-nums">

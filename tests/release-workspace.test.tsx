@@ -20,6 +20,8 @@ test('release headings use version identity, reject stale generated titles, and 
   assert.equal(assetVersionIssue('Alex-0.0.6-linux-amd64.deb','0.0.6'),null);
   assert.equal(assetVersionIssue('Alex-0.0.6-beta.1-mac-arm64.dmg','0.0.6-beta.1'),null);
   assert.equal(assetVersionIssue('manual-installer.deb','0.0.6'),null);
+  assert.ok(assetVersionIssue('ProtoFlow_AI-0.0.7-x86_64.AppImage', '0.0.8'));
+  assert.equal(assetVersionIssue('ProtoFlow_AI-0.0.8-beta.1-aarch64.AppImage', '0.0.8-beta.1'), null);
 });
 
 test('platform readiness supports partial releases and distinguishes draft, missing and unapproved packages',()=>{
