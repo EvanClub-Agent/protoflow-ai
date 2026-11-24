@@ -1,7 +1,7 @@
 {
   "name": "alex",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "license": "Apache-2.0",
   "description": "Alex (ProtoFlow AI) — AI 原型设计、ER 数据建模与多端协同工作台",
   "author": {

@@ -2,6 +2,27 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.8] - 2026-11-24
+
+### Added
+
+- **Native Dual-Channel Figma Import (`.fig` Offline Archive & Figma REST API)**:
+  - **100% Offline `.fig` Binary Decoder**: In-app Web Worker unpacks Zstandard/Deflate archives (`fzstd` / `fflate`) and decodes Figma Kiwi binary schemas locally with zero account or cloud upload required, unpacking only the image assets referenced by user-selected frames.
+  - **Figma Link + OS Keychain PAT Sync**: Fetches full files or scoped `?node-id=...` frame/section/leaf-node links via the Figma REST API, encrypts Personal Access Tokens via Electron `safeStorage` (serialized against concurrent clear/save operations), validates redirect hops & IPv4/IPv6 byte ranges against SSRF, and embeds referenced images as Data URIs so `.pflow` projects never break when Figma's 14-day S3 URLs expire.
+  - **Smart Frame Tree Picker & Design Import Hub**: Auto-detects **Desktop (`<Page>`)**, **Mobile (`<MobilePage>`)**, or **Hybrid** multi-platform workspaces from frame dimensions, auto-skips Design System / Component / Icon sheets by default, reports omitted image counts and 20 MiB UTF-8 publish snapshot warnings transparently, and adds a dedicated **Import Designs (Figma · Axure RP)** hub to the Welcome Launcher.
+- **Dual-Layer Material Expansion & Scoped AI Figma Reshaping**:
+  - **Layer-1 High-Fidelity Primitives**: Added `FigmaCanvas`, `FigmaFrame` (Flexbox Auto Layout direction, gap, padding, `FILL`/`HUG` sizing, gradients, radii, shadows, backdrop blur), `FigmaText` (multi-run rich text), `FigmaVector` (`commandsBlob` SVG path decoder), and `FigmaImage`.
+  - **Layer-2 Stateful Business Materials**: Added desktop `NavMenu`, `CardGrid`, `Dropdown`, `Carousel`, `Icon` and mobile `MBannerCarousel`, `MCardGrid` bound to shared physical ER tables (`DBTableSchema`) with unified `matchesStaticRowFilter` parity across `Table` and `CardGrid`.
+  - **On-Demand Scoped AI Reshaping & MCP Lineage**: Added `protoflow_inspect_figma_project`, `inspect_page(view="figma")`, and `protoflow_reshape_figma_page` with strict frame/folder/project scope enforcement across follow-up clarifications, plus `figmaSourcePageId` / `optimizedPageId` lineage exposure in `@protoflow-ai/mcp` and the Go HTTP Spec MCP server.
+
+### Fixed & Improved
+
+- **Portable Linux `ProtoFlow_AI-*` AppImage Packaging & Dev Port Identity Guard**:
+  - Updated Linux AppImage artifact naming (`ProtoFlow_AI-<version>-x86_64.AppImage`), automated `.AppImage.zsync` update syncing in `website-sync-downloads.cjs`, and added CI AppImage verification (`scripts/verify-appimage.sh`).
+  - Added `<meta name="protoflow-app" content="alex-protoflow-ai">` probing in `electron/main.cjs` so local Electron development never attaches to unrelated services occupying port `5173`.
+
+---
+
 ## [v0.0.7] - 2026-11-22
 
 ### Fixed & Improved
