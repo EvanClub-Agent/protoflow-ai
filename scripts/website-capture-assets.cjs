@@ -2,7 +2,7 @@
 /*
  * Captures fresh visual assets for ProtoFlow AI website & docs using headless Electron:
  *   1. website/assets/workbench-screenshot.png + docs/assets/workbench-screenshot.png (1600x980)
- *   2. website/assets/mobile-preview.png (960x760, from website/demo/#mob-crm-approvals)
+ *   2. website/assets/mobile-preview.png (960x760, from website/demo/#page_mobile_field)
  *   3. website/assets/social-preview.jpg + docs/assets/social-preview.png (1280x640)
  *
  * Usage:
@@ -176,7 +176,7 @@ if (process.versions.electron) {
       fs.writeFileSync(path.join(root, 'website/assets/workbench-screenshot.png'), wbPng);
       fs.writeFileSync(path.join(root, 'docs/assets/workbench-screenshot.png'), wbPng);
 
-      // 2. Capture Mobile Viewport Preview (960x760) from website/demo/#mob-crm-approvals
+      // 2. Capture Mobile Viewport Preview (960x760) from website/demo/#page_mobile_field
       const mobWin = new BrowserWindow({
         show: false,
         width: 960,
@@ -191,11 +191,11 @@ if (process.versions.electron) {
         },
       });
       windows.push(mobWin);
-      await mobWin.loadURL(`${websiteServer.origin}/demo/#mob-crm-approvals`);
+      await mobWin.loadURL(`${websiteServer.origin}/demo/#page_mobile_field`);
       await waitIn(
         mobWin,
-        `document.querySelector('.pf-mobile-canvas-stage') && document.body.innerText.includes('合同') && !document.body.innerText.includes('正在加载')`,
-        'mobile approvals preview ready',
+        `document.querySelector('.pf-mobile-canvas-stage') && document.body.innerText.includes('星链现场工程师') && !document.body.innerText.includes('正在加载')`,
+        'mobile field preview ready',
       );
       await mobWin.webContents.executeJavaScript(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 350))))`);
       const mobImage = await mobWin.webContents.capturePage();

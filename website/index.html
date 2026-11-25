@@ -112,13 +112,13 @@
             "description": "ProtoFlow AI（原名 Alex）是 Apache-2.0 开源、本机优先的 AI 原型设计工具，通过共享 ER 物理表驱动 PC 中后台与 iPhone 视口实时联动，支持免装 Axure 本地导入 .rp、18 个 MCP 双向画布协同工具与 Docker 私有化评审。",
             "featureList": [
               "项目 AI 先澄清业务规则再规划目录、页面与共享 ER 物理表",
-              "双向 AST 画布与 114+ PC 及移动端业务物料无损同步 TSX DSL",
-              "Navicat 级 ER 数据库建模、外键与复合唯一约束跨页面实时联动",
+              "双向 AST 画布、134+ 高上限业务物料、UI Stack 五态仿真与品牌主题令牌",
+              "Navicat 级 ER 数据库建模、Poka-Yoke 实时防错与 5 秒原子撤销闭环",
               "同一工程混排 PC 中后台与 iPhone 真机视口并共享底层数据库",
               "12 类原生 Apache ECharts 图表直接绑定工程物理表与 Mermaid 图谱",
-              "免装 Axure 本地解析 RP 9 / RP 11 .rp 文件并 AI 重塑为可运行页面",
+              "免装软件本地解析 Axure RP 9/11 (.rp) 与 Figma (.fig / 链接) 并受控升维为可运行页面",
               "18 个 MCP 双向实时画布设计工具与 /p/{id} 零安装远程 DDL/TSX 规格服务",
-              "Apache-2.0 开源 · 免登录本机 .pflow 存储与 3 步 Docker Compose 私有化部署"
+              "Apache-2.0 开源 · 免登录本机 .pflow 存储与多架构 GHCR Docker Compose 私有化部署"
             ],
             "author": {
               "@id": "https://alex.xclubai.com/#organization"
@@ -335,7 +335,7 @@
                     <li><span class="hl-dot ok" aria-hidden="true"></span><span data-i18n="sc.hl3">右侧双向 AST 属性检查器 + 组件级需求便签 + 局部问 AI</span></li>
                   </ul>
                   <div class="showcase-demo-bar">
-                    <p data-i18n="sc.demoBanner">不用下载安装包 — 5 秒直接在浏览器里试玩这套 6 页 PC + iPhone 共表联动的 CRM 业财活原型。</p>
+                    <p data-i18n="sc.demoBanner">不用下载安装包 — 5 秒直接在浏览器里试玩这套 PC + iPhone 共表联动的【星链售后维保与备件履约】活原型。</p>
                     <a class="btn btn-primary btn-sm" href="/demo/" data-i18n="sc.demoBannerBtn">浏览器在线体验 →</a>
                   </div>
                 </div>
@@ -345,22 +345,22 @@
                 <div class="showcase-panel-inner">
                   <div class="er-showcase">
                     <article class="er-card">
-                      <span class="er-tag" data-i18n="sc.er1Tag">PC 管理后台 · 表单页</span>
-                      <h3 data-i18n="sc.er1Title">新建销售合同 / 客户</h3>
-                      <p data-i18n="sc.er1Desc">表单直接绑定物理表字段与外键下拉，提交即写入工程数据集并触发防超额与 18 位税号校验。</p>
+                      <span class="er-tag" data-i18n="sc.er1Tag">PC 调度后台 · 无弹窗主从</span>
+                      <h3 data-i18n="sc.er1Title">工单派发与备件防超领</h3>
+                      <p data-i18n="sc.er1Desc">左列卡片秒切右侧详情舱，表单直连物理表并内置手机号、排期起止日与可用库存上限实时防错校验。</p>
                     </article>
 
                     <div class="er-arrow" aria-hidden="true">⇄</div>
 
                     <article class="er-card er-table">
                       <span class="er-tag" data-i18n="sc.er2Tag">共享物理表 · ER 约束</span>
-                      <h3>t_crm_contracts</h3>
-                      <p data-i18n="sc.er2Desc">外键关联客户主表，含状态机枚举与主子表分期回款复合唯一约束，改动字段即时追踪受影响页面。</p>
+                      <h3>srv_tickets</h3>
+                      <p data-i18n="sc.er2Desc">备件子表启用 RESTRICT 未退料禁删保护，跟进日志启用 CASCADE 级联归档与 5 秒一键原子撤销。</p>
                       <ul class="er-fields">
-                        <li><code>contract_no</code><span>UNIQUE</span></li>
-                        <li><code>customer_id</code><span>FK → t_crm_customers</span></li>
-                        <li><code>status</code><span>ENUM('待审','履约中')</span></li>
-                        <li><code>received_amount</code><span>DECIMAL(14,2)</span></li>
+                        <li><code>ticket_no</code><span>UNIQUE</span></li>
+                        <li><code>srv_part_usages</code><span>FK · RESTRICT</span></li>
+                        <li><code>status</code><span>ENUM('待派单','上门中')</span></li>
+                        <li><code>srv_ticket_logs</code><span>FK · CASCADE</span></li>
                       </ul>
                     </article>
 
@@ -368,8 +368,8 @@
 
                     <article class="er-card">
                       <span class="er-tag" data-i18n="sc.er3Tag">iPhone 视口 · 移动端</span>
-                      <h3 data-i18n="sc.er3Title">移动审批与现场开票</h3>
-                      <p data-i18n="sc.er3Desc">与 PC 后台共享同一数据集，手机端点击审批生效或提交开票后 PC 合同台账实时同步状态。</p>
+                      <h3 data-i18n="sc.er3Title">现场接单流转与随车领料</h3>
+                      <p data-i18n="sc.er3Desc">与 PC 工作台共享同一套物理表，手机端触控推进工单或半屏抽屉申领备件后 PC 台账与看板即时同步。</p>
                     </article>
                   </div>
 
@@ -381,16 +381,16 @@
                         height="760"
                         fetchpriority="low"
                         loading="lazy"
-                        alt="ProtoFlow AI 在线沙盒 iPhone 移动审批视口截图：与 PC 后台共享 t_crm_contracts 物理表实时审批合同"
+                        alt="ProtoFlow AI 在线沙盒 iPhone 工程师现场接单与领料视口截图：与 PC 工作台共享 srv_tickets 与 srv_part_usages 物理表实时同步"
                         data-i18n-alt="sc.erMobImgAlt"
                       />
                     </div>
                     <div class="er-mobile-copy">
-                      <h4 data-i18n="sc.erMobTitle">PC 录入合同 → 手机端真机视口同步审批</h4>
+                      <h4 data-i18n="sc.erMobTitle">PC 派发维保工单 → 手机端现场接单与随车领料</h4>
                       <p data-i18n="sc.erMobDesc">
-                        不必把 PC 与移动端拆成两套文件。同一工程下表单、台账、ECharts 与 iPhone 移动端共用一套物理表，审批状态即时互通。
+                        不必把 PC 与移动端拆成两套文件。同一工程下主从工作台、泳道日历、ECharts 与 iPhone 现场端共用一套物理表，状态与库存即时互通。
                       </p>
-                      <a class="btn btn-primary btn-sm" href="/demo/#mob-crm-approvals" data-i18n="sc.erMobBtn">打开移动端审批演示 →</a>
+                      <a class="btn btn-primary btn-sm" href="/demo/#page_mobile_field" data-i18n="sc.erMobBtn">打开移动端现场演示 →</a>
                     </div>
                   </div>
                 </div>
@@ -458,7 +458,7 @@
             <span data-i18n="fact.1.desc">免登录本机可用，支持 Docker 私有化</span>
           </div>
           <div class="fact">
-            <strong data-i18n="fact.2.title">114+ 物料 · 12 类图表</strong>
+            <strong data-i18n="fact.2.title">134+ 物料 · 12 类图表</strong>
             <span data-i18n="fact.2.desc">PC 中后台与 iPhone 视口共享 ER 数据表</span>
           </div>
           <div class="fact">
@@ -596,7 +596,7 @@
                 可视化建外键与复合唯一约束，表单录入立即联动台账、图表与 iPhone 视口；存量 Axure RP 9/11 (.rp) 无需安装 Axure 即可本机离线解析并升维为带数据库的交互原型。
               </p>
               <div class="feature-pillar-links">
-                <a class="text-link" href="/demo/" data-i18n="features.p1DemoLink">试玩 CRM 在线演示 →</a>
+                <a class="text-link" href="/demo/" data-i18n="features.p1DemoLink">试玩星链维保在线演示 →</a>
                 <a class="text-link" href="/axure-import/" data-i18n="features.p1AxureLink">查看 Axure .rp 迁移指南 →</a>
               </div>
             </article>
@@ -621,8 +621,8 @@
             </article>
             <article class="feature reveal">
               <span class="f-no">02</span>
-              <h3 data-i18n="f2.title">双向 AST 画布与 114+ 物料</h3>
-              <p data-i18n="f2.desc">内置宽屏栅格、多条件组合查询、主子表、抽屉弹窗、业务复合块与沙箱自由组件，画布拖拽、属性面板调参与底层 TSX DSL 实时无损同步。</p>
+              <h3 data-i18n="f2.title">双向 AST 画布、134+ 物料与五态防错</h3>
+              <p data-i18n="f2.desc">内置无弹窗主从列表、泳道看板、排期日历、Bento 指标卡与 UI Stack 五态仿真，支持 Poka-Yoke 实时防错、5 秒原子撤销与品牌主题切换。</p>
             </article>
             <article class="feature reveal">
               <span class="f-no">03</span>
@@ -749,7 +749,7 @@
                 <span>6 Pages (PC+Mobile)</span>
                 <span>ECharts</span>
               </div>
-              <a class="btn btn-primary btn-sm template-cta" href="/demo/" data-i18n="scn.t2Cta">浏览器在线试玩 →</a>
+              <a class="btn btn-primary btn-sm template-cta" href="/demo/" data-i18n="scn.t2Cta">打开在线交互沙盒 →</a>
             </article>
             <article class="template-card reveal">
               <h3 data-i18n="scn.t3Title">现代移动应用与跨端协同</h3>

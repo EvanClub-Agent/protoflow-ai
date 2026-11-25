@@ -20,7 +20,7 @@ import (
 
 const (
 	mcpServerName       = "protoflow-spec"
-	mcpServerVersion    = "0.0.9"
+	mcpServerVersion    = "0.0.10"
 	maxMcpRequestBytes  = 64 << 10 // 64 KiB cap for read-only MCP JSON-RPC request bodies
 	maxMcpBatchSize     = 16
 	maxMcpResponseBytes = 4 << 20 // 4 MiB cumulative response cap per HTTP request
@@ -63,9 +63,10 @@ type mcpSnapshot struct {
 	Pages         []mcpPage            `json:"pages"`
 	Tables        []mcpTable           `json:"tables"`
 	TableRows     map[string][]any     `json:"tableRows"`
-	StickyNotes   []mcpSticky          `json:"stickyNotes"`
-	Notes         []PublishedNote      `json:"notes"`
-	NoteAssets    map[string]NoteAsset `json:"noteAssets"`
+	StickyNotes   []mcpSticky            `json:"stickyNotes"`
+	Notes         []PublishedNote        `json:"notes"`
+	NoteAssets    map[string]NoteAsset   `json:"noteAssets"`
+	DesignTokens  *PublishedDesignTokens `json:"designTokens,omitempty"`
 }
 
 type mcpSitemapItem struct {
@@ -1096,6 +1097,19 @@ func collectNodeInfo(pageID string, node mcpNode, usages *[]gin.H, actions *[]mc
 			})
 		}
 	}
+	if activeTblID, ok := node.Props["activeTable"].(string); ok && activeTblID != "" {
+		if tbl, exists := tableByID[activeTblID]; exists {
+			*usages = append(*usages, gin.H{
+				"pageId":        pageID,
+				"tableId":       activeTblID,
+				"tableName":     tbl.TableName,
+				"cnName":        tbl.CNName,
+				"componentPfId": node.PfID,
+				"componentType": node.Type,
+				"bindingSource": node.Type + ".activeTable",
+			})
+		}
+	}
 	for eventKey, val := range node.Props {
 		extractActionsFromValue(pageID, node.PfID, node.Type, eventKey, val, actions)
 	}
@@ -1857,6 +1871,7 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 				"updatedAt":                 pub.UpdatedAt.UTC().Format(time.RFC3339),
 				"entryPageId":               snap.EntryPageID,
 			},
+			"designTokens": exportRemoteDesignTokensSpec(snap.DesignTokens, rc.en),
 			"counts": gin.H{
 				"pages":             activePages,
 				"archivedPages":     archivedPages,
@@ -2149,10 +2164,25 @@ func executeRemoteMcpTool(rc *mcpRequestContext, name string, args map[string]an
 		} else if optID := rc.figmaCopyBySource[pageID]; optID != "" {
 			pageMeta["optimizedPageId"] = optID
 		}
+		boundTableIDs := map[string]bool{}
+		for _, u := range bindings {
+			if tid, ok := u["tableId"].(string); ok && tid != "" {
+				boundTableIDs[tid] = true
+			}
+		}
+		var rootPtr *mcpNode
+		if hasPage {
+			rootCopy := pg.Doc.Root
+			rootPtr = &rootCopy
+		}
+		uiStackSpec, pokaYokeRules := extractRemotePageExperienceSpecs(rootPtr, rc.tableByID, boundTableIDs, pageActions, allFKs)
+
 		res := gin.H{
 			"page":               pageMeta,
 			"tableBindings":      bindings,
 			"actions":            pageActions,
+			"uiStackSpec":        uiStackSpec,
+			"pokaYokeRules":      pokaYokeRules,
 			"outgoingNavigation": outNav,
 			"incomingNavigation": inNav,
 			"stickyNotes":        stickies,
@@ -2560,4 +2590,434 @@ func readRemoteMcpResource(rc *mcpRequestContext, uri string) (any, error) {
 		}
 		return nil, fmt.Errorf("未知的 MCP Resource URI：%s", uri)
 	}
+}
+
+var mcpFieldComponentTypes = map[string]bool{
+	"Input": true, "NumberInput": true, "Textarea": true, "Select": true,
+	"DatePicker": true, "DateRange": true, "TimePicker": true, "Radio": true,
+	"Checkbox": true, "Switch": true, "Upload": true, "PickerInput": true,
+	"Slider": true, "Rate": true, "Cascader": true, "TreeSelect": true,
+	"AutoComplete": true, "Segmented": true,
+	"MField": true, "MSheetPicker": true, "MChipSelect": true, "MMediaInput": true,
+}
+
+func exportRemoteDesignTokensSpec(tokens *PublishedDesignTokens, en bool) gin.H {
+	preset := "classic_antd"
+	if tokens != nil && designPresets[tokens.Preset] {
+		preset = tokens.Preset
+	}
+	primaryColor := "#2563eb"
+	radius := "rounded"
+	density := "comfortable"
+	surfaceVariant := "bordered"
+	colorMode := "auto"
+	presetZh := "经典企业蓝白"
+	presetEn := "Classic Enterprise"
+
+	switch preset {
+	case "modern_minimal":
+		primaryColor = "#18181b"
+		radius = "rounded"
+		density = "comfortable"
+		surfaceVariant = "elevated"
+		presetZh = "现代极简 SaaS"
+		presetEn = "Modern Minimal SaaS"
+	case "collab_soft":
+		primaryColor = "#4f46e5"
+		radius = "generous"
+		density = "spacious"
+		surfaceVariant = "subtle"
+		presetZh = "柔和协同效率"
+		presetEn = "Soft Collaborative"
+	case "enterprise_compact":
+		primaryColor = "#0284c7"
+		radius = "sharp"
+		density = "compact"
+		surfaceVariant = "bordered"
+		presetZh = "高密专业业财"
+		presetEn = "Compact Finance & ERP"
+	}
+
+	if tokens != nil {
+		if tokens.PrimaryColor != nil && hexColorRe.MatchString(*tokens.PrimaryColor) {
+			primaryColor = strings.ToLower(*tokens.PrimaryColor)
+		}
+		if tokens.Radius != nil && designRadii[*tokens.Radius] {
+			radius = *tokens.Radius
+		}
+		if tokens.Density != nil && designDensities[*tokens.Density] {
+			density = *tokens.Density
+		}
+		if tokens.SurfaceVariant != nil && designSurfaces[*tokens.SurfaceVariant] {
+			surfaceVariant = *tokens.SurfaceVariant
+		}
+		if tokens.ColorMode != nil && designColorModes[*tokens.ColorMode] {
+			colorMode = *tokens.ColorMode
+		}
+	}
+
+	radiusPx := 6
+	if radius == "sharp" {
+		radiusPx = 4
+	} else if radius == "generous" {
+		radiusPx = 12
+	} else if preset == "modern_minimal" {
+		radiusPx = 8
+	}
+	cardRadiusPx := 12
+	if radius == "sharp" {
+		cardRadiusPx = 6
+	} else if radius == "generous" {
+		cardRadiusPx = 16
+	}
+	fontSizePx := 13
+	if density == "compact" {
+		fontSizePx = 12
+	} else if density == "spacious" {
+		fontSizePx = 14
+	}
+
+	buildCssVars := func(mode string) gin.H {
+		dark := mode == "dark"
+		effPrimary := primaryColor
+		if dark && strings.ToLower(primaryColor) == "#18181b" {
+			effPrimary = "#818cf8"
+		}
+		bgLayout := "#f8fafc"
+		if dark {
+			bgLayout = "#09090b"
+		} else if preset == "collab_soft" {
+			bgLayout = "#f4f6fb"
+		} else if preset == "modern_minimal" {
+			bgLayout = "#fafafa"
+		}
+		bgContainer := "#ffffff"
+		if dark {
+			bgContainer = "#141417"
+		}
+		border := "#e2e8f0"
+		if dark {
+			border = "#27272a"
+		} else if preset == "modern_minimal" {
+			border = "#e4e4e7"
+		}
+		borderSec := "#f1f5f9"
+		if dark {
+			borderSec = "#1f1f23"
+		}
+		textCol := "#0f172a"
+		textSec := "#64748b"
+		if dark {
+			textCol = "#f4f4f5"
+			textSec = "#a1a1aa"
+		}
+		return gin.H{
+			"--pf-color-scheme":     mode,
+			"--pf-primary":          effPrimary,
+			"--pf-radius-control":   fmt.Sprintf("%dpx", radiusPx),
+			"--pf-radius-card":      fmt.Sprintf("%dpx", cardRadiusPx),
+			"--pf-font-size":        fmt.Sprintf("%dpx", fontSizePx),
+			"--pf-bg-layout":        bgLayout,
+			"--pf-bg-container":     bgContainer,
+			"--pf-border":           border,
+			"--pf-border-secondary": borderSec,
+			"--pf-text":             textCol,
+			"--pf-text-secondary":   textSec,
+		}
+	}
+
+	presetLabel := presetZh
+	if en {
+		presetLabel = presetEn
+	}
+	return gin.H{
+		"preset":      preset,
+		"presetLabel": presetLabel,
+		"tokens": gin.H{
+			"preset":         preset,
+			"primaryColor":   primaryColor,
+			"radius":         radius,
+			"radiusPx":       radiusPx,
+			"cardRadiusPx":   cardRadiusPx,
+			"density":        density,
+			"fontSizePx":     fontSizePx,
+			"surfaceVariant": surfaceVariant,
+			"colorMode":      colorMode,
+		},
+		"cssVariables": gin.H{
+			"light": buildCssVars("light"),
+			"dark":  buildCssVars("dark"),
+		},
+		"antdThemeToken": gin.H{
+			"colorPrimary": primaryColor,
+			"borderRadius": radiusPx,
+			"fontSize":     fontSizePx,
+			"compact":      density == "compact",
+		},
+	}
+}
+
+func extractRemotePageExperienceSpecs(
+	root *mcpNode,
+	tableByID map[string]mcpTable,
+	boundTableIDs map[string]bool,
+	pageActions []mcpActionItem,
+	allFKs []mcpForeignKey,
+) (gin.H, gin.H) {
+	componentEmptyTexts := make([]gin.H, 0)
+	fieldConstraints := make([]gin.H, 0)
+	actionStateGuards := make([]gin.H, 0)
+
+	addFieldConstraint := func(pfID, formPfID string, formTableID any, props map[string]any) {
+		fieldName, _ := props["name"].(string)
+		if fieldName == "" {
+			return
+		}
+		req, _ := props["required"].(bool)
+		minField, _ := props["minField"].(string)
+		maxField, _ := props["maxField"].(string)
+		minVal, hasMinVal := props["minValue"].(float64)
+		maxVal, hasMaxVal := props["maxValue"].(float64)
+		fmtRule, _ := props["formatRule"].(string)
+		valMsg, _ := props["validationMessage"].(string)
+		if !req && minField == "" && maxField == "" && !hasMinVal && !hasMaxVal && fmtRule == "" {
+			return
+		}
+		var tblIDPtr any = nil
+		var tblNamePtr any = nil
+		if tid, ok := formTableID.(string); ok && tid != "" {
+			tblIDPtr = tid
+			if tbl, exists := tableByID[tid]; exists {
+				tblNamePtr = tbl.TableName
+			} else {
+				tblNamePtr = tid
+			}
+		}
+		label := fieldName
+		if lbl, ok := props["label"].(string); ok && lbl != "" {
+			label = lbl
+		}
+		item := gin.H{
+			"pfId":      pfID,
+			"formPfId":  formPfID,
+			"tableId":   tblIDPtr,
+			"tableName": tblNamePtr,
+			"fieldName": fieldName,
+			"label":     label,
+			"required":  req,
+		}
+		if minField != "" {
+			item["minField"] = minField
+		}
+		if maxField != "" {
+			item["maxField"] = maxField
+		}
+		if hasMinVal {
+			item["minValue"] = minVal
+		}
+		if hasMaxVal {
+			item["maxValue"] = maxVal
+		}
+		if fmtRule != "" {
+			item["formatRule"] = fmtRule
+		}
+		if valMsg != "" {
+			item["validationMessage"] = valMsg
+		}
+		fieldConstraints = append(fieldConstraints, item)
+	}
+
+	var pageEmptyTitle any = nil
+	pageErrorFallback := "component"
+	var pageErrorTitle any = nil
+	var pageErrorDescription any = nil
+
+	if root != nil {
+		if et, ok := root.Props["emptyTitle"].(string); ok && et != "" {
+			pageEmptyTitle = et
+		}
+		if ef, ok := root.Props["errorFallback"].(string); ok && ef != "" {
+			pageErrorFallback = ef
+		}
+		if ert, ok := root.Props["errorTitle"].(string); ok && ert != "" {
+			pageErrorTitle = ert
+		}
+		if erd, ok := root.Props["errorDescription"].(string); ok && erd != "" {
+			pageErrorDescription = erd
+		}
+
+		var visit func(n mcpNode, formOwner *mcpNode)
+		visit = func(n mcpNode, formOwner *mcpNode) {
+			if n.Kind != "node" {
+				return
+			}
+			emptyCopy := ""
+			if et, ok := n.Props["emptyText"].(string); ok && strings.TrimSpace(et) != "" {
+				emptyCopy = strings.TrimSpace(et)
+			} else if n.Type == "Empty" {
+				if desc, ok := n.Props["description"].(string); ok && strings.TrimSpace(desc) != "" {
+					emptyCopy = strings.TrimSpace(desc)
+				}
+			}
+			if emptyCopy != "" {
+				componentEmptyTexts = append(componentEmptyTexts, gin.H{
+					"pfId":          n.PfID,
+					"componentType": n.Type,
+					"emptyText":     emptyCopy,
+				})
+			}
+
+			activeForm := formOwner
+			if n.Type == "Form" || n.Type == "MForm" {
+				nCopy := n
+				activeForm = &nCopy
+			}
+
+			if activeForm != nil && mcpFieldComponentTypes[n.Type] {
+				addFieldConstraint(n.PfID, activeForm.PfID, activeForm.Props["table"], n.Props)
+			}
+
+			if n.Type == "Form" {
+				if rawFields, ok := n.Props["fields"].([]any); ok {
+					for _, rf := range rawFields {
+						if fm, ok := rf.(map[string]any); ok {
+							addFieldConstraint(n.PfID, n.PfID, n.Props["table"], fm)
+						}
+					}
+				}
+			}
+
+			if n.Type == "Button" || n.Type == "MButton" {
+				dwf, _ := n.Props["disabledWhenField"].(string)
+				hwf, _ := n.Props["hiddenWhenField"].(string)
+				if dwf != "" || hwf != "" {
+					lbl := n.Type
+					for _, ch := range n.Children {
+						if ch.Kind == "text" && strings.TrimSpace(ch.Value) != "" {
+							lbl = strings.TrimSpace(ch.Value)
+							break
+						}
+					}
+					if propLbl, ok := n.Props["label"].(string); lbl == n.Type && ok && propLbl != "" {
+						lbl = propLbl
+					}
+					guard := gin.H{"pfId": n.PfID, "componentType": n.Type, "label": lbl}
+					if dwf != "" {
+						guard["disabledWhenField"] = dwf
+					}
+					if dwv, ok := n.Props["disabledWhenValue"].(string); ok && dwv != "" {
+						guard["disabledWhenValue"] = dwv
+					}
+					if dr, ok := n.Props["disabledReason"].(string); ok && dr != "" {
+						guard["disabledReason"] = dr
+					}
+					if hwf != "" {
+						guard["hiddenWhenField"] = hwf
+					}
+					if hwv, ok := n.Props["hiddenWhenValue"].(string); ok && hwv != "" {
+						guard["hiddenWhenValue"] = hwv
+					}
+					actionStateGuards = append(actionStateGuards, guard)
+				}
+			}
+
+			if rawActs, ok := n.Props["rowActions"].([]any); ok {
+				for _, ra := range rawActs {
+					am, ok := ra.(map[string]any)
+					if !ok {
+						continue
+					}
+					dwf, _ := am["disabledWhenField"].(string)
+					hwf, _ := am["hiddenWhenField"].(string)
+					if dwf != "" || hwf != "" {
+						lbl, _ := am["label"].(string)
+						if lbl == "" {
+							lbl = "rowAction"
+						}
+						guard := gin.H{"pfId": n.PfID, "componentType": n.Type + ".rowAction", "label": lbl}
+						if dwf != "" {
+							guard["disabledWhenField"] = dwf
+						}
+						if dwv, ok := am["disabledWhenValue"].(string); ok && dwv != "" {
+							guard["disabledWhenValue"] = dwv
+						}
+						if dr, ok := am["disabledReason"].(string); ok && dr != "" {
+							guard["disabledReason"] = dr
+						}
+						if hwf != "" {
+							guard["hiddenWhenField"] = hwf
+						}
+						if hwv, ok := am["hiddenWhenValue"].(string); ok && hwv != "" {
+							guard["hiddenWhenValue"] = hwv
+						}
+						actionStateGuards = append(actionStateGuards, guard)
+					}
+				}
+			}
+
+			nextForm := activeForm
+			if n.Type == "QueryForm" {
+				nextForm = nil
+			}
+			for _, c := range n.Children {
+				visit(c, nextForm)
+			}
+		}
+		visit(*root, nil)
+	}
+
+	highRiskConfirmations := make([]gin.H, 0)
+	for _, a := range pageActions {
+		if a.ActionName == "confirm" && len(a.Args) > 1 {
+			if mt, ok := a.Args[1].(string); ok && strings.TrimSpace(mt) != "" {
+				msgStr, _ := a.Args[0].(string)
+				highRiskConfirmations = append(highRiskConfirmations, gin.H{
+					"pfId":      a.PfID,
+					"event":     a.Event,
+					"kind":      "match_text_confirm",
+					"message":   msgStr,
+					"matchText": mt,
+				})
+			}
+		} else if a.ActionName == "deleteRow" && len(a.Args) > 0 && a.Args[0] == "undo" {
+			highRiskConfirmations = append(highRiskConfirmations, gin.H{
+				"pfId":         a.PfID,
+				"event":        a.Event,
+				"kind":         "undoable_delete",
+				"undoWindowMs": 5000,
+			})
+		}
+	}
+
+	foreignKeyDeletePolicies := make([]gin.H, 0)
+	for _, fk := range allFKs {
+		if boundTableIDs[fk.ReferencesID] || boundTableIDs[fk.FromTableID] {
+			onDel := fk.OnDelete
+			if onDel == "" {
+				onDel = "RESTRICT"
+			}
+			foreignKeyDeletePolicies = append(foreignKeyDeletePolicies, gin.H{
+				"parentTable": fk.ReferencesTable,
+				"childTable":  fk.FromTable,
+				"childColumn": fk.FromColumn,
+				"onDelete":    onDel,
+			})
+		}
+	}
+
+	uiStackSpec := gin.H{
+		"supportedStates":      []string{"normal", "empty", "loading", "edge", "error"},
+		"pageEmptyTitle":       pageEmptyTitle,
+		"pageErrorFallback":    pageErrorFallback,
+		"pageErrorTitle":       pageErrorTitle,
+		"pageErrorDescription": pageErrorDescription,
+		"componentEmptyTexts":  componentEmptyTexts,
+	}
+	pokaYokeRules := gin.H{
+		"fieldConstraints":         fieldConstraints,
+		"actionStateGuards":        actionStateGuards,
+		"highRiskConfirmations":    highRiskConfirmations,
+		"foreignKeyDeletePolicies": foreignKeyDeletePolicies,
+	}
+	return uiStackSpec, pokaYokeRules
 }

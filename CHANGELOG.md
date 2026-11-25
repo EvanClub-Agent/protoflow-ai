@@ -2,6 +2,34 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.10] - 2026-11-25
+
+### Added
+
+- **高上限现代业务物料体系（134+ PC & 移动端注册物料）**：
+  - **PC 中后台核心物料**：新增无弹窗主从循环列表 `Repeater`（内置 `autoSelectFirst`、`selectRow()` 与分页筛选）、多阶段状态泳道看板 `Kanban`（多 SQL `ENUM` 列智能消歧与拖拽/箭头推进）、月/周排期日历 `Calendar`（支持起止日跨天排程联动）、结构化智能建议卡片 `AiCopilotCard`，以及 `Card(variant="bento")` 与 `Statistic(sparkline)` 微型趋势指标卡。
+  - **iPhone 移动端现场物料**：新增触控横向泳道看板 `MKanban`、周视图日程流 `MCalendar` 与移动端 AI 随行预检卡片 `MAiInsightCard`，与 PC 端天然共享同一套物理 ER 数据表。
+- **UI Stack 五态仿真矩阵（`normal` / `empty` / `loading` / `edge` / `error`）**：
+  - 桌面设计器与在线发布浏览端（`/p/<id>` 及 `/demo/`）顶部工具栏新增一键五态切换器，支持秒级检视理想态、空数据引导态、骨架屏加载态、极值压测态与异常降级态（`result_500` / `result_403` / `banner` / `component`）。
+  - **极值态写保护隔离**：`edge` 极值长文本与大额数字仅作用于视图展示投影，表单预填与业务写入始终读取真实底层 `tableRows`，彻底杜绝压测假数据污染工程存档。
+- **工程级品牌主题令牌（`designTokens`）**：
+  - 内置 `classic_antd`（经典中后台）、`modern_minimal`（现代极简）、`industrial_dense`（工业高密）、`collab_soft`（柔和协作）4 套预设，支持自定义主色（`primaryColor`）、圆角、密度与画布底色，完整打通 `.pflow` V7 自动保存（默认主题保持历史字节零差异兼容）与 V5 在线发布快照。
+- **Poka-Yoke 实时防错、递归外键闭环与 5 秒原子撤销**：
+  - **跨字段与格式实时防错**：PC `<Form>` 与移动端 `<MForm>` 表单控件支持 `minField` / `maxField`（跨字段日期/库存上限对比）、`minValue` / `maxValue` 及 `formatRule`（`phone` / `email` / `credit_code` / `id_card` / `positive_number`）实时拦截。
+  - **递归外键策略与原子恢复**：`deleteRow` 完整遍历多层 `ON DELETE RESTRICT / CASCADE / SET NULL` 引用树，存在 `RESTRICT` 子记录时精准阻断误删；支持 `deleteRow('undo')` 5 秒内一键原子恢复主子表快照，并在恢复前重验单列 `isUnique` 与表级联合唯一约束（`uniqueConstraints`）。
+  - **状态条件禁用与高危二次核验**：行操作与按钮支持 `disabledWhenField` / `disabledWhenValue` / `disabledReason` 动态禁用说明，以及 `confirm(message, '{{row.ticket_no}}')` 单号精确输入核验弹窗。
+- **官网在线演示升级为【星链设备售后维保与备件履约平台】**：
+  - `website/demo/` 升级为中英双语零下载交互沙盒（3 个 PC 页 + 1 个 iPhone 现场端页 + 3 张 `RESTRICT/CASCADE` 共享物理表 + 8 条防错需求便签），集中展示无弹窗主从工作台、五态切换与防错撤销闭环。
+
+### Fixed & Hardened
+
+- **主从作用域与循环表单跨行写入安全加固**：
+  - `Card` / `Modal` / `Drawer` 设置 `activeTable` 时严格阻断异表来源行及二级嵌套弹层 `params` 透传误写；`Repeater` 循环内嵌表单按行实例隔离草稿与新增记录；父详情容器内的关联子表行动作自动绑定子表自身行上下文；`PickerInput` 分离契约 `pfId` 与实例键确保外键来源列校验不跳检。
+- **MCP 双向契约、Go 发布白名单与多架构 GHCR 镜像同步**：
+  - Go 服务端 `publish.ValidateSnapshot` 与远程 Streamable HTTP MCP（`POST /api/v1/mcp/:id`）同步支持 `designTokens`、`selectRow`、字段级 Poka-Yoke 约束与动作防错守卫元数据，并随 `v0.0.10` 发布 `linux/amd64` + `linux/arm64` 多架构 `protoflow-ai-api` / `protoflow-ai-web` GHCR 镜像。
+
+---
+
 ## [v0.0.9] - 2026-11-24
 
 ### 桌面端修复

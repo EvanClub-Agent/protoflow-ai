@@ -554,6 +554,9 @@ function extractSourceBoundTableIds(source: string | undefined): string[] {
     if (typeof node.props.table === 'string' && node.props.table) {
       ids.add(node.props.table);
     }
+    if (typeof node.props.activeTable === 'string' && node.props.activeTable) {
+      ids.add(node.props.activeTable);
+    }
   });
   return [...ids].sort();
 }

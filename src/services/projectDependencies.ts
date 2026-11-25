@@ -111,6 +111,7 @@ export function reviewPageDependencies(s: Inputs) {
           if (n.props.source === 'table' && typeof n.props.table === 'string') result.charts.set(n.pfId, n.props.table);
         }
         if (typeof n.props.table === 'string') result.tables.add(n.props.table);
+        if (typeof n.props.activeTable === 'string' && n.props.activeTable) result.tables.add(n.props.activeTable);
       });
       result.semantics = extractPageActionSemantics(doc.root, s.dbTables);
       result.contractErrors = semanticActionContractErrors(result.semantics, s.dbTables, {

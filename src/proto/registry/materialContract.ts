@@ -145,8 +145,8 @@ export function validateMaterialDoc(doc: ProtoDoc): MaterialIssue[] {
     if (Array.isArray(value)) value.forEach((item, i) => inspectExpressions(node, item, `${path}[${i}]`));
     else if (object(value)) for (const [key, item] of Object.entries(value)) {
       const nestedEvent =
-        (/^rowActions\[\d+\]$/.test(path) && key === 'onClick' && ['Table', 'CardGrid', 'MTaskList'].includes(node.type)) ||
-        (/^items\[\d+\]$/.test(path) && key === 'onClick' && ['MBentoGrid', 'MTabBar', 'MListGroup', 'NavMenu', 'Dropdown', 'Carousel', 'MBannerCarousel'].includes(node.type)) ||
+        (/^rowActions\[\d+\]$/.test(path) && key === 'onClick' && ['Table', 'CardGrid', 'Kanban', 'MTaskList', 'MKanban'].includes(node.type)) ||
+        (/^items\[\d+\]$/.test(path) && key === 'onClick' && ['MBentoGrid', 'MTabBar', 'MListGroup', 'NavMenu', 'Dropdown', 'Carousel', 'MBannerCarousel', 'AiCopilotCard', 'MAiInsightCard'].includes(node.type)) ||
         (/^fields\[\d+\]$/.test(path) && (key === 'onChange' || key === 'onClick') && ['Form', 'QueryForm'].includes(node.type));
       inspectExpressions(node, item, `${path}.${key}`, nestedEvent);
     }
@@ -156,7 +156,7 @@ export function validateMaterialDoc(doc: ProtoDoc): MaterialIssue[] {
     if (type === 'MSheetPicker' && typeof values.table === 'string' &&
       (!values.labelField || !values.valueField)) report(node, 'table', '关联表必须明确配置显示字段和存储字段');
     if (type === 'Table') tableConfigErrors(values).forEach(message => report(node, 'table', message));
-    if (['Table','CardGrid','MTaskList','MFeedList','MCardGrid'].includes(type) && values.sourceForeignKey !== undefined &&
+    if (['Table','CardGrid','Repeater','Kanban','Calendar','MTaskList','MFeedList','MCardGrid','MRepeater','MKanban','MCalendar'].includes(type) && values.sourceForeignKey !== undefined &&
       (typeof values.table !== 'string' || !values.table.trim() || typeof values.sourceForeignKey !== 'string' || !values.sourceForeignKey.trim()))
       report(node, 'sourceForeignKey', '按当前来源行读取明细必须同时指定真实 table ID 和非空外键字段名');
     if (isChartType(type)) chartConfigErrors(type, values).forEach(message => report(node, 'chart', message));
@@ -184,7 +184,7 @@ export function validateMaterialDoc(doc: ProtoDoc): MaterialIssue[] {
       try { materialOptions(values.options, ['TreeSelect', 'Cascader'].includes(type)); }
       catch (error) { report(node, `${prefix}options`, error instanceof Error ? error.message : '选项配置无效'); }
     }
-    for (const [low, high] of [['min', 'max'], ['minRows', 'maxRows']]) {
+    for (const [low, high] of [['min', 'max'], ['minRows', 'maxRows'], ['minValue', 'maxValue']]) {
       const a = values[low], b = values[high];
       if (typeof a === 'number' && typeof b === 'number' && a > b) report(node, `${prefix}${low}`, `不能大于 ${high}`);
     }

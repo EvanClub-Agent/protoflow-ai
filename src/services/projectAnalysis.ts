@@ -59,6 +59,11 @@ export function analyzeProject(s: ProjectStateSnapshot) {
         if (s.dbTables.some(t=>t.id===tableId)) usages.push({pageId,tableId,pfId:node.pfId,description:`${node.type}.table`});
         else issues.push(tr(`${page.title} / ${node.pfId} 引用了不存在的数据表 ${tableId}`, `${page.title} / ${node.pfId} references non-existent table ${tableId}`));
       }
+      const activeTableId = node.props.activeTable;
+      if (typeof activeTableId==='string' && activeTableId) {
+        if (s.dbTables.some(t=>t.id===activeTableId)) usages.push({pageId,tableId:activeTableId,pfId:node.pfId,description:`${node.type}.activeTable`});
+        else issues.push(tr(`${page.title} / ${node.pfId} 引用了不存在的数据表 ${activeTableId}`, `${page.title} / ${node.pfId} references non-existent table ${activeTableId}`));
+      }
       Object.entries(node.props).forEach(([event,value])=>collect(value,node,event));
     }
     actions.push(...pageActions);

@@ -1,5 +1,6 @@
 import { validateColumnValues, valuesWithColumnDefaults } from '../database/columnDefault';
 import { seedRelatedTables } from '../database/previewRelations';
+import { applyGuardedRowDelete, applyRowDeleteUndo, type RowDeleteUndoPatch } from '../runtime/pokaYoke';
 import { create } from 'zustand';
 import { mapPurchaseOrderLines, purchaseTransferContractError } from '../runtime/purchaseTransfer';
 import { newId } from '../../utils/identity';
@@ -247,7 +248,8 @@ interface PageStore {
   getRows: (tableId: string) => Row[];
   insertRow: (tableId: string, values: Record<string, unknown>) => Row;
   updateRow: (tableId: string, id: string, values: Record<string, unknown>) => void;
-  deleteRow: (tableId: string, id: string) => void;
+  deleteRow: (tableId: string, id: string) => RowDeleteUndoPatch | null;
+  undoDeleteRow: (patch: RowDeleteUndoPatch) => void;
   resetRows: () => void;
   importPurchaseOrderLines: (sourceTableId: string, targetTableId: string, ids: string[], orderId: string) => number;
 
@@ -556,10 +558,25 @@ export const usePageStore = create<PageStore>((set, get) => {
     },
 
     deleteRow: (tableId, id) => {
-      const rows = get().getRows(tableId);
-      set((s) => ({
-        tableRows: { ...currentData(), [tableId]: (s.tableRows[tableId] ?? rows).filter((r) => r.id !== id) },
-      }));
+      const { nextTableRows, undoPatch } = applyGuardedRowDelete(
+        useProtoStore.getState().dbTables,
+        currentData(),
+        get().getRows,
+        tableId,
+        id,
+      );
+      set({ tableRows: nextTableRows });
+      return undoPatch;
+    },
+
+    undoDeleteRow: (patch) => {
+      const nextTableRows = applyRowDeleteUndo(
+        useProtoStore.getState().dbTables,
+        currentData(),
+        get().getRows,
+        patch,
+      );
+      set({ tableRows: nextTableRows });
     },
 
     resetRows: () => set({ tableRows: {} }),

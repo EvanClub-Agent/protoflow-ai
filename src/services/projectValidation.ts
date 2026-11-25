@@ -4,6 +4,7 @@ import { validateRequirementRecords } from '../proto/database/requirementReview'
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import type { DBTableSchema } from '../store/useProtoStore';
 import { validateProjectAgreements } from './projectKnowledge';
+import { validateDesignTokens } from '../proto/theme/designTokens';
 import { validateStickyNoteIndex } from '../proto/stickyNoteIndex';
 import { validateProjectPlan } from './projectPlan';
 import { validateMindmaps } from '../proto/mindmaps';
@@ -79,6 +80,7 @@ export function validateProjectPayload(value: unknown, { allowLegacyZeroStickyIn
   validateProjectMeta(value.meta);
   const s = value.stateSnapshot; object(s, 'stateSnapshot');
   if (s.projectAgreements !== undefined) validateProjectAgreements(s.projectAgreements);
+  if (s.designTokens !== undefined && s.designTokens !== null) validateDesignTokens(s.designTokens);
   if (s.databaseRequirements !== undefined) validateRequirementRecords(s.databaseRequirements);
   if (s.projectPlan !== undefined && s.projectPlan !== null) validateProjectPlan(s.projectPlan);
   fields(s, ['activePageId'], 'string', 'stateSnapshot');

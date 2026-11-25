@@ -3,13 +3,21 @@ import { AxureCanvas, AxureWidget, DynamicPanel, OutlineTree, TreeItem, StaticTa
 import { FIGMA_COMPONENTS } from '../figma/materials';
 import { MODERN_DESKTOP_COMPONENTS } from './modernComponents';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
-import { useSourceRow } from '../runtime/sourceRow';
+import { resolveCanonicalRow, useAutoSelectFirstRow, useSourceRow } from '../runtime/sourceRow';
+import { matchesWhenCondition } from '../runtime/pokaYoke';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AntButton from 'antd/es/button';
 import AntPagination from 'antd/es/pagination';
 import Skeleton from 'antd/es/skeleton';
 import Spin from 'antd/es/spin';
 import { AntdSurface } from './AntdSurface';
+import { useCanvasTheme } from '../theme/ProtoCanvasThemeScope';
+import {
+  applyUIStackRows,
+  UIStackEmptyBannerHint,
+  UIStackPageErrorResult,
+  useUIStackState,
+} from '../runtime/uiStackLens';
 import { PreviewDataContext, useMaterialTables } from '../runtime/PreviewData';
 import {
   AlertTriangle,
@@ -47,7 +55,7 @@ import { defaultTableColumns, missingMergeRow, SAMPLE_FIELDS, SAMPLE_ROWS, prepa
 import { ChartMaterial } from '../charts/ChartMaterial';
 import { CHART_TYPES } from '../charts/model';
 import type { PropValue, ProtoNode } from '../types';
-import type { Runtime, Scope } from '../runtime/runtime';
+import { childRowScope, resolveFormInstanceKey, type Runtime, type Scope } from '../runtime/runtime';
 import { usePageStore } from '../store/usePageStore';
 import { useProtoStore } from '../../store/useProtoStore';
 import { columnLabel, defaultDisplayColumns, type Row } from '../runtime/mock';
@@ -63,6 +71,7 @@ import { tr as trStatic, useI18n } from '../../i18n';
 
 export type RootAttrs = {
   'data-pf-id'?: string;
+  'data-pf-mirror-of'?: string;
   'data-pf-sel'?: string;
   'data-pf-hover'?: string;
   'data-pf-drop'?: string;
@@ -89,6 +98,7 @@ export interface CompProps {
   live: boolean;
   staticOverlay: boolean;
   renderNode: (n: ProtoNode, scope?: Scope) => React.ReactNode;
+  renderMirroredNode?: (n: ProtoNode, scope?: Scope) => React.ReactNode;
   withScope: (s: Scope, el: React.ReactNode) => React.ReactNode;
 }
 
@@ -128,7 +138,10 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 
 // ───────────────────────── Form & Inline Toolbar context ─────────────────────────
 interface FormCtxValue {
+  /** AST pfId of the Form node (used for schema & FK validation) */
   formId: string;
+  /** Runtime draft bucket key (may include `::row:<tableId>:<rowId>`) */
+  formKey?: string;
   tableId?: string;
   isQueryForm?: boolean;
   editingSource?: boolean;
@@ -404,12 +417,32 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       break;
     }
     case 'picker': {
-      const shown = (def.pfId && rt.pickerValues[def.pfId]) || (value == null ? '' : String(value));
+      const draftKey = bound ? (form.formKey ?? form.formId) : undefined;
+      const pickerKey =
+        def.pfId && bound && form && draftKey && draftKey !== form.formId
+          ? `${draftKey}::picker:${def.pfId}`
+          : def.pfId;
+      const shown = (pickerKey && rt.pickerValues[pickerKey]) || (value == null ? '' : String(value));
       control = (
         <button
           type="button"
           disabled={disabled}
-          onClick={() => !readOnly && def.overlay && def.pfId && rt.openPicker(def.overlay, { targetPfId: def.pfId!, formId: bound ? form.formId : undefined, name }, scope)}
+          onClick={() =>
+            !readOnly &&
+            def.overlay &&
+            def.pfId &&
+            rt.openPicker(
+              def.overlay,
+              {
+                targetPfId: def.pfId!,
+                pickerKey,
+                formId: bound ? form.formId : undefined,
+                formKey: draftKey,
+                name,
+              },
+              scope,
+            )
+          }
           className={cx(curInputCls, 'flex items-center justify-between text-left')}
         >
           <span className={shown ? 'text-slate-800 truncate' : 'text-slate-400'}>{shown || placeholder}</span>
@@ -435,7 +468,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
     def.width && widthMap[def.width]
       ? widthMap[def.width]
       : Math.min(12, Math.max(1, Number(def.span ?? 1)) * baseColSpan);
-  const rootAttrs = root ?? { 'data-pf-id': def.pfId ?? '' };
+  const rootAttrs = root ?? (def.pfId ? { 'data-pf-id': def.pfId } : {});
   if (def.layoutFrame && !form && !def.label) return <div className="h-full w-full">{control}</div>;
   if (inline) return <div {...rootWith(rootAttrs, {})}>{control}</div>;
 
@@ -617,64 +650,142 @@ const BTN_CLS: Record<string, string> = {
 
 const Button: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
   const { tr } = useI18n();
+  const hasWhenGuard = Boolean(p.disabledWhenField || p.hiddenWhenField);
+  const source = useSourceRow(scope, rt.pageId, hasWhenGuard);
+  const ctxRow = (scope.row ?? scope.params?.row ?? source.row) as Record<string, unknown> | undefined;
+  if (!rt.isDesign && matchesWhenCondition(ctxRow, p.hiddenWhenField, p.hiddenWhenValue)) {
+    return null;
+  }
+  const guardedDisabled = !rt.isDesign && matchesWhenCondition(ctxRow, p.disabledWhenField, p.disabledWhenValue);
+  const isDisabled = Boolean(p.disabled) || guardedDisabled;
+  const disabledReason =
+    guardedDisabled && typeof p.disabledReason === 'string' && p.disabledReason.trim()
+      ? p.disabledReason.trim()
+      : undefined;
   const Icon = p.icon ? ICONS[p.icon as string] : null;
   return <AntdSurface><AntButton
     {...root}
+    title={disabledReason}
+    data-disabled-reason={disabledReason}
     autoInsertSpace={p.layoutFrame ? false : undefined}
     style={p.layoutFrame ? { ...textFrameStyle(p.layoutFrame), boxShadow: 'none' } : root.style}
     type={p.type === 'danger' ? 'default' : p.type}
     danger={p.danger || p.type === 'danger'} ghost={p.ghost} size={p.size}
-    shape={p.shape} block={p.block} disabled={p.disabled} loading={p.loading}
+    shape={p.shape} block={p.block} disabled={isDisabled} loading={p.loading}
     icon={Icon ? <Icon className="h-3.5 w-3.5" /> : undefined} iconPlacement={p.iconPosition}
     onClick={(event) => {
       root.onClick?.(event);
-      if (!rt.isDesign && !p.disabled && !p.loading) rt.run(p.onClick as PropValue, scope);
+      if (!rt.isDesign && !isDisabled && !p.loading) rt.run(p.onClick as PropValue, scope);
     }}
   >{p.shape === 'circle' && Icon ? null : text || tr('按钮', 'Button')}</AntButton></AntdSurface>;
 };
 
 const Page: React.FC<CompProps> = ({ p, children, root, rt }) => {
   const { tr } = useI18n();
-  const padCls =
-    p.padding === 'compact' ? 'p-3.5 gap-y-2.5' : p.padding === 'loose' ? 'p-7 gap-y-5' : 'p-4 gap-y-3.5';
-  const bgCls =
-    p.bg === 'white' ? 'bg-white' : p.bg === 'gray' ? 'bg-slate-100/80' : 'bg-[#f8fafc]';
+  const canvasTheme = useCanvasTheme();
+  const uiState = useUIStackState();
+  const density = canvasTheme?.resolved.density ?? 'comfortable';
+  const effectivePad =
+    p.padding === 'compact' || (p.padding === undefined && density === 'compact')
+      ? 'p-3 gap-y-2.5'
+      : p.padding === 'loose' || (p.padding === undefined && density === 'spacious')
+      ? 'p-6 gap-y-5'
+      : 'p-4 gap-y-3.5';
+  const isDarkCanvas = canvasTheme?.effectiveMode === 'dark';
+  const bgCls = isDarkCanvas
+    ? 'bg-zinc-950 text-zinc-100'
+    : p.bg === 'white'
+    ? 'bg-white'
+    : p.bg === 'gray'
+    ? 'bg-slate-100/80'
+    : canvasTheme?.rawTokens
+    ? 'bg-[var(--pf-bg-layout)]'
+    : 'bg-[#f8fafc]';
+  const pageErrorMode =
+    uiState === 'error' && (p.errorFallback === 'result_403' || p.errorFallback === 'result_500')
+      ? (p.errorFallback as 'result_403' | 'result_500')
+      : null;
+
   return (
-    <div {...rootWith(root, { className: cx('flex-[1_0_auto] grid grid-cols-12 gap-x-4 items-start content-start rounded-[15px]', padCls, bgCls) })}>
-      {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label={tr('从左侧物料库拖入组件', 'Drop components from the left palette')} /></div>}
+    <div {...rootWith(root, { className: cx('flex-[1_0_auto] grid grid-cols-12 gap-x-4 items-start content-start rounded-[15px]', effectivePad, bgCls) })}>
+      {uiState === 'empty' && typeof p.emptyTitle === 'string' && p.emptyTitle.trim() && (
+        <UIStackEmptyBannerHint emptyTitle={p.emptyTitle.trim()} />
+      )}
+      {pageErrorMode ? (
+        <UIStackPageErrorResult
+          mode={pageErrorMode}
+          title={typeof p.errorTitle === 'string' ? p.errorTitle : undefined}
+          description={typeof p.errorDescription === 'string' ? p.errorDescription : undefined}
+          onRecover={() => useProtoStore.getState().setUIState('normal')}
+        />
+      ) : children.length ? (
+        children
+      ) : (
+        <div className="col-span-12"><DropHint rt={rt} label={tr('从左侧物料库拖入组件', 'Drop components from the left palette')} /></div>
+      )}
       {!p.title && null}
     </div>
   );
 };
 
 const Card: React.FC<CompProps> = ({ p, children, root, rt }) => {
-  const isSmall = p.size === 'small';
-  const headerBgCls =
-    p.headerBg === 'white'
-      ? 'bg-white'
-      : p.headerBg === 'blue'
-      ? 'bg-blue-50/50'
-      : 'bg-slate-50/40';
+  const canvasTheme = useCanvasTheme();
+  const isSmall = p.size === 'small' || (!p.size && canvasTheme?.resolved.density === 'compact');
+  const isDark = canvasTheme?.effectiveMode === 'dark';
+  const variant = (p.variant as 'default' | 'subtle' | 'accent' | 'bento') || 'default';
+  const surfaceMode = canvasTheme?.resolved.surfaceVariant ?? 'bordered';
+  const cardRadiusStyle = canvasTheme?.rawTokens ? { borderRadius: canvasTheme.resolved.cardRadiusPx } : undefined;
+
+  const boxVariantCls = isDark
+    ? variant === 'subtle'
+      ? 'bg-zinc-900/70 border border-zinc-800/80 text-zinc-100'
+      : variant === 'accent'
+      ? 'bg-gradient-to-br from-indigo-950/60 via-zinc-900 to-zinc-900 border border-indigo-500/30 text-zinc-100'
+      : variant === 'bento'
+      ? 'bg-zinc-900 border border-zinc-800 shadow-sm text-zinc-100'
+      : 'bg-zinc-900 border border-zinc-800 text-zinc-100'
+    : variant === 'subtle'
+    ? 'bg-slate-50/90 border border-slate-200/60'
+    : variant === 'accent'
+    ? 'bg-gradient-to-br from-blue-50/60 via-white to-indigo-50/30 border border-blue-200/80 shadow-2xs'
+    : variant === 'bento'
+    ? 'bg-white border border-slate-200/75 shadow-sm'
+    : surfaceMode === 'subtle'
+    ? 'bg-white shadow-2xs border border-slate-100'
+    : surfaceMode === 'elevated'
+    ? 'bg-white shadow-sm border border-zinc-200/80'
+    : cx('bg-white shadow-2xs', p.bordered === false ? '' : 'border border-slate-200/90');
+
+  const headerBgCls = isDark
+    ? 'bg-zinc-900/90 border-zinc-800'
+    : p.headerBg === 'white' || variant === 'bento' || surfaceMode === 'elevated'
+    ? 'bg-white border-slate-100'
+    : p.headerBg === 'blue' || variant === 'accent'
+    ? 'bg-blue-50/50 border-blue-100/80'
+    : 'bg-slate-50/40 border-slate-100';
+
   return (
     <div
       {...rootWith(root, {
         className: cx(
-          'rounded-xl bg-white shadow-2xs transition',
-          p.bordered === false ? '' : 'border border-slate-200/90',
+          'rounded-xl transition',
+          boxVariantCls,
           p.hoverable && 'hover:shadow-md hover:border-blue-200'
         ),
+        style: cardRadiusStyle,
       })}
     >
       {(p.title || p.extra) && (
         <div
           className={cx(
-            'flex items-center justify-between border-b border-slate-100 rounded-t-xl',
+            'flex items-center justify-between border-b rounded-t-xl',
             isSmall ? 'px-3 h-8' : 'px-4 h-10',
             headerBgCls
           )}
+          style={cardRadiusStyle ? { borderTopLeftRadius: cardRadiusStyle.borderRadius, borderTopRightRadius: cardRadiusStyle.borderRadius } : undefined}
         >
-          <span className={cx('font-bold text-slate-900', isSmall ? 'text-[12px]' : 'text-[13px]')}>{p.title}</span>
-          {p.extra && <span className="text-[11px] font-medium text-slate-500">{p.extra}</span>}
+          <span className={cx('font-bold', isDark ? 'text-zinc-100' : 'text-slate-900', isSmall ? 'text-[12px]' : 'text-[13px]')}>{p.title}</span>
+          {p.extra && <span className={cx('text-[11px] font-medium', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.extra}</span>}
         </div>
       )}
       <div className={cx('grid grid-cols-12 gap-x-4 items-start', isSmall ? 'p-3 gap-y-2' : 'p-4 gap-y-3')}>
@@ -1131,11 +1242,18 @@ const SearchInput: React.FC<CompProps> = ({ p, root, rt }) => {
 };
 
 function useTableRows(tableId: string | undefined): Row[] {
+  const { isEn } = useI18n();
   const preview = useContext(PreviewDataContext);
+  const uiState = useUIStackState();
+  const tables = useMaterialTables();
+  const schema = useMemo(() => tables.find((t) => t.id === tableId), [tables, tableId]);
   const stored = usePageStore((s) => (tableId ? s.tableRows[tableId] : undefined));
   const getRows = usePageStore((s) => s.getRows);
   // Drafts use actual snapshot rows (empty for new tables), never seed global mock data.
-  return useMemo(() => preview ? (tableId ? preview.rows[tableId] ?? [] : []) : (tableId ? stored ?? getRows(tableId) : []), [preview, tableId, stored, getRows]);
+  return useMemo(() => {
+    const raw = preview ? (tableId ? preview.rows[tableId] ?? [] : []) : (tableId ? stored ?? getRows(tableId) : []);
+    return applyUIStackRows(raw, schema, uiState, isEn);
+  }, [preview, tableId, stored, getRows, schema, uiState, isEn]);
 }
 
 const SAMPLE_FIELD_EN_TITLES: Record<string, string> = {
@@ -1195,7 +1313,11 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           title: SAMPLE_FIELD_EN_TITLES[c.dataIndex] ?? c.title,
         }))
       : defaultTableColumns(table);
-  const records = table ? boundRows : sampleRows;
+  const uiState = useUIStackState();
+  const records = useMemo(
+    () => (table ? boundRows : applyUIStackRows(sampleRows, undefined, uiState, isEn)),
+    [table, boundRows, sampleRows, uiState, isEn],
+  );
   const query = rt.filters[node.pfId];
   const model = useMemo(() => {
     try {
@@ -1208,6 +1330,16 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       return { error: error instanceof Error ? error.message : tr('表格配置无效', 'Invalid table configuration') };
     }
   }, [p, tableId, table, records, query, sortCol, sourceRow, sourceTableId, tables, tr]);
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+  const validRootRows = 'error' in model ? [] : model.roots.map((b) => b.row);
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    visibleRows: validRootRows,
+    autoSelectFirst,
+    runtimeQuery: query,
+  });
   if ('error' in model) {
     return <div {...rootWith(root, { className: 'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">{td(model.error)}</div>;
   }
@@ -1234,7 +1366,16 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     return columns.find(c => c.dataIndex === field)?.title ?? title ?? field;
   };
   const sel = rt.selections[node.pfId] ?? [];
-  const actions = (Array.isArray(p.rowActions) ? p.rowActions : []) as { label: string; danger?: boolean; onClick?: PropValue }[];
+  const actions = (Array.isArray(p.rowActions) ? p.rowActions : []) as {
+    label: string;
+    danger?: boolean;
+    disabledWhenField?: string;
+    disabledWhenValue?: string;
+    disabledReason?: string;
+    hiddenWhenField?: string;
+    hiddenWhenValue?: string;
+    onClick?: PropValue;
+  }[];
   const showIndex = p.showIndex !== false;
   const showHeader = p.showHeader !== false;
   const isStriped = Boolean(p.striped);
@@ -1333,10 +1474,17 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             {visible.map(({ row: r, depth, ordinal, hasChildren }, i) => (
               <React.Fragment key={r.id}>
               <tr data-row-id={r.id}
-                onClick={() => rt.run(p.onRowClick as PropValue, { ...scope, row: r, tableId })}
+                data-active-row={tableId && activeRowId === r.id ? '1' : undefined}
+                onClick={() => {
+                  if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id);
+                  void rt.run(p.onRowClick as PropValue, childRowScope(scope, r, tableId));
+                }}
                 className={cx(
                   'group/row hover:bg-blue-50/40 border-b border-slate-100 last:border-0 transition-colors',
-                  isStriped && i % 2 === 1 && 'bg-slate-50/75'
+                  (autoSelectFirst || Boolean(p.onRowClick)) && !rt.isDesign && 'cursor-pointer',
+                  tableId && activeRowId === r.id
+                    ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200'
+                    : isStriped && i % 2 === 1 && 'bg-slate-50/75'
                 )}
               >
                 {expandable && <td className={cx('w-8 text-center', cellPadCls, borderCellCls)}>
@@ -1380,7 +1528,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                     <td key={c.dataIndex} {...span} data-field={c.dataIndex}
                       style={depth && columnIndex === 0 ? { paddingInlineStart: 12 + depth * 18 } : undefined}
                       className={cx('text-slate-800 whitespace-nowrap max-w-[240px] truncate', cellPadCls, alignCls, borderCellCls)}>
-                      {c.editor ? <EditableCell key={c.editor} column={c} value={r[c.dataIndex]} readOnly={rt.isDesign || Boolean(preview)}
+                      {c.editor ? <EditableCell key={c.editor} column={c} value={r[c.dataIndex]} readOnly={rt.isDesign || Boolean(preview) || uiState !== 'normal'}
                         required={table?.columns.find(field => field.name === c.dataIndex)?.nullable === false}
                         onSave={value => {
                           if (table) usePageStore.getState().updateRow(table.id, r.id, { [c.dataIndex]: value });
@@ -1398,23 +1546,31 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                     )}
                   >
                     <div className="flex items-center gap-2.5">
-                      {actions.map((a, ai) => (
-                        <button
-                          key={ai}
-                          type="button"
-                          onClick={(e) => {
-                            if (rt.isDesign) return;
-                            e.stopPropagation();
-                            rt.run(a.onClick, { ...scope, row: r, tableId });
-                          }}
-                          className={cx(
-                            'text-[12px] font-medium cursor-pointer transition',
-                            a.danger ? 'text-rose-600 hover:text-rose-700' : 'text-blue-600 hover:text-blue-700'
-                          )}
-                        >
-                          {a.label}
-                        </button>
-                      ))}
+                      {actions.map((a, ai) => {
+                        if (!rt.isDesign && matchesWhenCondition(r, a.hiddenWhenField, a.hiddenWhenValue)) return null;
+                        const actDisabled = !rt.isDesign && matchesWhenCondition(r, a.disabledWhenField, a.disabledWhenValue);
+                        return (
+                          <button
+                            key={ai}
+                            type="button"
+                            disabled={actDisabled}
+                            title={actDisabled && a.disabledReason ? a.disabledReason : undefined}
+                            onClick={(e) => {
+                              if (rt.isDesign || actDisabled) return;
+                              e.stopPropagation();
+                              rt.run(a.onClick, childRowScope(scope, r, tableId));
+                            }}
+                            className={cx(
+                              'text-[12px] font-medium transition',
+                              actDisabled
+                                ? 'text-slate-400 opacity-50 cursor-not-allowed'
+                                : cx('cursor-pointer', a.danger ? 'text-rose-600 hover:text-rose-700' : 'text-blue-600 hover:text-blue-700')
+                            )}
+                          >
+                            {a.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </td>
                 )}
@@ -1493,7 +1649,7 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const table = tables.find((t) => t.id === p.table);
   const rows = useTableRows(table?.id);
   const hasFieldItems = Array.isArray(p.items) && p.items.some((it: unknown) => Boolean(it && typeof it === 'object' && 'field' in it && (it as { field?: unknown }).field));
-  const navSource = useSourceRow(scope, rt.pageId, Boolean(table || hasFieldItems));
+  const navSource = useSourceRow(scope, rt.pageId, Boolean(table || hasFieldItems), table?.id);
   const scopedRow =
     navSource.row && (!table || !navSource.tableId || navSource.tableId === table.id)
       ? navSource.row
@@ -1585,31 +1741,79 @@ const STAT_COLOR: Record<string, string> = {
   red: 'text-rose-600',
 };
 const Statistic: React.FC<CompProps> = ({ p, root }) => {
+  const canvasTheme = useCanvasTheme();
+  const isDark = canvasTheme?.effectiveMode === 'dark';
   const rows = useTableRows((p.table as string) || undefined);
   const rawVal = p.table ? rows.length : p.value ?? 0;
   const formattedVal =
     typeof p.precision === 'number' && !Number.isNaN(Number(rawVal))
       ? Number(rawVal).toFixed(p.precision)
       : rawVal;
+  const trendText = typeof p.trendText === 'string' ? p.trendText.trim() : '';
+  const isDown = p.trend === 'down' || trendText.startsWith('-');
+  const showSparkline = Boolean(p.sparkline);
+  const radiusStyle = canvasTheme?.rawTokens ? { borderRadius: canvasTheme.resolved.cardRadiusPx } : undefined;
+
   return (
     <div
       {...rootWith(root, {
         className: cx(
-          'rounded-lg bg-white px-4 py-3',
-          p.bordered === false ? '' : 'border border-slate-200'
+          'rounded-lg px-4 py-3 flex items-end justify-between gap-3',
+          isDark
+            ? 'bg-zinc-900 border border-zinc-800 text-zinc-100'
+            : cx(
+                'bg-white',
+                canvasTheme?.resolved.surfaceVariant === 'elevated'
+                  ? 'border border-zinc-200/80 shadow-xs'
+                  : p.bordered === false
+                  ? ''
+                  : 'border border-slate-200'
+              )
         ),
+        style: radiusStyle,
       })}
     >
-      <div className="text-[13px] text-slate-500">{p.title}</div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        {p.prefix && <span className="text-[15px] font-medium text-slate-500">{p.prefix}</span>}
-        <span className={cx('text-[24px] font-semibold tabular-nums', STAT_COLOR[(p.valueColor as string) || 'default'] ?? STAT_COLOR.default)}>
-          {formattedVal}
-        </span>
-        {p.suffix && <span className="text-[13px] text-slate-500">{p.suffix}</span>}
-        {p.trend === 'up' && <TrendingUp className="w-4 h-4 text-emerald-600 ml-1" />}
-        {p.trend === 'down' && <TrendingDown className="w-4 h-4 text-rose-500 ml-1" />}
+      <div className="min-w-0">
+        <div className={cx('text-[13px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.title}</div>
+        <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
+          {p.prefix && <span className={cx('text-[15px] font-medium', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.prefix}</span>}
+          <span
+            className={cx(
+              'text-[24px] font-semibold tabular-nums',
+              isDark && (!p.valueColor || p.valueColor === 'default')
+                ? 'text-zinc-50'
+                : STAT_COLOR[(p.valueColor as string) || 'default'] ?? STAT_COLOR.default
+            )}
+          >
+            {formattedVal}
+          </span>
+          {p.suffix && <span className={cx('text-[13px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.suffix}</span>}
+          {p.trend === 'up' && !trendText && <TrendingUp className="w-4 h-4 text-emerald-600 ml-1" />}
+          {p.trend === 'down' && !trendText && <TrendingDown className="w-4 h-4 text-rose-500 ml-1" />}
+          {trendText && (
+            <span
+              className={cx(
+                'ml-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums',
+                isDown ? 'bg-rose-500/12 text-rose-600' : 'bg-emerald-500/12 text-emerald-600'
+              )}
+            >
+              {isDown ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+              <span>{trendText}</span>
+            </span>
+          )}
+        </div>
       </div>
+      {showSparkline && (
+        <svg viewBox="0 0 72 28" className="w-[72px] h-[28px] shrink-0 overflow-visible" aria-hidden="true">
+          <path
+            d={isDown ? 'M2 6 C18 8, 26 14, 42 18 S58 24, 70 25' : 'M2 24 C16 22, 28 18, 42 12 S58 6, 70 4'}
+            fill="none"
+            stroke={isDown ? '#e11d48' : canvasTheme?.resolved.primaryColor || '#2563eb'}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
     </div>
   );
 };
@@ -1712,23 +1916,27 @@ const Empty: React.FC<CompProps> = ({ p, root }) => {
 
 const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
   const { locale, tr } = useI18n();
+  const preview = useContext(PreviewDataContext);
   const tables = useMaterialTables();
   const boundTable = tables.find((t) => t.id === p.table);
-  const values = rt.formValues[node.pfId] ?? {};
-  const errors = rt.formErrors[node.pfId] ?? {};
+  const instanceId = resolveFormInstanceKey(node.pfId, p.table, scope);
+  const values = rt.formValues[instanceId] ?? {};
+  const errors = rt.formErrors[instanceId] ?? {};
   const cols = Math.max(1, Math.min(4, Number(p.cols ?? 2)));
   const row = (scope.row ?? scope.params?.row) as Row | undefined;
-  // Edit mode: prefill from the row passed into the overlay
+  // Edit mode: prefill from the canonical unprojected row so UI Stack `edge` stress text never enters form state
   const editingSource = Boolean(row && p.table && (scope.tableId ?? scope.params?.tableId) === p.table);
   useEffect(() => {
     if (!rt.isDesign && row && editingSource && Object.keys(values).length === 0) {
-      const { id: _id, ...rest } = row;
-      rt.setFormValues(node.pfId, rest);
+      const canonical = resolveCanonicalRow(p.table, row, preview?.rows) ?? row;
+      const { id: _id, ...rest } = canonical;
+      rt.setFormValues(instanceId, rest);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row?.id, scope.tableId, scope.params?.tableId, p.table]);
+  }, [instanceId, row?.id, scope.tableId, scope.params?.tableId, p.table]);
   const ctx: FormCtxValue = {
     formId: node.pfId,
+    formKey: instanceId,
     tableId: typeof p.table === 'string' && p.table ? p.table : undefined,
     editingSource,
     cols,
@@ -1741,7 +1949,7 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
     disabled: Boolean(p.disabled),
     values,
     errors,
-    setValue: (n, v) => rt.setFormValue(node.pfId, n, v),
+    setValue: (n, v) => rt.setFormValue(instanceId, n, v),
   };
   const explicitFields = (Array.isArray(p.fields) ? p.fields : []) as FieldDef[];
   const fieldDefs: FieldDef[] =

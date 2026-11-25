@@ -9,6 +9,7 @@ import { generateBlankPageSource } from '../proto/ai/templates';
 import { createMobileStarterDataset } from '../proto/mobile/starter';
 import { createCrmStarterDataset } from '../proto/starter/crmStarter';
 import { decodePflowBinary, type PflowBinaryPayload, type PflowProjectMetadata, type ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
+import { isDefaultDesignTokens } from '../proto/theme/designTokens';
 import { object, validateProjectMeta, validateProjectPayload } from './projectValidation';
 import { ProjectAutosave, type ProjectSaveBridge } from './projectAutosave';
 import { isEnLocale, tr } from '../i18n/runtime';
@@ -51,7 +52,7 @@ export function startProjectPersistence(delay = 500) {
     },
   });
   autosave = controller;
-  const protoKeys = ['projectAgreements', 'databaseRequirements', 'projectPlan', 'activePageId', 'dbTables', 'stickyNotes', 'suppliers', 'purchaseOrderItems', 'acceptanceOrders', 'closedLoopIssues', 'widgets', 'draftAcceptanceHeader', 'draftAcceptanceLines', 'mindmaps', 'projectNotes'] as const;
+  const protoKeys = ['projectAgreements', 'databaseRequirements', 'projectPlan', 'designTokens', 'activePageId', 'dbTables', 'stickyNotes', 'suppliers', 'purchaseOrderItems', 'acceptanceOrders', 'closedLoopIssues', 'widgets', 'draftAcceptanceHeader', 'draftAcceptanceLines', 'mindmaps', 'projectNotes'] as const;
   const pageKeys = ['pageSources', 'designerPages', 'designerFolders', 'sitemapBase', 'sitemapOverrides', 'tableRows'] as const;
   const stopProto = useProtoStore.subscribe((next, prev) => {
     if (!applyingSnapshot && protoKeys.some(key => next[key] !== prev[key])) controller.changed();
@@ -577,6 +578,7 @@ export function captureProjectPayload(): PflowBinaryPayload {
       ...(s.databaseRequirements.length ? {databaseRequirements:s.databaseRequirements} : {}),
       projectPlan: s.projectPlan,
       projectAgreements: s.projectAgreements,
+      ...(s.designTokens && !isDefaultDesignTokens(s.designTokens) ? { designTokens: s.designTokens } : {}),
       mindmaps: s.mindmaps,
       ...(s.projectNotes.nodes.length || s.projectNotes.links.length ? { projectNotes: pruneUnusedNoteAssets(pruneStaleNoteLinks(s.projectNotes, p)) } : {}),
       activePageId: s.activePageId, dbTables: s.dbTables, stickyNotes: s.stickyNotes,
@@ -664,6 +666,9 @@ export function normalizeProjectPayload(input: unknown): PflowBinaryPayload {
   }
   validateProjectPayload(payload, { allowLegacyZeroStickyIndex: true });
   const normalized = structuredClone(payload);
+  if (normalized.stateSnapshot.designTokens && isDefaultDesignTokens(normalized.stateSnapshot.designTokens)) {
+    delete normalized.stateSnapshot.designTokens;
+  }
   migrateLegacyZeroStickyIndexes(normalized.stateSnapshot.stickyNotes);
   if (legacy && normalized.meta.templateId === 'blank_project') {
     normalized.stateSnapshot.sitemapBase = legacyBlankSitemap(normalized.stateSnapshot);
@@ -744,6 +749,7 @@ export function applyLiveProjectEdit(before: PflowBinaryPayload, next: PflowBina
   }
   if (changed('databaseRequirements')) protoPatch.databaseRequirements = s.databaseRequirements ?? [];
   if (changed('projectAgreements')) protoPatch.projectAgreements = s.projectAgreements ?? [];
+  if (changed('designTokens')) protoPatch.designTokens = s.designTokens ?? null;
   if (changed('projectPlan')) protoPatch.projectPlan = s.projectPlan ?? null;
   if (changed('projectNotes')) protoPatch.projectNotes = s.projectNotes ?? emptyProjectNotes();
   if (protoPatch.projectNotes) {
@@ -775,6 +781,7 @@ function applySnapshot(payload: PflowBinaryPayload) {
       ...state,
       navigationSource: null,
       projectAgreements: state.projectAgreements ?? [],
+      designTokens: state.designTokens && !isDefaultDesignTokens(state.designTokens) ? state.designTokens : null,
       databaseRequirements: state.databaseRequirements ?? [],
       projectPlan: state.projectPlan === undefined ? null : state.projectPlan,
       selectedMindmapNodeId: state.mindmaps.nodes.length ? state.mindmaps.nodes[0].id : null,

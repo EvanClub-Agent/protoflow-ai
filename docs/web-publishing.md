@@ -4,22 +4,22 @@ Alex 桌面端负责本地原型设计、数据表建模与 AI 协同（工程�
 
 ## 核心能力与安全边界
 
-- **完整还原交互**：支持当前项目的全部画布页面、目录树、指定入口页、区域需求便签、表单/表格/弹窗/抽屉及动作链；访客在浏览器内存中的增删改不会回写原设计，点击“重置演示”即可恢复初始数据。
+- **完整还原交互**：支持当前项目的全部画布页面、目录树、指定入口页、工程级品牌主题令牌（`designTokens`）、UI Stack 五态切换（理想/空白/加载/极值/异常）、区域需求便签、表单/主从工作台/泳道看板/排期日历及 Poka-Yoke 防错与 5 秒撤销动作链；访客在浏览器内存中的增删改不会回写原设计，点击“重置演示”即可恢复初始数据。
 - **分享生命周期**：支持创建多个分享链接、同链接版本更新、乐观锁冲突检测、PBKDF2-SHA256 访问密码保护、过期时间与一键撤回。
 - **自建服务连接**：客户端默认纯本地运行；在顶部工具栏或“发布与分享”弹窗填写自建服务器地址（公网要求 HTTPS，本机 `localhost` 或 RFC1918 局域网地址支持 HTTP）即可注册或登录账号。
 - **凭证安全隔离**：桌面端使用操作系统级 `safeStorage` 加密保存会话令牌，绝不写入 `.pflow` 工程、分享快照或 `localStorage`；切换不同服务地址时不会解密或转发旧服务器凭证。
 - **隐私最小化**：发布的快照仅包含页面结构、表结构与演示数据，不包含本机路径、AI 聊天记录或模型 API Key。
 
-## Docker Compose 一键部署（推荐）
+## Docker Compose 一键部署（推荐 · 预编译多架构 GHCR 镜像）
 
-`deploy/compose.yml` 已内置 `postgres:18-alpine`、`api`（Go 服务，启动时自动执行数据库迁移）与 `web`（Nginx + 在线浏览端 + 版本发布中心）：
+`deploy/compose.yml` 已内置 `postgres:18-alpine`、`api`（`ghcr.io/evanclub-agent/protoflow-ai-api:latest`）与 `web`（`ghcr.io/evanclub-agent/protoflow-ai-web:latest`），均支持 `linux/amd64` 与 `linux/arm64`：
 
 ```sh
-# 1. 准备环境变量（修改数据库密码与对外访问的 PUBLIC_ORIGIN）
+# 1. 准备环境变量（修改数据库密码与对外访问的 PUBLIC_ORIGIN；可选通过 PROTOFLOW_API_IMAGE / PROTOFLOW_WEB_IMAGE 锁定 :v0.0.10 版本）
 cp deploy/.env.example deploy/.env
 
-# 2. 构建并后台启动全部容器
-docker compose --env-file deploy/.env -f deploy/compose.yml up --build -d
+# 2. 直接拉取 GHCR 预编译镜像并后台启动全部容器（若本地修改了源码可追加 --build）
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 
 # 3. 检查健康状态
 curl -fsS http://127.0.0.1:8088/healthz
@@ -27,6 +27,8 @@ curl -fsS http://127.0.0.1:8088/healthz
 # 4. （可选）创建平台管理员账号，用于访问版本管理后台
 docker compose --env-file deploy/.env -f deploy/compose.yml exec api /app/protoflow create-admin admin
 ```
+
+后续发布新版本时，执行 `docker compose --env-file deploy/.env -f deploy/compose.yml pull && docker compose --env-file deploy/.env -f deploy/compose.yml up -d` 即可无损滚动升级。
 
 ### 端口与局域网/公网配置说明
 

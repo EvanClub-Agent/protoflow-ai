@@ -233,6 +233,7 @@ export function payloadFromPublishedSnapshot(
       sitemapBase,
       sitemapOverrides: emptySitemapOverrides(),
       tableRows: snapshot.tableRows,
+      ...(snapshot.designTokens ? { designTokens: snapshot.designTokens } : {}),
     },
   };
 }

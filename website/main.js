@@ -71,25 +71,26 @@
     'sc.hl1': 'Multi-module menu tree with live shared-table badges',
     'sc.hl2': '12 native ECharts & tables bound directly to project data',
     'sc.hl3': 'Bidirectional AST inspector, sticky specs & scoped Ask AI',
-    'sc.demoBanner': 'No download needed — explore this 6-page desktop + iPhone CRM prototype live in your browser in 5 seconds.',
+    'sc.demoBanner':
+      'No download needed — explore this desktop + iPhone StarLink Maintenance & Spare Parts prototype live in your browser in 5 seconds.',
     'sc.demoBannerBtn': 'Launch Browser Live Demo →',
-    'sc.er1Tag': 'Desktop Admin · Form',
-    'sc.er1Title': 'New Sales Contract / Account',
+    'sc.er1Tag': 'Desktop Dispatch · Master-Detail',
+    'sc.er1Title': 'Ticket Triage & Stock-Cap Guards',
     'sc.er1Desc':
-      'Form controls bind directly to table columns and foreign-key lookups, writing real rows and running tax ID and over-billing guards.',
+      'Popup-free Repeater cards switch isolated detail forms bound directly to ER columns with phone, date-range, and maxField stock checks.',
     'sc.er2Tag': 'Shared Physical Table · ER Constraints',
     'sc.er2Desc':
-      'Foreign keys to customers, ENUM status machines, and composite unique payment-plan keys with cross-page impact tracking.',
+      'RESTRICT spare-part foreign keys block premature ticket deletion, while CASCADE logs archive and restore via 5-second atomic Undo.',
     'sc.er3Tag': 'iPhone Viewport · Mobile',
-    'sc.er3Title': 'Mobile Approvals & Invoicing',
+    'sc.er3Title': 'Field Dispatch & Van Part Claims',
     'sc.er3Desc':
-      'Backed by the exact same dataset — approving contracts or filing field invoices updates desktop ledgers immediately.',
+      'Backed by the exact same dataset — advancing ticket stages or claiming van parts on mobile updates desktop workbenches immediately.',
     'sc.erMobImgAlt':
-      'ProtoFlow AI browser sandbox iPhone mobile approval viewport sharing the t_crm_contracts ER table with desktop admin',
-    'sc.erMobTitle': 'Real Desktop ↔ Mobile Data Sync in Your Browser',
+      'ProtoFlow AI browser sandbox iPhone field engineer viewport sharing srv_tickets and srv_part_usages ER tables with desktop dispatch',
+    'sc.erMobTitle': 'Real Desktop ↔ Field Mobile Sync in Your Browser',
     'sc.erMobDesc':
-      'No separate mobile file required. Forms, tables, ECharts, and iPhone viewports read and write the same ER physical tables inside one .pflow project.',
-    'sc.erMobBtn': 'Try Mobile Approvals Live →',
+      'No separate mobile file required. Master-detail workbenches, Kanban calendars, ECharts, and iPhone field apps share the same physical ER tables.',
+    'sc.erMobBtn': 'Try Mobile Field App Live →',
     'sc.mcp1Tag': 'Live Canvas Bridge · Design Time',
     'sc.mcp1Title': 'Let Coding Agents Design Directly on Canvas',
     'sc.mcp1Desc':
@@ -114,7 +115,7 @@
     'facts.aria': 'Key product facts',
     'fact.1.title': 'Apache-2.0 Open Source',
     'fact.1.desc': 'No sign-in required locally · Docker self-hostable',
-    'fact.2.title': '114+ Materials · 12 Charts',
+    'fact.2.title': '134+ Materials · 12 Charts',
     'fact.2.desc': 'Desktop admin & iPhone viewports sharing ER tables',
     'fact.3.title': '18 MCP Tools',
     'fact.3.desc': 'Live canvas co-design + zero-install spec handoff',
@@ -162,7 +163,7 @@
     'features.p1Title': 'Shared ER Physical Tables + Offline Axure .rp Upgrade',
     'features.p1Desc':
       'Model foreign keys and composite unique constraints visually so form writes update desktop ledgers, charts, and iPhone screens live — and parse Axure RP 9/11 .rp binaries offline without Axure installed.',
-    'features.p1DemoLink': 'Try Live CRM Demo →',
+    'features.p1DemoLink': 'Try StarLink Live Demo →',
     'features.p1AxureLink': 'Axure .rp Migration Guide →',
     'features.p2Tag': 'Track 2 · Built for Coding Agents',
     'features.p2Title': 'Bidirectional MCP Live Canvas + Zero-Install DDL/TSX Handoff',
@@ -172,9 +173,9 @@
     'f1.title': 'Clarify-First Project AI',
     'f1.desc':
       'The built-in Hermes engine asks about thresholds, approvals, and edge cases first, proposes a sitemap + ER blueprint, and supports scoped edits after confirmation.',
-    'f2.title': 'Bidirectional AST Canvas & 114+ Materials',
+    'f2.title': 'Bidirectional AST, 134+ Materials & 5-State Guards',
     'f2.desc':
-      'Widescreen grids, multi-column query bars, master-detail tables, drawers, composite blocks, and sandboxed freeform components synced losslessly with TSX DSL.',
+      'Popup-free Repeater Master-Detail, Kanban calendars, Bento KPIs, UI Stack 5-state simulation, Poka-Yoke field guards, 5s atomic undo, and brand theme tokens.',
     'f4.title': 'Desktop Admin & Mobile in One Project',
     'f4.desc':
       'Author wide admin consoles alongside iPhone mobile viewports with bottom sheets, capsule tabs, and waterfall feeds backed by the exact same dataset.',
@@ -225,7 +226,7 @@
     'scn.t2Title': 'CRM Sales & Contract Billing Dashboard',
     'scn.t2Desc':
       'Table-bound ECharts trend and regional ARR charts, customer opportunity CRUD, payment plans, and cross-platform billing views.',
-    'scn.t2Cta': 'Launch Live Demo in Browser →',
+    'scn.t2Cta': 'Open Browser Live Sandbox →',
     'scn.t3Title': 'Modern Mobile & Cross-Platform App',
     'scn.t3Desc':
       'Consumer waterfall discovery feed, mobile approval drawers, AI assistant view, and live table sync with the desktop admin console.',

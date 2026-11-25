@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "project": "crm-contract-billing",
+  "project": "starlink-maintenance-fulfillment",
   "snapshots": {
-    "zh": "./snapshots/crm-zh.json",
-    "en": "./snapshots/crm-en.json"
+    "zh": "./snapshots/starlink-zh.json",
+    "en": "./snapshots/starlink-en.json"
   }
 }

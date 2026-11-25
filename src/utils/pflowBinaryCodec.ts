@@ -50,6 +50,8 @@ export type ProjectStateSnapshot = Pick<ProtoStore,
   projectPlan?: ProjectPlan | null;
   /** Older V7 projects have no saved agreements. */
   projectAgreements?: import('../services/projectKnowledge').ProjectAgreement[];
+  /** Optional canvas-scoped Design Tokens preset & overrides; absent in older V7 archives. */
+  designTokens?: import('../proto/theme/designTokens').ProjectDesignTokens | null;
   projectNotes?: NoteWorkspace;
   pageSources: Record<string, string>;
   designerPages: DesignerPage[];

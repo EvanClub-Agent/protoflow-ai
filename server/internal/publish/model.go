@@ -73,8 +73,18 @@ type Snapshot struct {
 		Active           *bool   `json:"active"`
 	} `json:"stickyNotes"`
 	// Format 4: read-only project notes the author explicitly marked shareable.
-	Notes      []PublishedNote      `json:"notes"`
-	NoteAssets map[string]NoteAsset `json:"noteAssets"`
+	Notes        []PublishedNote      `json:"notes"`
+	NoteAssets   map[string]NoteAsset `json:"noteAssets"`
+	DesignTokens json.RawMessage      `json:"designTokens,omitempty"`
+}
+
+type PublishedDesignTokens struct {
+	Preset         string  `json:"preset"`
+	PrimaryColor   *string `json:"primaryColor,omitempty"`
+	Radius         *string `json:"radius,omitempty"`
+	Density        *string `json:"density,omitempty"`
+	SurfaceVariant *string `json:"surfaceVariant,omitempty"`
+	ColorMode      *string `json:"colorMode,omitempty"`
 }
 
 type PublishedNote struct {
@@ -109,6 +119,12 @@ const (
 )
 
 var noteAssetID = regexp.MustCompile(`^img-[a-z0-9]{3,48}$`)
+var hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+var designPresets = map[string]bool{"classic_antd": true, "modern_minimal": true, "collab_soft": true, "enterprise_compact": true}
+var designRadii = map[string]bool{"sharp": true, "rounded": true, "generous": true}
+var designDensities = map[string]bool{"compact": true, "comfortable": true, "spacious": true}
+var designSurfaces = map[string]bool{"bordered": true, "subtle": true, "elevated": true}
+var designColorModes = map[string]bool{"auto": true, "light": true, "dark": true}
 var noteStatuses = map[string]bool{"draft": true, "pending_confirm": true, "confirmed": true, "implemented": true}
 var notePriorities = map[string]bool{"P0": true, "P1": true, "P2": true}
 var noteMimes = map[string]bool{"image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true}
@@ -121,6 +137,7 @@ var allowedPublishedActions = map[string]bool{
 	"confirm":                  true,
 	"toast":                    true,
 	"refresh":                  true,
+	"selectRow":                true,
 	"deleteRow":                true,
 	"updateRow":                true,
 	"importPurchaseOrderLines": true,
@@ -130,6 +147,113 @@ var allowedPublishedActions = map[string]bool{
 	"setVar":                   true,
 	"show":                     true,
 	"hide":                     true,
+}
+
+var allowedSnapshotKeys = map[string]bool{
+	"formatVersion": true,
+	"sitemap":       true,
+	"projectId":     true,
+	"title":         true,
+	"entryPageId":   true,
+	"pages":         true,
+	"tables":        true,
+	"tableRows":     true,
+	"stickyNotes":   true,
+	"notes":         true,
+	"noteAssets":    true,
+	"designTokens":  true,
+}
+
+var allowedDesignTokenKeys = map[string]bool{
+	"preset":         true,
+	"primaryColor":   true,
+	"radius":         true,
+	"density":        true,
+	"surfaceVariant": true,
+	"colorMode":      true,
+}
+
+func decodeStrictJSONObjectKeys(raw []byte, allowed map[string]bool) (map[string]json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, errors.New("JSON 对象格式无效")
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return nil, errors.New("JSON 对象格式无效")
+	}
+	out := make(map[string]json.RawMessage)
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, errors.New("JSON 键名格式无效")
+		}
+		key, ok := keyTok.(string)
+		if !ok || (allowed != nil && !allowed[key]) {
+			return nil, errors.New("包含不支持的字段或字段大小写无效")
+		}
+		if _, dup := out[key]; dup {
+			return nil, errors.New("包含重复的 JSON 字段")
+		}
+		var val json.RawMessage
+		if err := dec.Decode(&val); err != nil {
+			return nil, errors.New("JSON 字段值无效")
+		}
+		out[key] = val
+	}
+	endTok, err := dec.Token()
+	if err != nil || endTok != json.Delim('}') || dec.More() {
+		return nil, errors.New("JSON 对象结尾格式无效")
+	}
+	return out, nil
+}
+
+func validateDesignTokens(s *Snapshot, fields map[string]json.RawMessage) error {
+	rawTokens, present := fields["designTokens"]
+	if !present {
+		return nil
+	}
+	if s.FormatVersion < 5 {
+		return errors.New("此发布格式不包含设计令牌字段")
+	}
+	tokenFields, err := decodeStrictJSONObjectKeys(rawTokens, allowedDesignTokenKeys)
+	if err != nil {
+		return errors.New("设计令牌格式无效或包含不支持的字段")
+	}
+	if _, hasPreset := tokenFields["preset"]; !hasPreset {
+		return errors.New("设计令牌缺少必填字段 preset")
+	}
+	for k, rv := range tokenFields {
+		if bytes.Equal(bytes.TrimSpace(rv), []byte("null")) {
+			return fmt.Errorf("设计令牌字段 %s 不能为 null", k)
+		}
+	}
+	var dt PublishedDesignTokens
+	dec := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(rawTokens)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&dt); err != nil {
+		return errors.New("设计令牌包含不支持的字段或类型无效")
+	}
+	if !designPresets[dt.Preset] {
+		return errors.New("设计令牌预设无效")
+	}
+	if dt.PrimaryColor != nil && !hexColorRe.MatchString(*dt.PrimaryColor) {
+		return errors.New("设计令牌主色格式无效")
+	}
+	if dt.Radius != nil && !designRadii[*dt.Radius] {
+		return errors.New("设计令牌圆角无效")
+	}
+	if dt.Density != nil && !designDensities[*dt.Density] {
+		return errors.New("设计令牌紧凑度无效")
+	}
+	if dt.SurfaceVariant != nil && !designSurfaces[*dt.SurfaceVariant] {
+		return errors.New("设计令牌表面质感无效")
+	}
+	if dt.ColorMode != nil && !designColorModes[*dt.ColorMode] {
+		return errors.New("设计令牌色彩模式无效")
+	}
+	return nil
 }
 
 func validateNotes(s *Snapshot, fields map[string]json.RawMessage, pages map[string]bool) error {
@@ -235,11 +359,14 @@ func ValidateSnapshot(raw json.RawMessage) (*Snapshot, error) {
 	if !pages[s.EntryPageID] {
 		return nil, errors.New("入口页面不存在")
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, err
+	fields, err := decodeStrictJSONObjectKeys(raw, allowedSnapshotKeys)
+	if err != nil {
+		return nil, errors.New("发布内容格式错误或包含不支持的字段")
 	}
 	if err := validateNotes(&s, fields, pages); err != nil {
+		return nil, err
+	}
+	if err := validateDesignTokens(&s, fields); err != nil {
 		return nil, err
 	}
 	if s.FormatVersion >= 3 {

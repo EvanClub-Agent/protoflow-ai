@@ -505,6 +505,38 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
     title: 'Semantic Icon',
     description: 'Configurable semantic vector icon supporting size, tone badge, custom color, and click actions.',
   },
+  Repeater: {
+    title: 'Repeater Cards',
+    description: 'Binds a physical table and repeats custom child component templates per row using {{row.field}}, preserving individual pfId selection and sticky notes.',
+  },
+  Kanban: {
+    title: 'Kanban Board',
+    description: 'Multi-lane status board bound to a physical table enum/status column with drag-and-drop and quick stage transitions.',
+  },
+  Calendar: {
+    title: 'Schedule Calendar',
+    description: 'Month and week schedule calendar bound to a physical table date column with status badges and event click actions.',
+  },
+  AiCopilotCard: {
+    title: 'AI Copilot Card',
+    description: 'Desktop AI review insight and risk alert card supporting context interpolation and one-click action chains per suggestion.',
+  },
+  MRepeater: {
+    title: 'Mobile Repeater',
+    description: 'Mobile repeating template container supporting stack, 2-column grid, and swipeable scroll layouts bound to a physical table via {{row.field}}.',
+  },
+  MKanban: {
+    title: 'Mobile Kanban',
+    description: 'Touch-friendly mobile stage board with pill lane switcher and real-time physical table status transitions.',
+  },
+  MCalendar: {
+    title: 'Mobile Calendar',
+    description: 'Compact mobile week/month date strip paired with a daily agenda list bound to physical table date records.',
+  },
+  MAiInsightCard: {
+    title: 'Mobile AI Insight',
+    description: 'Gemini-styled gradient-bordered mobile AI summary and quick action suggestion card.',
+  },
 
   // Axure Compatibility Materials
   FigmaCanvas: {
@@ -1413,6 +1445,26 @@ const EN_COMPONENT_SNIPPETS: Record<string, string> = {
   { title: 'Enterprise Data Panorama', subtitle: 'Real-time KPI rollups & drill-downs', tag: 'Featured', tone: 'violet' }
 ]} />`,
   Icon: '<Icon name="Sparkles" size={20} tone="blue" boxed={true} />',
+  Repeater: `<Repeater cols={3} gap={16}>
+  <Card title="{{row.title}}" extra="{{row.status}}" hoverable={true}>
+    <Text>{'{{row.subtitle}}'}</Text>
+  </Card>
+</Repeater>`,
+  Kanban: '<Kanban lanes={["Backlog", "Proposal", "Negotiation", "Won"]} allowMove={true} />',
+  Calendar: '<Calendar title="Schedule Calendar" view="month" />',
+  AiCopilotCard: `<AiCopilotCard title="AI Review Insights" badge="AI Check" tone="indigo" summary="Cross-checked linked records and flagged 2 items for review:" items={[
+  { title: 'Unit Price Variance', detail: 'Current price is 8.2% above 90-day average', actionLabel: 'Inspect History' },
+  { title: 'Split Delivery Suggestion', detail: 'East warehouse stock is healthy; split into 2 batches', actionLabel: 'Apply' }
+]} />`,
+  MRepeater: `<MRepeater layout="stack">
+  <MSurface title="{{row.title}}" extra="{{row.status}}" subtitle="{{row.subtitle}}" tone="card" />
+</MRepeater>`,
+  MKanban: '<MKanban lanes={["Queued", "Active", "Review", "Done"]} allowMove={true} />',
+  MCalendar: '<MCalendar title="Weekly Schedule" mode="week" />',
+  MAiInsightCard: `<MAiInsightCard title="AI Daily Insights" badge="Live" summary="2 high-priority orders are approaching SLA deadlines:" items={[
+  { title: 'Expedite East Hub Shipment', detail: 'Cutoff in 2 hours', actionLabel: 'Handle Now' },
+  { title: 'Overdue Receivable Follow-up', detail: '3 days past due', actionLabel: 'View Details' }
+]} />`,
   OutlineTree: '<OutlineTree width={180} height={100}><TreeItem text="Directory" /></OutlineTree>',
   FigmaCanvas: '<FigmaCanvas frameWidth={1440} frameHeight={900} background="#FFFFFF" />',
   FigmaFrame: '<FigmaFrame layoutMode="row" gap={12} padding="12px 16px" width={320} height={64} />',
@@ -1900,8 +1952,8 @@ const ACTION_EN_MAP: Record<string, { title: string; description: string; argLab
   },
   confirm: {
     title: 'Confirm Dialog',
-    description: 'Prompt confirmation; aborts remaining actions if canceled.',
-    argLabels: { message: 'Confirm message' },
+    description: 'Prompt confirmation; aborts remaining actions if canceled. Pass optional matchText (e.g. "{{row.order_no}}") for high-risk type-to-confirm.',
+    argLabels: { message: 'Confirm message', matchText: 'Type-to-confirm match text (optional)' },
   },
   toast: {
     title: 'Toast Notice',
@@ -1910,12 +1962,17 @@ const ACTION_EN_MAP: Record<string, { title: string; description: string; argLab
   },
   refresh: {
     title: 'Refresh Table/List',
-    description: 'Reload table or mobile list data and reset to page 1.',
+    description: 'Reload table, grid, board, or calendar data and reset to page 1.',
     argLabels: { table: 'Table / List pfId' },
+  },
+  selectRow: {
+    title: 'Select Active Row (Master-Detail)',
+    description: 'Set the clicked record as the page-level active row to drive bound detail containers (Card/MSurface activeTable), Descriptions, Form, and child tables without opening a modal.',
   },
   deleteRow: {
     title: 'Delete Current Row',
-    description: 'Delete the current row in context.',
+    description: 'Delete the current row in context (enforces FK RESTRICT/CASCADE; pass "undo" for a 5s undoable delete toast).',
+    argLabels: { mode: 'Recovery mode' },
   },
   updateRow: {
     title: 'Update Row Fields',

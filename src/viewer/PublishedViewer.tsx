@@ -6,6 +6,8 @@ import { AlertCircle, ArrowRight, Blocks, CheckCircle2, ChevronRight, LockKeyhol
 import { McpConnectModal } from '../components/McpConnectModal';
 import type { Publication } from '../services/publishingClient';
 import { useResolvedTheme } from '../proto/registry/AntdSurface';
+import { ProtoCanvasThemeScope } from '../proto/theme/ProtoCanvasThemeScope';
+import { UIStackSwitcher } from '../proto/designer/UIStackSwitcher';
 import { MobileViewportShell } from '../proto/mobile/MobileViewportShell';
 import { resolveMobileAppearance, ToastStatusIcon, type MobileAppearance } from '../proto/mobile/components';
 import { MOBILE_DEVICE_LIST, type MobileDevicePreset } from '../proto/mobile/types';
@@ -14,6 +16,7 @@ import { useProtoStore } from '../store/useProtoStore';
 import { usePageStore } from '../proto/store/usePageStore';
 import { NodeView, ScopeProvider } from '../proto/renderer/NodeView';
 import { findOverlay, RuntimeProvider, useRuntimeController } from '../proto/runtime/runtime';
+import { DesktopConfirmDialog } from '../proto/runtime/ConfirmModalContent';
 import type { Row } from '../proto/runtime/mock';
 import { PublishedNotesButton, PublishedNotesProvider } from './PublishedNotes';
 import { PublishedProjectNotes } from './PublishedProjectNotes';
@@ -77,6 +80,7 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
         value={{
           row: entry.params.row as Row | undefined,
           tableId: entry.params.tableId as string | undefined,
+          expectedTableId: entry.expectedTableId,
           params: entry.params,
           overlayIndex: index,
         }}
@@ -155,26 +159,28 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
       </>
     )}
     {!isMobile && runtime.confirmState && (
-      <div role="dialog" aria-modal="true" aria-label={tr('操作确认', 'Confirm Action')} className="fixed inset-0 z-[90] bg-slate-900/45 backdrop-blur-[2px] flex items-center justify-center p-5">
-        <div className="bg-white rounded-2xl border border-slate-200/90 p-5 max-w-sm w-full shadow-2xl space-y-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-bold text-slate-900">{tr('操作确认', 'Confirm Action')}</h2>
-            <p className="text-xs leading-5 text-slate-600">{runtime.confirmState.message}</p>
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => runtime.resolveConfirm(false)} className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-medium rounded-lg cursor-pointer transition">{tr('取消', 'Cancel')}</button>
-            <button type="button" onClick={() => runtime.resolveConfirm(true)} className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition">{tr('确认执行', 'Confirm')}</button>
-          </div>
-        </div>
-      </div>
+      <DesktopConfirmDialog
+        confirmState={runtime.confirmState}
+        onResolve={runtime.resolveConfirm}
+      />
     )}
     {!isMobile && (
       <div role="status" className="fixed bottom-5 right-5 z-[100] space-y-2 pointer-events-none">
         {runtime.toasts.map(t => (
-          <p key={t.id} className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/95 backdrop-blur-xs px-4 py-2.5 text-white text-xs font-medium shadow-xl">
+          <div key={t.id} className="pointer-events-auto flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/95 backdrop-blur-xs px-4 py-2.5 text-white text-xs font-medium shadow-xl">
             <ToastStatusIcon type={t.type} size={14} />
-            {t.message}
-          </p>
+            <span>{t.message}</span>
+            {t.undoAction && (
+              <button
+                type="button"
+                data-testid="toast-undo-btn"
+                onClick={() => t.undoAction?.onUndo()}
+                className="ml-1.5 rounded-md bg-blue-500/25 px-2 py-0.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/40 cursor-pointer transition"
+              >
+                {t.undoAction.label}
+              </button>
+            )}
+          </div>
         ))}
       </div>
     )}
@@ -548,6 +554,9 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <div className="hidden md:flex items-center">
+              <UIStackSwitcher compact />
+            </div>
             <p className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-400 mr-1 whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               {isStaticDemo
@@ -626,6 +635,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
           <main data-testid="published-content" style={hasAxureCanvas ? { contain:'layout' } : undefined}
             className={`min-h-0 min-w-0 flex-1 ${hasAxureCanvas ? 'overflow-hidden' : 'overflow-auto p-3 sm:p-5'} ${page?.doc.root.type === 'MobilePage' ? 'max-[540px]:p-0' : ''}`}>
             <div className={hasAxureCanvas ? 'h-full overflow-auto p-3 sm:p-5' : 'contents'}>
+            <ProtoCanvasThemeScope tokens={'designTokens' in snapshot ? snapshot.designTokens : null}>
             <div
               data-testid="published-canvas"
               className={
@@ -643,6 +653,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
                 <div role="alert" className="p-8 text-sm text-slate-500">{tr('目标页面未发布，请从左侧目录选择页面。', 'Target page is not published. Please select a page from the sidebar.')}</div>
               )}
             </div>
+            </ProtoCanvasThemeScope>
             </div>
           </main>
         </div>

@@ -9,6 +9,15 @@ import { localizeComponentMeta } from '../registry/localizeMeta';
 import { isChartType } from '../charts/model';
 import { REGISTRY, type CompProps, type RootAttrs } from '../registry/components';
 import { interpolate, usesLiteralLayoutContent, useRuntime, type Scope } from '../runtime/runtime';
+import { useSourceRow } from '../runtime/sourceRow';
+import {
+  DATA_ERROR_VIEW_TYPES,
+  DATA_LOADING_SKELETON_TYPES,
+  UIStackComponentErrorCard,
+  UIStackLoadingPlaceholder,
+  useUIStackState,
+} from '../runtime/uiStackLens';
+import { useProtoStore } from '../../store/useProtoStore';
 import type { ComponentStickyPinProps } from '../../components/ComponentStickyPin';
 import { FLOW_GRID_CONTAINERS, flowGridSpan, columnSpan, columnWidthLabel, trailingColumnSpace } from './gridLayout';
 import { useI18n } from '../../i18n';
@@ -50,6 +59,7 @@ const ScopeCtx = createContext<Scope>({});
 export const ScopeProvider = ScopeCtx.Provider;
 
 const ParentNodeCtx = createContext<{ node: ProtoNode; parent: ProtoNode | null } | null>(null);
+const MirroredNodeCtx = createContext<boolean>(false);
 
 const FLEX_ROW_CONTAINERS = new Set(['Toolbar', 'Space', 'Flex']);
 const FIELD_CONTROL_TYPES = FIELD_TYPES;
@@ -71,13 +81,61 @@ export interface RenderOptions {
   staticOverlay?: boolean;
 }
 
+function mergeChildScope(parentScope: Scope, patch?: Scope): Scope {
+  if (!patch) return parentScope;
+  const updatesRowContext =
+    Object.prototype.hasOwnProperty.call(patch, 'row') ||
+    Object.prototype.hasOwnProperty.call(patch, 'tableId');
+  const nextExpected = Object.prototype.hasOwnProperty.call(patch, 'expectedTableId')
+    ? patch.expectedTableId
+    : updatesRowContext
+    ? patch.tableId ?? parentScope.expectedTableId
+    : parentScope.expectedTableId;
+  return {
+    ...parentScope,
+    ...patch,
+    expectedTableId: nextExpected,
+  };
+}
+
 export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live?: boolean }> = ({ node, options, live }) => {
   const { locale, tr } = useI18n();
   const ComponentStickyPin = useContext(StickyPinContext);
   const renderAnnotation = useContext(NodeAnnotationContext);
   const rt = useRuntime();
+  const uiState = useUIStackState();
   const design = useContext(DesignCtx);
-  const scope = useContext(ScopeCtx);
+  const isMirrored = useContext(MirroredNodeCtx);
+  const rawOuterScope = useContext(ScopeCtx);
+  const liveOverlayEntry =
+    live && rawOuterScope.overlayIndex !== undefined ? rt.overlays[rawOuterScope.overlayIndex] : undefined;
+  const outerScope: Scope =
+    liveOverlayEntry?.expectedTableId && rawOuterScope.expectedTableId === undefined
+      ? { ...rawOuterScope, expectedTableId: liveOverlayEntry.expectedTableId }
+      : rawOuterScope;
+  const activeTableProp =
+    (node.type === 'Card' || node.type === 'MSurface') && typeof node.props.activeTable === 'string' && node.props.activeTable.trim()
+      ? node.props.activeTable.trim()
+      : undefined;
+  const boundActiveSource = useSourceRow(outerScope, rt.pageId, Boolean(activeTableProp), activeTableProp);
+  const scope: Scope = activeTableProp
+    ? (() => {
+        const row = boundActiveSource.tableId === activeTableProp ? boundActiveSource.row : undefined;
+        let params = outerScope.params;
+        if (params && (!row || params.tableId !== activeTableProp)) {
+          const { row: _row, tableId: _tableId, ...otherParams } = params;
+          params = otherParams;
+        }
+        return {
+          ...outerScope,
+          row,
+          tableId: row ? activeTableProp : undefined,
+          expectedTableId: activeTableProp,
+          params,
+        };
+      })()
+    : outerScope;
+  const hasScopedOverride = scope !== rawOuterScope;
   const parentContext = useContext(ParentNodeCtx);
   const parentNode = parentContext?.node ?? null;
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -127,7 +185,13 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   const childOptions = options?.staticOverlay ? { ...options, staticOverlay: false } : options;
   const children = kids.map((k) => (
     <ParentNodeCtx.Provider key={k.pfId} value={{ node, parent: parentNode }}>
-      <NodeView node={k} options={childOptions} />
+      {hasScopedOverride ? (
+        <ScopeProvider value={scope}>
+          <NodeView node={k} options={childOptions} />
+        </ScopeProvider>
+      ) : (
+        <NodeView node={k} options={childOptions} />
+      )}
     </ParentNodeCtx.Provider>
   ));
 
@@ -146,7 +210,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   const owningRow = owningColumn === node ? parentNode : parentContext?.parent ?? null;
   const columnSpace = trailingColumnSpace(owningRow, owningColumn);
 
-  const root: RootAttrs = { 'data-pf-id': node.pfId };
+  const root: RootAttrs = isMirrored ? { 'data-pf-mirror-of': node.pfId } : { 'data-pf-id': node.pfId };
   if (design && rt.isDesign) {
     const isContainer = !!meta?.container;
     root['data-pf-sel'] = design.selectedId === node.pfId ? '1' : undefined;
@@ -239,6 +303,12 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   // Freeform source/CSS/data and event placeholders are opaque values. They
   // must survive verbatim until the isolated runtime or event bridge reads them.
   const resolvedProps = isAxureMaterial(node.type) || isFigmaMaterial(node.type) || literalContent || node.type === 'Freeform' || isChartType(node.type) ? { ...node.props } : resolveProps(node.props, scope, rt.vars);
+  if (
+    uiState === 'loading' &&
+    (['Table', 'Card', 'Select', 'Switch'].includes(node.type) || (node.type === 'Button' && node.props.type === 'primary'))
+  ) {
+    resolvedProps.loading = true;
+  }
   // When placed inside Toolbar / horizontal Space, or when width === 'auto', force compact inline mode on FieldControl
   if ((inFlexRow || rawWidth === 'auto') && FIELD_CONTROL_TYPES.has(node.type)) {
     resolvedProps.width = 'auto';
@@ -260,7 +330,7 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
     renderNode: (n, s) => (
       <ParentNodeCtx.Provider key={n.pfId} value={{ node, parent: parentNode }}>
         {s ? (
-          <ScopeProvider value={{ ...scope, ...s }}>
+          <ScopeProvider value={mergeChildScope(scope, s)}>
             <NodeView node={n} options={childOptions} />
           </ScopeProvider>
         ) : (
@@ -268,7 +338,24 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
         )}
       </ParentNodeCtx.Provider>
     ),
-    withScope: (s, el) => <ScopeProvider value={{ ...scope, ...s }}>{el}</ScopeProvider>,
+    renderMirroredNode: (n, s) => (
+      <ParentNodeCtx.Provider key={n.pfId} value={{ node, parent: parentNode }}>
+        <MirroredNodeCtx.Provider value={true}>
+          <DesignProvider value={null}>
+            <NodeAnnotationProvider value={null}>
+              {s ? (
+                <ScopeProvider value={mergeChildScope(scope, s)}>
+                  <NodeView node={n} options={childOptions} />
+                </ScopeProvider>
+              ) : (
+                <NodeView node={n} options={childOptions} />
+              )}
+            </NodeAnnotationProvider>
+          </DesignProvider>
+        </MirroredNodeCtx.Provider>
+      </ParentNodeCtx.Provider>
+    ),
+    withScope: (s, el) => <ScopeProvider value={mergeChildScope(scope, s)}>{el}</ScopeProvider>,
   };
 
   // Root frames (Page or static Modal/Drawer frame) render directly
@@ -706,7 +793,19 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
         </div>
       )}
 
-      <Impl {...props} />
+      {uiState === 'loading' && (isChartType(node.type) || DATA_LOADING_SKELETON_TYPES.has(node.type)) ? (
+        <UIStackLoadingPlaceholder
+          mobile={node.type.startsWith('M')}
+          compact={node.type === 'Statistic' || node.type === 'MStatCard'}
+        />
+      ) : uiState === 'error' && (isChartType(node.type) || DATA_ERROR_VIEW_TYPES.has(node.type)) ? (
+        <UIStackComponentErrorCard
+          mobile={node.type.startsWith('M')}
+          onRetry={() => useProtoStore.getState().setUIState('normal')}
+        />
+      ) : (
+        <Impl {...props} />
+      )}
     </div>
   );
 };

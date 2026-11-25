@@ -60,9 +60,12 @@ export const ACTIONS: ActionSpec[] = [
   {
     name: 'confirm',
     title: '二次确认',
-    description: '弹出确认框，用户取消时中断后续动作。',
+    description: '弹出确认框，用户取消时中断后续动作。可选传入第二个参数 matchText（如 "{{row.order_no}}"）启用高危输入匹配确认模式。',
     canAbort: true,
-    args: [{ name: 'message', label: '确认文案', kind: 'string' }],
+    args: [
+      { name: 'message', label: '确认文案', kind: 'string' },
+      { name: 'matchText', label: '高危输入匹配词(可选)', kind: 'string', optional: true },
+    ],
   },
   {
     name: 'toast',
@@ -77,13 +80,22 @@ export const ACTIONS: ActionSpec[] = [
     name: 'refresh',
     title: '刷新列表/表格',
     description: '重新加载表格或移动列表数据（回到第一页）。',
-    args: [{ name: 'table', label: '表格/列表', kind: 'nodeRef', refTypes: ['Table', 'CardGrid', 'MFeedList', 'MTaskList', 'MCardGrid'] }],
+    args: [{ name: 'table', label: '表格/列表', kind: 'nodeRef', refTypes: ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar', 'MFeedList', 'MTaskList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar'] }],
+  },
+  {
+    name: 'selectRow',
+    title: '选中当前行（主从联动）',
+    description: '将当前点击的表格/卡片/列表记录设为页面级激活行，无需弹窗即可驱动绑定同一张表的详情容器（Card/MSurface activeTable）、Descriptions、Form 与关联明细子表实时联动刷新。',
+    args: [],
   },
   {
     name: 'deleteRow',
     title: '删除当前行',
-    description: '删除当前上下文中的行（用于表格行操作或带 row 参数的弹层）。',
-    args: [],
+    canAbort: true,
+    description: '删除当前上下文中的行（自动校验 ER 外键 RESTRICT/CASCADE 保护；传入 "undo" 时弹出 5 秒可撤销软删除提示）。',
+    args: [
+      { name: 'mode', label: '容错模式', kind: 'select', options: ['immediate', 'undo'], optional: true },
+    ],
   },
   {
     name: 'updateRow',

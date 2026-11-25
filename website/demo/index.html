@@ -10,16 +10,16 @@
     <meta name="robots" content="index, follow" />
     <meta
       name="description"
-      content="ProtoFlow AI 在线交互原型演示：免下载在浏览器直接体验 CRM 合同与回款开票业财系统，含 4 个 PC 页、2 个 iPhone 视口页、5 张共享 ER 表与 9 条需求便签。"
+      content="ProtoFlow AI 在线交互原型演示：免下载在浏览器直接体验【星链设备售后维保与备件履约平台】，含 3 个 PC 端调度与主从工作台页面、1 个 iPhone 工程师现场端页面、3 张共享物理 ER 表、UI Stack 五态切换与 Poka-Yoke 防错撤销。"
     />
     <link rel="canonical" href="https://alex.xclubai.com/demo/" />
     <link rel="alternate" type="text/markdown" href="https://alex.xclubai.com/llms-full.txt" title="Full Markdown Documentation" />
-    <title>ProtoFlow AI 在线交互演示 — 浏览器零下载体验可运行业务原型</title>
-    <script type="module" crossorigin src="./assets/demo-DXl2jthu.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/demo-DJhi7int.css">
+    <title>ProtoFlow AI 在线交互演示 — 星链设备售后维保与备件履约平台</title>
+    <script type="module" crossorigin src="./assets/demo-DFWLYoaQ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/demo-CY4RmlV3.css">
   </head>
   <body class="antialiased bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white"><div id="root"><main style="max-width:860px;margin:0 auto;padding:40px 24px;line-height:1.7">
-      <h1>Alex (ProtoFlow AI) 在线交互原型演示 — CRM 合同与回款开票业财系统</h1>
+      <h1>Alex (ProtoFlow AI) 在线交互原型演示 — 星链设备售后维保与备件履约平台</h1>
       <p>
         这是一个免下载、免登录的浏览器可运行业务原型沙盒，基于 Apache-2.0 开源工作台
         <a href="https://alex.xclubai.com/">Alex (ProtoFlow AI)</a> 构建。启用 JavaScript 后，页面会自动加载实时交互工作台与持久化沙盒状态。
@@ -27,18 +27,18 @@
       <section>
         <h2>这个在线示例包含哪些可交互页面与共享数据表</h2>
         <p>
-          当前示例工程完整演示了多页面、跨终端共享物理 ER 数据表的实时联动效果，包含 4 个 PC 中后台页面、2 个 iPhone 移动端视口页面、5 张共享物理数据表与 9 条组件级需求便签：
+          当前示例工程完整演示了无弹窗主从工作台、跨端共享物理 ER 表、外键 <code>RESTRICT / CASCADE</code> 防误删闭环与 UI Stack 五态容错能力，包含 3 个 PC 中后台页面、1 个 iPhone 掌上现场端页面、3 张共享物理数据表与 8 条组件级需求便签：
         </p>
         <ul>
-          <li>PC 管理端页面：业财经营与回款看板、企业客户与商机台账、销售合同审批与履约台账、回款核销与开票工作台。</li>
-          <li>iPhone 移动端视口页：移动审批与回款催办、客户拜访与移动开票。</li>
-          <li>共享物理 ER 数据表：<code>t_crm_customers</code>、<code>t_crm_contracts</code>、<code>t_crm_payment_plans</code>、<code>t_crm_invoices</code>、<code>t_crm_monthly_revenue</code>。</li>
+          <li>PC 调度管理端页面：维保运营数据看板、维保工单主从工作台、履约流转看板与排期日历。</li>
+          <li>iPhone 移动端视口页：工程师现场接单与领料端（含触控状态看板、周日程流与随车领料半屏抽屉）。</li>
+          <li>共享物理 ER 数据表：<code>srv_tickets</code>（维保工单主表）、<code>srv_part_usages</code>（备件领用明细表 · <code>RESTRICT</code>）、<code>srv_ticket_logs</code>（现场跟进日志表 · <code>CASCADE</code>）。</li>
         </ul>
       </section>
       <section>
         <h2>如何开始体验与完整桌面版能力</h2>
         <p>
-          在浏览器中可直接切换左侧目录与 PC/移动端视口，在表单和台账中增删改查记录并查看多页面与图表联动，同时点击查看挂在控件上的黄色需求便签。
+          在浏览器中可直接切换左侧菜单、顶部 UI Stack 五态（理想态/空数据/加载中/极值态/异常态）与中英双语，体验无弹窗主从切行、跨字段日期与库存上限防错校验、5 秒可撤销级联归档以及黄色需求便签。
           下载完整桌面端后，还可使用先追问澄清再规划蓝图的 Hermes AI、本地免装 Axure <code>.rp</code> 二进制导入、双向 AST 画布精修、18 个双向 MCP 协同工具，以及 3 步 Docker Compose 团队私有化发布服务。
         </p>
       </section>

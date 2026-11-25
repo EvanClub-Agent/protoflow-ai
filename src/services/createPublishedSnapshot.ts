@@ -10,6 +10,7 @@ import { pageContractErrors } from '../proto/ai/pageContract';
 import { printPageSource } from '../proto/dsl/printer';
 import { isChartType } from '../proto/charts/model';
 import { publishableNotes } from './publishedNotes';
+import { isDefaultDesignTokens } from '../proto/theme/designTokens';
 
 type PublishablePageState = Pick<ReturnType<typeof usePageStore.getState>, 'pageSources' | 'designerPages' | 'designerFolders' | 'sitemapBase' | 'sitemapOverrides'>;
 export function publishablePages(pages: PublishablePageState = usePageStore.getState()): DesignerPage[] {
@@ -79,6 +80,9 @@ export function createPublishedSnapshot(entryPageId: string): PublishedSnapshot 
   };
   const shared = publishableNotes(new Set(snapshot.pages.map(page => page.pageId)));
   if (shared.notes.length) Object.assign(snapshot, { notes: shared.notes, noteAssets: shared.noteAssets });
+  if (project.designTokens && !isDefaultDesignTokens(project.designTokens)) {
+    snapshot.designTokens = structuredClone(project.designTokens);
+  }
   validatePublishedSnapshot(snapshot);
   return structuredClone(snapshot);
 }

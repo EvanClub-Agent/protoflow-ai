@@ -1,4 +1,4 @@
-import { tr } from '../i18n/runtime';
+import { isEnLocale, tr } from '../i18n/runtime';
 import { getImplementationGuide } from '../proto/ai/implementationGuide';
 import { pageContractErrors } from '../proto/ai/pageContract';
 import { inspectPage } from '../proto/ai/pageInspection';
@@ -42,6 +42,16 @@ import {
   type SitemapMoveTarget,
 } from '../proto/sitemap';
 import { validateStickyNoteIndex } from '../proto/stickyNoteIndex';
+import {
+  DESIGN_COLOR_MODES,
+  DESIGN_DENSITY_TOKENS,
+  DESIGN_PRESET_IDS,
+  DESIGN_RADIUS_TOKENS,
+  DESIGN_SURFACE_TOKENS,
+  exportDesignTokensSpec,
+  isDefaultDesignTokens,
+  validateDesignTokens,
+} from '../proto/theme/designTokens';
 import { prepareMenuDeletion } from '../services/menuDeletion';
 import { analyzeProject } from '../services/projectAnalysis';
 import { applyProjectAgreement } from '../services/projectKnowledge';
@@ -104,7 +114,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_workspace',
     description:
-      'Inspect or manage the active Alex (.pflow) project workspace: check current editor/file context ("status"), list .pflow projects ("list_projects"), create a new project from scratch or starter template ("create_project"), switch to another .pflow file ("switch_project"), or update project name/mode/activePageId ("update_project_meta").',
+      'Inspect or manage the active Alex (.pflow) project workspace: check current editor/file context ("status"), list .pflow projects ("list_projects"), create a new project from scratch or starter template ("create_project"), switch to another .pflow file ("switch_project"), or update project name/mode/activePageId/designTokens ("update_project_meta").',
     annotations: { ...WRITE_ANNOTATIONS, title: 'Manage Alex Project Workspace' },
     inputSchema: {
       type: 'object',
@@ -139,6 +149,26 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         activePageId: {
           type: 'string',
           description: 'Set the active/entry pageId for update_project_meta.',
+        },
+        designTokens: {
+          oneOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['preset'],
+              properties: {
+                preset: { type: 'string', enum: DESIGN_PRESET_IDS },
+                primaryColor: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
+                radius: { type: 'string', enum: DESIGN_RADIUS_TOKENS },
+                density: { type: 'string', enum: DESIGN_DENSITY_TOKENS },
+                surfaceVariant: { type: 'string', enum: DESIGN_SURFACE_TOKENS },
+                colorMode: { type: 'string', enum: DESIGN_COLOR_MODES },
+              },
+            },
+          ],
+          description:
+            'Brand Design Tokens isolated to prototype canvas & viewer (classic_antd | modern_minimal | collab_soft | enterprise_compact). Pass null to reset to default classic_antd.',
         },
         overwrite: {
           type: 'boolean',
@@ -1672,13 +1702,33 @@ export async function executeAuthoringTool(
         const projectName = requireNonEmptyString(args.projectName, 'projectName');
         const templateId = optionalEnum(args.templateId, templateIds, 'templateId');
         const projectMode = optionalEnum(args.projectMode, projectModes, 'projectMode');
-        return await workspace.createProject({
+        if (args.designTokens !== undefined && args.designTokens !== null) {
+          validateDesignTokens(args.designTokens, 'designTokens');
+        }
+        const created = await workspace.createProject({
           filePath,
           projectName,
           templateId,
           projectMode,
           overwrite: args.overwrite === true,
         });
+        if (args.designTokens !== undefined) {
+          const tokenInput = args.designTokens;
+          const mutated = await workspace.mutate(
+            (draft) => {
+              if (tokenInput === null || isDefaultDesignTokens(tokenInput)) {
+                delete draft.stateSnapshot.designTokens;
+              } else {
+                validateDesignTokens(tokenInput, 'designTokens');
+                draft.stateSnapshot.designTokens = structuredClone(tokenInput);
+              }
+              return exportDesignTokensSpec(draft.stateSnapshot.designTokens, isEnLocale() ? 'en-US' : 'zh-CN');
+            },
+            { expectedRevision: created.revision, summary: 'apply initial design tokens' },
+          );
+          return { ...created, revision: mutated.revision, designTokens: mutated.result };
+        }
+        return created;
       }
       if (action === 'switch_project') {
         const filePath = requireNonEmptyString(args.filePath, 'filePath');
@@ -1716,11 +1766,24 @@ export async function executeAuthoringTool(
                 s.activePageId = targetPage;
               }
             }
+            if (args.designTokens !== undefined) {
+              if (args.designTokens === null) {
+                delete s.designTokens;
+              } else {
+                validateDesignTokens(args.designTokens, 'designTokens');
+                if (isDefaultDesignTokens(args.designTokens)) {
+                  delete s.designTokens;
+                } else {
+                  s.designTokens = structuredClone(args.designTokens);
+                }
+              }
+            }
             return {
               projectId: draft.meta.projectId,
               projectName: draft.meta.projectName,
               projectMode: draft.meta.projectMode ?? 'desktop',
               activePageId: s.activePageId,
+              designTokens: exportDesignTokensSpec(s.designTokens, isEnLocale() ? 'en-US' : 'zh-CN'),
             };
           },
           { expectedRevision: optionalExpectedRevision(args), summary: 'update project meta' }
@@ -2082,7 +2145,12 @@ export function readAuthoringResource(uri: string): { contents: { uri: string; m
       '4. Load scenario guides (`protoflow_get_implementation_guide`) and exact component/action schemas (`protoflow_get_contracts`), then write pages (`protoflow_write_page` / `protoflow_edit_page_block`), sticky notes (`protoflow_manage_sticky_notes`), and docs/Mermaid flows (`protoflow_manage_docs_and_flows`).',
       '5. Run `protoflow_audit_project` and resolve all contract, FK, and reference errors before concluding.',
       '',
-      '## 2. Hard Rules (Never Violate)',
+      '## 2. UX Architecture & Material Selection Heuristics',
+      '- **Brand Design Tokens**: Match industry temperament via `protoflow_workspace(action="update_project_meta", designTokens={ preset })` (`modern_minimal` for AI/SaaS, `collab_soft` for collaborative workspaces, `enterprise_compact` for finance/ERP/customs, `classic_antd` for general backoffice).',
+      '- **Break CRUD Monotony**: Use Master-Detail (`autoSelectFirst={true}` + `selectRow()` paired with `<Card activeTable="...">` or `<MSurface activeTable="...">`) for高频审单/客诉处理; `Kanban` / `MKanban` for state-machine pipelines; `Calendar` / `MCalendar` for schedules/bookings; `Repeater` / `MRepeater` for rich custom cards; `AiCopilotCard` / `MAiInsightCard` for AI triage summaries.',
+      '- **UI Stack 5-State & Poka-Yoke**: Configure `<Page>` / `<MobilePage>` `emptyTitle` and `errorFallback` (`result_403` / `result_500`); attach cross-field `minField`/`maxField` (e.g. `inbound_qty <= remaining_qty`, `end_date >= start_date`), `disabledWhenField`/`hiddenWhenField` state guards on buttons/rowActions, `deleteRow("undo")` for recoverable deletes, and `confirm(msg, "{{row.code}}")` for irreversible high-risk actions.',
+      '',
+      '## 3. Hard Rules (Never Violate)',
       '- **Never guess props or write arbitrary React code**: Outer TSX only accepts registered components, props, and zero-argument runtime action chains from `protoflow_get_contracts`. No imports, JS callbacks (`() => ...`), `style`, or `className`.',
       '- **Every element needs a unique explicit `pfId`**: Never omit `pfId` or reuse duplicate `pfId`s.',
       '- **Strict PC vs Mobile isolation**: Desktop `<Page>` only uses desktop + universal components; Mobile `<MobilePage>` only uses `M*` + universal components. Declare overlays (`Modal`/`Drawer` or `MBottomSheet`/`MDialog`) as direct children of the page root.',

@@ -41,7 +41,7 @@ site=$(bash scripts/website-stage-vercel.sh) &&
 
 - `index.html`：简体中文主落地页结构、Schema.org `@graph` 结构化数据、`hreflang` 与 SEO/GEO 元数据
 - `en/index.html`：由 `npm run website:seo`（[scripts/website-build-seo.cjs](../scripts/website-build-seo.cjs)）自动预渲染生成的静态英文落地页
-- `demo/`：由 `npm run website:demo`（[scripts/website-build-demo.cjs](../scripts/website-build-demo.cjs)）生成的纯静态浏览器 CRM 交互演示沙盒
+- `demo/`：由 `npm run website:demo`（[scripts/website-build-demo.cjs](../scripts/website-build-demo.cjs)）生成的纯静态浏览器「星链设备售后维保与备件履约平台」交互演示沙盒
 - `compare/`、`axure-import/`、`mcp/`、`about/`、`contact/`、`privacy/`：面向高意图搜索与信任审查的静态专题页面
 - `robots.txt`、`sitemap.xml`、`llms.txt`、`llms-full.txt`：搜索引擎抓取策略、双语站点地图与大模型/AI Agent 检索说明
 - `styles.css`：品牌蓝冷灰样式表（含明暗双色适配、高对比度模式与响应式容器查询）

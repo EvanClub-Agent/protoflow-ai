@@ -14,6 +14,7 @@ import { tableBindingErrors, sourceForeignKeyErrors } from '../proto/table/model
 import { freeformBindingErrors } from '../proto/freeform/contract';
 import { walk } from '../proto/dsl/tree';
 import { isChartType, chartConfigErrors, prepareChartData } from '../proto/charts/model';
+import { validateDesignTokens, type ProjectDesignTokens } from '../proto/theme/designTokens';
 
 export interface PublishedPage { pageId: string; title: string; folderId: string; doc: ProtoDoc }
 export type PublishedStickyNote = Pick<StickyNoteRule, 'id' | 'pageId' | 'targetWidgetId' | 'targetWidgetName' | 'index' | 'text' | 'active'>;
@@ -42,6 +43,7 @@ export interface PublishedSnapshot {
   formatVersion: 3 | 4 | 5;
   notes?: PublishedNote[];
   noteAssets?: Record<string, NoteAsset>;
+  designTokens?: ProjectDesignTokens;
   sitemap: PublishedMenuItem[];
   projectId: string;
   title: string;
@@ -56,6 +58,11 @@ export interface PublishedSnapshot {
 export type LegacyPublishedSnapshot = Omit<PublishedSnapshot, 'formatVersion' | 'sitemap' | 'notes' | 'noteAssets'> & { formatVersion: 2 };
 export type ReadablePublishedSnapshot = PublishedSnapshot | LegacyPublishedSnapshot;
 const has = (o: object, key: string) => Object.prototype.hasOwnProperty.call(o, key);
+const snapshotFields = {
+  formatVersion: true, projectId: true, title: true, entryPageId: true,
+  sitemap: true, pages: true, tables: true, tableRows: true, stickyNotes: true,
+  notes: true, noteAssets: true, designTokens: true,
+} satisfies Record<keyof PublishedSnapshot, true>;
 function required(value: unknown, name: string): asserts value is string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(tr(`${name} 不能为空`, `${name} cannot be empty`));
 }
@@ -64,6 +71,9 @@ function required(value: unknown, name: string): asserts value is string {
  * here and compiled only inside its isolated runtime. Validate before store writes. */
 export function validatePublishedSnapshot(value: unknown): asserts value is ReadablePublishedSnapshot {
   object(value, tr('发布内容', 'published snapshot'));
+  for (const key of Object.keys(value)) {
+    if (!has(snapshotFields, key)) throw new Error(tr(`发布内容包含不支持的字段 ${key}`, `Unsupported published snapshot field: ${key}`));
+  }
   if (value.formatVersion !== 2 && value.formatVersion !== 3 && value.formatVersion !== 4 && value.formatVersion !== 5) throw new Error(tr('此发布格式不受支持，请更新浏览端', 'Unsupported published snapshot version; please update the viewer'));
   required(value.projectId, tr('项目 ID', 'Project ID')); required(value.title, tr('项目标题', 'Project title')); required(value.entryPageId, tr('入口页面', 'Entry page'));
   if (!Array.isArray(value.pages) || !value.pages.length || value.pages.length > 500) throw new Error(tr('发布页面数量无效', 'Invalid published page count'));
@@ -172,9 +182,13 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
         const issues = tableBindingErrors(node.props, value.tables as DBTableSchema[], value.tableRows);
         if (issues.length) throw new Error(tr(`表格 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Table ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }
-      if (node.type === 'MTaskList' || node.type === 'MFeedList' || node.type === 'MCardGrid' || node.type === 'CardGrid') {
+      if (['MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'].includes(node.type)) {
         const issues = sourceForeignKeyErrors(node.props, value.tables as DBTableSchema[]);
-        if (issues.length) throw new Error(tr(`移动列表 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Mobile list ${node.pfId} failed publish check: ${issues.join(', ')}`));
+        if (issues.length) {
+          const kindZh = node.type.startsWith('M') ? '移动列表' : '数据组件';
+          const kindEn = node.type.startsWith('M') ? 'Mobile list' : 'Data view';
+          throw new Error(tr(`${kindZh} ${node.pfId} 未通过发布检查：${issues.join('，')}`, `${kindEn} ${node.pfId} failed publish check: ${issues.join(', ')}`));
+        }
       }
       if (isChartType(node.type)) {
         chartIds.add(node.pfId);
@@ -193,6 +207,12 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
     if (errors.length) throw new Error(tr(`自由组件未通过发布检查：${errors.join('；')}`, `Freeform component failed publish check: ${errors.join('; ')}`));
     if (chartIds.size) chartErrors.push(...validateMaterialDoc(page.doc).filter(issue => chartIds.has(issue.pfId)).map(issue => issue.message));
     if (chartErrors.length) throw new Error(tr(`数据图表未通过发布检查：${chartErrors.join('；')}`, `Chart failed publish check: ${chartErrors.join('; ')}`));
+  }
+  if (has(value, 'designTokens')) {
+    if (value.formatVersion !== 5) {
+      throw new Error(tr('此发布格式不包含设计令牌字段', 'This published format does not support designTokens'));
+    }
+    validateDesignTokens(value.designTokens, 'designTokens');
   }
   validatePublishedNotes(value, pageIds);
 }

@@ -41,6 +41,7 @@ import {
   type CustomCompositeBlock,
 } from '../store/usePageStore';
 import { parsePageSource } from '../dsl/parser';
+import { DesktopConfirmDialog } from '../runtime/ConfirmModalContent';
 import { sitemapCatalog } from '../sitemap';
 import { printPageSource } from '../dsl/printer';
 import {
@@ -84,6 +85,9 @@ import { conversationKey } from '../../services/hermesConversation';
 import type { OverlayDescriptor } from './ActionChainEditor';
 import { PageTableBindingBar } from '../../components/PageTableBindingBar';
 import { ComponentStickyPin, renderStructuredRequirementText } from '../../components/ComponentStickyPin';
+import { ProtoCanvasThemeScope } from '../theme/ProtoCanvasThemeScope';
+import { DesignTokensPopover } from './DesignTokensPopover';
+import { UIStackSwitcher } from './UIStackSwitcher';
 import type { ActionCall, ProtoDoc, ProtoNode } from '../types';
 
 interface ProtoCanvasDesignerProps {
@@ -109,6 +113,9 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
     leftSidebarCollapsed,
     rightSidebarCollapsed,
     currentProjectMeta,
+    designTokens,
+    uiState,
+    setUIState,
   } = useProtoStore();
   const previewKey = conversationKey({ projectId: currentProjectMeta.projectId, pageId });
   const hasAiPreview = useAiPreviewStore(s => Boolean(s.runs[previewKey]?.latestPageId));
@@ -1195,9 +1202,11 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Inline Database Binding Bar + AST Validation Icon */}
+                {/* Right: UI Stack 5-State Simulator + Design Tokens + Inline Database Binding Bar + AST Validation Icon */}
                 {!isWebPlayerMode && (
-                  <div className="flex items-center gap-1 shrink-0 ml-auto">
+                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                    <UIStackSwitcher />
+                    <DesignTokensPopover />
                     <PageTableBindingBar
                       pageId={pageId}
                       pageTitle={menuTitle ?? tr(`页面 ID · ${pageId}`, `Page ID · ${pageId}`)}
@@ -1487,6 +1496,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                   </div>
 
                   {/* Isolated Paper Frame for the Modal or Drawer */}
+                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
                   {isMobilePage ? (
                     <div className="pf-mobile-canvas-stage flex-1 min-h-0 py-4 flex justify-center items-start rounded-2xl border border-slate-200/80 overflow-y-auto">
                       <MobileViewportShell
@@ -1511,11 +1521,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       />
                     </div>
                   )}
+                  </ProtoCanvasThemeScope>
                 </div>
               ) : (
                 /* MAIN PAGE CANVAS + ADAPTIVE BOTTOM STICKY NOTES DOCK (Design or Live Preview) */
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {/* Upper Primary Canvas Region: takes all remaining height and stretches <Page> to 100%, while expanding freely when content exceeds viewport */}
+                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
                   {isMobilePage ? (
                     <div className="pf-mobile-canvas-stage flex-1 min-h-0 overflow-y-auto py-5 px-4 flex flex-col items-center">
                       <MobileViewportShell
@@ -1546,6 +1558,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                                     value={{
                                       row: entry.params.row as Row | undefined,
                                       tableId: entry.params.tableId as string | undefined,
+                                      expectedTableId: entry.expectedTableId,
                                       params: entry.params,
                                       overlayIndex: stackIdx,
                                     }}
@@ -1568,6 +1581,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       </div>
                     </div>
                   )}
+                  </ProtoCanvasThemeScope>
 
                   {/* Bottom Docked Sticky Notes Summary Ledger (compact height share + collapse/expand) */}
                   {showAllComponentPins &&
@@ -1704,56 +1718,35 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
 
               {/* LIVE PREVIEW STACKED OVERLAYS (Supports unlimited Modal -> Drawer -> Modal nesting!) */}
               {mode === 'preview' &&
-                !isMobilePage &&
-                runtime.overlays.map((entry, stackIdx) => {
-                  const target = overlays.find((o) => o.overlayId === entry.id);
-                  if (!target) return null;
-                  return (
-                    <ScopeProvider
-                      key={entry.key}
-                      value={{
-                        row: entry.params.row as Row | undefined,
-                        tableId: entry.params.tableId as string | undefined,
-                        params: entry.params,
-                        overlayIndex: stackIdx,
-                      }}
-                    >
-                      <NodeView node={target.node} live />
-                    </ScopeProvider>
-                  );
-                })}
+                !isMobilePage && (
+                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
+                    {runtime.overlays.map((entry, stackIdx) => {
+                      const target = overlays.find((o) => o.overlayId === entry.id);
+                      if (!target) return null;
+                      return (
+                        <ScopeProvider
+                          key={entry.key}
+                          value={{
+                            row: entry.params.row as Row | undefined,
+                            tableId: entry.params.tableId as string | undefined,
+                            expectedTableId: entry.expectedTableId,
+                            params: entry.params,
+                            overlayIndex: stackIdx,
+                          }}
+                        >
+                          <NodeView node={target.node} live />
+                        </ScopeProvider>
+                      );
+                    })}
+                  </ProtoCanvasThemeScope>
+                )}
 
               {/* Runtime Confirm Dialog */}
               {!(isMobilePage && mode === 'preview') && runtime.confirmState && (
-                <div className="fixed inset-0 z-[90] bg-slate-900/50 flex items-center justify-center p-4">
-                  <div className="pf-paper bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="text-sm font-bold text-slate-900">{tr('操作确认', 'Confirm Action')}</div>
-                        <div className="text-xs text-slate-600 mt-1 leading-relaxed">
-                          {runtime.confirmState.message}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => runtime.resolveConfirm(false)}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 cursor-pointer"
-                      >
-                        {tr('取消', 'Cancel')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => runtime.resolveConfirm(true)}
-                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
-                      >
-                        {tr('确认执行', 'Confirm')}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <DesktopConfirmDialog
+                  confirmState={runtime.confirmState}
+                  onResolve={runtime.resolveConfirm}
+                />
               )}
 
               {/* Runtime Toasts */}
@@ -1762,10 +1755,20 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                   {runtime.toasts.map((t) => (
                     <div
                       key={t.id}
-                      className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-xl flex items-center gap-2"
+                      className="pointer-events-auto px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-xl flex items-center gap-2"
                     >
                       <ToastStatusIcon type={t.type} size={16} />
                       <span>{t.message}</span>
+                      {t.undoAction && (
+                        <button
+                          type="button"
+                          data-testid="toast-undo-btn"
+                          onClick={() => t.undoAction?.onUndo()}
+                          className="ml-1.5 rounded-md bg-blue-500/25 px-2 py-0.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/40 cursor-pointer transition"
+                        >
+                          {t.undoAction.label}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -30,7 +30,7 @@
 - **`.pflow`**: The local-first project archive format (and Git-friendly unpacked directory tree) containing pages (TSX DSL), physical ER database schemas, preview data rows, component sticky-note requirements, rich project notes, and mindmaps.
 
 **Core Value Proposition**:
-ProtoFlow AI bridges requirement engineering, relational data modeling, interactive multi-platform prototyping, and AI-assisted code generation in one local-first workspace. No sign-in is required to launch or design locally, and anyone can try the 6-page CRM suite immediately at `/demo/`.
+ProtoFlow AI bridges requirement engineering, relational data modeling, interactive multi-platform prototyping, and AI-assisted code generation in one local-first workspace. No sign-in is required to launch or design locally, and anyone can try the StarLink Maintenance & Spare Parts Fulfillment suite immediately at `/demo/`.
 
 ---
 
@@ -51,8 +51,8 @@ ProtoFlow AI bridges requirement engineering, relational data modeling, interact
    - Built-in managed NousResearch Hermes runtime installed and verified by the desktop app.
    - Actively asks clarifying questions about thresholds, approval rules, and edge cases before outputting a module sitemap, page list, and ER schema blueprint.
    - Generates only after user confirmation, and supports scoped incremental edits on individual sections without overwriting existing page structure.
-2. **Bidirectional AST Canvas & 114+ Enterprise Materials**
-   - Widescreen grid layouts, multi-column `QueryForm` filters, master-detail `Table`s, `Descriptions`, drawers, modals, composite business blocks, and sandboxed Freeform components.
+2. **Bidirectional AST Canvas & 134+ Enterprise & Mobile Materials**
+   - Popup-free `Repeater` Master-Detail workbenches, SQL-ENUM-disambiguated `Kanban`/`MKanban` boards, `Calendar`/`MCalendar` schedules, `AiCopilotCard`/`MAiInsightCard`, Bento Sparkline KPIs, multi-column `QueryForm` filters, `Table`s, `Descriptions`, drawers, modals, sandboxed Freeform components, UI Stack 5-state simulator, and project-level `designTokens` themes.
    - Dragging on canvas, editing in the property inspector, and underlying TSX DSL stay losslessly synchronized.
 3. **Navicat-Style ER Database Designer & Shared Tables**
    - Visual relational table editor supporting column types, `ENUM(...)` state machines, foreign keys (`REFERENCES`), single-column unique constraints, and composite unique constraints.
@@ -111,7 +111,7 @@ Claude, Gemini, OpenAI, DeepSeek, Qwen (通义千问), Kimi, Z.ai (智谱 GLM), 
 ## 6. Built-In Community Starter Templates
 
 1. **SaaS E-Commerce & Inventory Admin**: Supplier onboarding, purchase order approvals, master-detail inbound receipts, 4 shared ER tables, and 5 tax/over-receipt sticky specs.
-2. **CRM Sales & Contract Billing Dashboard**: Live online at https://alex.xclubai.com/demo/ — monthly contract trend and regional ARR ECharts bound to tables, customer opportunity CRUD, and payment plans (`examples/crm-contract-billing`, 5 ER tables, 4 desktop + 2 mobile pages).
+2. **CRM Sales & Contract Billing Dashboard**: Built-in desktop launcher starter (`examples/crm-contract-billing`, 5 ER tables, 4 desktop + 2 mobile pages) with monthly contract trend and regional ARR ECharts, customer opportunity CRUD, and payment plans. (For the hosted zero-install browser sandbox, visit https://alex.xclubai.com/demo/ to try the **StarLink Maintenance & Spare Parts Fulfillment** suite.)
 3. **Modern Mobile & Cross-Platform App**: Consumer discovery waterfall feed, B2B mobile approval half-sheet drawers, AI assistant view, and cross-platform table sync.
 
 ---

@@ -10,6 +10,7 @@ Use this workflow when asked to generate an entire prototype project (sitemap, E
    - `projectName`
    - `projectMode`: `'desktop'`, `'mobile'`, or `'hybrid'` (pick `'hybrid'` if the system has both admin/backoffice and mobile/mini-program screens)
    - `templateId`: `'blank_project'` unless the user requested a starter template
+   - `designTokens`: Optional `{ preset: 'modern_minimal' | 'collab_soft' | 'enterprise_compact' | 'classic_antd', primaryColor?, radius?, density?, surfaceVariant?, colorMode? }` matching the customer's industry aesthetic (can also be updated anytime via `action="update_project_meta"`).
 3. If modifying an existing project, call `protoflow_get_project_overview`, `protoflow_get_database_schema`, and `protoflow_get_docs_and_flows` first so existing pages, domains, and tables are preserved and reused.
 
 ## Step 2: Clarify Decisive Business Ambiguities
@@ -39,7 +40,8 @@ Always build the data backbone **before** writing pages:
    - Second: core transactional pages (e.g. Orders, Approvals, Inspections) linking upstream tables/pages.
    - Third: overview dashboards/charts and mobile companion pages sharing the same physical `dbTables.id`.
 3. For each page:
-   - Call `protoflow_write_page` with valid TSX, unique `pfId`s, and explicit `platform` in hybrid projects.
+   - Choose domain-appropriate layouts (`workspace` scenario for Master-Detail `activeTable`, `Kanban`/`MKanban`, `Calendar`/`MCalendar`, `Repeater`/`MRepeater`, `AiCopilotCard`/`MAiInsightCard` instead of repetitive Table+Modal screens).
+   - Call `protoflow_write_page` with valid TSX, unique `pfId`s, explicit `platform` in hybrid projects, `<Page>` / `<MobilePage>` `emptyTitle` + `errorFallback` UI Stack props, and declarative Poka-Yoke props (`minField`/`maxField`/`formatRule` on fields, `disabledWhenField`/`hiddenWhenField` on state-sensitive buttons/rowActions, `deleteRow("undo")`, and `confirm(msg, "{{row.code}}")` for high-risk actions).
    - Attach business-rule sticky notes via `protoflow_manage_sticky_notes(action="upsert", ...)` pointing to exact existing component `pfId`s (validation limits, formulas, state preconditions).
 4. Optionally add PRD notes or Mermaid business flowcharts via `protoflow_manage_docs_and_flows` (`upsert_note` / `upsert_mindmap`) and durable project agreements (`upsert_agreement`).
 

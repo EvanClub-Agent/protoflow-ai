@@ -12,6 +12,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Compass,
@@ -43,6 +44,7 @@ import {
 } from 'lucide-react';
 import type { CompProps, RootAttrs } from '../registry/components';
 import { isActionChain, type PropValue, type ProtoNode } from '../types';
+import { resolveFormInstanceKey } from '../runtime/runtime';
 import { useResolvedTheme } from '../registry/AntdSurface';
 import { PreviewDataContext, useMaterialTables } from '../runtime/PreviewData';
 import { usePageStore } from '../store/usePageStore';
@@ -52,7 +54,16 @@ import { resolveBoundForeignKeySpec } from '../ai/templates';
 import { mobileOptions } from './options';
 import { OVERLAY_TYPES } from '../registry/meta';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
-import { useSourceRow } from '../runtime/sourceRow';
+import { declaredColumnOptions } from '../database/enumContract';
+import { childRowScope } from '../runtime/runtime';
+import { resolveCanonicalRow, useAutoSelectFirstRow, useSourceRow } from '../runtime/sourceRow';
+import { matchesWhenCondition, resolveKanbanStatusColumn } from '../runtime/pokaYoke';
+import {
+  applyUIStackRows,
+  UIStackEmptyBannerHint,
+  UIStackPageErrorResult,
+  useUIStackState,
+} from '../runtime/uiStackLens';
 import { useI18n } from '../../i18n';
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
@@ -333,16 +344,20 @@ function resolveMobileIcon(name?: string, fallback: LucideIcon = Sparkles): Luci
 }
 
 function useTableDataRows(tableId?: string): Row[] {
+  const { isEn } = useI18n();
   const preview = useContext(PreviewDataContext);
+  const uiState = useUIStackState();
+  const tables = useMaterialTables();
+  const schema = useMemo(() => tables.find((t) => t.id === tableId), [tables, tableId]);
   const storeRows = usePageStore((s) => (tableId ? s.tableRows[tableId] : undefined));
   const getRows = usePageStore((s) => s.getRows);
   const suppliers = useProtoStore((s) => s.suppliers);
   const purchaseOrderItems = useProtoStore((s) => s.purchaseOrderItems);
   return useMemo(() => {
     if (!tableId) return [];
-    if (preview) return preview.rows[tableId] ?? [];
-    return storeRows ?? getRows(tableId);
-  }, [tableId, preview, storeRows, getRows, suppliers, purchaseOrderItems]);
+    const raw = preview ? preview.rows[tableId] ?? [] : storeRows ?? getRows(tableId);
+    return applyUIStackRows(raw, schema, uiState, isEn);
+  }, [tableId, preview, storeRows, getRows, suppliers, purchaseOrderItems, schema, uiState, isEn]);
 }
 
 function matchesFilter(row: Row, staticFilter: unknown, runtimeFilter?: Record<string, unknown>): boolean {
@@ -372,6 +387,7 @@ function matchesFilter(row: Row, staticFilter: unknown, runtimeFilter?: Record<s
 const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNode }) => {
   const { tr } = useI18n();
   const workspaceTheme = useResolvedTheme();
+  const uiState = useUIStackState();
   const previewOverride = useContext(MobileAppearanceOverrideContext);
   const appearance = resolveMobileAppearance(p.appearance, workspaceTheme, previewOverride);
   const accent: MobileAccent =
@@ -414,7 +430,18 @@ const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNo
         )}
 
         <div className={cx('flex-1 flex flex-col gap-3.5 min-w-0', padCls, bottomNodes.length > 0 && 'pb-5')}>
-          {bodyNodes.length > 0 ? (
+          {uiState === 'empty' && typeof p.emptyTitle === 'string' && p.emptyTitle.trim() && (
+            <UIStackEmptyBannerHint emptyTitle={p.emptyTitle.trim()} />
+          )}
+          {uiState === 'error' && (p.errorFallback === 'result_403' || p.errorFallback === 'result_500') ? (
+            <UIStackPageErrorResult
+              mobile
+              mode={p.errorFallback}
+              title={typeof p.errorTitle === 'string' ? p.errorTitle : undefined}
+              description={typeof p.errorDescription === 'string' ? p.errorDescription : undefined}
+              onRecover={() => useProtoStore.getState().setUIState('normal')}
+            />
+          ) : bodyNodes.length > 0 ? (
             bodyNodes.map((n) => renderNode(n))
           ) : (
             <div
@@ -1193,7 +1220,8 @@ const FEED_GRADIENTS_DARK = [
 ];
 
 const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
-  const { tr, td } = useI18n();
+  const { isEn, tr, td } = useI18n();
+  const uiState = useUIStackState();
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
@@ -1227,23 +1255,29 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       price?: string;
       tag?: string;
     }[];
-    return items
+    const projectedItems = applyUIStackRows(
+      items.map((it, idx) => ({ id: `item-${idx}`, ...it })),
+      undefined,
+      uiState,
+      isEn,
+    );
+    return projectedItems
       .filter((it) =>
         matchesFilter(
-          { id: '', title: it.title ?? '', subtitle: it.subtitle ?? '', price: it.price ?? '', tag: it.tag ?? '' },
+          { id: it.id, title: String(it.title ?? ''), subtitle: String(it.subtitle ?? ''), price: String(it.price ?? ''), tag: String(it.tag ?? '') },
           p.filter,
           runtimeFilter,
         ),
       )
       .map((it, idx) => ({
-        id: `item-${idx}`,
-        row: { id: `item-${idx}`, ...it } as Row,
-        title: it.title || tr(`精选内容 ${idx + 1}`, `Featured Item ${idx + 1}`),
-        subtitle: it.subtitle || '',
-        price: it.price || '',
-        tag: it.tag || '',
+        id: it.id,
+        row: it,
+        title: String(it.title || tr(`精选内容 ${idx + 1}`, `Featured Item ${idx + 1}`)),
+        subtitle: String(it.subtitle || ''),
+        price: String(it.price || ''),
+        tag: String(it.tag || ''),
       }));
-  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, priceKey, tagKey, tr]);
+  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, priceKey, tagKey, tr, uiState, isEn]);
 
   if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{td(bindingErrors[0])}</div>;
 
@@ -1261,7 +1295,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       <div {...rootWith(root, { className: 'space-y-2.5' })}>
         {cards.map((c, idx) => {
           const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-          const activate = () => void rt.run(p.onItemClick as PropValue, { ...scope, row: c.row, tableId });
+          const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
           return (
             <div
               key={c.id}
@@ -1316,7 +1350,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     >
       {cards.map((c, idx) => {
         const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-        const activate = () => void rt.run(p.onItemClick as PropValue, { ...scope, row: c.row, tableId });
+        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
         return (
           <div
             key={c.id}
@@ -1430,13 +1464,35 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     label: string;
     primary?: boolean;
     danger?: boolean;
+    disabledWhenField?: string;
+    disabledWhenValue?: string;
+    disabledReason?: string;
+    hiddenWhenField?: string;
+    hiddenWhenValue?: string;
     onClick?: PropValue;
   }[];
+
+  const uiState = useUIStackState();
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+  const resolvedBoundRows = useMemo(() => {
+    if (!tableId || bindingErrors.length) return [];
+    const recs = typeof p.sourceForeignKey === 'string' ? rowsForSource(rawRows, p.sourceForeignKey, tableId, source, tables) : rawRows;
+    return recs.filter((r) => matchesFilter(r, p.filter, runtimeFilter));
+  }, [tableId, bindingErrors.length, p.sourceForeignKey, rawRows, source, tables, p.filter, runtimeFilter]);
+
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    visibleRows: resolvedBoundRows,
+    autoSelectFirst,
+    runtimeQuery: runtimeFilter,
+  });
 
   if (bindingErrors.length) return <div {...rootWith(root, {className:'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'})} role="alert">{td(bindingErrors[0])}</div>;
 
   if (!tableId) {
-    const demoItems = (
+    const rawDemoItems = (
       Array.isArray(p.items)
         ? p.items
         : isEn
@@ -1469,6 +1525,18 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             },
           ]
     ) as {
+      title?: string;
+      status?: string;
+      summary?: string;
+      meta?: string;
+    }[];
+    const demoItems = applyUIStackRows(
+      rawDemoItems.map((it, idx) => ({ id: `demo-${idx}`, ...it })),
+      undefined,
+      uiState,
+      isEn,
+    ) as {
+      id: string;
       title?: string;
       status?: string;
       summary?: string;
@@ -1537,25 +1605,38 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 <span className={cx('text-[11.5px]', theme.textMuted)}>{it.meta}</span>
                 {rowActions.length > 0 && (
                   <div className="flex items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
-                    {rowActions.map((act, aIdx) => (
-                      <button
-                        key={aIdx}
-                        type="button"
-                        onClick={() => rt.run(act.onClick, rowScope)}
-                        className={cx(
-                          "relative min-h-[36px] px-3.5 rounded-full text-[12px] font-semibold cursor-pointer transition after:content-[''] after:absolute after:-inset-y-1 after:inset-x-0",
-                          act.danger
-                            ? theme.isDark
-                              ? 'bg-rose-500/18 text-rose-300 ring-1 ring-inset ring-rose-400/25'
-                              : 'bg-rose-500/12 text-rose-600'
-                            : act.primary
-                            ? theme.accentSolidBg
-                            : theme.pillActiveBg,
-                        )}
-                      >
-                        {act.label}
-                      </button>
-                    ))}
+                    {rowActions.map((act, aIdx) => {
+                      if (!rt.isDesign && matchesWhenCondition(demoRow, act.hiddenWhenField, act.hiddenWhenValue)) return null;
+                      const actDisabled = !rt.isDesign && matchesWhenCondition(demoRow, act.disabledWhenField, act.disabledWhenValue);
+                      return (
+                        <button
+                          key={aIdx}
+                          type="button"
+                          disabled={actDisabled}
+                          title={actDisabled && act.disabledReason ? act.disabledReason : undefined}
+                          onClick={() => {
+                            if (!rt.isDesign && !actDisabled) void rt.run(act.onClick, rowScope);
+                          }}
+                          className={cx(
+                            "relative min-h-[36px] px-3.5 rounded-full text-[12px] font-semibold transition after:content-[''] after:absolute after:-inset-y-1 after:inset-x-0",
+                            actDisabled
+                              ? 'opacity-45 cursor-not-allowed bg-slate-200/70 text-slate-400'
+                              : cx(
+                                  'cursor-pointer',
+                                  act.danger
+                                    ? theme.isDark
+                                      ? 'bg-rose-500/18 text-rose-300 ring-1 ring-inset ring-rose-400/25'
+                                      : 'bg-rose-500/12 text-rose-600'
+                                    : act.primary
+                                    ? theme.accentSolidBg
+                                    : theme.pillActiveBg,
+                                ),
+                          )}
+                        >
+                          {act.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1566,8 +1647,7 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     );
   }
 
-  const records = typeof p.sourceForeignKey === 'string' ? rowsForSource(rawRows, p.sourceForeignKey, tableId, source, tables) : rawRows;
-  const rows = records.filter((r) => matchesFilter(r, p.filter, runtimeFilter));
+  const rows = resolvedBoundRows;
 
   if (rows.length === 0) {
     return (
@@ -1581,17 +1661,27 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   return (
     <div {...rootWith(root, { className: 'space-y-2.5' })}>
       {rows.map((r) => {
-        const rowScope = { ...scope, row: r, tableId };
+        const rowScope = childRowScope(scope, r, tableId);
         const statusVal = statusField && r[statusField] != null ? String(r[statusField]) : '';
-        const activateCard = () => void rt.run(p.onCardClick as PropValue, rowScope);
-        const hasCardClick = Boolean(p.onCardClick) && !rt.isDesign;
+        const isActive = Boolean(tableId && activeRowId === r.id);
+        const activateCard = () => {
+          if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id);
+          void rt.run(p.onCardClick as PropValue, rowScope);
+        };
+        const hasCardClick = (Boolean(p.onCardClick) || autoSelectFirst) && !rt.isDesign;
         const cardTitle = titleField && r[titleField] != null ? String(r[titleField]) : tr('未配置标题或暂无值', 'Untitled');
         return (
           <div
             key={r.id}
+            data-row-id={r.id}
+            data-active-row={isActive ? '1' : undefined}
             onClick={activateCard}
             {...interactiveBoxProps(hasCardClick && rowActions.length === 0, activateCard)}
-            className={cx('rounded-[22px] p-4 space-y-3 cursor-pointer transition-transform active:scale-[0.99]', theme.cardBg)}
+            className={cx(
+              'rounded-[22px] p-4 space-y-3 cursor-pointer transition-transform active:scale-[0.99]',
+              theme.cardBg,
+              isActive && 'ring-2 ring-blue-500/50',
+            )}
           >
             <div className="flex items-start justify-between gap-2">
               {hasCardClick && rowActions.length > 0 ? (
@@ -1651,25 +1741,38 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 
             {rowActions.length > 0 && (
               <div className="flex items-center justify-end gap-2.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
-                {rowActions.map((act, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => rt.run(act.onClick, rowScope)}
-                    className={cx(
-                      "relative min-h-[36px] px-4 rounded-full text-[12px] font-semibold cursor-pointer transition-transform active:scale-95 after:content-[''] after:absolute after:-inset-y-1 after:inset-x-0",
-                      act.danger
-                        ? theme.isDark
-                          ? 'bg-rose-500/18 text-rose-300 ring-1 ring-inset ring-rose-400/25'
-                          : 'bg-rose-50 text-rose-600'
-                        : act.primary
-                        ? theme.accentSolidBg
-                        : theme.pillActiveBg,
-                    )}
-                  >
-                    {act.label}
-                  </button>
-                ))}
+                {rowActions.map((act, idx) => {
+                  if (!rt.isDesign && matchesWhenCondition(r, act.hiddenWhenField, act.hiddenWhenValue)) return null;
+                  const actDisabled = !rt.isDesign && matchesWhenCondition(r, act.disabledWhenField, act.disabledWhenValue);
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={actDisabled}
+                      title={actDisabled && act.disabledReason ? act.disabledReason : undefined}
+                      onClick={() => {
+                        if (!rt.isDesign && !actDisabled) void rt.run(act.onClick, rowScope);
+                      }}
+                      className={cx(
+                        "relative min-h-[36px] px-4 rounded-full text-[12px] font-semibold transition-transform after:content-[''] after:absolute after:-inset-y-1 after:inset-x-0",
+                        actDisabled
+                          ? 'opacity-45 cursor-not-allowed bg-slate-200/70 text-slate-400'
+                          : cx(
+                              'cursor-pointer active:scale-95',
+                              act.danger
+                                ? theme.isDark
+                                  ? 'bg-rose-500/18 text-rose-300 ring-1 ring-inset ring-rose-400/25'
+                                  : 'bg-rose-50 text-rose-600'
+                                : act.primary
+                                ? theme.accentSolidBg
+                                : theme.pillActiveBg,
+                            ),
+                      )}
+                    >
+                      {act.label}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1684,20 +1787,22 @@ const MListGroup: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableSchema = typeof p.table === 'string' ? tables.find((t) => t.id === p.table) : undefined;
-  const contextRow = (scope.row ?? scope.params?.row) as Row | undefined;
+  const source = useSourceRow(scope, rt.pageId, Boolean(tableSchema), tableSchema?.id);
+  const contextRow = (scope.row ?? scope.params?.row ?? source.row) as Row | undefined;
+  const contextTableId = scope.tableId ?? (scope.params?.tableId as string | undefined) ?? source.tableId;
 
   const autoRowItems = useMemo(() => {
     if (!tableSchema) return [];
     const cols = tableSchema.columns.filter((c) => !c.isPrimaryKey).slice(0, 8);
     return cols.map((c) => ({
       title: columnLabel(c),
-      value: (scope.tableId ?? scope.params?.tableId) === tableSchema.id && contextRow?.[c.name] != null ? String(contextRow[c.name]) : '—',
+      value: contextTableId === tableSchema.id && contextRow?.[c.name] != null ? String(contextRow[c.name]) : '—',
       description: undefined as string | undefined,
       icon: undefined as string | undefined,
       arrow: false,
       onClick: undefined as PropValue | undefined,
     }));
-  }, [tableSchema, contextRow, scope.tableId, scope.params?.tableId]);
+  }, [tableSchema, contextRow, contextTableId]);
 
   const propItems = (Array.isArray(p.items) ? p.items : []) as {
     title?: string;
@@ -2030,7 +2135,9 @@ const MComposerBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 
 const MForm: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
   const theme = useMobileTheme();
-  const values = rt.formValues[node.pfId] ?? {};
+  const preview = useContext(PreviewDataContext);
+  const instanceId = resolveFormInstanceKey(node.pfId, p.table, scope);
+  const values = rt.formValues[instanceId] ?? {};
   const row = (scope.row ?? scope.params?.row) as Row | undefined;
 
   useEffect(() => {
@@ -2041,13 +2148,14 @@ const MForm: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
       (scope.tableId ?? scope.params?.tableId) === p.table &&
       Object.keys(values).length === 0
     ) {
-      const { id: _id, ...rest } = row;
-      rt.setFormValues(node.pfId, rest);
+      const canonical = resolveCanonicalRow(p.table, row, preview?.rows) ?? row;
+      const { id: _id, ...rest } = canonical;
+      rt.setFormValues(instanceId, rest);
     }
-  }, [rt.isDesign, row, p.table, scope.tableId, scope.params?.tableId, node.pfId]);
+  }, [rt.isDesign, instanceId, row?.id, p.table, scope.tableId, scope.params?.tableId]);
 
   return (
-    <MobileFormIdContext.Provider value={node.pfId}>
+    <MobileFormIdContext.Provider value={instanceId}>
       <MobileFormTableContext.Provider value={typeof p.table === 'string' && p.table ? p.table : undefined}>
         <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3.5', theme.cardBg) })}>
           {p.title && <div className={cx('text-[14.5px] font-semibold', theme.textPrimary)}>{p.title}</div>}
@@ -2643,6 +2751,18 @@ const MMediaInput: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 const MButton: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
   const { tr } = useI18n();
   const theme = useMobileTheme();
+  const hasWhenGuard = Boolean(p.disabledWhenField || p.hiddenWhenField);
+  const source = useSourceRow(scope, rt.pageId, hasWhenGuard);
+  const ctxRow = (scope.row ?? scope.params?.row ?? source.row) as Record<string, unknown> | undefined;
+  if (!rt.isDesign && matchesWhenCondition(ctxRow, p.hiddenWhenField, p.hiddenWhenValue)) {
+    return null;
+  }
+  const guardedDisabled = !rt.isDesign && matchesWhenCondition(ctxRow, p.disabledWhenField, p.disabledWhenValue);
+  const isDisabled = Boolean(p.disabled) || guardedDisabled;
+  const disabledReason =
+    guardedDisabled && typeof p.disabledReason === 'string' && p.disabledReason.trim()
+      ? p.disabledReason.trim()
+      : undefined;
   const variant = (p.variant as string) || 'primary';
   const size = (p.size as string) || 'md';
   const Icon = p.icon ? resolveMobileIcon(p.icon as string, Sparkles) : null;
@@ -2668,11 +2788,15 @@ const MButton: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
   return (
     <button
       type="button"
-      disabled={Boolean(p.disabled)}
+      disabled={isDisabled}
+      title={disabledReason}
+      data-disabled-reason={disabledReason}
       {...rootWith(root, {
-        onClick: () => rt.run(p.onClick as PropValue, scope),
+        onClick: () => {
+          if (!rt.isDesign && !isDisabled) void rt.run(p.onClick as PropValue, scope);
+        },
         className: cx(
-          'rounded-full font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-[0.98] disabled:opacity-45',
+          'rounded-full font-semibold inline-flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-[0.98] disabled:opacity-45 disabled:cursor-not-allowed',
           heightCls,
           styleCls,
           p.block !== false && 'w-full',
@@ -2967,8 +3091,13 @@ export function ToastStatusIcon({ type, size = 15 }: { type?: string; size?: num
 }
 
 export interface MobileRuntimeFeedbackProps {
-  toasts: { id: number; message: string; type: 'success' | 'info' | 'warning' | 'error' }[];
-  confirmState: { message: string } | null;
+  toasts: {
+    id: number;
+    message: string;
+    type: 'success' | 'info' | 'warning' | 'error';
+    undoAction?: { label: string; onUndo: () => void };
+  }[];
+  confirmState: { message: string; matchText?: string } | null;
   onResolveConfirm: (ok: boolean) => void;
   topOffset?: number;
 }
@@ -2981,6 +3110,14 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
 }) => {
   const { tr, td } = useI18n();
   const theme = useMobileTheme();
+  const [typedMatch, setTypedMatch] = useState('');
+  const requiredMatch = typeof confirmState?.matchText === 'string' ? confirmState.matchText.trim() : '';
+  const isMatched = !requiredMatch || typedMatch.trim() === requiredMatch;
+
+  useEffect(() => {
+    setTypedMatch('');
+  }, [confirmState]);
+
   return (
     <>
       {confirmState && (
@@ -3007,9 +3144,37 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
             )}
           >
             <div className="space-y-1.5 text-center">
-              <div className={cx('text-[16px] font-semibold', theme.textPrimary)}>{tr('操作确认', 'Confirm Action')}</div>
+              <div className={cx('text-[16px] font-semibold', theme.textPrimary)}>
+                {requiredMatch ? tr('高危操作确认', 'High-Risk Confirmation') : tr('操作确认', 'Confirm Action')}
+              </div>
               <p className={cx('text-[13px] leading-relaxed', theme.textMuted)}>{td(confirmState.message)}</p>
             </div>
+            {requiredMatch && (
+              <div className="space-y-2 rounded-2xl bg-rose-500/10 p-3 text-left">
+                <div className="text-[11.5px] text-rose-500 leading-snug">
+                  {tr('请输入', 'Type')}{' '}
+                  <code
+                    data-testid="confirm-match-target"
+                    className="px-1.5 py-0.5 rounded bg-rose-500/15 font-mono font-semibold select-all"
+                  >
+                    {requiredMatch}
+                  </code>{' '}
+                  {tr('以确认：', 'to confirm:')}
+                </div>
+                <input
+                  type="text"
+                  data-testid="confirm-match-input"
+                  value={typedMatch}
+                  onChange={(e) => setTypedMatch(e.target.value)}
+                  placeholder={requiredMatch}
+                  className={cx(
+                    'w-full min-h-[38px] rounded-xl px-3 text-[13px] font-mono focus:outline-none ring-1 ring-inset ring-rose-400/40',
+                    theme.inputBg,
+                    theme.textPrimary,
+                  )}
+                />
+              </div>
+            )}
             <div className="flex items-center gap-2.5 pt-1">
               <button
                 type="button"
@@ -3020,8 +3185,17 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onResolveConfirm(true)}
-                className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer', theme.accentSolidBg)}
+                data-testid="confirm-submit-btn"
+                disabled={!isMatched}
+                onClick={() => {
+                  if (isMatched) onResolveConfirm(true);
+                }}
+                className={cx(
+                  'flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold transition',
+                  requiredMatch
+                    ? 'bg-rose-600 text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
+                    : cx('cursor-pointer', theme.accentSolidBg),
+                )}
               >
                 {tr('确认', 'Confirm')}
               </button>
@@ -3041,7 +3215,7 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
             <div
               key={t.id}
               className={cx(
-                'max-w-full px-4 py-2.5 rounded-full text-[12.5px] font-medium shadow-xl flex items-center gap-2 backdrop-blur-md pf-fade-in',
+                'pointer-events-auto max-w-full px-4 py-2.5 rounded-full text-[12.5px] font-medium shadow-xl flex items-center gap-2 backdrop-blur-md pf-fade-in',
                 theme.isDark
                   ? 'bg-[#282A2E]/95 text-[#E3E3E3] ring-1 ring-inset ring-white/14'
                   : 'bg-slate-900/92 text-white',
@@ -3049,6 +3223,16 @@ export const MobileRuntimeFeedback: React.FC<MobileRuntimeFeedbackProps> = ({
             >
               <ToastStatusIcon type={t.type} size={15} />
               <span className="truncate">{td(t.message)}</span>
+              {t.undoAction && (
+                <button
+                  type="button"
+                  data-testid="toast-undo-btn"
+                  onClick={() => t.undoAction?.onUndo()}
+                  className="ml-1 shrink-0 rounded-full bg-blue-500/25 px-2.5 py-0.5 text-[11.5px] font-semibold text-blue-300 hover:bg-blue-500/40 cursor-pointer transition"
+                >
+                  {t.undoAction.label}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -3217,7 +3401,8 @@ const MBannerCarousel: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
-  const { tr, td } = useI18n();
+  const { isEn, tr, td } = useI18n();
+  const uiState = useUIStackState();
   const theme = useMobileTheme();
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
@@ -3249,11 +3434,17 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         }));
     }
     const items = (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[];
-    return items
+    const projected = applyUIStackRows(
+      items.map((it, idx) => ({ id: `mcard-${idx}`, ...it })),
+      undefined,
+      uiState,
+      isEn,
+    );
+    return projected
       .filter((it) =>
         matchesFilter(
           {
-            id: '',
+            id: it.id,
             title: String(it.title ?? ''),
             subtitle: String(it.subtitle ?? ''),
             price: String(it.price ?? ''),
@@ -3264,15 +3455,15 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
         ),
       )
       .map((it, idx) => ({
-        id: `mcard-${idx}`,
-        row: { id: `mcard-${idx}`, ...it } as Row,
+        id: it.id,
+        row: it,
         title: String(it.title || tr(`卡片项 ${idx + 1}`, `Card ${idx + 1}`)),
         subtitle: String(it.subtitle || ''),
         image: String(it.image || ''),
         price: String(it.price || ''),
         tag: String(it.tag || ''),
       }));
-  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, imgKey, priceKey, tagKey, tr]);
+  }, [tableId, rawRows, p.sourceForeignKey, sourceRow, sourceTableId, tables, p.filter, p.items, runtimeFilter, titleKey, subKey, imgKey, priceKey, tagKey, tr, uiState, isEn]);
 
   if (bindingErrors.length) {
     return (
@@ -3300,7 +3491,7 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     >
       {cards.map((c, idx) => {
         const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-        const activate = () => void rt.run(p.onItemClick as PropValue, { ...scope, row: c.row, tableId });
+        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
         return (
           <div
             key={c.id}
@@ -3349,6 +3540,717 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   );
 };
 
+const MRepeater: React.FC<CompProps> = ({ node, p, kids, root, rt, scope, renderNode, renderMirroredNode }) => {
+  const { isEn, tr, td } = useI18n();
+  const uiState = useUIStackState();
+  const theme = useMobileTheme();
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const schema = tables.find((t) => t.id === tableId);
+  const rawRows = useTableDataRows(tableId);
+  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const runtimeFilter = rt.filters[node.pfId];
+  const layout = p.layout === 'grid' || p.layout === 'scroll' ? p.layout : 'stack';
+  const cols = Math.max(1, Math.min(2, Math.round(Number(p.cols ?? 2))));
+  const pageSize = Math.max(1, Math.round(Number(p.pageSize ?? 8)));
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+
+  const sampleRows = useMemo<Row[]>(
+    () => [
+      {
+        id: 'mrep-1',
+        title: tr('智能门店晨检复盘', 'Smart Store Morning Check'),
+        subtitle: tr('已完成 12 项设备巡检 · 准确率 100%', '12 checks done · 100% pass'),
+        status: tr('正常', 'Healthy'),
+      },
+      {
+        id: 'mrep-2',
+        title: tr('冷链温控预警复核', 'Cold-Chain Temp Review'),
+        subtitle: tr('2 号冷柜瞬时波动 +1.2℃', 'Freezer #2 +1.2°C spike'),
+        status: tr('待处理', 'Pending'),
+      },
+    ],
+    [tr],
+  );
+
+  const model = useMemo((): { rows: Row[] } | { error: string } => {
+    try {
+      if (tableId && !schema) {
+        throw new Error(tr(`未找到关联数据表 ${tableId}`, `Bound table "${tableId}" not found`));
+      }
+      const fkErrors = tableId ? sourceForeignKeyErrors(p, tables) : [];
+      if (fkErrors.length) throw new Error(fkErrors[0]);
+      const base =
+        tableId && schema
+          ? typeof p.sourceForeignKey === 'string'
+            ? rowsForSource(rawRows, p.sourceForeignKey, tableId, source, tables)
+            : rawRows
+          : applyUIStackRows(sampleRows, undefined, uiState, isEn);
+      return { rows: base.filter((r) => matchesFilter(r, p.filter, runtimeFilter)).slice(0, pageSize) };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [tableId, schema, p, tables, rawRows, source, sampleRows, runtimeFilter, pageSize, tr, uiState, isEn]);
+
+  const validRows = 'error' in model ? [] : model.rows;
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    visibleRows: validRows,
+    autoSelectFirst,
+    runtimeQuery: runtimeFilter,
+  });
+
+  if ('error' in model && model.error !== undefined) {
+    return (
+      <div {...rootWith(root, { className: 'rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">
+        {td(model.error)}
+      </div>
+    );
+  }
+  if ('error' in model) return null;
+
+  if (kids.length === 0) {
+    return (
+      <div {...rootWith(root, { className: cx('rounded-[22px] p-5 text-center text-[12px]', theme.subtleBg, theme.textMuted) })}>
+        {tr('在 MRepeater 内拖入 MSurface / MButton 等移动组件，用 {{row.字段}} 绑定数据', 'Drop MSurface / MButton inside MRepeater and bind with {{row.field}}')}
+      </div>
+    );
+  }
+
+  if (model.rows.length === 0) {
+    if (rt.isDesign && uiState === 'normal') {
+      return (
+        <div {...rootWith(root, { className: 'space-y-2.5' })}>
+          {kids.map((k) => renderNode(k, { row: sampleRows[0], tableId }))}
+        </div>
+      );
+    }
+    return (
+      <div
+        {...rootWith(root, { className: cx('rounded-[22px] py-8 text-center', theme.cardBg, theme.textMuted) })}
+        data-ui-stack="empty"
+      >
+        <Inbox className="w-7 h-7 mx-auto mb-1.5 opacity-50" aria-hidden="true" />
+        <div className="text-[12.5px]">{String(p.emptyText || tr('暂无相关内容', 'No items found'))}</div>
+      </div>
+    );
+  }
+
+  const containerCls =
+    layout === 'scroll'
+      ? 'flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory'
+      : layout === 'grid'
+      ? cx('grid gap-2.5', cols === 1 ? 'grid-cols-1' : 'grid-cols-2')
+      : 'space-y-2.5';
+
+  return (
+    <div {...rootWith(root, { className: containerCls })}>
+      {model.rows.map((row, idx) => {
+        const clickable = (Boolean(p.onItemClick) || autoSelectFirst) && !rt.isDesign;
+        const isActive = Boolean(tableId && activeRowId === row.id);
+        const renderFn = rt.isDesign && idx > 0 && renderMirroredNode ? renderMirroredNode : renderNode;
+        return (
+          <div
+            key={row.id}
+            data-row-id={row.id}
+            data-active-row={isActive ? '1' : undefined}
+            onClick={() => {
+              if (!clickable) return;
+              if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
+              if (p.onItemClick) void rt.run(p.onItemClick as PropValue, childRowScope(scope, row, tableId));
+            }}
+            className={cx(
+              'min-w-0 rounded-[22px] transition',
+              layout === 'scroll' && 'min-w-[240px] max-w-[280px] shrink-0 snap-start',
+              clickable && 'cursor-pointer active:scale-[0.99]',
+              isActive && 'ring-2 ring-blue-500/60',
+              rt.isDesign && idx > 0 && 'opacity-90',
+            )}
+          >
+            {kids.map((k) => renderFn(k, { row, tableId }))}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MKanban: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { isEn, tr, td } = useI18n();
+  const uiState = useUIStackState();
+  const theme = useMobileTheme();
+  const preview = useContext(PreviewDataContext);
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const schema = tables.find((t) => t.id === tableId);
+  const rawRows = useTableDataRows(tableId);
+  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const runtimeFilter = rt.filters[node.pfId];
+  const allowMove = p.allowMove !== false;
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+  const [activeLaneIdx, setActiveLaneIdx] = useState(0);
+  const [sampleRows, setSampleRows] = useState<Row[]>(() => [
+    { id: 'mkb-1', title: '旗舰店陈列焕新巡检', subtitle: '静安中心店 · 陈店长', metric: '高优', status: '待接单' },
+    { id: 'mkb-2', title: '冷链车次到货扫码签收', subtitle: '沪A·88291 · 16箱生鲜', metric: '¥24,800', status: '处理中' },
+    { id: 'mkb-3', title: '季度消防设施安全复查', subtitle: '后仓与配电间全检', metric: '100%', status: '待验收' },
+  ]);
+
+  const model = useMemo(() => {
+    try {
+      if (tableId && !schema) {
+        throw new Error(tr(`未找到关联数据表 ${tableId}`, `Bound table "${tableId}" not found`));
+      }
+      const fkErrors = tableId ? sourceForeignKeyErrors(p, tables) : [];
+      if (fkErrors.length) throw new Error(fkErrors[0]);
+
+      const nonPk = schema?.columns.filter((c) => !c.isPrimaryKey) ?? [];
+      const statusInfo = resolveKanbanStatusColumn(schema, p.statusField, p.lanes);
+      const statusCol = statusInfo.statusCol;
+      const statusKey = statusInfo.statusKey;
+
+      const base =
+        tableId && schema
+          ? typeof p.sourceForeignKey === 'string'
+            ? rowsForSource(rawRows, p.sourceForeignKey, tableId, source, tables)
+            : rawRows
+          : applyUIStackRows(sampleRows, undefined, uiState, isEn);
+      const filtered = base.filter((r) => matchesFilter(r, p.filter, runtimeFilter));
+
+      const configuredLanes = Array.isArray(p.lanes)
+        ? (p.lanes as unknown[]).map((x) => String(x)).filter(Boolean)
+        : [];
+      const enumLanes = statusCol ? (declaredColumnOptions(statusCol) ?? []).map(option => String(option.value)) : [];
+      const rowLanes = [...new Set(filtered.map((r) => String(r[statusKey] ?? '')).filter(Boolean))];
+      const lanes = configuredLanes.length
+        ? configuredLanes
+        : enumLanes.length
+        ? enumLanes
+        : rowLanes.length
+        ? rowLanes
+        : [tr('待接单', 'Queued'), tr('处理中', 'Active'), tr('已结单', 'Done')];
+
+      const allLanes = [...lanes];
+      for (const rl of rowLanes) {
+        if (!allLanes.includes(rl)) allLanes.push(rl);
+      }
+
+      const titleKey =
+        (typeof p.titleField === 'string' && p.titleField) ||
+        nonPk.find((c) => c.name !== statusKey)?.name ||
+        'title';
+      const subtitleKey =
+        (typeof p.subtitleField === 'string' && p.subtitleField) ||
+        nonPk.find((c) => c.name !== statusKey && c.name !== titleKey)?.name ||
+        'subtitle';
+      const metricKey = (typeof p.metricField === 'string' && p.metricField) || (schema ? '' : 'metric');
+
+      return {
+        rows: filtered,
+        lanes: allLanes,
+        moveTargets: new Set(lanes),
+        statusKey,
+        statusWritable: statusInfo.writable,
+        titleKey,
+        subtitleKey,
+        metricKey,
+      };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [tableId, schema, p, tables, rawRows, source, sampleRows, runtimeFilter, tr, uiState, isEn]);
+
+  const validRows = 'error' in model ? [] : model.rows;
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    visibleRows: validRows,
+    autoSelectFirst,
+    runtimeQuery: runtimeFilter,
+  });
+
+  if ('error' in model && model.error !== undefined) {
+    return (
+      <div {...rootWith(root, { className: 'rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">
+        {td(model.error)}
+      </div>
+    );
+  }
+  if ('error' in model) return null;
+
+  if (uiState === 'empty' && model.rows.length === 0) {
+    return (
+      <div
+        {...rootWith(root, { className: cx('rounded-[22px] py-8 text-center text-[12.5px]', theme.cardBg, theme.textMuted) })}
+        data-ui-stack="empty"
+      >
+        <Inbox className="w-7 h-7 mx-auto mb-1.5 opacity-50" aria-hidden="true" />
+        <div>{tr('暂无待流转事项', 'No items on board')}</div>
+      </div>
+    );
+  }
+
+  const safeLaneIdx = Math.min(activeLaneIdx, Math.max(0, model.lanes.length - 1));
+  const canMutate = allowMove && model.statusWritable && !rt.isDesign && !preview && uiState === 'normal';
+  const canMoveTo = (lane: string) => canMutate && model.moveTargets.has(lane);
+  const moveCard = (row: Row, nextLane: string) => {
+    if (!canMoveTo(nextLane)) return;
+    if (tableId && schema) {
+      try {
+        usePageStore.getState().updateRow(tableId, row.id, { [model.statusKey]: nextLane });
+      } catch {
+        // Ignore strict enum mismatch if lane is custom
+      }
+    } else {
+      setSampleRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, [model.statusKey]: nextLane } : r)));
+    }
+  };
+
+  const rowActions = (Array.isArray(p.rowActions) ? p.rowActions : []) as {
+    label?: string;
+    primary?: boolean;
+    danger?: boolean;
+    disabledWhenField?: string;
+    disabledWhenValue?: string;
+    disabledReason?: string;
+    hiddenWhenField?: string;
+    hiddenWhenValue?: string;
+    onClick?: PropValue;
+  }[];
+
+  return (
+    <div {...rootWith(root, { className: 'space-y-3' })}>
+      {/* Touch-friendly pill lane switcher */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        {model.lanes.map((lane, idx) => {
+          const count = model.rows.filter((r) => String(r[model.statusKey] ?? model.lanes[0]) === lane).length;
+          const active = idx === safeLaneIdx;
+          return (
+            <button
+              key={lane}
+              type="button"
+              onClick={() => setActiveLaneIdx(idx)}
+              className={cx(
+                'shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition cursor-pointer',
+                active ? theme.accentSolidBg : cx(theme.cardBg, theme.textSecondary),
+              )}
+            >
+              <span>{td(lane)}</span>
+              <span className={cx('rounded-full px-1.5 py-0.2 text-[10.5px] tabular-nums', active ? 'bg-white/25' : theme.subtleBg)}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active lane cards */}
+      <div className="space-y-2.5" data-kanban-lane={model.lanes[safeLaneIdx]}>
+        {(() => {
+          const lane = model.lanes[safeLaneIdx];
+          const laneRows = model.rows.filter((r) => String(r[model.statusKey] ?? model.lanes[0]) === lane);
+          if (laneRows.length === 0) {
+            return (
+              <div className={cx('rounded-[22px] py-8 text-center text-[12.5px]', theme.cardBg, theme.textMuted)}>
+                {tr('该状态泳道下暂无事项', 'No items in this stage')}
+              </div>
+            );
+          }
+          return laneRows.map((row) => {
+            const titleText = String(row[model.titleKey] ?? row.id);
+            const subText = model.subtitleKey && row[model.subtitleKey] != null ? String(row[model.subtitleKey]) : '';
+            const metricText = model.metricKey && row[model.metricKey] != null ? String(row[model.metricKey]) : '';
+            const isActive = Boolean(tableId && activeRowId === row.id);
+            const clickable = (Boolean(p.onCardClick) || autoSelectFirst) && !rt.isDesign;
+
+            return (
+              <div
+                key={row.id}
+                data-row-id={row.id}
+                data-active-row={isActive ? '1' : undefined}
+                onClick={() => {
+                  if (!clickable) return;
+                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
+                  if (p.onCardClick) void rt.run(p.onCardClick as PropValue, childRowScope(scope, row, tableId));
+                }}
+                className={cx(
+                  'rounded-[22px] p-4 space-y-2.5 transition',
+                  theme.cardBg,
+                  clickable && 'cursor-pointer active:scale-[0.99]',
+                  isActive && 'ring-2 ring-blue-500/60',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className={cx('text-[14px] font-semibold leading-snug', theme.textPrimary)}>{titleText}</div>
+                  {metricText && (
+                    <span className={cx('shrink-0 text-[12.5px] font-bold tabular-nums', theme.accentText)}>{metricText}</span>
+                  )}
+                </div>
+                {subText && <div className={cx('text-[12px] leading-relaxed', theme.textSecondary)}>{subText}</div>}
+                {(canMutate || rowActions.length > 0) && (
+                  <div className="flex items-center justify-between gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1.5">
+                      {safeLaneIdx > 0 && canMoveTo(model.lanes[safeLaneIdx - 1]) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            moveCard(row, model.lanes[safeLaneIdx - 1]);
+                            setActiveLaneIdx(safeLaneIdx - 1);
+                          }}
+                          className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium cursor-pointer', theme.subtleBg, theme.textSecondary)}
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <span>{td(model.lanes[safeLaneIdx - 1])}</span>
+                        </button>
+                      )}
+                      {safeLaneIdx < model.lanes.length - 1 && canMoveTo(model.lanes[safeLaneIdx + 1]) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            moveCard(row, model.lanes[safeLaneIdx + 1]);
+                            setActiveLaneIdx(safeLaneIdx + 1);
+                          }}
+                          className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold cursor-pointer', theme.pillActiveBg)}
+                        >
+                          <span>{tr('推进至', 'To')} {td(model.lanes[safeLaneIdx + 1])}</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {rowActions.map((act, ai) => {
+                        if (!rt.isDesign && matchesWhenCondition(row, act.hiddenWhenField, act.hiddenWhenValue)) return null;
+                        const actDisabled = !rt.isDesign && matchesWhenCondition(row, act.disabledWhenField, act.disabledWhenValue);
+                        return (
+                          <button
+                            key={ai}
+                            type="button"
+                            disabled={actDisabled}
+                            title={actDisabled && act.disabledReason ? act.disabledReason : undefined}
+                            onClick={() => {
+                              if (!rt.isDesign && !actDisabled && act.onClick) void rt.run(act.onClick, childRowScope(scope, row, tableId));
+                            }}
+                            className={cx(
+                              'rounded-full px-3 py-1 text-[11.5px] font-semibold',
+                              actDisabled
+                                ? 'opacity-45 cursor-not-allowed bg-slate-200/70 text-slate-400'
+                                : cx('cursor-pointer', act.danger ? 'bg-rose-500/12 text-rose-600' : act.primary ? theme.accentSolidBg : theme.pillActiveBg),
+                            )}
+                          >
+                            {act.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          });
+        })()}
+      </div>
+    </div>
+  );
+};
+
+function parseMobileDateKey(raw: unknown): string | null {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(String(raw).trim());
+  if (!match) return null;
+  return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+}
+
+const MCalendar: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { tr, td, isEn } = useI18n();
+  const uiState = useUIStackState();
+  const theme = useMobileTheme();
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const schema = tables.find((t) => t.id === tableId);
+  const rawRows = useTableDataRows(tableId);
+  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const runtimeFilter = rt.filters[node.pfId];
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+
+  const sampleAgenda = useMemo<Row[]>(
+    () => [
+      { id: 'mcal-1', date: '2026-11-24', title: tr('09:30 华东核心客户驻场回访', '09:30 Key Account Onsite Visit'), subtitle: tr('张江高科园区 B 座', 'Zhangjiang Tech Park'), status: tr('已确认', 'Confirmed') },
+      { id: 'mcal-2', date: '2026-11-24', title: tr('14:00 季度供应链履约评审会', '14:00 Supply Chain SLA Review'), subtitle: tr('线上会议室 · 采购与仓储协同', 'Online Sync'), status: tr('待开始', 'Upcoming') },
+      { id: 'mcal-3', date: '2026-11-25', title: tr('10:00 新签门店设备验收交付', '10:00 New Store Handover'), subtitle: tr('徐汇旗舰店', 'Xuhui Flagship'), status: tr('计划中', 'Planned') },
+    ],
+    [tr],
+  );
+
+  const model = useMemo(() => {
+    try {
+      if (tableId && !schema) {
+        throw new Error(tr(`未找到关联数据表 ${tableId}`, `Bound table "${tableId}" not found`));
+      }
+      const fkErrors = tableId ? sourceForeignKeyErrors(p, tables) : [];
+      if (fkErrors.length) throw new Error(fkErrors[0]);
+
+      const cols = schema?.columns ?? [];
+      const dateCol =
+        (typeof p.dateField === 'string' && p.dateField ? cols.find((c) => c.name === p.dateField) : undefined) ??
+        cols.find((c) => /DATE|TIMESTAMP/i.test(c.dataType) || /date|time|day|deadline|at$/i.test(c.name));
+      const dateKey = (typeof p.dateField === 'string' && p.dateField) || dateCol?.name || 'date';
+      const titleKey =
+        (typeof p.titleField === 'string' && p.titleField) ||
+        cols.find((c) => !c.isPrimaryKey && c.name !== dateKey)?.name ||
+        'title';
+      const subtitleKey =
+        (typeof p.subtitleField === 'string' && p.subtitleField) ||
+        cols.find((c) => !c.isPrimaryKey && c.name !== dateKey && c.name !== titleKey)?.name ||
+        'subtitle';
+      const statusKey =
+        (typeof p.statusField === 'string' && p.statusField) ||
+        cols.find((c) => /status|state|stage/i.test(c.name))?.name ||
+        'status';
+
+      const base =
+        tableId && schema
+          ? typeof p.sourceForeignKey === 'string'
+            ? rowsForSource(rawRows, p.sourceForeignKey, tableId, source, tables)
+            : rawRows
+          : applyUIStackRows(sampleAgenda, undefined, uiState, isEn);
+      const filtered = base.filter((r) => matchesFilter(r, p.filter, runtimeFilter));
+      const dated = filtered
+        .map((row) => ({ row, dayKey: parseMobileDateKey(row[dateKey]) }))
+        .filter((x): x is { row: Row; dayKey: string } => x.dayKey !== null);
+
+      return { rows: filtered, dated, dateKey, titleKey, subtitleKey, statusKey };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [tableId, schema, p, tables, rawRows, source, sampleAgenda, uiState, isEn, runtimeFilter, tr]);
+
+  const firstDayKey = 'error' in model ? '2026-11-24' : model.dated[0]?.dayKey ?? '2026-11-24';
+  const [selectedDay, setSelectedDay] = useState<string>(firstDayKey);
+  useEffect(() => {
+    setSelectedDay(firstDayKey);
+  }, [firstDayKey]);
+
+  const validRows = 'error' in model ? [] : model.rows;
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    visibleRows: validRows,
+    autoSelectFirst,
+    runtimeQuery: runtimeFilter,
+  });
+
+  if ('error' in model && model.error !== undefined) {
+    return (
+      <div {...rootWith(root, { className: 'rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800' })} role="alert">
+        {td(model.error)}
+      </div>
+    );
+  }
+  if ('error' in model) return null;
+
+  if (uiState === 'empty' && model.dated.length === 0) {
+    return (
+      <div
+        {...rootWith(root, {
+          className: cx('rounded-[22px] py-8 px-4 text-center text-[12.5px]', theme.cardBg, theme.textMuted),
+        })}
+        data-ui-stack="empty"
+      >
+        {String(p.emptyText || tr('暂无排期日程事项', 'No scheduled agenda events'))}
+      </div>
+    );
+  }
+
+  // Build strip of 7 days (week) or 14 days around selectedDay
+  const stripCount = p.mode === 'month' ? 14 : 7;
+  const anchorDate = new Date(`${selectedDay}T00:00:00`);
+  const baseDate = Number.isNaN(anchorDate.getTime()) ? new Date('2026-11-24T00:00:00') : anchorDate;
+  const dowOffset = (baseDate.getDay() + 6) % 7;
+  const stripStart = new Date(baseDate);
+  stripStart.setDate(baseDate.getDate() - dowOffset);
+
+  const weekdayShort = isEn ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['一', '二', '三', '四', '五', '六', '日'];
+  const eventCounts = new Map<string, number>();
+  for (const d of model.dated) eventCounts.set(d.dayKey, (eventCounts.get(d.dayKey) ?? 0) + 1);
+
+  const dayStrip = Array.from({ length: stripCount }).map((_, idx) => {
+    const dt = new Date(stripStart);
+    dt.setDate(stripStart.getDate() + idx);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    return {
+      key,
+      dayNum: dt.getDate(),
+      wk: weekdayShort[idx % 7],
+      count: eventCounts.get(key) ?? 0,
+    };
+  });
+
+  const agendaRows = model.dated.filter((d) => d.dayKey === selectedDay).map((d) => d.row);
+
+  return (
+    <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3.5', theme.cardBg) })}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Calendar className={cx('w-4 h-4', theme.accentText)} aria-hidden="true" />
+          <span className={cx('text-[14.5px] font-semibold', theme.textPrimary)}>
+            {String(p.title || tr('日程安排', 'Schedule'))}
+          </span>
+        </div>
+        <span className={cx('text-[11.5px] font-medium tabular-nums', theme.textMuted)}>{selectedDay}</span>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {dayStrip.map((d) => {
+          const isSel = d.key === selectedDay;
+          return (
+            <button
+              key={d.key}
+              type="button"
+              onClick={() => setSelectedDay(d.key)}
+              className={cx(
+                'flex flex-col items-center justify-center rounded-2xl py-2 transition cursor-pointer',
+                isSel ? theme.accentSolidBg : cx(theme.subtleBg, theme.textPrimary),
+              )}
+            >
+              <span className={cx('text-[10px]', isSel ? 'opacity-85' : theme.textMuted)}>{d.wk}</span>
+              <span className="mt-0.5 text-[13px] font-bold tabular-nums">{d.dayNum}</span>
+              <span
+                className={cx(
+                  'mt-1 h-1.5 w-1.5 rounded-full',
+                  d.count > 0 ? (isSel ? 'bg-white' : 'bg-blue-500') : 'bg-transparent',
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-2 pt-1">
+        {agendaRows.length === 0 ? (
+          <div className={cx('rounded-2xl py-5 text-center text-[12px]', theme.subtleBg, theme.textMuted)}>
+            {tr('当日暂无排期事项', 'No scheduled events for this day')}
+          </div>
+        ) : (
+          agendaRows.map((row) => {
+            const titleText = String(row[model.titleKey] ?? row.id);
+            const subText = model.subtitleKey && row[model.subtitleKey] != null ? String(row[model.subtitleKey]) : '';
+            const statusVal = model.statusKey && row[model.statusKey] != null ? String(row[model.statusKey]) : '';
+            const isActive = Boolean(tableId && activeRowId === row.id);
+            const clickable = (Boolean(p.onEventClick) || autoSelectFirst) && !rt.isDesign;
+
+            return (
+              <div
+                key={row.id}
+                data-row-id={row.id}
+                data-active-row={isActive ? '1' : undefined}
+                onClick={() => {
+                  if (!clickable) return;
+                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
+                  if (p.onEventClick) void rt.run(p.onEventClick as PropValue, childRowScope(scope, row, tableId));
+                }}
+                className={cx(
+                  'flex items-start justify-between gap-2.5 rounded-2xl p-3 transition',
+                  theme.subtleBg,
+                  clickable && 'cursor-pointer active:scale-[0.99]',
+                  isActive && 'ring-2 ring-blue-500/60',
+                )}
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className={cx('text-[13px] font-semibold leading-snug', theme.textPrimary)}>{titleText}</div>
+                  {subText && <div className={cx('text-[11.5px] truncate', theme.textMuted)}>{subText}</div>}
+                </div>
+                {statusVal && (
+                  <span className={cx('shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold', statusToneCls(statusVal, theme.isDark))}>
+                    {td(statusVal)}
+                  </span>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
+const MAiInsightCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
+  const theme = useMobileTheme();
+  const items = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+
+  return (
+    <div
+      {...rootWith(root, {
+        className: cx(
+          'p-[1.5px] rounded-[23.5px]',
+          theme.isDark
+            ? 'bg-gradient-to-br from-[#8AB4F8]/80 via-[#C58AF9]/75 to-[#F28B82]/80'
+            : 'bg-gradient-to-br from-[#4285F4]/70 via-[#9B72CB]/65 to-[#D96570]/70',
+        ),
+      })}
+    >
+      <div className={cx('rounded-[22px] p-4 space-y-3', theme.cardBg)}>
+        <div
+          onClick={() => {
+            if (!rt.isDesign && p.onPrimaryAction) void rt.run(p.onPrimaryAction as PropValue, scope);
+          }}
+          className={cx('flex items-start justify-between gap-2', Boolean(p.onPrimaryAction) && !rt.isDesign && 'cursor-pointer')}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#4285F4] to-[#9B72CB] text-white">
+              <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+            </span>
+            <span className={cx('text-[14.5px] font-semibold truncate', theme.textPrimary)}>
+              {String(p.title || tr('AI 智能助手建议', 'AI Assistant Insight'))}
+            </span>
+          </div>
+          {Boolean(p.badge) && (
+            <span className={cx('shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold', theme.pillActiveBg)}>
+              {String(p.badge)}
+            </span>
+          )}
+        </div>
+
+        {Boolean(p.summary) && (
+          <p className={cx('text-[12.5px] leading-relaxed', theme.textSecondary)}>{String(p.summary)}</p>
+        )}
+
+        {items.length > 0 && (
+          <div className="space-y-2">
+            {items.map((it, idx) => (
+              <div
+                key={idx}
+                className={cx('flex items-center justify-between gap-2.5 rounded-2xl px-3 py-2.5', theme.subtleBg)}
+              >
+                <div className="min-w-0">
+                  <div className={cx('text-[12.5px] font-semibold truncate', theme.textPrimary)}>{String(it.title ?? '')}</div>
+                  {Boolean(it.detail) && (
+                    <div className={cx('text-[11px] truncate mt-0.5', theme.textMuted)}>{String(it.detail)}</div>
+                  )}
+                </div>
+                {Boolean(it.actionLabel) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!rt.isDesign && it.onClick) void rt.run(it.onClick as PropValue, scope);
+                    }}
+                    className={cx('shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold cursor-pointer', theme.accentSolidBg)}
+                  >
+                    {String(it.actionLabel)}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MobilePage,
   MSurface,
@@ -3363,6 +4265,10 @@ export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MFeedList,
   MBannerCarousel,
   MCardGrid,
+  MRepeater,
+  MKanban,
+  MCalendar,
+  MAiInsightCard,
   MTaskList,
   MListGroup,
   MListItem,

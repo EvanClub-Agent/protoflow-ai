@@ -6,10 +6,11 @@ import { emptyMindmaps, type MindmapWorkspace } from '../proto/mindmaps';
 import { emptyProjectNotes, type NoteWorkspace } from '../proto/notes';
 import { create } from 'zustand';
 import type { PflowProjectMetadata } from '../utils/pflowBinaryCodec';
+import type { ProjectDesignTokens } from '../proto/theme/designTokens';
 import { newId as createIdentity } from '../utils/identity';
 import { tr } from '../i18n/runtime';
 
-export type UIStateMatrix = 'normal' | 'loading' | 'empty' | 'error';
+export type UIStateMatrix = 'normal' | 'empty' | 'loading' | 'edge' | 'error';
 export type WorkspaceViewMode =
   | 'project_ai'
   | 'single_page'
@@ -246,6 +247,7 @@ export interface ProtoStore {
   databaseRequirements: RequirementRecord[];
   projectPlan: ProjectPlan | null;
   projectAgreements: import('../services/projectKnowledge').ProjectAgreement[];
+  designTokens: ProjectDesignTokens | null;
   viewMode: WorkspaceViewMode;
   uiState: UIStateMatrix;
   searchQuery: string;
@@ -338,6 +340,7 @@ export interface ProtoStore {
   setViewMode: (mode: WorkspaceViewMode) => void;
   setAuditScopeFilter: (scope: 'all' | 'current_module') => void;
   setUIState: (state: UIStateMatrix) => void;
+  setDesignTokens: (tokens: ProjectDesignTokens | null) => void;
   setSearchQuery: (q: string) => void;
   toggleFolder: (folderId: string) => void;
   setShowDeprecatedNodes: (show: boolean) => void;
@@ -1235,6 +1238,7 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
   databaseRequirements: [],
   projectPlan: null,
   projectAgreements: [],
+  designTokens: null,
   viewMode: 'single_page',
   uiState: 'normal',
   searchQuery: '',
@@ -1340,6 +1344,7 @@ export const useProtoStore = create<ProtoStore>((set, get) => ({
   setWelcomeScreenOpen: (isWelcomeScreenOpen) => set({ isWelcomeScreenOpen }),
 
   setUIState: (uiState) => set({ uiState }),
+  setDesignTokens: (designTokens) => set({ designTokens }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 
   toggleFolder: (folderId) =>

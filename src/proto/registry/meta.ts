@@ -114,6 +114,12 @@ const FIELD_ITEM: ListFieldSpec[] = [
   { name: 'required', label: '必填', kind: 'boolean' },
   { name: 'options', label: '选项(逗号分隔)', kind: 'string' },
   { name: 'span', label: '占列', kind: 'number' },
+  { name: 'minField', label: '下限比较列(≥)', kind: 'column' },
+  { name: 'maxField', label: '上限比较列(≤)', kind: 'column' },
+  { name: 'minValue', label: '最小值', kind: 'number' },
+  { name: 'maxValue', label: '最大值', kind: 'number' },
+  { name: 'formatRule', label: '格式校验', kind: 'select', options: ['', 'phone', 'email', 'credit_code', 'id_card', 'positive_number'] },
+  { name: 'validationMessage', label: '防错提示语', kind: 'string' },
 ];
 
 const COLUMN_ITEM: ListFieldSpec[] = [
@@ -131,6 +137,11 @@ const COLUMN_ITEM: ListFieldSpec[] = [
 const ROW_ACTION_ITEM: ListFieldSpec[] = [
   { name: 'label', label: '名称', kind: 'string' },
   { name: 'danger', label: '危险', kind: 'boolean' },
+  { name: 'disabledWhenField', label: '前置禁用判断字段', kind: 'column' },
+  { name: 'disabledWhenValue', label: '禁用匹配值(逗号分隔或!非某值)', kind: 'string' },
+  { name: 'disabledReason', label: '禁用悬浮原因提示', kind: 'string' },
+  { name: 'hiddenWhenField', label: '前置隐藏判断字段', kind: 'column' },
+  { name: 'hiddenWhenValue', label: '隐藏匹配值(逗号分隔或!非某值)', kind: 'string' },
   { name: 'onClick', label: '点击动作', kind: 'actions' },
 ];
 
@@ -162,6 +173,12 @@ const fieldBase: PropSpec[] = [
   { name: 'readOnly', label: '只读状态', kind: 'boolean' },
   { name: 'extra', label: '底部辅助说明(extra)', kind: 'string' },
   { name: 'span', label: '表单内占列(1-4)', kind: 'number' },
+  { name: 'minField', label: '跨字段下限比较列(≥某字段)', kind: 'column', description: 'Poka-Yoke 防错：数值或日期不得小于同表单/当前记录指定字段（如结束日期 ≥ start_date）' },
+  { name: 'maxField', label: '跨字段上限比较列(≤某字段)', kind: 'column', description: 'Poka-Yoke 防错：数值或日期不得超过同表单/当前记录指定字段（如本次入库数 ≤ remaining_qty）' },
+  { name: 'minValue', label: '静态最小数值', kind: 'number' },
+  { name: 'maxValue', label: '静态最大数值', kind: 'number' },
+  { name: 'formatRule', label: '格式校验规则', kind: 'select', options: ['', 'phone', 'email', 'credit_code', 'id_card', 'positive_number'] },
+  { name: 'validationMessage', label: '自定义防错提示语', kind: 'string' },
 ];
 
 export const COMPONENTS: ComponentMeta[] = [
@@ -178,6 +195,10 @@ export const COMPONENTS: ComponentMeta[] = [
       { name: 'description', label: '页面说明', kind: 'text' },
       { name: 'padding', label: '页面边距', kind: 'select', options: ['default', 'compact', 'loose'], default: 'default' },
       { name: 'bg', label: '背景色', kind: 'select', options: ['slate', 'white', 'gray'], default: 'slate' },
+      { name: 'emptyTitle', label: '空状态引导提示(UI Stack)', kind: 'string' },
+      { name: 'errorFallback', label: '异常态展示策略(UI Stack)', kind: 'select', options: ['banner', 'result_500', 'result_403'], default: 'banner' },
+      { name: 'errorTitle', label: '异常态主标题(UI Stack)', kind: 'string' },
+      { name: 'errorDescription', label: '异常态说明文案(UI Stack)', kind: 'text' },
     ],
     snippet: '<Page title="新页面" />',
   },
@@ -194,8 +215,10 @@ export const COMPONENTS: ComponentMeta[] = [
       { name: 'size', label: '尺寸(size)', kind: 'select', options: ['default', 'small'], default: 'default' },
       { name: 'bordered', label: '显示边框(bordered)', kind: 'boolean', default: true },
       { name: 'hoverable', label: '悬停浮起(hoverable)', kind: 'boolean' },
+      { name: 'variant', label: '视觉变体(variant)', kind: 'select', options: ['default', 'subtle', 'accent', 'bento'], default: 'default' },
       { name: 'headerBg', label: '头部底色', kind: 'select', options: ['gray', 'white', 'blue'], default: 'gray' },
       { name: 'cols', label: '内部默认列数(1-4)', kind: 'number', default: 1 },
+      { name: 'activeTable', label: '绑定激活行物理表(主从详情)', kind: 'table', description: '主从分栏工作台使用：自动读取当前页通过 selectRow 选中的该表记录，无需弹窗即可驱动内部 {{row.字段}}、Descriptions、Form 与子表实时联动。' },
     ],
     snippet: '<Card title="卡片标题" />',
   },
@@ -358,7 +381,7 @@ export const COMPONENTS: ComponentMeta[] = [
     icon: 'SlidersHorizontal',
     description: '紧凑查询条件区（ProTable QueryFilter），自带查询/重置与展开收起。cols 是每行最大列数，窄容器自动换行；普通控件默认不超过 240px，日期范围不超过 320px。target 指向要过滤的 Table 的 pfId。',
     props: [
-      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid'] },
+      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'] },
       { name: 'fields', label: '查询条件', kind: 'list', itemFields: FIELD_ITEM.filter((p) => !['required', 'span'].includes(p.name)) },
       { name: 'cols', label: '每行最多列数(cols)', kind: 'number', default: 3 },
       { name: 'controlMaxWidth', label: '普通控件最大宽度(px)', kind: 'number', default: 240, description: '限制查询输入框、下拉等控件的宽度，不包含标签；空间不足时自动缩小。' },
@@ -396,7 +419,7 @@ export const COMPONENTS: ComponentMeta[] = [
     inline: true,
     props: [
       { name: 'placeholder', label: '占位提示', kind: 'string' },
-      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid'] },
+      { name: 'target', label: '过滤目标表格', kind: 'nodeRef', refTypes: ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'] },
       { name: 'enterButton', label: '显示右侧搜索按钮', kind: 'boolean' },
       { name: 'allowClear', label: '允许清空', kind: 'boolean', default: true },
       { name: 'size', label: '尺寸(size)', kind: 'select', options: ['small', 'middle', 'large'], default: 'middle' },
@@ -435,6 +458,7 @@ export const COMPONENTS: ComponentMeta[] = [
         default: 'middle',
       },
       { name: 'selectable', label: '启用行选择(rowSelection)', kind: 'boolean' },
+      { name: 'autoSelectFirst', label: '主从联动默认选中首行', kind: 'boolean', description: '开启后首屏自动激活第一条记录，点击任意行自动切换页面激活行并高亮，配合右侧 Card(activeTable) 实现一屏无弹窗主从工作台。' },
       {
         name: 'selectionType',
         label: '选择框类型',
@@ -515,6 +539,8 @@ export const COMPONENTS: ComponentMeta[] = [
       { name: 'suffix', label: '后缀单位(suffix)', kind: 'string' },
       { name: 'precision', label: '小数位数(precision)', kind: 'number' },
       { name: 'trend', label: '趋势箭头', kind: 'select', options: ['up', 'down', 'none'] },
+      { name: 'trendText', label: '环比涨跌胶囊(如 +18.2%)', kind: 'string' },
+      { name: 'sparkline', label: '显示迷你趋势图(Sparkline)', kind: 'boolean', default: false },
       {
         name: 'valueColor',
         label: '数值颜色',
@@ -900,6 +926,11 @@ export const COMPONENTS: ComponentMeta[] = [
       { name: 'ghost', label: '幽灵透明底(ghost)', kind: 'boolean' },
       { name: 'block', label: '撑满行宽(block)', kind: 'boolean' },
       { name: 'disabled', label: '禁用(disabled)', kind: 'boolean' },
+      { name: 'disabledWhenField', label: '前置禁用判断字段(Poka-Yoke)', kind: 'column' },
+      { name: 'disabledWhenValue', label: '禁用匹配值(逗号分隔或!非某值)', kind: 'string' },
+      { name: 'disabledReason', label: '禁用原因提示(Tooltip)', kind: 'string' },
+      { name: 'hiddenWhenField', label: '前置隐藏判断字段', kind: 'column' },
+      { name: 'hiddenWhenValue', label: '隐藏匹配值(逗号分隔或!非某值)', kind: 'string' },
     ],
     events: [{ name: 'onClick', label: '点击' }],
     snippet: '<Button type="primary">按钮</Button>',

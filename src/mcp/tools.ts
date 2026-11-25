@@ -1,14 +1,17 @@
-import { tr } from '../i18n/runtime';
+import { isEnLocale, tr } from '../i18n/runtime';
 import { inspectPage } from '../proto/ai/pageInspection';
 import { verifiedAxureSourceId } from '../proto/axure/task';
 import { verifiedFigmaSourceId } from '../proto/figma/task';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
+import { diagramRelations } from '../proto/database/relations';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import { readPageHeader } from '../proto/dsl/header';
 import { parsePageSource } from '../proto/dsl/parser';
 import { walk } from '../proto/dsl/tree';
 import { noteHtmlToMarkdown, noteHtmlToPlainText } from '../proto/notes';
+import { FIELD_TYPES } from '../proto/registry/meta';
 import { buildSitemap } from '../proto/sitemap';
+import { exportDesignTokensSpec } from '../proto/theme/designTokens';
 import { isNode, type PropValue, type ProtoNode } from '../proto/types';
 import { analyzeProject, projectSpecification } from '../services/projectAnalysis';
 import { reviewPageDependencies } from '../services/projectDependencies';
@@ -57,7 +60,7 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_project_overview',
     description:
-      'Get the high-level architecture of the Alex (ProtoFlow AI) prototype project: metadata, hierarchical navigation sitemap, page catalog with table bindings, database table summary, global business agreements, and static health diagnostics. Call this tool FIRST before implementing features.',
+      'Get the high-level architecture of the Alex (ProtoFlow AI) prototype project: metadata, brand Design Tokens (CSS variables + Antd theme tokens), hierarchical navigation sitemap, page catalog with table bindings, database table summary, global business agreements, and static health diagnostics. Call this tool FIRST before implementing features.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Prototype Project Overview' },
     inputSchema: {
       type: 'object',
@@ -105,7 +108,7 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_page_spec',
     description:
-      'Get the full specification of a single prototype page: route path, desktop/mobile viewport mode, bound physical tables, interactive event chains (submitForm, updateRow, deleteRow, navigate, openOverlay, transfers), component-pinned product sticky notes, component outline, and TSX prototype source.',
+      'Get the full specification of a single prototype page: route path, desktop/mobile viewport mode, bound physical tables, interactive event chains, UI Stack 5-state fallback spec (empty/loading/edge/error), Poka-Yoke defensive rules (cross-field constraints, disabledWhen/hiddenWhen guards, confirm matchText, undo deletes, FK onDelete policies), component-pinned product sticky notes, component outline, and TSX prototype source.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Single Page UI & Interaction Spec' },
     inputSchema: {
       type: 'object',
@@ -377,6 +380,226 @@ function pagePlatform(source: string | undefined): 'desktop' | 'mobile' | 'unkno
   return parsed.doc.root.type === 'MobilePage' ? 'mobile' : 'desktop';
 }
 
+function extractPageExperienceSpecs(
+  root: ProtoNode | null,
+  dbTables: LoadedWorkspace['payload']['stateSnapshot']['dbTables'],
+  boundTableIds: Set<string>,
+  pageActions: { pfId: string; event: string; actionName: string; args: unknown[] }[],
+) {
+  const componentEmptyTexts: { pfId: string; componentType: string; emptyText: string }[] = [];
+  const fieldConstraints: {
+    pfId: string;
+    formPfId: string;
+    tableId: string | null;
+    tableName: string | null;
+    fieldName: string;
+    label: string;
+    required: boolean;
+    minField?: string;
+    maxField?: string;
+    minValue?: number;
+    maxValue?: number;
+    formatRule?: string;
+    validationMessage?: string;
+  }[] = [];
+  const actionStateGuards: {
+    pfId: string;
+    componentType: string;
+    label: string;
+    disabledWhenField?: string;
+    disabledWhenValue?: string;
+    disabledReason?: string;
+    hiddenWhenField?: string;
+    hiddenWhenValue?: string;
+  }[] = [];
+  const tableById = new Map(dbTables.map((t) => [t.id, t]));
+
+  if (root) {
+    const visit = (node: ProtoNode, formOwner?: ProtoNode) => {
+      const emptyCopy =
+        typeof node.props.emptyText === 'string' && node.props.emptyText.trim()
+          ? node.props.emptyText.trim()
+          : node.type === 'Empty' && typeof node.props.description === 'string' && node.props.description.trim()
+          ? node.props.description.trim()
+          : null;
+      if (emptyCopy) {
+        componentEmptyTexts.push({ pfId: node.pfId, componentType: node.type, emptyText: emptyCopy });
+      }
+
+      const activeForm = node.type === 'Form' || node.type === 'MForm' ? node : formOwner;
+
+      if (activeForm && FIELD_TYPES.has(node.type) && typeof node.props.name === 'string' && node.props.name) {
+        const hasRule = Boolean(
+          node.props.required ||
+            node.props.minField ||
+            node.props.maxField ||
+            typeof node.props.minValue === 'number' ||
+            typeof node.props.maxValue === 'number' ||
+            node.props.formatRule,
+        );
+        if (hasRule) {
+          const tblId = typeof activeForm.props.table === 'string' && activeForm.props.table ? activeForm.props.table : null;
+          const tbl = tblId ? tableById.get(tblId) : undefined;
+          fieldConstraints.push({
+            pfId: node.pfId,
+            formPfId: activeForm.pfId,
+            tableId: tblId,
+            tableName: tbl?.tableName ?? tblId,
+            fieldName: node.props.name,
+            label: String(node.props.label ?? node.props.name),
+            required: Boolean(node.props.required),
+            ...(typeof node.props.minField === 'string' && node.props.minField ? { minField: node.props.minField } : {}),
+            ...(typeof node.props.maxField === 'string' && node.props.maxField ? { maxField: node.props.maxField } : {}),
+            ...(typeof node.props.minValue === 'number' ? { minValue: node.props.minValue } : {}),
+            ...(typeof node.props.maxValue === 'number' ? { maxValue: node.props.maxValue } : {}),
+            ...(typeof node.props.formatRule === 'string' && node.props.formatRule ? { formatRule: node.props.formatRule } : {}),
+            ...(typeof node.props.validationMessage === 'string' && node.props.validationMessage
+              ? { validationMessage: node.props.validationMessage }
+              : {}),
+          });
+        }
+      }
+
+      if (node.type === 'Form' && Array.isArray(node.props.fields)) {
+        const tblId = typeof node.props.table === 'string' && node.props.table ? node.props.table : null;
+        const tbl = tblId ? tableById.get(tblId) : undefined;
+        for (const rawF of node.props.fields) {
+          if (!rawF || typeof rawF !== 'object' || Array.isArray(rawF)) continue;
+          const f = rawF as Record<string, unknown>;
+          if (typeof f.name !== 'string' || !f.name) continue;
+          const hasRule = Boolean(
+            f.required ||
+              f.minField ||
+              f.maxField ||
+              typeof f.minValue === 'number' ||
+              typeof f.maxValue === 'number' ||
+              f.formatRule,
+          );
+          if (hasRule) {
+            fieldConstraints.push({
+              pfId: node.pfId,
+              formPfId: node.pfId,
+              tableId: tblId,
+              tableName: tbl?.tableName ?? tblId,
+              fieldName: f.name,
+              label: String(f.label ?? f.name),
+              required: Boolean(f.required),
+              ...(typeof f.minField === 'string' && f.minField ? { minField: f.minField } : {}),
+              ...(typeof f.maxField === 'string' && f.maxField ? { maxField: f.maxField } : {}),
+              ...(typeof f.minValue === 'number' ? { minValue: f.minValue } : {}),
+              ...(typeof f.maxValue === 'number' ? { maxValue: f.maxValue } : {}),
+              ...(typeof f.formatRule === 'string' && f.formatRule ? { formatRule: f.formatRule } : {}),
+              ...(typeof f.validationMessage === 'string' && f.validationMessage
+                ? { validationMessage: f.validationMessage }
+                : {}),
+            });
+          }
+        }
+      }
+
+      if ((node.type === 'Button' || node.type === 'MButton') && (node.props.disabledWhenField || node.props.hiddenWhenField)) {
+        const textChild = node.children.find((c) => !isNode(c)) as { value: string } | undefined;
+        actionStateGuards.push({
+          pfId: node.pfId,
+          componentType: node.type,
+          label: textChild?.value?.trim() || String(node.props.label ?? node.type),
+          ...(typeof node.props.disabledWhenField === 'string' && node.props.disabledWhenField
+            ? { disabledWhenField: node.props.disabledWhenField }
+            : {}),
+          ...(typeof node.props.disabledWhenValue === 'string' && node.props.disabledWhenValue
+            ? { disabledWhenValue: node.props.disabledWhenValue }
+            : {}),
+          ...(typeof node.props.disabledReason === 'string' && node.props.disabledReason
+            ? { disabledReason: node.props.disabledReason }
+            : {}),
+          ...(typeof node.props.hiddenWhenField === 'string' && node.props.hiddenWhenField
+            ? { hiddenWhenField: node.props.hiddenWhenField }
+            : {}),
+          ...(typeof node.props.hiddenWhenValue === 'string' && node.props.hiddenWhenValue
+            ? { hiddenWhenValue: node.props.hiddenWhenValue }
+            : {}),
+        });
+      }
+
+      if (Array.isArray(node.props.rowActions)) {
+        for (const rawAct of node.props.rowActions) {
+          if (!rawAct || typeof rawAct !== 'object' || Array.isArray(rawAct)) continue;
+          const act = rawAct as Record<string, unknown>;
+          if (act.disabledWhenField || act.hiddenWhenField) {
+            actionStateGuards.push({
+              pfId: node.pfId,
+              componentType: `${node.type}.rowAction`,
+              label: String(act.label ?? 'rowAction'),
+              ...(typeof act.disabledWhenField === 'string' && act.disabledWhenField
+                ? { disabledWhenField: act.disabledWhenField }
+                : {}),
+              ...(typeof act.disabledWhenValue === 'string' && act.disabledWhenValue
+                ? { disabledWhenValue: act.disabledWhenValue }
+                : {}),
+              ...(typeof act.disabledReason === 'string' && act.disabledReason ? { disabledReason: act.disabledReason } : {}),
+              ...(typeof act.hiddenWhenField === 'string' && act.hiddenWhenField ? { hiddenWhenField: act.hiddenWhenField } : {}),
+              ...(typeof act.hiddenWhenValue === 'string' && act.hiddenWhenValue ? { hiddenWhenValue: act.hiddenWhenValue } : {}),
+            });
+          }
+        }
+      }
+
+      for (const c of node.children) {
+        if (isNode(c)) visit(c, node.type === 'QueryForm' ? undefined : activeForm);
+      }
+    };
+    visit(root);
+  }
+
+  const highRiskConfirmations = pageActions
+    .filter(
+      (a) =>
+        (a.actionName === 'confirm' && typeof a.args[1] === 'string' && a.args[1].trim().length > 0) ||
+        (a.actionName === 'deleteRow' && a.args[0] === 'undo'),
+    )
+    .map((a) => ({
+      pfId: a.pfId,
+      event: a.event,
+      kind: a.actionName === 'confirm' ? ('match_text_confirm' as const) : ('undoable_delete' as const),
+      ...(a.actionName === 'confirm'
+        ? { message: String(a.args[0] ?? ''), matchText: String(a.args[1] ?? '') }
+        : { undoWindowMs: 5000 }),
+    }));
+
+  const relations = diagramRelations(dbTables).relations;
+  const foreignKeyDeletePolicies = relations
+    .filter((rel) => boundTableIds.has(rel.fromTableId) || boundTableIds.has(rel.toTableId))
+    .map((rel) => ({
+      parentTable: tableById.get(rel.fromTableId)?.tableName ?? rel.fromTableId,
+      childTable: tableById.get(rel.toTableId)?.tableName ?? rel.toTableId,
+      childColumn: rel.toColumnName,
+      onDelete: rel.onDelete ?? 'RESTRICT',
+    }));
+
+  return {
+    uiStackSpec: {
+      supportedStates: ['normal', 'empty', 'loading', 'edge', 'error'] as const,
+      pageEmptyTitle: root && typeof root.props.emptyTitle === 'string' && root.props.emptyTitle ? root.props.emptyTitle : null,
+      pageErrorFallback:
+        root && typeof root.props.errorFallback === 'string' && root.props.errorFallback
+          ? root.props.errorFallback
+          : 'component',
+      pageErrorTitle: root && typeof root.props.errorTitle === 'string' && root.props.errorTitle ? root.props.errorTitle : null,
+      pageErrorDescription:
+        root && typeof root.props.errorDescription === 'string' && root.props.errorDescription
+          ? root.props.errorDescription
+          : null,
+      componentEmptyTexts,
+    },
+    pokaYokeRules: {
+      fieldConstraints,
+      actionStateGuards,
+      highRiskConfirmations,
+      foreignKeyDeletePolicies,
+    },
+  };
+}
+
 export function executeSpecTool(
   workspace: LoadedWorkspace,
   name: string,
@@ -452,6 +675,7 @@ export function executeSpecTool(
           updatedAt: payload.meta.updatedAt,
           entryPageId: s.activePageId,
         },
+        designTokens: exportDesignTokensSpec(s.designTokens, isEnLocale() ? 'en-US' : 'zh-CN'),
         counts: {
           pages: pages.filter((p) => !p.deprecated).length,
           archivedPages: pages.filter((p) => p.deprecated).length,
@@ -723,6 +947,14 @@ export function executeSpecTool(
         }
       }
 
+      const boundTableIdSet = new Set(tableBindings.map((tb) => tb.tableId));
+      const { uiStackSpec, pokaYokeRules } = extractPageExperienceSpecs(
+        parsed?.doc?.root ?? null,
+        s.dbTables,
+        boundTableIdSet,
+        actions,
+      );
+
       return {
         page: {
           pageId: pageEntry.pageId,
@@ -737,6 +969,8 @@ export function executeSpecTool(
         },
         tableBindings,
         actions,
+        uiStackSpec,
+        pokaYokeRules,
         outgoingNavigation,
         incomingNavigation,
         dataTransfers,

@@ -158,9 +158,10 @@ export function extractPageActionSemantics(
     slotsByQualifiedId.set(`${node.pfId}.${path}`, slot);
   };
 
-  const visit = (node: ProtoNode, enclosingOverlayId: string | null) => {
+  const visit = (node: ProtoNode, enclosingOverlayId: string | null, enclosingRowTableId: string | null = null) => {
     nodeTypes.set(node.pfId, node.type);
     let currentOverlayId = enclosingOverlayId;
+    let currentRowTableId = enclosingRowTableId;
     if (OVERLAY_TYPES.has(node.type)) {
       const explicitId = strProp(node.props.id);
       const oid = explicitId || node.pfId;
@@ -169,6 +170,21 @@ export function extractPageActionSemantics(
       overlayAliases.set(node.pfId, oid);
       if (explicitId) overlays.add(node.pfId);
       currentOverlayId = oid;
+      currentRowTableId = null;
+    }
+    if (
+      (node.type === 'Card' || node.type === 'MSurface') &&
+      typeof node.props.activeTable === 'string' &&
+      tableMap.has(node.props.activeTable)
+    ) {
+      currentRowTableId = node.props.activeTable;
+    }
+    if (
+      (node.type === 'Repeater' || node.type === 'MRepeater') &&
+      typeof node.props.table === 'string' &&
+      tableMap.has(node.props.table)
+    ) {
+      currentRowTableId = node.props.table;
     }
     if (node.type === 'Form' || node.type === 'MForm') {
       const rawTable = strProp(node.props.table);
@@ -184,7 +200,7 @@ export function extractPageActionSemantics(
     if (node.props.disabled !== true) {
       const handledProps = new Set<string>();
       const boundRowTable =
-        (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'MTaskList' || node.type === 'MFeedList' || node.type === 'MCardGrid') &&
+        ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar', 'MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar'].includes(node.type) &&
         typeof node.props.table === 'string' &&
         tableMap.has(node.props.table)
           ? node.props.table
@@ -298,7 +314,7 @@ export function extractPageActionSemantics(
         );
       }
 
-      if (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'MTaskList') {
+      if (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'Kanban' || node.type === 'MTaskList' || node.type === 'MKanban') {
         const rowClickKey = node.type === 'Table' ? 'onRowClick' : node.type === 'CardGrid' ? 'onItemClick' : 'onCardClick';
         handledProps.add(rowClickKey);
         handledProps.add('rowActions');
@@ -327,7 +343,7 @@ export function extractPageActionSemantics(
             );
           });
         }
-      } else if (node.type === 'MFeedList' || node.type === 'MCardGrid') {
+      } else if (node.type === 'MFeedList' || node.type === 'MCardGrid' || node.type === 'Repeater' || node.type === 'MRepeater') {
         handledProps.add('onItemClick');
         addSlot(
           node,
@@ -338,10 +354,21 @@ export function extractPageActionSemantics(
           boundRowTable,
           currentOverlayId,
         );
+      } else if (node.type === 'Calendar' || node.type === 'MCalendar') {
+        handledProps.add('onEventClick');
+        addSlot(
+          node,
+          'onEventClick',
+          'primary',
+          strProp(node.props.title) || 'onEventClick',
+          node.props.onEventClick,
+          boundRowTable,
+          currentOverlayId,
+        );
       }
 
       if (
-        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup' || node.type === 'NavMenu' || node.type === 'Dropdown' || node.type === 'Carousel' || node.type === 'MBannerCarousel') &&
+        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup' || node.type === 'NavMenu' || node.type === 'Dropdown' || node.type === 'Carousel' || node.type === 'MBannerCarousel' || node.type === 'AiCopilotCard' || node.type === 'MAiInsightCard') &&
         Array.isArray(node.props.items)
       ) {
         handledProps.add('items');
@@ -355,7 +382,7 @@ export function extractPageActionSemantics(
             CANCEL_LABEL_PATTERN.test(itemLabel) ? 'cancel' : 'primary',
             itemLabel,
             rec.onClick,
-            null,
+            currentRowTableId,
             currentOverlayId,
           );
         });
@@ -389,11 +416,11 @@ export function extractPageActionSemantics(
               : CANCEL_LABEL_PATTERN.test(inlineLabel)
                 ? 'cancel'
                 : 'primary';
-        addSlot(node, key, role, inlineLabel, val, null, currentOverlayId);
+        addSlot(node, key, role, inlineLabel, val, currentRowTableId, currentOverlayId);
       }
     }
 
-    node.children.filter(isNode).forEach((child) => visit(child, currentOverlayId));
+    node.children.filter(isNode).forEach((child) => visit(child, currentOverlayId, currentRowTableId));
   };
 
   visit(root, null);
@@ -642,6 +669,14 @@ export function semanticActionContractIssues(
               push(slot, 'invalid-row-patch', `updateRow 更新了未知字段 ${invalidTableId}.${badKey}`);
             }
           }
+        }
+      } else if (call.name === 'selectRow') {
+        if (!slot.hasGuaranteedRowContext && (slot.hasUncontextualizedEntry || strict)) {
+          push(
+            slot,
+            'missing-row-context',
+            'selectRow 缺少当前行数据上下文；必须放在绑定了真实数据表的列表/表格/看板/日历行事件中',
+          );
         }
       } else if (call.name === 'deleteRow') {
         if (!slot.hasGuaranteedRowContext) {

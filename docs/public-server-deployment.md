@@ -20,10 +20,10 @@ WEB_PORT=8088
 ADMIN_PORT=8089
 ```
 
-2. 一键构建并启动 PostgreSQL + Go API + Web 浏览端：
+2. 拉取 GHCR 多架构预编译镜像并启动 PostgreSQL + Go API + Web 浏览端（如需锁定版本可在 `deploy/.env` 中配置 `PROTOFLOW_API_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-api:v0.0.10` 与 `PROTOFLOW_WEB_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-web:v0.0.10`；本地二次开发源码后可加 `--build`）：
 
 ```sh
-docker compose --env-file deploy/.env -f deploy/compose.yml up --build -d
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 ```
 
 3. 初始化平台管理员账号（用于管理安装包与查看诊断）：

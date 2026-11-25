@@ -188,166 +188,163 @@ body {
   }
 
   /* ---- Ant Design Dark Algorithm Tokens for Prototype Canvas (.pf-paper) ----
-     Reference: Ant Design 5/6 `theme.darkAlgorithm` specification
-     - colorBgLayout:          #0a0a0a (page canvas background)
-     - colorBgContainer:       #141414 (card, table, input, modal container)
-     - colorBgElevated:        #1f1f1f (segmented active pill, elevated surface)
-     - colorFillAlter:         #1d1d1d (table header, striped row, card header)
-     - colorFillSecondary:     #262626 (tags, secondary track, hover fill)
-     - colorBorder:            #424242 (control border)
-     - colorBorderSecondary:   #303030 (structural divider / card / cell border)
-     - colorText:              rgba(255, 255, 255, 0.88)
-     - colorTextSecondary:     rgba(255, 255, 255, 0.65)
-     - colorTextTertiary:      rgba(255, 255, 255, 0.45)
-     - colorTextQuaternary:    rgba(255, 255, 255, 0.25)
-  */
-  .pf-paper {
+     Driven by the effective canvas mode (`data-pf-mode`), NOT blindly forced by the
+     workbench shell: an explicit light canvas (`[data-pf-mode="light"]`) stays crisp
+     light even when the workbench is dark, and an explicit dark canvas (`[data-pf-mode="dark"]`)
+     renders dark surfaces even when the workbench is light. */
+}
+
+:is([data-pf-mode="dark"], :root[data-theme="dark"]) {
+  .pf-paper:not([data-pf-mode="light"], [data-pf-mode="light"] *) {
     color: rgba(255, 255, 255, 0.88);
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-\[\#f8fafc\], .bg-\[\#F8FAFC\]) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-\[\#f8fafc\], .bg-\[\#F8FAFC\]) {
     background-color: #0a0a0a !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-white, .bg-white\/98, .bg-white\/95, .bg-white\/90, .bg-white\/80, .focus-within\:bg-white:focus-within) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-white, .bg-white\/98, .bg-white\/95, .bg-white\/90, .bg-white\/80, .focus-within\:bg-white:focus-within) {
     background-color: #141414 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-slate-50, .bg-slate-50\/90, .bg-slate-50\/80, .bg-slate-50\/75, .bg-slate-50\/70, .bg-slate-50\/60, .bg-slate-50\/50, .bg-slate-50\/40) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-slate-50, .bg-slate-50\/90, .bg-slate-50\/80, .bg-slate-50\/75, .bg-slate-50\/70, .bg-slate-50\/60, .bg-slate-50\/50, .bg-slate-50\/40) {
     background-color: #1d1d1d !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-slate-100, .bg-slate-100\/90, .bg-slate-100\/80) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-slate-100, .bg-slate-100\/90, .bg-slate-100\/80) {
     background-color: #262626 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-slate-200, .bg-slate-200\/80, .bg-slate-200\/70, .bg-slate-200\/60) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-slate-200, .bg-slate-200\/80, .bg-slate-200\/70, .bg-slate-200\/60) {
     background-color: #303030 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.bg-slate-300) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-slate-300) {
     background-color: #424242 !important;
   }
 
-  .pf-paper :is(.bg-slate-100, .bg-slate-50) > .bg-white.shadow-2xs {
+  .pf-paper:not([data-pf-mode="light"], [data-pf-mode="light"] *) :is(.bg-slate-100, .bg-slate-50) > .bg-white.shadow-2xs {
     background-color: #1f1f1f !important;
   }
 
-  .pf-paper tr.group\/row:hover > td.sticky {
+  .pf-paper:not([data-pf-mode="light"], [data-pf-mode="light"] *) tr.group\/row:hover > td.sticky {
     background-color: #1d283a !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-100\/80, .hover\:bg-white\/70):hover {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-100\/80, .hover\:bg-white\/70):hover {
     background-color: #262626 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.hover\:bg-slate-200, .hover\:bg-slate-200\/70, .hover\:bg-slate-200\/60):hover {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.hover\:bg-slate-200, .hover\:bg-slate-200\/70, .hover\:bg-slate-200\/60):hover {
     background-color: #303030 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.border-slate-100, .border-slate-200, .border-slate-200\/95, .border-slate-200\/90, .border-slate-200\/85, .border-slate-200\/80) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-slate-100, .border-slate-200, .border-slate-200\/95, .border-slate-200\/90, .border-slate-200\/85, .border-slate-200\/80) {
     border-color: #303030 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.border-slate-300, .border-slate-300\/80, .border-slate-400) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-slate-300, .border-slate-300\/80, .border-slate-400) {
     border-color: #424242 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.divide-slate-100, .divide-slate-200) > :not(:last-child) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.divide-slate-100, .divide-slate-200) > :not(:last-child) {
     border-color: #303030 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.text-slate-950, .text-slate-900, .text-slate-800) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-slate-950, .text-slate-900, .text-slate-800) {
     color: rgba(255, 255, 255, 0.88) !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.text-slate-700, .text-slate-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-slate-700, .text-slate-600) {
     color: rgba(255, 255, 255, 0.65) !important;
   }
 
   /* The floating quickbar has a dark background in both modes. Keep its own
      foreground and hover colors, while still theming nested sticky-note panels. */
-  :is(.pf-paper, .pf-paper *):is(.text-slate-500, .text-slate-400):not(:where([data-pf-quickbar] > *)) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-slate-500, .text-slate-400):not(:where([data-pf-quickbar] > *)) {
     color: rgba(255, 255, 255, 0.45) !important;
   }
 
-  :is(.pf-paper, .pf-paper *).text-slate-300:not(:where([data-pf-quickbar] > *)) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *).text-slate-300:not(:where([data-pf-quickbar] > *)) {
     color: rgba(255, 255, 255, 0.25) !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.hover\:text-slate-900, .hover\:text-slate-800):hover {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.hover\:text-slate-900, .hover\:text-slate-800):hover {
     color: rgba(255, 255, 255, 0.95) !important;
   }
 
   /* Ant Design semantic status tokens inside .pf-paper (colorInfoBg/Border, colorSuccessBg/Border, colorWarningBg/Border, colorErrorBg/Border) */
-  :is(.pf-paper, .pf-paper *):is(.bg-blue-50, .bg-blue-50\/80, .bg-blue-50\/70, .bg-blue-50\/60, .bg-blue-50\/50, .bg-blue-50\/40, .bg-blue-50\/20, .bg-blue-100, .bg-blue-100\/80, .hover\:bg-blue-50:hover, .hover\:bg-blue-50\/40:hover, .hover\:bg-blue-50\/20:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-blue-50, .bg-blue-50\/80, .bg-blue-50\/70, .bg-blue-50\/60, .bg-blue-50\/50, .bg-blue-50\/40, .bg-blue-50\/20, .bg-blue-100, .bg-blue-100\/80, .hover\:bg-blue-50:hover, .hover\:bg-blue-50\/40:hover, .hover\:bg-blue-50\/20:hover) {
     background-color: #111a2c !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-indigo-50, .bg-indigo-50\/80, .bg-indigo-100) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-indigo-50, .bg-indigo-50\/80, .bg-indigo-100) {
     background-color: #131629 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-emerald-50, .bg-emerald-50\/80, .bg-emerald-50\/50, .bg-emerald-100) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-emerald-50, .bg-emerald-50\/80, .bg-emerald-50\/50, .bg-emerald-100) {
     background-color: #162312 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-amber-50, .bg-amber-50\/95, .bg-amber-50\/90, .bg-amber-50\/80, .bg-amber-50\/70, .bg-amber-50\/60, .bg-amber-50\/50, .bg-amber-50\/45, .bg-amber-50\/40, .bg-amber-100, .bg-amber-100\/95, .bg-amber-100\/80, .bg-amber-200, .bg-amber-200\/90, .bg-amber-200\/80, .hover\:bg-amber-50:hover, .hover\:bg-amber-100:hover, .hover\:bg-amber-100\/80:hover, .hover\:bg-amber-200:hover, .hover\:bg-amber-200\/60:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-amber-50, .bg-amber-50\/95, .bg-amber-50\/90, .bg-amber-50\/80, .bg-amber-50\/70, .bg-amber-50\/60, .bg-amber-50\/50, .bg-amber-50\/45, .bg-amber-50\/40, .bg-amber-100, .bg-amber-100\/95, .bg-amber-100\/80, .bg-amber-200, .bg-amber-200\/90, .bg-amber-200\/80, .hover\:bg-amber-50:hover, .hover\:bg-amber-100:hover, .hover\:bg-amber-100\/80:hover, .hover\:bg-amber-200:hover, .hover\:bg-amber-200\/60:hover) {
     background-color: #2b2111 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-rose-50, .bg-rose-50\/80, .bg-rose-100, .bg-red-50, .hover\:bg-rose-50:hover, .hover\:bg-rose-50\/40:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-rose-50, .bg-rose-50\/80, .bg-rose-100, .bg-red-50, .hover\:bg-rose-50:hover, .hover\:bg-rose-50\/40:hover) {
     background-color: #2c1618 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-100) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-100) {
     background-color: #1a1325 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-teal-50, .bg-teal-50\/80, .bg-teal-50\/40, .bg-teal-100, .bg-teal-100\/80, .hover\:bg-teal-50:hover, .hover\:bg-teal-50\/40:hover, .hover\:bg-teal-100:hover, .hover\:bg-teal-100\/80:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-teal-50, .bg-teal-50\/80, .bg-teal-50\/40, .bg-teal-100, .bg-teal-100\/80, .hover\:bg-teal-50:hover, .hover\:bg-teal-50\/40:hover, .hover\:bg-teal-100:hover, .hover\:bg-teal-100\/80:hover) {
     background-color: #112123 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.bg-sky-50, .bg-sky-100, .bg-cyan-50, .bg-cyan-100) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.bg-sky-50, .bg-sky-100, .bg-cyan-50, .bg-cyan-100) {
     background-color: #112123 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.border-blue-100, .border-blue-200, .border-blue-300) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-blue-100, .border-blue-200, .border-blue-300) {
     border-color: #15325b !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-indigo-100, .border-indigo-200, .border-indigo-300) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-indigo-100, .border-indigo-200, .border-indigo-300) {
     border-color: #1e2759 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-emerald-100, .border-emerald-200, .border-emerald-300) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-emerald-100, .border-emerald-200, .border-emerald-300) {
     border-color: #274916 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-amber-100, .border-amber-200, .border-amber-200\/90, .border-amber-200\/80, .border-amber-200\/70, .border-amber-200\/60, .border-amber-300, .border-amber-300\/90) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-amber-100, .border-amber-200, .border-amber-200\/90, .border-amber-200\/80, .border-amber-200\/70, .border-amber-200\/60, .border-amber-300, .border-amber-300\/90) {
     border-color: #594214 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-rose-100, .border-rose-200, .border-rose-300, .border-red-200) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-rose-100, .border-rose-200, .border-rose-300, .border-red-200) {
     border-color: #5b2526 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-purple-200, .border-violet-200) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-purple-200, .border-violet-200) {
     border-color: #301c4d !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.border-sky-200, .border-cyan-200, .border-teal-200, .border-teal-200\/90, .border-teal-300, .hover\:border-teal-300:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.border-sky-200, .border-cyan-200, .border-teal-200, .border-teal-200\/90, .border-teal-300, .hover\:border-teal-300:hover) {
     border-color: #144848 !important;
   }
 
-  :is(.pf-paper, .pf-paper *):is(.text-blue-900, .text-blue-800, .text-blue-700, .text-blue-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-blue-900, .text-blue-800, .text-blue-700, .text-blue-600) {
     color: #3c89e8 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-indigo-900, .text-indigo-800, .text-indigo-700, .text-indigo-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-indigo-900, .text-indigo-800, .text-indigo-700, .text-indigo-600) {
     color: #6875f5 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-emerald-900, .text-emerald-800, .text-emerald-700, .text-emerald-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-emerald-900, .text-emerald-800, .text-emerald-700, .text-emerald-600) {
     color: #49aa19 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-amber-950, .text-amber-900, .text-amber-800, .text-amber-700, .text-amber-600, .hover\:text-amber-950:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-amber-950, .text-amber-900, .text-amber-800, .text-amber-700, .text-amber-600, .hover\:text-amber-950:hover) {
     color: #d89614 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-rose-900, .text-rose-800, .text-rose-700, .text-rose-600, .text-rose-500, .text-red-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-rose-900, .text-rose-800, .text-rose-700, .text-rose-600, .text-rose-500, .text-red-600) {
     color: #dc4446 !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-purple-800, .text-purple-700, .text-purple-600, .text-violet-700, .text-violet-600) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-purple-800, .text-purple-700, .text-purple-600, .text-violet-700, .text-violet-600) {
     color: #854eca !important;
   }
-  :is(.pf-paper, .pf-paper *):is(.text-sky-800, .text-sky-700, .text-sky-600, .text-cyan-700, .text-cyan-600, .text-teal-900, .text-teal-800, .text-teal-700, .text-teal-600, .hover\:text-teal-800:hover) {
+  :is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *):is(.text-sky-800, .text-sky-700, .text-sky-600, .text-cyan-700, .text-cyan-600, .text-teal-900, .text-teal-800, .text-teal-700, .text-teal-600, .hover\:text-teal-800:hover) {
     color: #13a8a8 !important;
   }
+}
+
+:root[data-theme="dark"] {
 
   /* ---- Surfaces (Workspace Chrome; excludes PC .pf-paper and Gemini .pf-mobile-scope) ---- */
   :is(.bg-\[\#F3F5F8\], .bg-\[\#f3f5f8\]):not(.pf-paper, .pf-paper *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *)) {
@@ -417,7 +414,7 @@ body {
     color: #ffffff !important;
   }
 
-  :is(input, select, textarea):not(:where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *))::placeholder {
+  :is(input, select, textarea):not([data-pf-mode="light"] *, :where(.pf-mobile-scope, .pf-mobile-scope *):not([data-pf-sticky-ui], [data-pf-sticky-ui] *))::placeholder {
     color: #6b7487;
   }
 
@@ -509,9 +506,7 @@ body {
     color: #ffffff;
   }
 
-  .shadow-2xs,
-  .shadow-xs,
-  .shadow-sm {
+  :is(.shadow-2xs, .shadow-xs, .shadow-sm):not([data-pf-mode="light"] *) {
     --tw-shadow-color: rgba(0, 0, 0, 0.4);
   }
 }

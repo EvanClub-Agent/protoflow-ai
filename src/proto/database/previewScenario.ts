@@ -2,7 +2,7 @@ import type { DBColumnSchema, DBTableSchema } from '../../store/useProtoStore';
 import type { Row } from '../runtime/mock';
 import { sqlEnumValues } from './enumContract';
 import { diagramRelations } from './relations';
-import { resolveUniqueConstraints } from './uniqueConstraints';
+import { resolveUniqueConstraints, uniqueColumnValue } from './uniqueConstraints';
 import { previewRelationIssues } from './previewRelations';
 
 type Dataset = Record<string, Row[]>;
@@ -20,17 +20,6 @@ function validColumnValue(col: DBColumnSchema, value: unknown) {
   if (/^(?:(?:VAR)?CHAR|TEXT|ENUM|DATE|TIMESTAMP)\b/i.test(type)) return typeof value === 'string';
   if (/^(?:BOOL|BOOLEAN)\b/i.test(type)) return typeof value === 'boolean';
   return true;
-}
-// Numeric columns may be encoded as decimal text (including BIGINT). Compare
-// such unique keys without rounding through Number; keep FK joins type-exact.
-function uniqueValue(value: unknown, type?: string) {
-  if (!type || !(integerType.test(type) || decimalType.test(type))) return value;
-  const [whole, fraction = ''] = String(value).split('.');
-  if (!/^-?\d+$/.test(whole)) return String(value);
-  const digits = whole.replace(/^-/, '').replace(/^0+(?=\d)/, '');
-  const remainder = fraction.replace(/0+$/, '');
-  const sign = whole.startsWith('-') && (digits !== '0' || remainder) ? '-' : '';
-  return sign + digits + (remainder ? '.' + remainder : '');
 }
 
 /** Explicit, synthetic scenario records for a prototype. Only initializes absent datasets.
@@ -69,7 +58,7 @@ export function preparePreviewScenario(tables: DBTableSchema[], existing: Datase
       const seen = new Set<string>();
       for (const row of rows) {
         if (fields.some(f => row[f] == null)) continue;
-        const key = JSON.stringify(fields.map(f => uniqueValue(row[f], types.get(f))));
+        const key = JSON.stringify(fields.map(f => uniqueColumnValue(row[f], types.get(f))));
         if (seen.has(key)) throw new Error(`表 ${table.tableName} 的演示记录违反唯一约束 ${fields.join(', ')}`);
         seen.add(key);
       }

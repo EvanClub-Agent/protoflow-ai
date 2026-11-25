@@ -49,13 +49,21 @@ export function pageContractErrors(
       }
     }
     if (n.type === 'Table') errors.push(...tableBindingErrors(n.props, tables, data?.tableRows).map(message => `${n.pfId}:${message}`));
-    if (n.type === 'MTaskList' || n.type === 'MFeedList' || n.type === 'MCardGrid' || n.type === 'CardGrid') errors.push(...sourceForeignKeyErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
+    if (['MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'].includes(n.type)) {
+      errors.push(...sourceForeignKeyErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
+    }
     if (n.type === 'Freeform') errors.push(...freeformBindingErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
     if (
       typeof n.props.table === "string" &&
       !tables.some((t) => t.id === n.props.table)
     )
       errors.push(`${n.pfId}:未知表 ${n.props.table}`);
+    if (
+      typeof n.props.activeTable === "string" &&
+      n.props.activeTable &&
+      !tables.some((t) => t.id === n.props.activeTable)
+    )
+      errors.push(`${n.pfId}:未知表 ${n.props.activeTable}`);
     const table =
       (n.type === "Form" || n.type === "MForm") ? tables.find((t) => t.id === n.props.table) : owner;
     const isQuery = query || n.type === "QueryForm";
@@ -69,6 +77,8 @@ export function pageContractErrors(
         errors.push(`${n.pfId}:未知字段 ${table.id}.${name}`);
     };
     field(n.props.name);
+    if (typeof n.props.minField === "string" && n.props.minField) field(n.props.minField);
+    if (typeof n.props.maxField === "string" && n.props.maxField) field(n.props.maxField);
     if (n.type === 'MSheetPicker' && typeof n.props.table === 'string' && table) {
       const column = table.columns.find(c => c.name === n.props.name);
       if (column && (column.isForeignKey || column.references)) {
@@ -79,16 +89,38 @@ export function pageContractErrors(
     }
     if (n.type === "Form" && Array.isArray(n.props.fields))
       n.props.fields.forEach((f) => {
-        if (f && typeof f === "object" && !Array.isArray(f) && "name" in f)
-          field(f.name);
+        if (f && typeof f === "object" && !Array.isArray(f)) {
+          if ("name" in f) field(f.name);
+          if ("minField" in f && typeof f.minField === "string" && f.minField) field(f.minField);
+          if ("maxField" in f && typeof f.maxField === "string" && f.maxField) field(f.maxField);
+        }
       });
     if (
-      (n.type === "MFeedList" || n.type === "MCardGrid" || n.type === "CardGrid" || n.type === "MTaskList" || n.type === "MSheetPicker") &&
+      ["Table", "CardGrid", "Kanban", "MTaskList", "MKanban"].includes(n.type) &&
+      typeof n.props.table === "string" &&
+      Array.isArray(n.props.rowActions)
+    ) {
+      const bound = tables.find((t) => t.id === n.props.table);
+      if (bound) {
+        for (const act of n.props.rowActions) {
+          if (act && typeof act === "object" && !Array.isArray(act)) {
+            for (const guardKey of ["disabledWhenField", "hiddenWhenField"] as const) {
+              const colName = (act as Record<string, unknown>)[guardKey];
+              if (typeof colName === "string" && colName && !bound.columns.some((col) => col.name === colName)) {
+                errors.push(`${n.pfId}:未知字段 ${bound.id}.${colName}`);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (
+      ["MFeedList", "MCardGrid", "MRepeater", "MKanban", "MCalendar", "CardGrid", "Repeater", "Kanban", "Calendar", "MTaskList", "MSheetPicker"].includes(n.type) &&
       typeof n.props.table === "string"
     ) {
       const bound = tables.find((t) => t.id === n.props.table);
       if (bound) {
-        for (const key of ["titleField", "subtitleField", "imageField", "priceField", "tagField", "statusField", "labelField", "valueField"]) {
+        for (const key of ["titleField", "subtitleField", "imageField", "priceField", "tagField", "statusField", "metricField", "dateField", "endDateField", "labelField", "valueField"]) {
           const val = n.props[key];
           if (typeof val === "string" && val && !bound.columns.some((col) => col.name === val)) {
             errors.push(`${n.pfId}:未知字段 ${bound.id}.${val}`);
@@ -112,7 +144,7 @@ export function pageContractErrors(
       const targetNode = nodesByPfId.get(n.props.target);
       if (
         targetNode &&
-        (targetNode.type === "MFeedList" || targetNode.type === "MTaskList" || targetNode.type === "MCardGrid") &&
+        ["MFeedList", "MTaskList", "MCardGrid", "MRepeater", "MKanban", "MCalendar"].includes(targetNode.type) &&
         typeof targetNode.props.table === "string"
       ) {
         const bound = tables.find((t) => t.id === targetNode.props.table);

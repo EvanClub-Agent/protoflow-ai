@@ -4,6 +4,7 @@ import '../index.css';
 import { setLocale } from '../i18n/runtime';
 import { MobileViewportShell } from '../proto/mobile/MobileViewportShell';
 import { AntdSurface } from '../proto/registry/AntdSurface';
+import { ProtoCanvasThemeScope } from '../proto/theme/ProtoCanvasThemeScope';
 import { NodeView } from '../proto/renderer/NodeView';
 import { RuntimeProvider, useRuntimeController } from '../proto/runtime/runtime';
 import { usePageStore } from '../proto/store/usePageStore';
@@ -62,7 +63,7 @@ function Preview({ snapshot }: { snapshot: PreviewSnapshot }) {
     };
     void render().catch(e => host!.ready({ error: String(e) }));
   }, [snapshot, mobile]);
-  return <AntdSurface><RuntimeProvider value={runtime}>
+  return <ProtoCanvasThemeScope tokens={snapshot.state.designTokens} hostTheme={snapshot.theme}><AntdSurface><RuntimeProvider value={runtime}>
     <div ref={stage} style={snapshot.fullPage ? { minHeight: snapshot.height } : undefined}
       className={`pf-canvas-viewport-shell box-border flex w-full bg-slate-100 p-[12px] ${snapshot.fullPage ? '' : 'h-dvh overflow-hidden'}`}>
       {mobile ? <div className="m-auto"><MobileViewportShell device={snapshot.device} expandHeight={snapshot.fullPage} appearance={snapshot.doc.root.props.appearance}
@@ -71,14 +72,14 @@ function Preview({ snapshot }: { snapshot: PreviewSnapshot }) {
       </MobileViewportShell></div> :
         <div data-preview-viewport className={`pf-paper flex min-w-0 flex-1 flex-col rounded-xl bg-white ${snapshot.fullPage ? '' : 'overflow-auto'}`}><NodeView node={snapshot.doc.root} /></div>}
     </div>
-  </RuntimeProvider></AntdSurface>;
+  </RuntimeProvider></AntdSurface></ProtoCanvasThemeScope>;
 }
 
 if (host) void host.snapshot().then(snapshot => {
   const { tableRows, ...state } = snapshot.state;
   document.documentElement.dataset.theme = snapshot.theme;
   setLocale(snapshot.locale);
-  useProtoStore.setState({ ...state, currentProjectMeta: snapshot.meta, activePageId: snapshot.pageId, isWebPlayerMode: true });
+  useProtoStore.setState({ ...state, currentProjectMeta: snapshot.meta, activePageId: snapshot.pageId, isWebPlayerMode: true, uiState: snapshot.uiState ?? 'normal' });
   usePageStore.setState({ tableRows, pageSources: {}, designerPages: [], designerFolders: [], history: {} });
   createRoot(document.getElementById('root')!, { onRecoverableError: e => host.ready({ error: String(e) }) }).render(<CaptureMode.Provider value><Preview snapshot={snapshot} /></CaptureMode.Provider>);
 }).catch(e => host.ready({ error: String(e) }));

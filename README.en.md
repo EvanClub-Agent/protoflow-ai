@@ -7,7 +7,7 @@
 ### Open-Source AI Prototyping Workbench — Turn Requirements into Runnable Apps
 
 Describe your business workflow — ProtoFlow AI clarifies edge cases first, plans your sitemap, pages, and shared relational ER tables,<br/>
-lets you refine **Desktop Admin** & **Mobile Viewports** on a bidirectional AST canvas, imports Axure `.rp` binaries offline, and connects coding agents via MCP.
+lets you refine **Desktop Admin** & **Mobile Viewports** with **UI Stack 5-State Simulation** & **Poka-Yoke Guardrails**, imports **Axure `.rp` & Figma `.fig`**, and connects coding agents via MCP.
 
 **[Try Live Browser Demo](https://alex.xclubai.com/demo/)** · **[Official Website](https://alex.xclubai.com/en/)** · **[MCP Docs](https://alex.xclubai.com/mcp/)** · **[Join Discord](https://discord.gg/YDnKBhmsrR)** (share prototypes in `#general` or ask in `#help-and-bugs`).
 
@@ -48,19 +48,19 @@ Product managers and engineering teams are often stuck between **static wirefram
 ## ✨ Key Features
 
 - **01 · Project-Level AI Planning**: Clarifies business constraints, proposes sitemaps + ER schemas, and supports scoped incremental edits without overwriting existing pages.
-- **02 · Enterprise Desktop & Mobile Materials**: Built-in Ant Design-style query forms, master-detail tables, modals/drawers, composite blocks, mobile bottom sheets, and sandboxed freeform components.
-- **03 · Navicat-Style ER Database Designer**: Visual relational schema editor, foreign-key validation, cross-module data transfer, and realistic preview datasets.
-- **04 · 12 Native Apache ECharts + Mermaid Diagrams**: Bar, Line, Area, Pie, Donut, Scatter, Radar, Gauge, Funnel, Heatmap, Treemap, and Sankey charts bound directly to project tables, plus Mermaid architecture/sequence templates.
-- **05 · Component Sticky Specs & Closed-Loop Audit**: Pin requirement notes directly onto UI controls, trace schema change impact across menus, and audit broken links or unbound foreign keys.
-- **06 · Self-Hosted Online Sharing & Release Center**: Share password-protected, expiring, versioned `/p/{id}` interactive prototypes via a lightweight Go + PostgreSQL + Nginx stack.
+- **02 · 134+ High-Ceiling Desktop & Mobile Materials + Brand Theme Tokens**: Popup-free `Repeater` Master-Detail workbenches, SQL-ENUM-disambiguated `Kanban` / `MKanban` boards, `Calendar` / `MCalendar` schedules, `AiCopilotCard` / `MAiInsightCard`, Bento Sparkline KPIs, drawers, mobile bottom sheets, sandboxed freeform components, and 4 project-level `designTokens` presets (`classic_antd`, `modern_minimal`, `industrial_dense`, `collab_soft`).
+- **03 · UI Stack 5-State Matrix (`normal` / `empty` / `loading` / `edge` / `error`)**: One-click top-bar switcher in both the Desktop Designer and Published Viewer (`/p/{id}`) to inspect empty CTAs, skeletons, stress-test long strings (strictly isolated from project writes), and page/banner/component error fallbacks.
+- **04 · Navicat-Style ER Designer, Poka-Yoke Guardrails & 5s Atomic Undo**: Visual relational schema editor with cross-field `minField` / `maxField` caps, phone/email/tax-ID format validation, multi-level `ON DELETE RESTRICT / CASCADE / SET NULL` closure checks, exact-match high-risk `confirm(msg, '{{row.ticket_no}}')`, and `deleteRow('undo')` 5-second atomic rollback.
+- **05 · 12 Native Apache ECharts + Mermaid Diagrams & Sticky Specs**: Bar, Line, Area, Pie, Donut, Scatter, Radar, Gauge, Funnel, Heatmap, Treemap, and Sankey charts bound directly to project tables, paired with component sticky-note rules, rich PRD notes, and closed-loop audits.
+- **06 · Self-Hosted Online Sharing & Release Center**: Share password-protected, expiring, versioned `/p/{id}` interactive prototypes via multi-arch (`linux/amd64` + `linux/arm64`) GHCR Docker images (`Go 1.27 + PostgreSQL 18 + Nginx`).
 - **07 · Bidirectional MCP Authoring, Visual Capture & Read-Only Spec Server**: Let **Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**, or **Cursor** directly design and refine prototypes on the live Alex Desktop canvas (`--mode readwrite --desktop-bridge`) — modeling shared ER tables, seeding FK-valid rows, editing `<Page>` / `<MobilePage>` subtrees by `selectedPfId`, verifying rendered layouts via `protoflow_capture_preview` PNG screenshots, and supporting multi-step `Cmd/Ctrl+Z` undo, with one-click **Antigravity plugin** install and **Claude Desktop `.mcpb`** export. For engineering handoff, connect in read-only mode to any `/p/{id}` share URL over Streamable HTTP (zero local install) or local `.pflow` file. See the **[Official MCP Setup & Tools Guide](https://alex.xclubai.com/mcp/)**.
-- **08 · Native Axure (`.rp`) Binary Import & Controlled AI Flow Reshaping**: Drop Axure RP 9 or RP 11 `.rp` files directly into Alex locally without Axure installed. Edit imported pages visually or let Project AI reshape scattered wireframes and static grids into flow-layout `QueryForm` + `Table` + `Descriptions` backed by shared physical ER tables, with strict per-column mapping, row-action consistency checks, and itemized **Converted / Retained / Pending** confirmation reviews alongside the preserved original RP pages.
+- **08 · Native Axure (`.rp`) & Dual-Channel Figma (`.fig` / API) Import**: Unpack Axure RP 9/11 `.rp` and Figma `.fig` archives 100% offline in a local Worker (or sync Figma frame links via OS Keychain-encrypted PAT), then optionally reshape imported frames into table-bound flow layouts alongside untouched originals.
 
 ---
 
 ## 🚀 Quick Start in 60 Seconds
 
-Download desktop installers (new AppImages use `ProtoFlow_AI-*` and other installers retain the `Alex-*` filename) for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, try the **[Browser Live Demo](https://alex.xclubai.com/demo/)**, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
+Download desktop installers (new AppImages use `ProtoFlow_AI-*` and other installers retain the `Alex-*` filename) for macOS, Windows, and Linux from **[alex.xclubai.com/en/#download](https://alex.xclubai.com/en/#download)** or **[GitHub Releases](https://github.com/EvanClub-Agent/protoflow-ai/releases)**, try the **[StarLink Maintenance & Spare Parts Live Demo](https://alex.xclubai.com/demo/)** in your browser, or run from source locally (no Go or PostgreSQL installation is required — just **Node.js 22+**):
 
 ```bash
 git clone https://github.com/EvanClub-Agent/protoflow-ai.git
@@ -81,9 +81,13 @@ Choose from built-in starter templates right from the Welcome Launcher:
 
 ---
 
-## 🐳 Self-Hosted Deployment (Docker Compose)
+## 🐳 Self-Hosted Deployment (Docker Compose · Multi-Arch GHCR Images)
 
-Want to share interactive `/p/{id}` prototype links with your team in the browser? Spin up the self-hosted publishing server (`PostgreSQL 18 + Go API + Nginx Viewer`) in 3 commands:
+Want to share interactive `/p/{id}` prototype links with your team in the browser? Every release publishes multi-arch (`linux/amd64` + `linux/arm64`) images to GitHub Container Registry:
+
+- **API Server**: `ghcr.io/evanclub-agent/protoflow-ai-api:latest` (or pin `:v0.0.10`)
+- **Web Viewer & Release Center**: `ghcr.io/evanclub-agent/protoflow-ai-web:latest` (or pin `:v0.0.10`)
+- **Database**: `postgres:18-alpine` (migrations run automatically on startup)
 
 ```bash
 # 1. Copy environment config and set POSTGRES_PASSWORD & PUBLIC_ORIGIN
@@ -95,6 +99,15 @@ docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 # 3. Verify service health
 curl -fsS http://127.0.0.1:8088/healthz
 ```
+
+**Rolling upgrade for existing deployments** (preserves PostgreSQL volumes):
+
+```bash
+docker compose --env-file deploy/.env -f deploy/compose.yml pull &&
+  docker compose --env-file deploy/.env -f deploy/compose.yml up -d
+```
+
+> To pin a specific release in production, set `PROTOFLOW_API_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-api:v0.0.10` and `PROTOFLOW_WEB_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-web:v0.0.10` in `deploy/.env`.
 
 Then click **"Local Mode · Connect Server"** in the Alex toolbar, enter your `PUBLIC_ORIGIN` (e.g. `http://localhost:8088` or `https://protoflow.example.com`), register an account, and publish!
 

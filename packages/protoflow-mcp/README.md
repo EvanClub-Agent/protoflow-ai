@@ -114,9 +114,9 @@ Or connect to an online share over `stdio`:
 
 | Tool | Description |
 | :--- | :--- |
-| `protoflow_get_project_overview` | Navigation sitemap, page catalog, shared table summary, business agreements, and static health checks |
-| `protoflow_get_database_schema` | ER physical tables, primary/foreign keys, unique constraints, PostgreSQL/MySQL DDL drafts, and seed rows |
-| `protoflow_get_page_spec` | Single-page TSX layout, table bindings, interactive actions (`submitForm`, `updateRow`, `navigate`), pinned sticky notes, and optional `inspectPage` diagnostics |
+| `protoflow_get_project_overview` | Navigation sitemap, page catalog, shared table summary, `designTokens` brand theme, business agreements, and static health checks |
+| `protoflow_get_database_schema` | ER physical tables, primary/foreign keys (`RESTRICT`/`CASCADE`/`SET NULL`), unique constraints, PostgreSQL/MySQL DDL drafts, and seed rows |
+| `protoflow_get_page_spec` | Single-page TSX layout, table bindings, Poka-Yoke field constraints (`minField`, `maxField`, `formatRule`), interactive actions (`selectRow`, `submitForm`, `updateRow`, `deleteRow`, `confirm`, `navigate`), action guards, pinned sticky notes, and optional `inspectPage` diagnostics |
 | `protoflow_get_docs_and_flows` | Product requirement notes (Markdown) and Mermaid business diagrams (`.mmd`) |
 | `protoflow_search_spec` | Full-text search across tables, columns, pages, sticky notes, agreements, and diagrams |
 | `protoflow_get_implementation_checklist` | Actionable full-stack implementation checklist inferred from tables, actions, and sticky notes |

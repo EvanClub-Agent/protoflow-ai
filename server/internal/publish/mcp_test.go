@@ -1019,3 +1019,438 @@ func TestPostgresMigrationAcceptsFormat5Snapshot(t *testing.T) {
 		t.Fatalf("unexpected version %d", created.Version)
 	}
 }
+
+func TestArchitectureReviewPublishAndMcpParity(t *testing.T) {
+	richExperienceSnapshot := `{
+  "formatVersion": 5,
+  "projectId": "project-A",
+  "title": "体验与防呆发布联调",
+  "entryPageId": "orders-page",
+  "designTokens": {
+    "preset": "modern_minimal",
+    "primaryColor": "#059669",
+    "radius": "generous",
+    "density": "comfortable",
+    "surfaceVariant": "elevated",
+    "colorMode": "dark"
+  },
+  "sitemap": [
+    {
+      "id": "folder-biz",
+      "title": "订单履约",
+      "type": "folder",
+      "deprecated": false,
+      "children": [
+        { "id": "node-orders", "title": "入库验收工作台", "type": "page", "deprecated": false, "pageId": "orders-page" }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "pageId": "orders-page",
+      "title": "入库验收工作台",
+      "folderId": "folder-biz",
+      "doc": {
+        "header": [],
+        "root": {
+          "kind": "node",
+          "pfId": "root-page",
+          "type": "Page",
+          "props": {
+            "title": "入库验收工作台",
+            "emptyTitle": "暂无待验收单据",
+            "errorTitle": "仓储网关连接超时"
+          },
+          "children": [
+            {
+              "kind": "node",
+              "pfId": "tbl-orders",
+              "type": "Table",
+              "props": {
+                "table": "t_orders",
+                "onRowClick": {
+                  "$kind": "actions",
+                  "calls": [{ "name": "selectRow", "args": [] }]
+                },
+                "rowActions": [
+                  {
+                    "label": "确认入库",
+                    "disabledWhenField": "status",
+                    "disabledWhenValue": "已入库",
+                    "disabledReason": "已入库单据不可重复验收",
+                    "onClick": {
+                      "$kind": "actions",
+                      "calls": [{ "name": "updateRow", "args": [{ "status": "已入库" }] }]
+                    }
+                  },
+                  {
+                    "label": "高危作废",
+                    "danger": true,
+                    "onClick": {
+                      "$kind": "actions",
+                      "calls": [
+                        { "name": "confirm", "args": ["确认彻底删除该单据？", "{{row.order_no}}"] },
+                        { "name": "deleteRow", "args": ["undo"] }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "children": []
+            },
+            {
+              "kind": "node",
+              "pfId": "card-detail",
+              "type": "Card",
+              "props": {
+                "title": "单据验收表单",
+                "activeTable": "t_orders"
+              },
+              "children": [
+                {
+                  "kind": "node",
+                  "pfId": "form-inbound",
+                  "type": "Form",
+                  "props": { "table": "t_orders" },
+                  "children": [
+                    {
+                      "kind": "node",
+                      "pfId": "fi-qty",
+                      "type": "NumberInput",
+                      "props": {
+                        "label": "本次实收",
+                        "name": "inbound_qty",
+                        "required": true,
+                        "maxField": "remaining_qty",
+                        "ruleMessage": "实收数不可超过待收余量"
+                      },
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "tables": [
+    {
+      "id": "t_orders",
+      "tableName": "wms_orders",
+      "cnName": "入库验收单",
+      "domain": "仓储域",
+      "description": "入库单主表",
+      "sharedByMenus": [],
+      "columns": [
+        { "id": "c_id", "name": "id", "dataType": "VARCHAR(64)", "nullable": false, "isPrimaryKey": true, "comment": "主键" },
+        { "id": "c_no", "name": "order_no", "dataType": "VARCHAR(64)", "nullable": false, "isUnique": true, "comment": "单号" },
+        { "id": "c_status", "name": "status", "dataType": "ENUM('待验收','已入库')", "nullable": false, "comment": "状态" },
+        { "id": "c_rem", "name": "remaining_qty", "dataType": "INT", "nullable": false, "comment": "待收余量" },
+        { "id": "c_in", "name": "inbound_qty", "dataType": "INT", "nullable": false, "comment": "实收数" }
+      ]
+    },
+    {
+      "id": "t_items",
+      "tableName": "wms_order_items",
+      "cnName": "入库明细",
+      "domain": "仓储域",
+      "description": "入库单明细表",
+      "sharedByMenus": [],
+      "columns": [
+        { "id": "ci_id", "name": "id", "dataType": "VARCHAR(64)", "nullable": false, "isPrimaryKey": true, "comment": "主键" },
+        {
+          "id": "ci_order",
+          "name": "order_id",
+          "dataType": "VARCHAR(64)",
+          "nullable": false,
+          "isForeignKey": true,
+          "references": "wms_orders(id)",
+          "foreignKeyOptions": { "onDelete": "RESTRICT" },
+          "comment": "所属入库单"
+        }
+      ]
+    }
+  ],
+  "tableRows": {
+    "t_orders": [{ "id": "ord-1", "order_no": "ASN-20261125", "status": "待验收", "remaining_qty": 20, "inbound_qty": 5 }],
+    "t_items": [{ "id": "item-1", "order_id": "ord-1" }]
+  },
+  "stickyNotes": [],
+  "notes": []
+}`
+
+	// [P1 #1 & #2] HTTP publish endpoint (POST /api/v1/publications) + viewer open round-trip must succeed with designTokens + selectRow()
+	pubStore := &memoryStore{items: map[string]Publication{}}
+	pubHandler := Handler(pubStore, Options{PublicOrigin: "http://localhost:8088", AllowedOrigins: []string{"http://localhost:5173"}})
+	pubBody, err := json.Marshal(publishInput{
+		Snapshot: json.RawMessage(richExperienceSnapshot),
+		Access:   accessInput{PasswordAction: "set", Password: "test password"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/publications", bytes.NewReader(pubBody))
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("Authorization", "Bearer owner-A")
+	postRec := httptest.NewRecorder()
+	pubHandler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusOK {
+		t.Fatalf("expected POST /api/v1/publications to return 200 with designTokens + selectRow, got %d: %s", postRec.Code, postRec.Body.String())
+	}
+	var createdPub Publication
+	if err := json.Unmarshal(postRec.Body.Bytes(), &createdPub); err != nil {
+		t.Fatal(err)
+	}
+	openReq := httptest.NewRequest(http.MethodPost, "/api/v1/view/"+createdPub.ID+"/open", strings.NewReader(`{"password":"test password"}`))
+	openReq.Header.Set("Content-Type", "application/json")
+	openRec := httptest.NewRecorder()
+	pubHandler.ServeHTTP(openRec, openReq)
+	if openRec.Code != http.StatusOK || !strings.Contains(openRec.Body.String(), `"preset":"modern_minimal"`) || !strings.Contains(openRec.Body.String(), `"selectRow"`) {
+		t.Fatalf("expected viewer open response to preserve designTokens and selectRow, got %d: %s", openRec.Code, openRec.Body.String())
+	}
+
+	// Negative checks for designTokens strict validation
+	invalidTokenCases := map[string]string{
+		"v3 with designTokens": strings.Replace(
+			mcpLegacySnapshotV3,
+			`"formatVersion": 3`,
+			`"formatVersion": 3, "designTokens": { "preset": "modern_minimal" }`,
+			1,
+		),
+		"unknown field inside designTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"preset": "modern_minimal"`,
+			`"preset": "modern_minimal", "hackField": true`,
+			1,
+		),
+		"wrong case Preset inside designTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"preset": "modern_minimal"`,
+			`"Preset": "modern_minimal"`,
+			1,
+		),
+		"wrong case PrimaryColor inside designTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"primaryColor": "#059669"`,
+			`"PrimaryColor": "#059669"`,
+			1,
+		),
+		"wrong case top-level DesignTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"designTokens": {`,
+			`"DesignTokens": {`,
+			1,
+		),
+		"duplicate key inside designTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"preset": "modern_minimal"`,
+			`"preset": "classic_antd", "preset": "modern_minimal"`,
+			1,
+		),
+		"invalid preset": strings.Replace(
+			richExperienceSnapshot,
+			`"preset": "modern_minimal"`,
+			`"preset": "neon_cyberpunk"`,
+			1,
+		),
+		"invalid hex primaryColor": strings.Replace(
+			richExperienceSnapshot,
+			`"primaryColor": "#059669"`,
+			`"primaryColor": "emerald"`,
+			1,
+		),
+		"null designTokens": strings.Replace(
+			richExperienceSnapshot,
+			`"designTokens": {
+    "preset": "modern_minimal",
+    "primaryColor": "#059669",
+    "radius": "generous",
+    "density": "comfortable",
+    "surfaceVariant": "elevated",
+    "colorMode": "dark"
+  }`,
+			`"designTokens": null`,
+			1,
+		),
+	}
+	for name, badSnap := range invalidTokenCases {
+		if _, err := ValidateSnapshot(json.RawMessage(badSnap)); err == nil {
+			t.Fatalf("%s: expected ValidateSnapshot to reject invalid designTokens", name)
+		}
+	}
+
+	// [P2 #1] Verify remote HTTP MCP exposes designTokens in project overview and uiStackSpec + pokaYokeRules in page spec
+	now := time.Now().UTC()
+	mcpStore := &memoryStore{
+		items: map[string]Publication{
+			"pub-exp-1234567890abcdef": {
+				ID:        "pub-exp-1234567890abcdef",
+				ProjectID: "project-A",
+				Title:     "体验与防呆发布联调",
+				Snapshot:  json.RawMessage(richExperienceSnapshot),
+				Version:   1,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+		},
+	}
+	router := Handler(mcpStore, Options{PublicOrigin: "https://proto.example.com"})
+	callTool := func(toolName string, args string) map[string]any {
+		t.Helper()
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, toolName, args)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/pub-exp-1234567890abcdef", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s HTTP %d: %s", toolName, rec.Code, rec.Body.String())
+		}
+		var rpcResp struct {
+			Error  any `json:"error"`
+			Result struct {
+				IsError bool `json:"isError"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &rpcResp); err != nil {
+			t.Fatalf("unmarshal rpc response: %v", err)
+		}
+		if rpcResp.Error != nil || rpcResp.Result.IsError || len(rpcResp.Result.Content) == 0 {
+			t.Fatalf("unexpected MCP error for %s: %s", toolName, rec.Body.String())
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(rpcResp.Result.Content[0].Text), &payload); err != nil {
+			t.Fatalf("unmarshal tool JSON payload: %v", err)
+		}
+		return payload
+	}
+
+	overview := callTool("protoflow_get_project_overview", `{}`)
+	dtSpec, ok := overview["designTokens"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected designTokens in protoflow_get_project_overview, got: %v", overview)
+	}
+	tokensMap, _ := dtSpec["tokens"].(map[string]any)
+	cssVars, _ := dtSpec["cssVariables"].(map[string]any)
+	darkVars, _ := cssVars["dark"].(map[string]any)
+	if tokensMap["preset"] != "modern_minimal" || darkVars["--pf-primary"] != "#059669" {
+		t.Fatalf("unexpected designTokens spec in overview: %v", dtSpec)
+	}
+
+	pageSpec := callTool("protoflow_get_page_spec", `{"pageId":"orders-page"}`)
+	uiStack, ok := pageSpec["uiStackSpec"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected uiStackSpec in protoflow_get_page_spec, got: %v", pageSpec)
+	}
+	if uiStack["pageEmptyTitle"] != "暂无待验收单据" || uiStack["pageErrorTitle"] != "仓储网关连接超时" {
+		t.Fatalf("expected custom pageEmptyTitle/pageErrorTitle in uiStackSpec, got: %v", uiStack)
+	}
+
+	pokaYoke, ok := pageSpec["pokaYokeRules"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected pokaYokeRules in protoflow_get_page_spec, got: %v", pageSpec)
+	}
+	fc, _ := pokaYoke["fieldConstraints"].([]any)
+	asg, _ := pokaYoke["actionStateGuards"].([]any)
+	hrc, _ := pokaYoke["highRiskConfirmations"].([]any)
+	fkd, _ := pokaYoke["foreignKeyDeletePolicies"].([]any)
+	if len(fc) == 0 || len(asg) == 0 || len(hrc) == 0 || len(fkd) == 0 {
+		t.Fatalf("expected non-empty fieldConstraints/actionStateGuards/highRiskConfirmations/foreignKeyDeletePolicies, got: %v", pokaYoke)
+	}
+}
+
+func TestExternalPublishedSnapshotFile(t *testing.T) {
+	snapPath := os.Getenv("STARLINK_SNAPSHOT_PATH")
+	if snapPath == "" {
+		t.Skip("STARLINK_SNAPSHOT_PATH not set")
+	}
+	raw, err := os.ReadFile(snapPath)
+	if err != nil {
+		t.Fatalf("read snapshot file %s: %v", snapPath, err)
+	}
+	validated, err := ValidateSnapshot(json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("ValidateSnapshot rejected real .pflow snapshot (%s): %v", snapPath, err)
+	}
+
+	now := time.Now().UTC()
+	pubID := "pub-starlink-1234567890ab"
+	mcpStore := &memoryStore{
+		items: map[string]Publication{
+			pubID: {
+				ID:        pubID,
+				ProjectID: validated.ProjectID,
+				Title:     validated.Title,
+				Snapshot:  json.RawMessage(raw),
+				Version:   1,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+		},
+	}
+	router := Handler(mcpStore, Options{PublicOrigin: "https://proto.example.com"})
+	callMCP := func(toolName string, args string) map[string]any {
+		t.Helper()
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, toolName, args)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/"+pubID, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s HTTP %d: %s", toolName, rec.Code, rec.Body.String())
+		}
+		var rpcResp struct {
+			Error  any `json:"error"`
+			Result struct {
+				IsError bool `json:"isError"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &rpcResp); err != nil {
+			t.Fatalf("unmarshal rpc: %v", err)
+		}
+		if rpcResp.Error != nil || rpcResp.Result.IsError || len(rpcResp.Result.Content) == 0 {
+			t.Fatalf("MCP tool error for %s: %s", toolName, rec.Body.String())
+		}
+		var out map[string]any
+		if err := json.Unmarshal([]byte(rpcResp.Result.Content[0].Text), &out); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		return out
+	}
+
+	overview := callMCP("protoflow_get_project_overview", `{}`)
+	wbSpec := callMCP("protoflow_get_page_spec", `{"pageId":"page_ticket_workbench"}`)
+	mobSpec := callMCP("protoflow_get_page_spec", `{"pageId":"page_mobile_field"}`)
+
+	if _, ok := wbSpec["uiStackSpec"].(map[string]any); !ok {
+		t.Fatalf("expected uiStackSpec on page_ticket_workbench")
+	}
+	poka, ok := wbSpec["pokaYokeRules"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected pokaYokeRules on page_ticket_workbench")
+	}
+	if len(poka["fieldConstraints"].([]any)) == 0 ||
+		len(poka["actionStateGuards"].([]any)) == 0 ||
+		len(poka["highRiskConfirmations"].([]any)) == 0 ||
+		len(poka["foreignKeyDeletePolicies"].([]any)) == 0 {
+		t.Fatalf("expected complete 4-part pokaYokeRules on page_ticket_workbench, got: %v", poka)
+	}
+	mobPoka, ok := mobSpec["pokaYokeRules"].(map[string]any)
+	if !ok || len(mobPoka["fieldConstraints"].([]any)) == 0 {
+		t.Fatalf("expected mobile pokaYokeRules fieldConstraints on page_mobile_field, got: %v", mobPoka)
+	}
+	t.Logf("Verified snapshot=%s hasDesignTokens=%v pages=4 workbenchFieldConstraints=%d actionGuards=%d fkPolicies=%d",
+		snapPath, overview["designTokens"] != nil,
+		len(poka["fieldConstraints"].([]any)),
+		len(poka["actionStateGuards"].([]any)),
+		len(poka["foreignKeyDeletePolicies"].([]any)),
+	)
+}
+

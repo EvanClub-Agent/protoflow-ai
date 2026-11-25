@@ -31,7 +31,10 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
   - Remember `QueryForm` filters scalar substring matches; array filters (`dateRange`, multi-select, `cascader`) are UI-only and do not execute array filtering in preview runtime — note this honestly if used.
   - Put Create/Edit `<Form pfId="form_..." table="t_...">` inside `<Modal>` or `<Drawer>`. Use either `fields={[...]}` shorthand OR child field components (`<Input>`, `<Select>`, etc.), never both simultaneously.
   - Edit flows open the overlay from `Table.rowActions[].onClick` (`openModal('dlg_edit')` or `openDrawer('drawer_edit')`) so the overlay inherits the clicked `row` context; save buttons call `submitForm('form_...')` followed by `closeOverlay` / `toast` / `refresh`.
-- **Master-detail & Picker**:
+- **Master-detail, Repeater, Kanban, Calendar & Picker**:
+  - **In-page Master-Detail (no modal/drawer needed)**: Set `autoSelectFirst={true}` and `onRowClick={() => selectRow()}` (or `onItemClick` / `onCardClick`) on the master `<Table>`, `<Repeater>`, `<CardGrid>`, or `<Kanban>`, and wrap the detail column in `<Card activeTable="t_...">`. Inside that `Card`, `title="{{row.field}}"`, `<Descriptions table="t_..." />`, `<Form table="t_..." />`, `<Button onClick={() => updateRow({ ... })}>`, and child `<Table table="t_sub" sourceForeignKey="<fk>" />` all react live to the selected row! (In JSX text children like `<Text>` or `<Tag>`, quote mustache placeholders as `{'{{row.field}}'}`).
+  - **Custom Card Templates (`<Repeater>`)**: Bind `table="t_..."` and compose `<Card>`, `<Flex>`, `<Avatar>`, `<Tag>`, `<Progress>`, `<Button>` inside instead of falling back to `Freeform`.
+  - **Stage Workflows (`<Kanban>`) & Schedules (`<Calendar>`)**: Bind `table` + `statusField` on `<Kanban>` or `dateField` on `<Calendar>`, and pair with `<AiCopilotCard>` for AI review/risk insights.
   - Cross-page drill-down uses `navigate('detail_page_id', 'row')`, and detail `Table` sets `sourceForeignKey="<fk_column_name>"`.
   - FK lookup pickers use `<PickerInput overlay="modal_picker" />` with a `selectable` `<Table>` and `returnSelection(tablePfId, displayField, sourceKeyField)`.
 
@@ -40,7 +43,7 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
 - **Allowed components**: `MobilePage`, `M*` components, and Universal (`Freeform` + charts). Never use `Table`, `QueryForm`, `Card`, `Row`/`Col`, `Modal`, or `Drawer`.
 - **3-tier viewport structure**:
   1. Top sticky bar: `<MTopBar>`
-  2. Middle single-column flow: `<MHeroHeader>`, `<MBentoGrid>`, `<MSurface>`, `<MSearchPill target="list_id" />`, `<MPillTabs target="list_id" filterField="status" />`, `<MFeedList>` (C-end feed/cards), `<MTaskList>` (B-end task/document list), `<MListGroup>` + `<MListItem>`, `<MStatCard>`, `<MChatStream>`
+  2. Middle single-column flow: `<MHeroHeader>`, `<MBentoGrid>`, `<MSurface>`, `<MAiInsightCard>`, `<MSearchPill target="list_id" />`, `<MPillTabs target="list_id" filterField="status" />`, `<MFeedList>` (C-end feed/cards), `<MTaskList>` (B-end task/document list), `<MRepeater>` (custom repeating mobile card template), `<MKanban>` (touch stage board), `<MCalendar>` (week/month date strip + daily agenda), `<MListGroup>` + `<MListItem>`, `<MStatCard>`, `<MChatStream>`
   3. Bottom dock: `<MTabBar>` (top-level tabs), `<MBottomDock>` (detail/form primary/secondary CTA), or `<MComposerBar>` (AI input bar)
 - **Mobile forms & overlays**: Place `<MForm>` with `<MField>`, `<MSheetPicker>`, `<MChipSelect>`, `<MMediaInput>` inside `<MBottomSheet>` (`openDrawer`) or a dedicated mobile form page.
 - **Related detail rows on mobile**: Set `table` + `sourceForeignKey` on `<MTaskList>` or `<MFeedList>` inside an overlay opened from row click (`openDrawer`) or target page navigated with `'row'`.

@@ -3,6 +3,19 @@ import type { DBTableSchema } from '../../store/useProtoStore';
 export type UniqueConstraint = { name: string; columnIds: string[] };
 type ConstraintTable = Pick<DBTableSchema, 'tableName' | 'columns' | 'uniqueConstraints'>;
 
+/** A numeric SQL key can arrive as decimal text or a JS number. Keep all BIGINT digits. */
+export function uniqueColumnValue(value: unknown, dataType?: string): unknown {
+  if (!dataType || !/^(?:(?:TINY|SMALL|MEDIUM|BIG)?INT|INTEGER|DECIMAL|NUMERIC|FLOAT|DOUBLE|REAL)\b/i.test(dataType)) return value;
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(value));
+  if (!match) return value;
+  const [, sign, whole, fraction = '', exponent = '0'] = match;
+  const digits = whole + fraction;
+  const coefficient = digits.replace(/^0+|0+$/g, '');
+  if (!coefficient) return '0';
+  const trailingZeros = digits.length - digits.replace(/0+$/, '').length;
+  return `${sign}${coefficient}e${Number(exponent) - fraction.length + trailingZeros}`;
+}
+
 /** Resolve only stable column IDs, including when reading an untrusted archive.
  * Keep declared order for the index, but compare unordered sets for redundancy. */
 export function resolveUniqueConstraints(table: ConstraintTable) {

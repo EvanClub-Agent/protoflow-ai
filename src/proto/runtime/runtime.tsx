@@ -1,4 +1,3 @@
-import { diagramRelations } from '../database/relations';
 import { readPageHeader } from '../dsl/header';
 import { axureSourcePagePattern, axureCopyId, verifiedAxureSourceId } from '../axure/task';
 import { figmaSourcePagePattern, figmaCopyId, verifiedFigmaSourceId } from '../figma/task';
@@ -13,34 +12,99 @@ import { PreviewDataContext } from './PreviewData';
 import {
   buildForeignKeyOptionsFromRows,
   isQualifiedSupplierStatus,
-  requiresQualifiedSupplier,
   resolveBoundForeignKeySpec,
 } from '../ai/templates';
 import type { Row } from './mock';
 import { projectPageCatalog } from '../../services/projectAnalysis';
 import { td, tr, useLocale, type Locale } from '../../i18n';
 import { valuesWithColumnDefaults } from '../database/columnDefault';
+import {
+  evaluateFieldConstraint,
+  formatPokaYokeIssue,
+  type FieldConstraintSpec,
+  type FieldFormatRule,
+  type PokaYokeIssue,
+} from './pokaYoke';
 
 export interface Scope {
   row?: Row;
   /** Physical table the current row belongs to */
   tableId?: string;
+  /** Enforced target table when nested inside an explicit `activeTable` detail container */
+  expectedTableId?: string;
   params?: Record<string, unknown>;
   /** Index in the overlay stack when rendering inside a live overlay */
   overlayIndex?: number;
+}
+
+/**
+ * Computes a row-isolated draft key whenever a Form / MForm renders inside a
+ * specific table record's row scope (both when editing that record directly and
+ * when creating child records inside a parent Repeater / MRepeater card), while
+ * keeping `node.pfId` unchanged in the AST and DOM for design selection.
+ */
+export function resolveFormInstanceKey(formPfId: string, formTable?: unknown, scope?: Scope): string {
+  const row = (scope?.row ?? scope?.params?.row) as Row | undefined;
+  const rowTableId = scope?.tableId ?? (scope?.params?.tableId as string | undefined);
+  if (
+    row &&
+    typeof row.id === 'string' &&
+    row.id.length > 0 &&
+    typeof formTable === 'string' &&
+    formTable.length > 0 &&
+    typeof rowTableId === 'string' &&
+    rowTableId.length > 0
+  ) {
+    return `${formPfId}::row:${rowTableId}:${row.id}`;
+  }
+  return formPfId;
+}
+
+/**
+ * Creates a child row scope for a bound data view (`Table`, `Repeater`, `CardGrid`,
+ * `Kanban`, `Calendar`, `MTaskList`, etc.), updating `expectedTableId` to the child
+ * view's own `tableId` when bound so an ancestor detail container's `activeTable`
+ * never blocks legitimate row actions on child detail tables.
+ */
+export function childRowScope(scope: Scope, row: Row, tableId?: string): Scope {
+  return {
+    ...scope,
+    row,
+    tableId,
+    expectedTableId: tableId ?? scope.expectedTableId,
+  };
+}
+
+export interface PickerTargetSpec {
+  targetPfId: string;
+  pickerKey?: string;
+  /** AST pfId of the owning Form node (for schema & FK validation) */
+  formId?: string;
+  /** Runtime draft bucket key (may include `::row:<tableId>:<rowId>`) */
+  formKey?: string;
+  name?: string;
 }
 
 export interface OverlayEntry {
   key: string;
   id: string;
   params: Record<string, unknown>;
-  picker?: { targetPfId: string; formId?: string; name?: string };
+  expectedTableId?: string;
+  submittedForms?: Record<string, Row>;
+  picker?: PickerTargetSpec;
 }
 
 export interface ToastItem {
   id: number;
   message: string;
   type: 'success' | 'info' | 'warning' | 'error';
+  undoAction?: { label: string; onUndo: () => void };
+}
+
+export interface ConfirmDialogState {
+  message: string;
+  matchText?: string;
+  resolve: (ok: boolean) => void;
 }
 
 export interface Runtime {
@@ -53,27 +117,31 @@ export interface Runtime {
   filters: Record<string, Record<string, unknown>>;
   pageNo: Record<string, number>;
   selections: Record<string, string[]>;
+  activeRows: Record<string, string>;
   formValues: Record<string, Record<string, unknown>>;
   formErrors: Record<string, Record<string, string>>;
   pickerValues: Record<string, string>;
   toasts: ToastItem[];
-  confirmState: { message: string; resolve: (ok: boolean) => void } | null;
+  confirmState: ConfirmDialogState | null;
 
   setTab: (pfId: string, index: number) => void;
   setFilter: (pfId: string, values: Record<string, unknown>) => void;
   setPageNo: (pfId: string, n: number) => void;
   setSelection: (pfId: string, ids: string[]) => void;
+  setActiveRow: (tableId: string, rowId: string | null) => void;
+  getActiveRowId?: (tableId: string) => string | undefined;
   setFormValue: (formId: string, name: string, value: unknown) => void;
   setFormValues: (formId: string, values: Record<string, unknown>) => void;
   openOverlay: (overlayId: string, params?: Record<string, unknown>) => boolean;
   closeOverlay: () => void;
-  openPicker: (overlayId: string, picker: { targetPfId: string; formId?: string; name?: string }, scope: Scope) => void;
+  openPicker: (overlayId: string, picker: PickerTargetSpec, scope: Scope) => void;
   run: (chain: PropValue | undefined, scope: Scope) => Promise<void>;
   resolveConfirm: (ok: boolean) => void;
   reset: () => void;
 }
 
 const RuntimeCtx = createContext<Runtime | null>(null);
+export const useOptionalRuntime = () => useContext(RuntimeCtx);
 export const useRuntime = () => {
   const r = useContext(RuntimeCtx);
   if (!r) throw new Error('Runtime context missing');
@@ -86,14 +154,26 @@ function lookupPlaceholderPath(
   scope: Scope,
   vars: Record<string, unknown>,
   forms?: Record<string, Record<string, unknown>>,
+  doc?: ProtoDoc | null,
 ): unknown {
+  const parts = path.split('.');
+  if (parts[0] === 'form' && parts.length >= 3 && forms) {
+    const form = doc && findById(doc, parts[1]);
+    const key = resolveFormInstanceKey(parts[1], form?.props.table, scope);
+    let cur: unknown = forms[key];
+    for (const k of parts.slice(2)) {
+      if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[k];
+      else return undefined;
+    }
+    return cur;
+  }
   let cur: unknown = {
     row: scope.row ?? scope.params?.row ?? {},
     params: scope.params ?? {},
     vars,
     form: forms ?? {},
   };
-  for (const k of path.split('.')) {
+  for (const k of parts) {
     if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[k];
     else return undefined;
   }
@@ -106,10 +186,11 @@ export function interpolate(
   scope: Scope,
   vars: Record<string, unknown>,
   forms?: Record<string, Record<string, unknown>>,
+  doc?: ProtoDoc | null,
 ): string {
   if (!text.includes('{{')) return text;
   return text.replace(/\{\{\s*([\w.$-]+)\s*\}\}/g, (_m, path: string) => {
-    const cur = lookupPlaceholderPath(path, scope, vars, forms);
+    const cur = lookupPlaceholderPath(path, scope, vars, forms, doc);
     return cur === undefined || cur === null ? '' : String(cur);
   });
 }
@@ -124,17 +205,18 @@ export function resolveActionValue(
   scope: Scope,
   vars: Record<string, unknown>,
   forms?: Record<string, Record<string, unknown>>,
+  doc?: ProtoDoc | null,
 ): unknown {
   if (typeof raw !== 'string') return raw;
   const exact = /^\{\{\s*([\w.$-]+)\s*\}\}$/.exec(raw);
   if (exact) {
-    const resolved = lookupPlaceholderPath(exact[1], scope, vars, forms);
+    const resolved = lookupPlaceholderPath(exact[1], scope, vars, forms, doc);
     if (resolved === undefined) {
       throw new Error(tr(`找不到动作引用 ${exact[1]}`, `Action reference ${exact[1]} has no value`));
     }
     return resolved;
   }
-  return interpolate(raw, scope, vars, forms);
+  return interpolate(raw, scope, vars, forms, doc);
 }
 
 export function findOverlay(doc: ProtoDoc | null, id: string): ProtoNode | null {
@@ -160,12 +242,25 @@ export function usesLiteralLayoutContent(frame: PropValue | undefined) {
     (!('literalContent' in frame) || frame.literalContent !== false));
 }
 
+export interface FormFieldRuntimeSpec extends FieldConstraintSpec {
+  required: boolean;
+  initialValue?: string;
+}
+
 /** Field specs use the same interpolation and literal import rules as the rendered control. */
-export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<string,unknown> = {}): { name: string; label: string; required: boolean; initialValue?: string }[] {
-  const out: { name: string; label: string; required: boolean; initialValue?: string }[] = [];
+export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<string,unknown> = {}): FormFieldRuntimeSpec[] {
+  const out: FormFieldRuntimeSpec[] = [];
   const initial = (field:ProtoNode['props'], owner:ProtoNode) => typeof field.initialValue === 'string'
     ? {initialValue:usesLiteralLayoutContent(owner.props.layoutFrame) ? field.initialValue : interpolate(field.initialValue,scope,vars)}
     : {};
+  const constraints = (field: Record<string, PropValue>) => ({
+    ...(typeof field.minField === 'string' && field.minField ? { minField: field.minField } : {}),
+    ...(typeof field.maxField === 'string' && field.maxField ? { maxField: field.maxField } : {}),
+    ...(typeof field.minValue === 'number' && Number.isFinite(field.minValue) ? { minValue: field.minValue } : {}),
+    ...(typeof field.maxValue === 'number' && Number.isFinite(field.maxValue) ? { maxValue: field.maxValue } : {}),
+    ...(typeof field.formatRule === 'string' && field.formatRule ? { formatRule: field.formatRule as FieldFormatRule } : {}),
+    ...(typeof field.validationMessage === 'string' && field.validationMessage ? { validationMessage: field.validationMessage } : {}),
+  });
   function visit(n:ProtoNode) {
     if (n.type === 'Form' || n.type === 'MForm' || n.type === 'QueryForm') return;
     if (FIELD_TYPES.has(n.type) && typeof n.props.name === 'string') {
@@ -174,6 +269,7 @@ export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<st
         label: String(n.props.label ?? n.props.name),
         required: n.props.required === true,
         ...initial(n.props,n),
+        ...constraints(n.props),
       });
     }
     for (const child of n.children) if (isNode(child)) visit(child);
@@ -189,6 +285,7 @@ export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<st
           label: String(ff.label ?? ff.name),
           required: ff.required === true,
           ...initial(ff,form),
+          ...constraints(ff),
         });
       }
     }
@@ -196,9 +293,12 @@ export function formFieldSpecs(form: ProtoNode, scope:Scope = {}, vars:Record<st
   return out;
 }
 
-type FormIssue = { kind: 'required' | 'unqualified' | 'missingReference' | 'invalidReference'; label: string };
+type FormIssue =
+  | { kind: 'required' | 'unqualified' | 'missingReference' | 'invalidReference'; label: string }
+  | { kind: 'pokaYoke'; label: string; issue: PokaYokeIssue };
 
 function formIssueMessage(issue: FormIssue, locale: Locale): string {
+  if (issue.kind === 'pokaYoke') return formatPokaYokeIssue(issue.issue, locale);
   const label = td(issue.label, locale);
   switch (issue.kind) {
     case 'required': return tr(`请填写${label}`, `${label} is required`, locale);
@@ -217,6 +317,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   const [filters, setFilters] = useState<Record<string, Record<string, unknown>>>({});
   const [pageNo, setPageNoState] = useState<Record<string, number>>({});
   const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const [activeRows, setActiveRowsState] = useState<Record<string, string>>({});
   const [formValues, setFormValuesState] = useState<Record<string, Record<string, unknown>>>({});
   const locale = useLocale();
   const [formIssues, setFormIssues] = useState<Record<string, Record<string, FormIssue>>>({});
@@ -236,8 +337,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   docRef.current = doc;
   const isDesignRef = useRef(isDesign);
   isDesignRef.current = isDesign;
-  const stateRef = useRef({ overlays, formValues, selections });
-  stateRef.current = { overlays, formValues, selections };
+  const stateRef = useRef({ overlays, formValues, selections, activeRows });
+  stateRef.current = { overlays, formValues, selections, activeRows };
   const previewRef = useRef(preview);
   previewRef.current = preview;
 
@@ -250,15 +351,32 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     };
   }, []);
 
-  const toast = useCallback((message: string | FormIssue, type: ToastItem['type'] = 'success') => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, message, type }]);
-    const timer = setTimeout(() => {
-      toastTimers.current = toastTimers.current.filter((item) => item !== timer);
-      setToasts((t) => t.filter((x) => x.id !== id));
-    }, 2400);
-    toastTimers.current.push(timer);
-  }, []);
+  const toast = useCallback(
+    (
+      message: string | FormIssue,
+      type: ToastItem['type'] = 'success',
+      undoAction?: { label: string; onUndo: () => void },
+    ) => {
+      const id = Date.now() + Math.random();
+      const wrappedUndo = undoAction
+        ? {
+            label: undoAction.label,
+            onUndo: () => {
+              undoAction.onUndo();
+              setToasts((t) => t.filter((x) => x.id !== id));
+            },
+          }
+        : undefined;
+      setToasts((t) => [...t, { id, message, type, ...(wrappedUndo ? { undoAction: wrappedUndo } : {}) }]);
+      const duration = wrappedUndo ? 5000 : 2400;
+      const timer = setTimeout(() => {
+        toastTimers.current = toastTimers.current.filter((item) => item !== timer);
+        setToasts((t) => t.filter((x) => x.id !== id));
+      }, duration);
+      toastTimers.current.push(timer);
+    },
+    [],
+  );
 
   // Field onChange action chains can submit immediately, before React commits a render.
   // Keep the executor's snapshot in sync with the exact values just entered.
@@ -268,6 +386,43 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     setFormValuesState(next);
   };
 
+  const setActiveRow = useCallback((tableId: string, rowId: string | null) => {
+    if (!tableId) return;
+    const prevId = stateRef.current.activeRows[tableId] ?? null;
+    if (prevId === rowId) return;
+    const nextActive = { ...stateRef.current.activeRows };
+    if (rowId === null || rowId === '') delete nextActive[tableId];
+    else nextActive[tableId] = rowId;
+    stateRef.current = { ...stateRef.current, activeRows: nextActive };
+    setActiveRowsState(nextActive);
+
+    // Clear inline (non-overlay, non-repeater) forms bound to this table so master-detail edit panels re-prefill cleanly
+    if (docRef.current) {
+      const inlineFormIds: string[] = [];
+      const visitNonOverlay = (n: ProtoNode) => {
+        if (OVERLAY_TYPES.has(n.type) || n.type === 'Repeater' || n.type === 'MRepeater') return;
+        if ((n.type === 'Form' || n.type === 'MForm') && n.props.table === tableId) {
+          inlineFormIds.push(n.pfId);
+        }
+        n.children.filter(isNode).forEach(visitNonOverlay);
+      };
+      visitNonOverlay(docRef.current.root);
+      if (inlineFormIds.length) {
+        const matchesInlineForm = (key: string) =>
+          inlineFormIds.some((id) => key === id || key.startsWith(`${id}::row:${tableId}:`));
+        for (const key of Object.keys(submittedRows.current)) {
+          if (matchesInlineForm(key)) delete submittedRows.current[key];
+        }
+        updateFormValues((fv) =>
+          Object.fromEntries(Object.entries(fv).filter(([key]) => !matchesInlineForm(key))),
+        );
+        setFormIssues((fe) =>
+          Object.fromEntries(Object.entries(fe).filter(([key]) => !matchesInlineForm(key))),
+        );
+      }
+    }
+  }, []);
+
   const clearFormsIn = (node: ProtoNode) => {
     const ids: string[] = [];
     const pickers = new Set<string>();
@@ -276,29 +431,76 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       if (n.type === 'PickerInput') pickers.add(n.pfId);
     });
     if (!ids.length) return;
+    const matchesClearedForm = (key: string) => ids.some((id) => key === id || key.startsWith(`${id}::row:`));
+    const matchesClearedPicker = (key: string) =>
+      pickers.has(key) || [...pickers].some((pid) => key.endsWith(`::picker:${pid}`));
     // Opening a different source record must clear the previous record's selection label.
-    setPickerValues(values => Object.fromEntries(Object.entries(values).filter(([id]) => !pickers.has(id))));
-    ids.forEach(id => delete submittedRows.current[id]);
-    updateFormValues((fv) => {
-      const next = { ...fv };
-      ids.forEach((i) => delete next[i]);
-      return next;
-    });
-    setFormIssues((fe) => {
-      const next = { ...fe };
-      ids.forEach((i) => delete next[i]);
-      return next;
-    });
+    setPickerValues((values) =>
+      Object.fromEntries(Object.entries(values).filter(([id]) => !matchesClearedPicker(id))),
+    );
+    for (const key of Object.keys(submittedRows.current)) {
+      if (matchesClearedForm(key)) delete submittedRows.current[key];
+    }
+    updateFormValues((fv) =>
+      Object.fromEntries(Object.entries(fv).filter(([key]) => !matchesClearedForm(key))),
+    );
+    setFormIssues((fe) =>
+      Object.fromEntries(Object.entries(fe).filter(([key]) => !matchesClearedForm(key))),
+    );
   };
 
-  const pushOverlay = (id: string, params: Record<string, unknown>, picker?: OverlayEntry['picker']): boolean => {
+  const submittedFormForScope = (form: ProtoNode, s: Scope, inherited?: Row): Row | undefined => {
+    const source = s.row ?? (s.params?.row as Row | undefined);
+    const sourceTable = s.tableId ?? s.params?.tableId;
+    if (s.expectedTableId && (!source || sourceTable !== s.expectedTableId)) return;
+    const key = resolveFormInstanceKey(form.pfId, form.props.table, s);
+    const saved = submittedRows.current[key];
+    if (source && sourceTable === form.props.table) {
+      // A previously saved create form is reusable in edit mode only for that exact record.
+      return [saved, inherited, submittedRows.current[form.pfId]].find(row => row?.id === source.id);
+    }
+    return saved ?? inherited;
+  };
+
+  const captureSubmittedFormsForScope = (s: Scope): Record<string, Row> => {
+    const parentOverlay = s.overlayIndex !== undefined ? stateRef.current.overlays[s.overlayIndex] : undefined;
+    const out: Record<string, Row> = {};
+    const doc = docRef.current;
+    if (!doc) return out;
+    walk(doc.root, form => {
+      if (form.type !== 'Form' && form.type !== 'MForm') return;
+      if (typeof form.props.table !== 'string') return;
+      const saved = submittedFormForScope(form, s, parentOverlay?.submittedForms?.[form.pfId]);
+      if (saved) out[form.pfId] = saved;
+    });
+    return out;
+  };
+
+  const pushOverlay = (
+    id: string,
+    params: Record<string, unknown>,
+    picker?: OverlayEntry['picker'],
+    meta?: { expectedTableId?: string; submittedForms?: Record<string, Row> },
+  ): boolean => {
     const node = findOverlay(docRef.current, id);
     if (!node) {
       toast(tr(`未找到弹层「${id}」，请先在页面中添加 id 为 ${id} 的 Modal / Drawer`, `Overlay "${id}" not found. Add a Modal or Drawer with id="${id}" on this page first.`), 'error');
       return false;
     }
     clearFormsIn(node);
-    setOverlays((o) => [...o, { key: `${id}-${Date.now()}`, id, params, picker }]);
+    setOverlays((o) => [
+      ...o,
+      {
+        key: `${id}-${Date.now()}-${o.length}`,
+        id,
+        params,
+        ...(meta?.expectedTableId ? { expectedTableId: meta.expectedTableId } : {}),
+        ...(meta?.submittedForms && Object.keys(meta.submittedForms).length > 0
+          ? { submittedForms: meta.submittedForms }
+          : {}),
+        picker,
+      },
+    ]);
     return true;
   };
 
@@ -315,24 +517,64 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   }, []);
 
   const run = useCallback(
-    async (chain: PropValue | undefined, scope: Scope) => {
+    async (chain: PropValue | undefined, rawScope: Scope) => {
       if (isDesignRef.current || !isActionChain(chain)) return;
       const ac = chain as ActionChain;
+      const pages = usePageStore.getState();
+      // Resolve canonical unprojected rows independently for `scope.row` and `scope.params.row`
+      // so UI Stack `edge` stress text never leaks into writes AND child rows never clobber `params.row`.
+      const canonicalizeRow = (tId: unknown, candidate: unknown): Row | undefined => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
+        const rowObj = candidate as Row;
+        if (typeof rowObj.id !== 'string' || !rowObj.id || typeof tId !== 'string' || !tId) return rowObj;
+        const list = previewRef.current ? previewRef.current.rows[tId] : pages.getRows(tId);
+        return list?.find((r) => r.id === rowObj.id) ?? rowObj;
+      };
+      const nextDirectRow =
+        rawScope.row !== undefined ? canonicalizeRow(rawScope.tableId, rawScope.row) : undefined;
+      const rawParamRow = rawScope.params?.row;
+      const nextParamRow =
+        rawParamRow !== undefined ? canonicalizeRow(rawScope.params?.tableId, rawParamRow) : undefined;
+      const scope: Scope =
+        nextDirectRow !== rawScope.row || nextParamRow !== rawParamRow
+          ? {
+              ...rawScope,
+              ...(rawScope.row !== undefined ? { row: nextDirectRow } : {}),
+              ...(rawParamRow !== undefined && rawScope.params
+                ? { params: { ...rawScope.params, row: nextParamRow } }
+                : {}),
+            }
+          : rawScope;
       const rowOf = () => (scope.row ?? (scope.params?.row as Row | undefined)) as Row | undefined;
       const tableOf = () => scope.tableId ?? (scope.params?.tableId as string | undefined);
-      const pages = usePageStore.getState();
 
       for (const call of ac.calls) {
         const a = call.args;
-        const str = (i: number) => (typeof a[i] === 'string' ? (a[i] as string) : a[i] === undefined ? '' : String(a[i]));
+        const str = (i: number) => (typeof a[i] === 'string' ? (a[i] as string) : a[i === undefined ? 0 : i] === undefined ? '' : String(a[i]));
         switch (call.name) {
           case 'openModal':
           case 'openDrawer': {
             const rawExtra = a[1] && typeof a[1] === 'object' && !Array.isArray(a[1]) ? (a[1] as Record<string, unknown>) : {};
             const { row: _reservedRow, tableId: _reservedTableId, ...extra } = rawExtra;
             const currentRow = rowOf();
-            const params = { ...extra, ...(currentRow ? { row: currentRow, tableId: tableOf() } : {}) };
-            if (!pushOverlay(str(0), params)) return;
+            const currentTable = tableOf();
+            const validRowForOverlay =
+              currentRow && (!scope.expectedTableId || currentTable === scope.expectedTableId)
+                ? currentRow
+                : undefined;
+            const params = {
+              ...extra,
+              ...(validRowForOverlay ? { row: validRowForOverlay, tableId: currentTable } : {}),
+            };
+            const submittedForms = captureSubmittedFormsForScope(scope);
+            if (
+              !pushOverlay(str(0), params, undefined, {
+                expectedTableId: scope.expectedTableId,
+                submittedForms,
+              })
+            ) {
+              return;
+            }
             break;
           }
           case 'closeOverlay':
@@ -342,7 +584,44 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             toast(str(0), (str(1) as ToastItem['type']) || 'success');
             break;
           case 'confirm': {
-            const ok = await new Promise<boolean>((resolve) => setConfirmState({ message: str(0) || tr('确定执行该操作吗？', 'Are you sure you want to proceed?'), resolve }));
+            const hasExplicitMatchArg =
+              typeof a[1] === 'string' ? a[1].trim().length > 0 : a[1] !== undefined && a[1] !== null;
+            let rawMatch = '';
+            if (hasExplicitMatchArg) {
+              const templateStr = str(1);
+              for (const m of templateStr.matchAll(/\{\{\s*([\w.$-]+)\s*\}\}/g)) {
+                const refVal = lookupPlaceholderPath(m[1], scope, vars, stateRef.current.formValues, docRef.current);
+                if (refVal === undefined || refVal === null || String(refVal).trim() === '') {
+                  toast(
+                    tr(
+                      `无法执行高危确认：缺少匹配字段值（${m[1]}）`,
+                      `Cannot confirm high-risk action: missing value for ${m[1]}`,
+                    ),
+                    'error',
+                  );
+                  return;
+                }
+              }
+              rawMatch = interpolate(templateStr, scope, vars, stateRef.current.formValues, docRef.current).trim();
+              if (!rawMatch) {
+                toast(
+                  tr(
+                    '无法执行高危确认：匹配校验值不能为空',
+                    'Cannot confirm high-risk action: match text resolved to empty',
+                  ),
+                  'error',
+                );
+                return;
+              }
+            }
+            const resolvedMsg = interpolate(str(0), scope, vars, stateRef.current.formValues, docRef.current).trim();
+            const ok = await new Promise<boolean>((resolve) =>
+              setConfirmState({
+                message: resolvedMsg || tr('确定执行该操作吗？', 'Are you sure you want to proceed?'),
+                ...(rawMatch ? { matchText: rawMatch } : {}),
+                resolve,
+              }),
+            );
             setConfirmState(null);
             if (!ok) return;
             break;
@@ -354,19 +633,44 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               toast(tr(`未找到表单「${str(0)}」`, `Form "${str(0)}" not found`), 'error');
               return;
             }
+            const formKey = resolveFormInstanceKey(form.pfId, form.props.table, scope);
             if (call.name === 'resetForm') {
-              clearFormsIn(form);
+              if (formKey === form.pfId) {
+                clearFormsIn(form);
+              } else {
+                delete submittedRows.current[formKey];
+                setPickerValues((pv) =>
+                  Object.fromEntries(Object.entries(pv).filter(([id]) => !id.startsWith(`${formKey}::picker:`))),
+                );
+                updateFormValues((fv) => {
+                  const next = { ...fv };
+                  delete next[formKey];
+                  return next;
+                });
+                setFormIssues((fe) => {
+                  const next = { ...fe };
+                  delete next[formKey];
+                  return next;
+                });
+              }
               break;
             }
-            const rawValues = stateRef.current.formValues[form.pfId] ?? {};
-            const specs = formFieldSpecs(form,scope,vars);
             const table = typeof form.props.table === 'string' ? form.props.table : '';
             const source = rowOf();
+            if (scope.expectedTableId && (!source || tableOf() !== scope.expectedTableId)) {
+              toast(
+                tr('当前未选中目标记录，请先选择记录后再保存', 'Please select a target record before saving'),
+                'error',
+              );
+              return;
+            }
+            const rawValues = stateRef.current.formValues[formKey] ?? {};
+            const specs = formFieldSpecs(form,scope,vars);
             if (source && table && !tableOf()) {
               toast(tr('当前记录缺少来源表，无法确定表单写入对象', 'Current record is missing its source table'), 'error');
               return;
             }
-            const row = source && tableOf() === table ? source : submittedRows.current[form.pfId];
+            const row = source && tableOf() === table ? source : submittedRows.current[formKey];
             const allTables = useProtoStore.getState().dbTables;
             const boundTable = allTables.find(t => t.id === table);
             const values: Record<string, unknown> = { ...rawValues };
@@ -388,17 +692,41 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); return; }
             }
             const errs: Record<string, FormIssue> = {};
+            const labelMap = new Map<string, string>();
+            if (boundTable) {
+              for (const col of boundTable.columns) labelMap.set(col.name, col.comment || col.name);
+            }
+            for (const f of specs) labelMap.set(f.name, f.label);
+            const comparisonCtx: Record<string, unknown> = { ...(source ?? {}), ...effective };
+
             for (const f of specs) {
               const v = effective[f.name];
               if (f.required && (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0))) {
                 errs[f.name] = { kind: 'required', label: f.label };
+                continue;
+              }
+              const pokaIssue = evaluateFieldConstraint(f, v, comparisonCtx, labelMap);
+              if (pokaIssue) {
+                errs[f.name] = { kind: 'pokaYoke', label: f.label, issue: pokaIssue };
               }
             }
             if (Object.keys(errs).length) {
-              setFormIssues((fe) => ({ ...fe, [form.pfId]: errs }));
-              toast(tr('请完善必填项', 'Please complete all required fields'), 'error');
+              setFormIssues((fe) => ({ ...fe, [formKey]: errs }));
+              const firstIssue = Object.values(errs)[0];
+              toast(
+                firstIssue.kind === 'pokaYoke'
+                  ? firstIssue
+                  : tr('请完善必填项', 'Please complete all required fields'),
+                'error',
+              );
               return;
             }
+            setFormIssues((fe) => {
+              if (!fe[formKey]) return fe;
+              const next = { ...fe };
+              delete next[formKey];
+              return next;
+            });
             if (boundTable) {
               const invalidKeys: string[] = [];
               for (const col of boundTable.columns) {
@@ -435,27 +763,33 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
                 });
                 if (stalePickerIds.size > 0) {
                   setPickerValues((pv) =>
-                    Object.fromEntries(Object.entries(pv).filter(([id]) => !stalePickerIds.has(id))),
+                    Object.fromEntries(
+                      Object.entries(pv).filter(
+                        ([id]) =>
+                          !stalePickerIds.has(id) &&
+                          ![...stalePickerIds].some((pid) => id === `${formKey}::picker:${pid}`),
+                      ),
+                    ),
                   );
                 }
                 updateFormValues((fv) => {
-                  const cur = { ...(fv[form.pfId] ?? {}) };
+                  const cur = { ...(fv[formKey] ?? {}) };
                   for (const k of invalidKeys) delete cur[k];
-                  return { ...fv, [form.pfId]: cur };
+                  return { ...fv, [formKey]: cur };
                 });
-                setFormIssues((fe) => ({ ...fe, [form.pfId]: errs }));
+                setFormIssues((fe) => ({ ...fe, [formKey]: errs }));
                 toast(errs[invalidKeys[0]], 'error');
                 return;
               }
             }
-            setFormIssues((fe) => ({ ...fe, [form.pfId]: {} }));
+            setFormIssues((fe) => ({ ...fe, [formKey]: {} }));
             if (table) {
               try {
                 if (row) {
                   pages.updateRow(table, row.id, values);
-                  submittedRows.current[form.pfId] = { ...effective, id: row.id };
+                  submittedRows.current[formKey] = { ...effective, id: row.id };
                 } else {
-                  submittedRows.current[form.pfId] = pages.insertRow(table, effective);
+                  submittedRows.current[formKey] = pages.insertRow(table, effective);
                 }
               } catch (error) {
                 toast(error instanceof Error ? error.message : String(error), 'error');
@@ -463,28 +797,80 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               }
             }
             if (!row && Object.keys(values).length > Object.keys(rawValues).length) {
-              updateFormValues((fv) => ({ ...fv, [form.pfId]: values }));
+              updateFormValues((fv) => ({ ...fv, [formKey]: values }));
             }
             break;
           }
           case 'refresh':
             setPageNoState((p) => ({ ...p, [str(0)]: 1 }));
             break;
+          case 'selectRow': {
+            const row = rowOf();
+            const table = tableOf();
+            if (scope.expectedTableId && (!row || table !== scope.expectedTableId)) {
+              toast(tr('当前未选中目标记录，无法执行该操作', 'No active target record selected for this action'), 'error');
+              return;
+            }
+            if (row && table) setActiveRow(table, row.id);
+            break;
+          }
           case 'deleteRow': {
             const row = rowOf();
             const table = tableOf();
-            if (row && table) pages.deleteRow(table, row.id);
+            if (scope.expectedTableId && (!row || table !== scope.expectedTableId)) {
+              toast(tr('当前未选中目标记录，无法执行删除', 'No active target record selected to delete'), 'error');
+              return;
+            }
+            if (row && table) {
+              const undoMode = str(0) === 'undo';
+              pages.getRows(table);
+              const prevActiveId = stateRef.current.activeRows[table] ?? null;
+              let undoPatch: ReturnType<typeof pages.deleteRow> = null;
+              try {
+                undoPatch = pages.deleteRow(table, row.id);
+              } catch (error) {
+                toast(error instanceof Error ? error.message : String(error), 'error');
+                return;
+              }
+              if (prevActiveId === row.id) {
+                setActiveRow(table, null);
+              }
+              if (undoMode && undoPatch) {
+                const capturedPatch = undoPatch;
+                toast(
+                  tr('记录已移除', 'Record removed'),
+                  'info',
+                  {
+                    label: tr('撤销', 'Undo'),
+                    onUndo: () => {
+                      try {
+                        usePageStore.getState().undoDeleteRow(capturedPatch);
+                        if (prevActiveId && !stateRef.current.activeRows[table]) {
+                          setActiveRow(table, prevActiveId);
+                        }
+                      } catch (err) {
+                        toast(err instanceof Error ? err.message : String(err), 'error');
+                      }
+                    },
+                  },
+                );
+              }
+            }
             break;
           }
           case 'updateRow': {
             const row = rowOf();
             const table = tableOf();
+            if (scope.expectedTableId && (!row || table !== scope.expectedTableId)) {
+              toast(tr('当前未选中目标记录，无法更新数据', 'No active target record selected to update'), 'error');
+              return;
+            }
             const rawValues = a[0] && typeof a[0] === 'object' && !Array.isArray(a[0]) ? (a[0] as Record<string, unknown>) : {};
             if (row && table) {
               let values: Record<string, unknown>;
               try {
                 values = Object.fromEntries(Object.entries(rawValues).map(([key, val]) => [
-                  key, resolveActionValue(val, scope, vars, stateRef.current.formValues),
+                  key, resolveActionValue(val, scope, vars, stateRef.current.formValues, docRef.current),
                 ]));
                 pages.updateRow(table, row.id, values);
               } catch (error) {
@@ -503,11 +889,17 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
           case 'importPurchaseOrderLines': {
             const source = findById(docRef.current, str(0));
             const target = findById(docRef.current, str(1));
-            const form = findById(docRef.current, str(2));
-            const header = submittedRows.current[str(2)];
+            const formPfId = str(2);
+            const form = findById(docRef.current, formPfId);
+            const currentOverlay = scope.overlayIndex === undefined ? undefined : stateRef.current.overlays[scope.overlayIndex];
+            const header = currentOverlay
+              ? currentOverlay.submittedForms?.[formPfId]
+              : form && submittedFormForScope(form, scope);
             try {
               if (source?.type !== 'Table' || target?.type !== 'Table' || form?.type !== 'Form' ||
                   form.props.table !== 't_wms_acceptance_order' || !header ||
+                  (tableOf() === form.props.table && rowOf()?.id !== header.id) ||
+                  (scope.expectedTableId === form.props.table && !rowOf()) ||
                   typeof source.props.table !== 'string' || typeof target.props.table !== 'string') {
                 throw new Error(tr('请先保存验收单表头，并配置采购来源表与验收明细表', 'Please save the receipt header first and configure the PO source table and detail table'));
               }
@@ -536,14 +928,40 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             }
             const rows = pages.getRows(tableNode.props.table).filter((r) => ids.includes(r.id));
             const labelField = str(1);
-            const valueField = a[2];
-            if (rows.length !== ids.length || !rows.length) { toast(tr('所选来源记录已变化，请重新选择', 'Selected source records changed; please select again'), 'error'); return; }
-            // Two-argument selections keep the historical text contract. An explicit
-            // third argument binds one scalar key, with its original type.
+            if (rows.length !== ids.length || !rows.length) {
+              toast(tr('所选来源记录已变化，请重新选择', 'Selected source records changed; please select again'), 'error');
+              return;
+            }
+            const tables = useProtoStore.getState().dbTables;
+            const form = top.picker.formId ? findById(docRef.current, top.picker.formId) : null;
+            const owner = tables.find(t => t.id === form?.props.table);
+            const column = owner?.columns.find(c => c.name === top.picker!.name);
+            if (form?.props.table && !column) {
+              toast(tr('选单回填的目标表或字段不存在', 'The target table or field for this picker does not exist'), 'error');
+              return;
+            }
+            let valueField = a[2];
+            if (owner && column && (column.isForeignKey || column.references)) {
+              const fk = resolveBoundForeignKeySpec(owner, column, tables);
+              // A two-argument FK picker is valid only when the displayed field is itself the referenced key.
+              if (valueField === undefined) valueField = labelField;
+              if (!fk || fk.refTable.id !== tableNode.props.table || fk.valueCol !== valueField) {
+                toast(tr('选单的来源表或存储字段与目标外键不一致', 'Picker source table or value field does not match the target foreign key'), 'error');
+                return;
+              }
+              if (fk.qualifiedOnly && !isQualifiedSupplierStatus(rows[0].status)) {
+                toast(tr('请选择已准入的合格供应商', 'Please select a qualified supplier'), 'error');
+                return;
+              }
+            }
             let label: string;
             let value: unknown;
             if (valueField === undefined) {
-              label = rows.map(r => String(r[labelField] ?? r.id)).join(tr('、', ', '));
+              if (rows.some(r => !Object.hasOwn(r, labelField) || r[labelField] == null)) {
+                toast(tr('所选记录缺少指定的显示字段', 'The selected record is missing the requested display field'), 'error');
+                return;
+              }
+              label = rows.map(r => String(r[labelField])).join(tr('、', ', '));
               value = label;
             } else {
               const row = rows[0];
@@ -552,25 +970,13 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
                   row[valueField] === '' || !Object.hasOwn(row, labelField) || row[labelField] == null) {
                 toast(tr('请单选一条具有指定显示字段和值字段的来源记录', 'Please select a single source record with valid display and value fields'), 'error'); return;
               }
-              const form = top.picker.formId && findById(docRef.current, top.picker.formId);
-              const tables = useProtoStore.getState().dbTables;
-              const owner = form && tables.find(t => t.id === form.props.table);
-              const column = owner && owner.columns.find(c => c.name === top.picker!.name);
-              if (owner && column && (column.isForeignKey || column.references)) {
-                const edge = diagramRelations(tables).relations.find(r => r.toTableId === owner.id && r.toColumnId === column.id);
-                if (!edge || edge.fromTableId !== tableNode.props.table || edge.fromColumnName !== valueField) {
-                  toast(tr('选单的来源表或存储字段与目标外键不一致', 'Picker source table or value field does not match the target foreign key'), 'error'); return;
-                }
-                const refTable = tables.find(t => t.id === edge.fromTableId);
-                if (requiresQualifiedSupplier(column, owner, refTable) && !isQualifiedSupplierStatus(row.status)) {
-                  toast(tr('请选择已准入的合格供应商', 'Please select a qualified supplier'), 'error'); return;
-                }
-              }
               label = String(row[labelField]); value = row[valueField];
             }
-            setPickerValues(pv => ({ ...pv, [top.picker!.targetPfId]: label }));
-            const { formId, name } = top.picker;
-            if (formId && name) updateFormValues(fv => ({ ...fv, [formId]: { ...fv[formId], [name]: value } }));
+            const displayKey = top.picker!.pickerKey ?? top.picker!.targetPfId;
+            setPickerValues(pv => ({ ...pv, [displayKey]: label }));
+            const draftFormKey = top.picker.formKey ?? top.picker.formId;
+            const { name } = top.picker;
+            if (draftFormKey && name) updateFormValues(fv => ({ ...fv, [draftFormKey]: { ...fv[draftFormKey], [name]: value } }));
             setOverlays((o) => o.slice(0, -1));
             break;
           }
@@ -639,6 +1045,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     setFilters({});
     setPageNoState({});
     setSelections({});
+    setActiveRowsState({});
     setFormValuesState({});
     setFormIssues({});
     setPickerValues({});
@@ -655,6 +1062,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       filters,
       pageNo,
       selections,
+      activeRows,
       formValues,
       formErrors,
       pickerValues,
@@ -667,6 +1075,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       },
       setPageNo: (pfId, n) => setPageNoState((p) => ({ ...p, [pfId]: n })),
       setSelection: (pfId, ids) => setSelections((s) => ({ ...s, [pfId]: ids })),
+      setActiveRow,
+      getActiveRowId: (tableId) => stateRef.current.activeRows[tableId],
       setFormValue: (formId, name, value) =>
         updateFormValues((fv) => ({ ...fv, [formId]: { ...(fv[formId] ?? {}), [name]: value } })),
       setFormValues: (formId, values) => updateFormValues((fv) => ({ ...fv, [formId]: values })),
@@ -674,14 +1084,28 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       closeOverlay: () => setOverlays((o) => o.slice(0, -1)),
       openPicker: (overlayId, picker, scope) => {
         if (isDesignRef.current) return;
-        pushOverlay(overlayId, { ...(scope.row ? { row: scope.row, tableId: scope.tableId } : {}) }, picker);
+        const currentRow = scope.row ?? (scope.params?.row as Row | undefined);
+        const currentTable = scope.tableId ?? (scope.params?.tableId as string | undefined);
+        const validRow =
+          currentRow && (!scope.expectedTableId || currentTable === scope.expectedTableId)
+            ? currentRow
+            : undefined;
+        pushOverlay(
+          overlayId,
+          { ...(validRow ? { row: validRow, tableId: currentTable } : {}) },
+          picker,
+          {
+            expectedTableId: scope.expectedTableId,
+            submittedForms: captureSubmittedFormsForScope(scope),
+          },
+        );
       },
       run,
       resolveConfirm: (ok) => confirmState?.resolve(ok),
       reset,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isDesign, pageId, overlays, vars, hidden, tabs, filters, pageNo, selections, formValues, formErrors, pickerValues, toasts, confirmState, run, reset]
+    [isDesign, pageId, overlays, vars, hidden, tabs, filters, pageNo, selections, activeRows, setActiveRow, formValues, formErrors, pickerValues, toasts, confirmState, run, reset]
   );
 }
 

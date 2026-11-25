@@ -8,11 +8,13 @@ import { usePageStore } from '../store/usePageStore';
 import { PreviewDataContext, useMaterialTables } from '../runtime/PreviewData';
 import { chartConfigErrors, prepareChartData, resolveChartEvent, type ChartType } from './model';
 import { buildChartOption, chartClickPoint } from './options';
+import { useUIStackState } from '../runtime/uiStackLens';
 import { useI18n } from '../../i18n';
 
 export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const { tr, td } = useI18n();
   const capturing = useContext(CaptureMode);
+  const uiState = useUIStackState();
   const tables = useMaterialTables();
   const preview = useContext(PreviewDataContext);
   const savedRows = usePageStore(s => s.tableRows);
@@ -29,11 +31,19 @@ export const ChartMaterial: React.FC<CompProps> = ({ node, p, root, rt, scope })
       const type = node.type as ChartType;
       const errors = chartConfigErrors(type, node.props, tables);
       if (errors.length) throw new Error(errors.join('；'));
-      const rows = p.source === 'table' ? (preview ? preview.rows[p.table] : savedRows[p.table]) : p.data;
-      const dataset = prepareChartData(type, node.props, rows);
+      if (uiState === 'empty') {
+        return {
+          type,
+          props: node.props,
+          dataset: { data: [], dimension: String(node.props.dimension ?? 'category'), metrics: [] },
+          error: null,
+        };
+      }
+      const rawRows = p.source === 'table' ? (preview ? preview.rows[p.table] : savedRows[p.table]) : p.data;
+      const dataset = prepareChartData(type, node.props, rawRows);
       return { type, props: node.props, dataset, error: null };
     } catch (e) { return { dataset: null, error: e instanceof Error ? e.message : String(e) }; }
-  }, [node.type, node.props, tables, preview, savedRows]);
+  }, [node.type, node.props, tables, preview, savedRows, uiState]);
   const applied = useRef<typeof prepared | null>(null);
   const latest = useRef({ prepared, isDark, p, rt, scope });
   latest.current = { prepared, isDark, p, rt, scope };

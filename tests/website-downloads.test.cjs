@@ -348,7 +348,7 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
     'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt',
     'en/index.html', 'about/index.html', 'contact/index.html', 'privacy/index.html', 'mcp/index.html',
     'axure-import/index.html', 'compare/index.html',
-    'demo/index.html', 'demo/demo-manifest.json', 'demo/snapshots/crm-zh.json', 'demo/snapshots/crm-en.json',
+    'demo/index.html', 'demo/demo-manifest.json', 'demo/snapshots/starlink-zh.json', 'demo/snapshots/starlink-en.json',
     'assets/workbench-screenshot.png', 'assets/mobile-preview.png', 'assets/social-preview.jpg',
     '404.html', '404.md',
   ]) {
@@ -403,6 +403,20 @@ test('SEO and GEO metadata, Schema.org @graph, and crawl files are complete acro
   assert.match(fourOhFourMd, /llms\.txt/);
   assert.match(fourOhFourMd, /sitemap\.xml/);
   assert.match(fourOhFourMd, /\/demo\//);
+
+  const demoManifest = JSON.parse(fs.readFileSync(path.join(site, 'demo/demo-manifest.json'), 'utf8'));
+  assert.equal(demoManifest.project, 'starlink-maintenance-fulfillment');
+  assert.equal(demoManifest.snapshots.zh, './snapshots/starlink-zh.json');
+  assert.equal(demoManifest.snapshots.en, './snapshots/starlink-en.json');
+  const zhSnap = JSON.parse(fs.readFileSync(path.join(site, 'demo/snapshots/starlink-zh.json'), 'utf8'));
+  const enSnap = JSON.parse(fs.readFileSync(path.join(site, 'demo/snapshots/starlink-en.json'), 'utf8'));
+  assert.equal(zhSnap.entryPageId, 'page_overview_dashboard');
+  assert.equal(enSnap.entryPageId, 'page_overview_dashboard');
+  assert.deepEqual(
+    zhSnap.pages.map(p => p.pageId),
+    ['page_overview_dashboard', 'page_ticket_workbench', 'page_kanban_schedule', 'page_mobile_field'],
+  );
+  assert.deepEqual(zhSnap.pages.map(p => p.pageId), enSnap.pages.map(p => p.pageId));
 
   const assertSequentialHeadings = (doc, fileLabel) => {
     const levels = [...doc.querySelectorAll('h1, h2, h3, h4, h5, h6')].map(h => Number(h.tagName.slice(1)));

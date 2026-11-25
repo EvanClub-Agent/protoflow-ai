@@ -3114,8 +3114,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               );
             })}
 
-            {/* Row actions for tables, desktop card grids, and mobile task cards */}
-            {(selectedNode.type === 'Table' || selectedNode.type === 'CardGrid' || selectedNode.type === 'MTaskList') && (
+            {/* Row actions for tables, desktop card grids, kanban boards, and mobile task cards */}
+            {['Table', 'CardGrid', 'Kanban', 'MTaskList', 'MKanban'].includes(selectedNode.type) && (
               <div className="space-y-2.5 pt-2 border-t border-slate-200">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -3171,7 +3171,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
                           className="flex-1 min-w-[96px] px-2 py-1 rounded border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600"
                           placeholder={tr('按钮文字', 'Button label')}
                         />
-                        {selectedNode.type === 'MTaskList' && (
+                        {(selectedNode.type === 'MTaskList' || selectedNode.type === 'MKanban') && (
                           <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer shrink-0">
                             <input
                               type="checkbox"
@@ -3241,9 +3241,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             )}
 
             {eventSpecs.length === 0 &&
-              selectedNode.type !== 'Table' &&
-              selectedNode.type !== 'CardGrid' &&
-              selectedNode.type !== 'MTaskList' && (
+              !['Table', 'CardGrid', 'Kanban', 'MTaskList', 'MKanban'].includes(selectedNode.type) && (
                 <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400">
                   {doc.root.type === 'MobilePage'
                     ? tr(
