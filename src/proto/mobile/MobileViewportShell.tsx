@@ -1,15 +1,92 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useLayoutEffect, useRef, useState } from 'react';
+import { CaptureMode } from '../../capture/CaptureMode';
+import { scopeForOverlay, type OverlayEntry } from '../runtime/runtime';
+import type { ProtoNode } from '../types';
+import { NodeView, ScopeProvider } from '../renderer/NodeView';
 import { useResolvedTheme } from '../registry/AntdSurface';
 import {
+  canAnimateMobileOverlayExit,
   MobileAppearanceOverrideContext,
+  MobileMotionContext,
+  MobileOverlayExitContext,
   MobilePageTheme,
   MobileRuntimeFeedback,
   MobileScreenPortalContext,
+  normalizeMobileMotion,
+  normalizeMobileSurfaceBg,
   resolveMobileAppearance,
   type MobileAppearance,
+  type MobileMotionMode,
   type MobileRuntimeFeedbackProps,
 } from './components';
 import { MOBILE_DEVICE_SPECS, type MobileDevicePreset } from './types';
+
+interface RetainedOverlayItem {
+  entry: OverlayEntry;
+  stackIndex: number;
+  closing: boolean;
+}
+
+export const MobileOverlayStack: React.FC<{
+  overlays: readonly OverlayEntry[];
+  resolveNode: (overlayId: string) => ProtoNode | null | undefined;
+}> = ({ overlays, resolveNode }) => {
+  const isCapture = useContext(CaptureMode);
+  const motionMode = useContext(MobileMotionContext);
+  const canAnimate = canAnimateMobileOverlayExit(isCapture, motionMode);
+  const [, setExitTick] = useState(0);
+  const syncedRef = useRef<RetainedOverlayItem[]>([]);
+
+  const liveByKey = new Map(overlays.map((entry, stackIndex) => [entry.key, { entry, stackIndex }]));
+  const nextList: RetainedOverlayItem[] = [];
+  const seen = new Set<string>();
+
+  for (const prev of syncedRef.current) {
+    const active = liveByKey.get(prev.entry.key);
+    if (active) {
+      nextList.push({ entry: active.entry, stackIndex: active.stackIndex, closing: false });
+      seen.add(prev.entry.key);
+    } else if (canAnimate) {
+      nextList.push({ entry: prev.entry, stackIndex: prev.stackIndex, closing: true });
+      seen.add(prev.entry.key);
+    }
+  }
+  for (const [key, active] of liveByKey) {
+    if (!seen.has(key)) {
+      nextList.push({ entry: active.entry, stackIndex: active.stackIndex, closing: false });
+    }
+  }
+  syncedRef.current = nextList;
+
+  const finalizeExit = useCallback((key: string) => {
+    const before = syncedRef.current.length;
+    syncedRef.current = syncedRef.current.filter((it) => !(it.entry.key === key && it.closing));
+    if (syncedRef.current.length !== before) {
+      setExitTick((t) => t + 1);
+    }
+  }, []);
+
+  return (
+    <>
+      {nextList.map((item) => {
+        const node = resolveNode(item.entry.id);
+        if (!node) return null;
+        return (
+          <MobileOverlayExitContext.Provider
+            key={item.entry.key}
+            value={item.closing ? () => finalizeExit(item.entry.key) : null}
+          >
+            <ScopeProvider
+              value={scopeForOverlay(item.entry, item.stackIndex)}
+            >
+              <NodeView node={node} live />
+            </ScopeProvider>
+          </MobileOverlayExitContext.Provider>
+        );
+      })}
+    </>
+  );
+};
 
 interface ScrollThumbState {
   visible: boolean;
@@ -89,6 +166,7 @@ interface MobileViewportShellProps {
   previewAppearance?: MobileAppearance | null;
   accent?: unknown;
   surfaceBg?: unknown;
+  motion?: unknown;
   /** Show outer iPhone titanium bezel, Dynamic Island & Home Indicator */
   framed?: boolean;
   /** Expand height to fit full page content instead of fixed screen scrolling */
@@ -104,23 +182,42 @@ interface MobileViewportShellProps {
 
 export const MobileViewportShell: React.FC<MobileViewportShellProps> = props => {
   const workspaceTheme = useResolvedTheme();
+  const isCapture = useContext(CaptureMode);
   const resolvedAppearance = resolveMobileAppearance(
     props.appearance,
     workspaceTheme,
     props.previewAppearance,
+    props.surfaceBg,
   );
+  const resolvedMotion = normalizeMobileMotion(props.motion);
   return (
-    <MobileAppearanceOverrideContext.Provider value={props.previewAppearance ?? null}>
-      <MobilePageTheme appearance={resolvedAppearance} accent={props.accent} surfaceBg={props.surfaceBg}>
-        <ViewportFrame {...props} resolvedAppearance={resolvedAppearance} />
-      </MobilePageTheme>
-    </MobileAppearanceOverrideContext.Provider>
+    <MobileMotionContext.Provider value={resolvedMotion}>
+      <MobileAppearanceOverrideContext.Provider value={props.previewAppearance ?? null}>
+        <MobilePageTheme appearance={resolvedAppearance} accent={props.accent} surfaceBg={props.surfaceBg}>
+          <ViewportFrame
+            {...props}
+            resolvedAppearance={resolvedAppearance}
+            resolvedMotion={resolvedMotion}
+            isCapture={isCapture}
+          />
+        </MobilePageTheme>
+      </MobileAppearanceOverrideContext.Provider>
+    </MobileMotionContext.Provider>
   );
 };
 
-const ViewportFrame: React.FC<MobileViewportShellProps & { resolvedAppearance: MobileAppearance }> = ({
+const ViewportFrame: React.FC<
+  MobileViewportShellProps & {
+    resolvedAppearance: MobileAppearance;
+    resolvedMotion: MobileMotionMode;
+    isCapture: boolean;
+  }
+> = ({
   device = 'iphone',
   resolvedAppearance,
+  resolvedMotion,
+  isCapture,
+  surfaceBg,
   framed = true,
   expandHeight = false,
   fullBleed = false,
@@ -128,6 +225,7 @@ const ViewportFrame: React.FC<MobileViewportShellProps & { resolvedAppearance: M
   runtimeFeedback,
   children,
 }) => {
+  const normalizedSurfaceBg = normalizeMobileSurfaceBg(surfaceBg);
   const spec = MOBILE_DEVICE_SPECS[device] ?? MOBILE_DEVICE_SPECS.iphone;
   const isDark = resolvedAppearance === 'dark';
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -175,6 +273,9 @@ const ViewportFrame: React.FC<MobileViewportShellProps & { resolvedAppearance: M
       <MobileScreenPortalContext.Provider value={portalEl}>
         <div
           data-mobile-appearance={resolvedAppearance}
+          data-surface-bg={normalizedSurfaceBg}
+          data-motion={resolvedMotion}
+          data-capture-mode={isCapture ? '1' : undefined}
           style={{ colorScheme: isDark ? 'dark' : 'light' }}
           className={`pf-mobile-scope relative w-full h-full min-h-0 flex flex-col overflow-hidden ${
             isDark ? 'bg-[#131314] text-[#E3E3E3]' : 'bg-[#F0F4F9] text-[#1F1F1F]'
@@ -196,6 +297,9 @@ const ViewportFrame: React.FC<MobileViewportShellProps & { resolvedAppearance: M
       <MobileScreenPortalContext.Provider value={portalEl}>
         <div
           data-mobile-appearance={resolvedAppearance}
+          data-surface-bg={normalizedSurfaceBg}
+          data-motion={resolvedMotion}
+          data-capture-mode={isCapture ? '1' : undefined}
           className={`pf-mobile-scope relative mx-auto shrink-0 rounded-[28px] shadow-xl border overflow-hidden flex flex-col ${
             isDark
               ? 'bg-[#131314] text-[#E3E3E3] border-white/12 shadow-[0_24px_60px_-14px_rgba(0,0,0,0.72)]'
@@ -258,6 +362,9 @@ const ViewportFrame: React.FC<MobileViewportShellProps & { resolvedAppearance: M
           {/* Inner OLED Screen Viewport */}
           <div
             data-mobile-appearance={resolvedAppearance}
+            data-surface-bg={normalizedSurfaceBg}
+            data-motion={resolvedMotion}
+            data-capture-mode={isCapture ? '1' : undefined}
             className={`pf-mobile-scope relative rounded-[42px] overflow-hidden flex flex-col ${
               isDark
                 ? 'bg-[#131314] text-[#E3E3E3] ring-1 ring-inset ring-white/[0.06]'

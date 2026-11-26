@@ -200,7 +200,7 @@ export function extractPageActionSemantics(
     if (node.props.disabled !== true) {
       const handledProps = new Set<string>();
       const boundRowTable =
-        ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar', 'MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar'].includes(node.type) &&
+        ['Table', 'CardGrid', 'Repeater', 'Kanban', 'Calendar', 'ProgressBoard', 'ActivityFeed', 'MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'MProgressList', 'MActivityList'].includes(node.type) &&
         typeof node.props.table === 'string' &&
         tableMap.has(node.props.table)
           ? node.props.table
@@ -314,8 +314,14 @@ export function extractPageActionSemantics(
         );
       }
 
-      if (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'Kanban' || node.type === 'MTaskList' || node.type === 'MKanban') {
-        const rowClickKey = node.type === 'Table' ? 'onRowClick' : node.type === 'CardGrid' ? 'onItemClick' : 'onCardClick';
+      if (node.type === 'Table' || node.type === 'CardGrid' || node.type === 'Kanban' || node.type === 'ActivityFeed' || node.type === 'MTaskList' || node.type === 'MKanban' || node.type === 'MActivityList') {
+        const rowSlotOverlayId = boundRowTable ? currentOverlayId : null;
+        const rowClickKey =
+          node.type === 'Table'
+            ? 'onRowClick'
+            : node.type === 'CardGrid' || node.type === 'ActivityFeed' || node.type === 'MActivityList'
+            ? 'onItemClick'
+            : 'onCardClick';
         handledProps.add(rowClickKey);
         handledProps.add('rowActions');
         addSlot(
@@ -325,7 +331,7 @@ export function extractPageActionSemantics(
           strProp(node.props.title) || rowClickKey,
           node.props[rowClickKey],
           boundRowTable,
-          currentOverlayId,
+          rowSlotOverlayId,
         );
         if (Array.isArray(node.props.rowActions)) {
           node.props.rowActions.forEach((item, i) => {
@@ -339,11 +345,12 @@ export function extractPageActionSemantics(
               actLabel,
               rec.onClick,
               boundRowTable,
-              currentOverlayId,
+              rowSlotOverlayId,
             );
           });
         }
-      } else if (node.type === 'MFeedList' || node.type === 'MCardGrid' || node.type === 'Repeater' || node.type === 'MRepeater') {
+      } else if (node.type === 'MFeedList' || node.type === 'MCardGrid' || node.type === 'MProgressList' || node.type === 'ProgressBoard' || node.type === 'Repeater' || node.type === 'MRepeater') {
+        const rowSlotOverlayId = boundRowTable ? currentOverlayId : null;
         handledProps.add('onItemClick');
         addSlot(
           node,
@@ -352,9 +359,10 @@ export function extractPageActionSemantics(
           strProp(node.props.title) || 'onItemClick',
           node.props.onItemClick,
           boundRowTable,
-          currentOverlayId,
+          rowSlotOverlayId,
         );
       } else if (node.type === 'Calendar' || node.type === 'MCalendar') {
+        const rowSlotOverlayId = boundRowTable ? currentOverlayId : null;
         handledProps.add('onEventClick');
         addSlot(
           node,
@@ -363,14 +371,19 @@ export function extractPageActionSemantics(
           strProp(node.props.title) || 'onEventClick',
           node.props.onEventClick,
           boundRowTable,
-          currentOverlayId,
+          rowSlotOverlayId,
         );
       }
 
       if (
-        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup' || node.type === 'NavMenu' || node.type === 'Dropdown' || node.type === 'Carousel' || node.type === 'MBannerCarousel' || node.type === 'AiCopilotCard' || node.type === 'MAiInsightCard') &&
+        (node.type === 'MBentoGrid' || node.type === 'MTabBar' || node.type === 'MListGroup' || node.type === 'NavMenu' || node.type === 'Dropdown' || node.type === 'Carousel' || node.type === 'MBannerCarousel' || node.type === 'AiCopilotCard' || node.type === 'MAiInsightCard' || node.type === 'ProgressBoard' || node.type === 'ActivityFeed' || node.type === 'MProgressList' || node.type === 'MActivityList') &&
         Array.isArray(node.props.items)
       ) {
+        const isCollectionStaticList =
+          node.type === 'ProgressBoard' ||
+          node.type === 'ActivityFeed' ||
+          node.type === 'MProgressList' ||
+          node.type === 'MActivityList';
         handledProps.add('items');
         node.props.items.forEach((item, i) => {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return;
@@ -382,8 +395,8 @@ export function extractPageActionSemantics(
             CANCEL_LABEL_PATTERN.test(itemLabel) ? 'cancel' : 'primary',
             itemLabel,
             rec.onClick,
-            currentRowTableId,
-            currentOverlayId,
+            isCollectionStaticList ? boundRowTable : currentRowTableId,
+            isCollectionStaticList ? (boundRowTable ? currentOverlayId : null) : currentOverlayId,
           );
         });
       }

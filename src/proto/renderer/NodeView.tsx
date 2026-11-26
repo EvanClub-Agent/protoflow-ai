@@ -108,11 +108,17 @@ export const NodeView: React.FC<{ node: ProtoNode; options?: RenderOptions; live
   const isMirrored = useContext(MirroredNodeCtx);
   const rawOuterScope = useContext(ScopeCtx);
   const liveOverlayEntry =
-    live && rawOuterScope.overlayIndex !== undefined ? rt.overlays[rawOuterScope.overlayIndex] : undefined;
-  const outerScope: Scope =
-    liveOverlayEntry?.expectedTableId && rawOuterScope.expectedTableId === undefined
-      ? { ...rawOuterScope, expectedTableId: liveOverlayEntry.expectedTableId }
-      : rawOuterScope;
+    live && rawOuterScope.overlayKey === undefined && rawOuterScope.overlayIndex !== undefined
+      ? rt.overlays[rawOuterScope.overlayIndex]
+      : undefined;
+  const outerScope: Scope = liveOverlayEntry
+    ? {
+        ...rawOuterScope,
+        expectedTableId: rawOuterScope.expectedTableId ?? liveOverlayEntry.expectedTableId,
+        isolatePageRow: liveOverlayEntry.isolatePageRow,
+        overlayKey: liveOverlayEntry.key,
+      }
+    : rawOuterScope;
   const activeTableProp =
     (node.type === 'Card' || node.type === 'MSurface') && typeof node.props.activeTable === 'string' && node.props.activeTable.trim()
       ? node.props.activeTable.trim()

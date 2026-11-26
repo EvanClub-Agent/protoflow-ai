@@ -395,11 +395,11 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
   },
   MTabBar: {
     title: 'Bottom Tab Bar',
-    description: 'Global safe-area bottom navigation bar supporting floating glass pill or docked bar with cross-page navigation.',
+    description: 'Global safe-area bottom navigation bar supporting floating glass pill island, optional detached circular avatar button, or docked bar.',
   },
   MPillTabs: {
     title: 'Pill Tabs',
-    description: 'Rounded sliding pill switcher that toggles nested MTab panes or filters a target MFeedList / MTaskList.',
+    description: 'Rounded sliding pill switcher that toggles nested MTab panes or filters a target MFeedList / MTaskList / MActivityList.',
   },
   MTab: {
     title: 'Mobile Tab Pane',
@@ -411,7 +411,7 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
   },
   MHeroHeader: {
     title: 'Hero Header',
-    description: 'Gemini iridescent greeting header or rounded visual brand banner card.',
+    description: 'Gemini iridescent greeting header, visual brand banner, dark inverted wallet balance card, or metric progress hero.',
   },
   MFeedList: {
     title: 'Feed List',
@@ -519,7 +519,15 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
   },
   AiCopilotCard: {
     title: 'AI Copilot Card',
-    description: 'Desktop AI review insight and risk alert card supporting context interpolation and one-click action chains per suggestion.',
+    description: 'Desktop AI review insight, risk alert, and executive dark brief card supporting context interpolation and one-click action chains per suggestion.',
+  },
+  ProgressBoard: {
+    title: 'Progress & Gauge Board',
+    description: 'Desktop full-fill rounded capsule progress comparison bars or multi-column semicircle gauges supporting bound physical tables and QueryForm filtering.',
+  },
+  ActivityFeed: {
+    title: 'Activity & Ledger Feed',
+    description: 'Modern desktop business activity, spare-part claim, and financial ledger stream with signed split-decimal figures, master-detail selection, and guarded row action pills.',
   },
   MRepeater: {
     title: 'Mobile Repeater',
@@ -535,7 +543,19 @@ const EN_COMPONENT_META: Record<string, { title: string; description: string }> 
   },
   MAiInsightCard: {
     title: 'Mobile AI Insight',
-    description: 'Gemini-styled gradient-bordered mobile AI summary and quick action suggestion card.',
+    description: 'Gemini gradient-bordered AI summary card or deep-forest high-contrast daily brief card (`dark_brief`) with quick action pills.',
+  },
+  MProgressList: {
+    title: 'Capsule Progress List',
+    description: 'Full-fill rounded capsule progress comparison bars or dual semicircle gauges supporting static items or physical table bindings.',
+  },
+  MActivityList: {
+    title: 'Activity & Ledger List',
+    description: 'Modern financial or spare-part activity stream with signed split-decimal figures and swipe-left pill rowActions.',
+  },
+  MFloatingBar: {
+    title: 'Floating Status Bar',
+    description: 'Persistent glassmorphic or inverted mini-dock anchored above MTabBar for live SLA timers, mini players, or quick actions.',
   },
 
   // Axure Compatibility Materials
@@ -964,6 +984,28 @@ const PROP_LABEL_MAP: Record<string, string> = {
   '视觉外观': 'Appearance',
   '品牌强调色': 'Accent Theme',
   '页面底色层次': 'Surface Background',
+  '画布氛围底色': 'Canvas Surface',
+  '动效档位': 'Motion Preset',
+  '卡片质感(tone)': 'Card Tone',
+  '语义图标(icon)': 'Semantic Icon',
+  '目标对比胶囊': 'Target Badge',
+  '小数与单位视觉降噪': 'Split Decimal Styling',
+  '核验时间戳': 'Timestamp',
+  '展示形态': 'Display Variant',
+  '仪表并排列数(cols)': 'Gauge Columns (cols)',
+  '当前单据外键字段': 'Source Foreign Key',
+  '指标名称字段': 'Label Field',
+  '当前进度值字段(0-100)': 'Value Field (0-100)',
+  '目标基准值字段(0-100)': 'Target Field (0-100)',
+  '状态语义字段': 'Status Field',
+  '空状态文案': 'Empty Text',
+  '静态指标项(未绑表时生效)': 'Static Items (when unbound)',
+  '变动金额/数量字段': 'Amount / Delta Field',
+  '收支方向字段': 'Direction Field',
+  '图标字段': 'Icon Field',
+  '主从联动默认选中首项': 'Auto-Select First Row',
+  '行操作胶囊': 'Row Action Pills',
+  '静态流水项(未绑表时生效)': 'Static Entries (when unbound)',
   '内容区内边距': 'Content Padding',
   '区块标题': 'Section Title',
   '副标题说明': 'Subtitle',
@@ -1186,6 +1228,9 @@ const EVENT_LABEL_MAP: Record<string, string> = {
   '点击时': 'On Click',
   '点击': 'On Click',
   '点击确定': 'On Confirm (OK)',
+  '点击进度项': 'On Item Click',
+  '点击流水行': 'On Item Click',
+  '点击主操作按钮': 'On Primary Action',
   '确认': 'On Confirm',
   '取消': 'On Cancel',
   '关闭': 'On Close',
@@ -1216,6 +1261,7 @@ const EVENT_LABEL_MAP: Record<string, string> = {
 };
 
 const PROP_DESCRIPTION_MAP: Record<string, string> = {
+  '未带符号的变动值按方向字段显示。显式正负号优先，零值使用中性色。': 'The direction field applies to unsigned amounts. An explicit sign takes precedence. Zero uses a neutral tone.',
   '字符串数组或 [{"label":"显示名","value":"实际值","disabled":false}]，value 保留原始类型。':
     'String array or [{"label":"Display","value":"val","disabled":false}]; preserves value type.',
   '字符串数组，或 [{"label":"显示名","value":"实际值","disabled":false}]；保留 value 原始类型。':
@@ -1268,6 +1314,20 @@ const PROP_DESCRIPTION_MAP: Record<string, string> = {
     'None shows raw rows; sum/average aggregates duplicate categories.',
   'auto=自动跟随全局明暗主题，light=冷雾灰白现代风 (#F0F4F9)，dark=Gemini 曜石黑 (#131314)':
     'auto = follow workspace theme, light = mist light, dark = Gemini obsidian dark.',
+  'auto=跟随画布明暗主题（oled_carbon 自动深色）；light=强制浅色；dark=强制深色':
+    'auto = follow canvas theme (oled_carbon defaults to dark); light = force light; dark = force dark.',
+  '设计师高颜值色阶底布：mist=冷雾灰蓝，pure=极简纯白，warm_paper=暖白微纸感，sage_field=鼠尾草绿调，aurora=极光微渐变，oled_carbon=曜石碳黑':
+    'Designer canvas surface: mist, pure, warm_paper, sage_field, aurora, or oled_carbon.',
+  '控制本页主按钮、高亮胶囊与关键进度色阶':
+    'Controls primary actions, active badges, and progress accent color on this page.',
+  'smooth=流畅错峰入场与弹层过渡；snappy=利落快节奏；none=零过渡静态模式':
+    'smooth = staggered entry & overlay transitions; snappy = fast motion; none = zero transitions.',
+  'card=纯净浮起卡；inverted=深色反色压舱指标卡；subtle=柔和次级块':
+    'card = elevated card; inverted = high-contrast dark hero metric card; subtle = muted block.',
+  '右上角语义矢量图标名称（如 TrendingUp、Wallet、Shield、Zap）':
+    'Semantic Lucide icon name in the top-right badge (e.g. TrendingUp, Wallet, Shield, Zap).',
+  '如 达标率 98.4% 或 较计划 +4.2%': 'e.g. 98.4% of Plan or +4.2% vs Target.',
+  '如 实时扫描 · 刚刚': 'e.g. Live scan · Just now.',
   'gemini=蓝紫流光现代配色；支持按 C 端品牌或 B 端企业色切换':
     'gemini = blue-violet gradient accent, or choose a brand accent color.',
   'mist=无边框色阶呼吸底；pure=极简纯底':
@@ -1456,6 +1516,15 @@ const EN_COMPONENT_SNIPPETS: Record<string, string> = {
   { title: 'Unit Price Variance', detail: 'Current price is 8.2% above 90-day average', actionLabel: 'Inspect History' },
   { title: 'Split Delivery Suggestion', detail: 'East warehouse stock is healthy; split into 2 batches', actionLabel: 'Apply' }
 ]} />`,
+  ProgressBoard: `<ProgressBoard title="Fulfillment Progress" extra="Plan 85%" variant="capsule" items={[
+  { label: 'Core Site Inspection Closure', value: 92, target: 90, tone: 'forest' },
+  { label: 'Optical Module Safety Stock', value: 78, target: 85, tone: 'emerald' },
+  { label: 'P0 Ticket 2h SLA Response', value: 64, target: 80, tone: 'amber' }
+]} />`,
+  ActivityFeed: `<ActivityFeed title="Recent Parts & Settlement Ledger" extra="View All" items={[
+  { title: 'Optical Transceiver Return', subtitle: 'Today 14:20 · East Hub', amount: '+$1,280.00', icon: 'TrendingUp', tone: 'inflow' },
+  { title: 'Phased Array Dish Claim', subtitle: 'Today 10:05 · WO-202611-01', amount: '-$340.50', icon: 'ShoppingBag', tone: 'outflow' }
+]} />`,
   MRepeater: `<MRepeater layout="stack">
   <MSurface title="{{row.title}}" extra="{{row.status}}" subtitle="{{row.subtitle}}" tone="card" />
 </MRepeater>`,
@@ -1465,6 +1534,16 @@ const EN_COMPONENT_SNIPPETS: Record<string, string> = {
   { title: 'Expedite East Hub Shipment', detail: 'Cutoff in 2 hours', actionLabel: 'Handle Now' },
   { title: 'Overdue Receivable Follow-up', detail: '3 days past due', actionLabel: 'View Details' }
 ]} />`,
+  MProgressList: `<MProgressList title="Key Milestones" extra="Plan 85%" variant="capsule" items={[
+  { label: 'Core Site Inspection', value: 88, target: 90, tone: 'forest' },
+  { label: 'Spare Parts Readiness', value: 76, target: 85, tone: 'emerald' },
+  { label: 'SLA On-Time Closure', value: 64, target: 80, tone: 'amber' }
+]} />`,
+  MActivityList: `<MActivityList title="Recent Activity" extra="See all" items={[
+  { title: 'Optical Transceiver Return', subtitle: 'Today 14:20 · East Hub', amount: '+$1,280.00', icon: 'TrendingUp', tone: 'inflow' },
+  { title: 'Phased Array Dish Claim', subtitle: 'Today 10:05 · WO-202611-01', amount: '-$340.50', icon: 'ShoppingBag', tone: 'outflow' }
+]} />`,
+  MFloatingBar: '<MFloatingBar tone="inverted" icon="Zap" title="Active SLA Ticket · WO-202611-01" subtitle="42m remaining before cutoff" progress={72} actionText="Claim Parts" />',
   OutlineTree: '<OutlineTree width={180} height={100}><TreeItem text="Directory" /></OutlineTree>',
   FigmaCanvas: '<FigmaCanvas frameWidth={1440} frameHeight={900} background="#FFFFFF" />',
   FigmaFrame: '<FigmaFrame layoutMode="row" gap={12} padding="12px 16px" width={320} height={64} />',
@@ -1605,6 +1684,7 @@ const PROTECTED_JSX_ATTRS = new Set([
   'accent',
   'surfaceBg',
   'appearance',
+  'motion',
   'icon',
   'leftMode',
   'rightIcon',
@@ -1647,6 +1727,10 @@ const PROTECTED_JSX_ATTRS = new Set([
   'statusField',
   'labelField',
   'valueField',
+  'targetField',
+  'amountField',
+  'typeField',
+  'iconField',
   'filterField',
   'treeKeyField',
   'parentField',

@@ -65,10 +65,10 @@ export const AntdSurface: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isEn]);
 
   const themeConfig = useMemo<ThemeConfig>(() => {
-    if (!canvasTheme || !canvasTheme.rawTokens) {
+    if (!canvasTheme || (!canvasTheme.rawTokens && !canvasTheme.accent)) {
       return mode === 'dark' ? darkTheme : lightTheme;
     }
-    return buildAntdThemeConfig(canvasTheme.rawTokens, mode);
+    return buildAntdThemeConfig(canvasTheme.rawTokens, mode, canvasTheme.accent);
   }, [canvasTheme, mode]);
 
   return (

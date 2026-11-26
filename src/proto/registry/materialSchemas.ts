@@ -160,7 +160,7 @@ export function materialPropSchema(component: ComponentMeta, prop: PropSpec): Va
         ? ['dataIndex', 'title']
         : prop.name === 'rowActions'
         ? ['label']
-        : component.name === 'Descriptions'
+        : component.name === 'Descriptions' || component.name === 'MProgressList' || component.name === 'ProgressBoard'
         ? ['label']
         : ['title'];
     return { type: 'array', items: object(properties, required) };

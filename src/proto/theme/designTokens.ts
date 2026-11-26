@@ -8,6 +8,85 @@ export type DesignDensityToken = 'compact' | 'comfortable' | 'spacious';
 export type DesignSurfaceToken = 'bordered' | 'subtle' | 'elevated';
 export type DesignColorMode = 'auto' | 'light' | 'dark';
 
+export type DesktopAppearance = 'light' | 'dark';
+export type DesktopSurfaceBg = 'mist' | 'pure' | 'warm_paper' | 'sage_field' | 'aurora' | 'oled_carbon';
+export type DesktopAccent = 'blue' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'obsidian' | 'lime_forest';
+export type DesktopMotionMode = 'smooth' | 'snappy' | 'none';
+
+export const DESKTOP_SURFACE_BGS: readonly DesktopSurfaceBg[] = [
+  'mist',
+  'pure',
+  'warm_paper',
+  'sage_field',
+  'aurora',
+  'oled_carbon',
+];
+
+export const DESKTOP_ACCENTS: readonly DesktopAccent[] = [
+  'blue',
+  'indigo',
+  'emerald',
+  'amber',
+  'rose',
+  'obsidian',
+  'lime_forest',
+];
+
+export const DESKTOP_MOTION_MODES: readonly DesktopMotionMode[] = ['smooth', 'snappy', 'none'];
+
+const DESKTOP_ACCENT_HEX: Record<DesktopAccent, { light: string; dark: string }> = {
+  blue: { light: '#2563eb', dark: '#3b82f6' },
+  indigo: { light: '#4f46e5', dark: '#818cf8' },
+  emerald: { light: '#059669', dark: '#10b981' },
+  amber: { light: '#d97706', dark: '#f59e0b' },
+  rose: { light: '#e11d48', dark: '#f43f5e' },
+  obsidian: { light: '#18181b', dark: '#818cf8' },
+  lime_forest: { light: '#166534', dark: '#22c55e' },
+};
+
+export function normalizeDesktopSurfaceBg(raw: unknown): DesktopSurfaceBg | null {
+  return typeof raw === 'string' && (DESKTOP_SURFACE_BGS as readonly string[]).includes(raw)
+    ? (raw as DesktopSurfaceBg)
+    : null;
+}
+
+export function normalizeDesktopAccent(raw: unknown): DesktopAccent | null {
+  return typeof raw === 'string' && (DESKTOP_ACCENTS as readonly string[]).includes(raw)
+    ? (raw as DesktopAccent)
+    : null;
+}
+
+export function normalizeDesktopMotion(raw: unknown): DesktopMotionMode {
+  if (raw === 'snappy') return 'snappy';
+  if (raw === 'none') return 'none';
+  return 'smooth';
+}
+
+export function resolveDesktopAppearance(
+  rawAppearance: unknown,
+  baseCanvasMode: 'light' | 'dark',
+  previewOverride?: DesktopAppearance | null,
+  rawSurfaceBg?: unknown,
+): DesktopAppearance {
+  if (previewOverride === 'light' || previewOverride === 'dark') return previewOverride;
+  if (rawAppearance === 'dark') return 'dark';
+  if (rawAppearance === 'light') return 'light';
+  if (rawSurfaceBg === 'oled_carbon') return 'dark';
+  return baseCanvasMode === 'dark' ? 'dark' : 'light';
+}
+
+export function resolveDesktopAccentColor(
+  accent: DesktopAccent | null | undefined,
+  effectiveMode: 'light' | 'dark',
+  fallbackPrimary?: string,
+): string {
+  if (accent && DESKTOP_ACCENT_HEX[accent]) {
+    return effectiveMode === 'dark' ? DESKTOP_ACCENT_HEX[accent].dark : DESKTOP_ACCENT_HEX[accent].light;
+  }
+  const base = fallbackPrimary || '#2563eb';
+  return effectiveMode === 'dark' && base.toLowerCase() === '#18181b' ? '#818cf8' : base;
+}
+
 export interface ProjectDesignTokens {
   preset: DesignPresetId;
   primaryColor?: string;
@@ -216,15 +295,14 @@ export function effectiveCanvasColorMode(
 export function buildAntdThemeConfig(
   tokens: ProjectDesignTokens | null | undefined,
   effectiveMode: 'light' | 'dark',
+  pageAccent?: DesktopAccent | null,
 ): ThemeConfig {
   const r = resolveDesignTokens(tokens);
   const algorithms = [effectiveMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm];
   if (r.density === 'compact') {
     algorithms.push(antdTheme.compactAlgorithm);
   }
-  // In dark mode, pure near-black primary (#18181b) becomes invisible on dark surfaces; lift to crisp indigo/slate
-  const effectivePrimary =
-    effectiveMode === 'dark' && r.primaryColor.toLowerCase() === '#18181b' ? '#818cf8' : r.primaryColor;
+  const effectivePrimary = resolveDesktopAccentColor(pageAccent, effectiveMode, r.primaryColor);
 
   return {
     algorithm: algorithms.length === 1 ? algorithms[0] : algorithms,
@@ -259,10 +337,11 @@ export function buildAntdThemeConfig(
 export function buildScopedCssVariables(
   tokens: ProjectDesignTokens | null | undefined,
   effectiveMode: 'light' | 'dark',
+  pageAccent?: DesktopAccent | null,
 ): Record<string, string> {
   const r = resolveDesignTokens(tokens);
   const dark = effectiveMode === 'dark';
-  const effectivePrimary = dark && r.primaryColor.toLowerCase() === '#18181b' ? '#818cf8' : r.primaryColor;
+  const effectivePrimary = resolveDesktopAccentColor(pageAccent, effectiveMode, r.primaryColor);
   return {
     '--pf-color-scheme': effectiveMode,
     '--pf-primary': effectivePrimary,

@@ -114,11 +114,138 @@ export function sourceForeignKeyErrors(props: Record<string, unknown>, tables: D
   return edges.length === 1 ? [] : ['sourceForeignKey 必须是绑定表中已声明并可唯一解析的来源外键字段名（不是列 ID）'];
 }
 
+export function resolveForeignKeySourceTableId(
+  tableId: string | undefined,
+  sourceForeignKey: unknown,
+  tables: DBTableSchema[],
+): string | undefined {
+  if (!tableId || typeof sourceForeignKey !== 'string' || !sourceForeignKey.trim()) return undefined;
+  const edges = diagramRelations(tables).relations.filter(
+    (edge) => edge.toTableId === tableId && edge.toColumnName === sourceForeignKey,
+  );
+  return edges.length === 1 ? edges[0].fromTableId : undefined;
+}
+
+export const COLLECTION_BINDING_TYPES = new Set([
+  'MTaskList',
+  'MFeedList',
+  'MCardGrid',
+  'MRepeater',
+  'MKanban',
+  'MCalendar',
+  'MProgressList',
+  'MActivityList',
+  'CardGrid',
+  'Repeater',
+  'Kanban',
+  'Calendar',
+  'ProgressBoard',
+  'ActivityFeed',
+]);
+
+const COLLECTION_COLUMN_PROPS = [
+  'titleField',
+  'subtitleField',
+  'imageField',
+  'priceField',
+  'tagField',
+  'statusField',
+  'metricField',
+  'dateField',
+  'endDateField',
+  'labelField',
+  'valueField',
+  'targetField',
+  'amountField',
+  'typeField',
+  'iconField',
+] as const;
+
+const STATIC_ACTIVITY_GUARD_FIELDS = new Set(['title', 'subtitle', 'amount', 'icon', 'tone']);
+
+export function rowActionGuardErrors(
+  props: Record<string, unknown>,
+  bound: DBTableSchema | undefined,
+  nodeType?: string,
+): string[] {
+  if (!Array.isArray(props.rowActions)) return [];
+  const errors: string[] = [];
+  for (const act of props.rowActions) {
+    if (!act || typeof act !== 'object' || Array.isArray(act)) continue;
+    for (const guardKey of ['disabledWhenField', 'hiddenWhenField'] as const) {
+      const colName = (act as Record<string, unknown>)[guardKey];
+      if (typeof colName !== 'string' || !colName.trim()) continue;
+      const trimmed = colName.trim();
+      if (bound) {
+        if (!bound.columns.some((col) => col.name === trimmed)) {
+          errors.push(`未知字段 ${bound.id}.${trimmed}`);
+        }
+      } else if ((nodeType === 'MActivityList' || nodeType === 'ActivityFeed') && !STATIC_ACTIVITY_GUARD_FIELDS.has(trimmed)) {
+        errors.push(`静态 ${nodeType} 状态守卫字段 ${trimmed} 未绑定物理表或有效静态属性`);
+      }
+    }
+  }
+  return errors;
+}
+
+export function collectionBindingErrors(
+  nodeType: string,
+  props: Record<string, unknown>,
+  tables: DBTableSchema[],
+): string[] {
+  const errors: string[] = [...sourceForeignKeyErrors(props, tables)];
+  const hasTableProp = typeof props.table === 'string' && props.table.length > 0;
+  const bound = hasTableProp ? tables.find((t) => t.id === props.table) : undefined;
+  if (hasTableProp && !bound) {
+    errors.push(`未知表 ${String(props.table)}`);
+    return errors;
+  }
+
+  if (bound) {
+    if (nodeType === 'MProgressList' || nodeType === 'ProgressBoard') {
+      const vf = typeof props.valueField === 'string' ? props.valueField.trim() : '';
+      if (!vf) {
+        errors.push(`${nodeType} 绑定数据表时必须明确指定数值进度列 valueField`);
+      }
+    }
+    if (nodeType === 'MActivityList' || nodeType === 'ActivityFeed') {
+      const af = typeof props.amountField === 'string' ? props.amountField.trim() : '';
+      if (!af) {
+        errors.push(`${nodeType} 绑定数据表时必须明确指定变动数值列 amountField`);
+      }
+    }
+    for (const key of COLLECTION_COLUMN_PROPS) {
+      const val = props[key];
+      if (typeof val === 'string' && val && !bound.columns.some((col) => col.name === val)) {
+        errors.push(`未知字段 ${bound.id}.${val}`);
+      }
+    }
+    if (nodeType === 'MTaskList' && Array.isArray(props.fields)) {
+      for (const f of props.fields) {
+        if (
+          f &&
+          typeof f === 'object' &&
+          !Array.isArray(f) &&
+          'dataIndex' in f &&
+          typeof f.dataIndex === 'string' &&
+          !bound.columns.some((col) => col.name === f.dataIndex)
+        ) {
+          errors.push(`未知字段 ${bound.id}.${f.dataIndex}`);
+        }
+      }
+    }
+  }
+
+  errors.push(...rowActionGuardErrors(props, bound, nodeType));
+  return errors;
+}
+
 export function tableBindingErrors(props: Record<string, unknown>, tables: DBTableSchema[], savedRows?: unknown): string[] {
   const bound = tables.find(t => t.id === props.table);
   if (props.table && !bound) return [`未知表 ${String(props.table)}`];
   const errors = tableConfigErrors(props, bound);
   errors.push(...sourceForeignKeyErrors(props, tables));
+  errors.push(...rowActionGuardErrors(props, bound, 'Table'));
   const regions = (props.cellMerges ?? []) as CellMerge[];
   if (errors.length || (props.rowMode !== 'tree' && !regions.length) || savedRows === undefined) return errors;
   const rows = bound ? (object(savedRows) && Object.hasOwn(savedRows, bound.id) ? savedRows[bound.id] : undefined) : SAMPLE_ROWS;

@@ -1,5 +1,6 @@
-import { useContext, useEffect, useRef } from 'react';
-import { useProtoStore } from '../../store/useProtoStore';
+import { useContext, useEffect, useMemo, useRef } from 'react';
+import { useProtoStore, type DBTableSchema } from '../../store/useProtoStore';
+import { resolveForeignKeySourceTableId } from '../table/model';
 import { usePageStore } from '../store/usePageStore';
 import { PreviewDataContext } from './PreviewData';
 import { useOptionalRuntime, type Runtime, type Scope } from './runtime';
@@ -8,7 +9,7 @@ import type { Row } from './mock';
 /** Overlay row scope takes precedence over page activeRow and page navigation.
  * A mismatched explicit scope or navigation from an unrelated table must never
  * leak into a table-constrained consumer (`preferredTableId`). */
-export function useSourceRow(scope: Scope, pageId: string, enabled: boolean, preferredTableId?: string) {
+export function useSourceRow(scope: Scope, pageId: string, enabled: boolean, preferredTableId?: string, collectionTableId?: string) {
   const preview = useContext(PreviewDataContext);
   const rt = useOptionalRuntime();
   // Runtime overlay params have always reserved row/tableId. Some embedding
@@ -16,28 +17,31 @@ export function useSourceRow(scope: Scope, pageId: string, enabled: boolean, pre
   const direct = scope.row !== undefined;
   const paramRow = scope.params?.row;
   const hasParams = paramRow !== undefined;
+  const allowPageRow = enabled && !scope.isolatePageRow && !direct && !hasParams;
   const activeEntry = (() => {
-    if (!enabled || direct || hasParams || !rt?.activeRows) return null;
+    if (!allowPageRow || !rt?.activeRows) return null;
     if (preferredTableId) {
-      const id = rt.activeRows[preferredTableId];
-      return id ? { tableId: preferredTableId, rowId: id } : null;
+      const selections = preferredTableId === collectionTableId ? rt.activeParentRows : rt.activeRows;
+      return Object.hasOwn(selections, preferredTableId)
+        ? { tableId: preferredTableId, rowId: selections[preferredTableId] }
+        : null;
     }
-    const entries = Object.entries(rt.activeRows);
-    if (!entries.length) return null;
-    const [tableId, rowId] = entries[entries.length - 1];
-    return rowId ? { tableId, rowId } : null;
+    const last = Object.entries(rt.activeRows).reverse().find(([, rowId]) => rowId !== undefined);
+    return last ? { tableId: last[0], rowId: last[1] } : null;
   })();
   const navigation = useProtoStore((state) => {
-    if (!enabled || direct || hasParams || activeEntry || state.activePageId !== pageId) return null;
+    if (!allowPageRow || activeEntry || state.activePageId !== pageId) return null;
     const nav = state.navigationSource;
     if (!nav) return null;
     if (preferredTableId && nav.tableId !== preferredTableId) return null;
+    // An explicitly empty child selection cannot fall back to editing the navigation row.
+    if (nav.tableId !== collectionTableId && rt?.activeRows && Object.hasOwn(rt.activeRows, nav.tableId) && rt.activeRows[nav.tableId] === undefined) return null;
     return nav;
   });
   const target = activeEntry ?? navigation;
-  const savedRows = usePageStore((state) => (target ? state.tableRows[target.tableId] : undefined));
+  const savedRows = usePageStore((state) => (target?.rowId !== undefined ? state.tableRows[target.tableId] : undefined));
   // Staged preview data is authoritative, including a missing/empty source table.
-  const resolvedRows = target
+  const resolvedRows = target?.rowId !== undefined
     ? preview
       ? preview.rows[target.tableId]
       : savedRows ?? usePageStore.getState().getRows(target.tableId)
@@ -61,6 +65,16 @@ export function useSourceRow(scope: Scope, pageId: string, enabled: boolean, pre
   return { row: resolvedRows?.find((row) => row.id === target?.rowId), tableId: target?.tableId };
 }
 
+/** Resolve the declared parent table once for both row lookup and child selection. */
+export function useCollectionSourceRow(scope: Scope, pageId: string, tableId: string | undefined, foreignKey: unknown, tables: DBTableSchema[]) {
+  const fkSourceTableId = useMemo(
+    () => resolveForeignKeySourceTableId(tableId, foreignKey, tables),
+    [tableId, foreignKey, tables],
+  );
+  const source = useSourceRow(scope, pageId, foreignKey !== undefined, fkSourceTableId, tableId);
+  return { ...source, fkSourceTableId };
+}
+
 /**
  * Resolve the unprojected canonical stored row for a bound table so UI Stack `edge`
  * display projections can never prefill forms or write back into `tableRows`.
@@ -77,7 +91,7 @@ export function resolveCanonicalRow(
 
 /**
  * Safely auto-selects the first visible row of a bound list when no valid row in the
- * underlying table is active yet (or when THIS list's own runtime filter just changed),
+ * underlying table is active yet, or this list's parent or runtime filter changed,
  * preventing ping-pong thrashing when multiple filtered lists share the same `tableId`.
  */
 export function useAutoSelectFirstRow(params: {
@@ -86,8 +100,10 @@ export function useAutoSelectFirstRow(params: {
   visibleRows: readonly { id: string }[];
   autoSelectFirst: boolean;
   runtimeQuery?: unknown;
+  sourceTableId?: string;
+  sourceRowId?: string;
 }): void {
-  const { rt, tableId, visibleRows, autoSelectFirst, runtimeQuery } = params;
+  const { rt, tableId, visibleRows, autoSelectFirst, runtimeQuery, sourceTableId, sourceRowId } = params;
   const preview = useContext(PreviewDataContext);
   const savedTableRows = usePageStore((s) => (tableId ? s.tableRows[tableId] : undefined));
   const getRows = usePageStore((s) => s.getRows);
@@ -99,6 +115,7 @@ export function useAutoSelectFirstRow(params: {
 
   const serializedQuery = JSON.stringify(runtimeQuery ?? null);
   const prevQueryRef = useRef<string>(serializedQuery);
+  const previousSource = useRef<{ tableId?: string; rowId?: string }>({});
 
   const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
   const firstVisibleId = visibleRows[0]?.id ?? null;
@@ -106,17 +123,30 @@ export function useAutoSelectFirstRow(params: {
   useEffect(() => {
     const queryChanged = prevQueryRef.current !== serializedQuery;
     prevQueryRef.current = serializedQuery;
-    if (rt.isDesign || !autoSelectFirst || !tableId || !firstVisibleId) return;
+    if (rt.isDesign || !autoSelectFirst || !tableId) return;
+    const previous = previousSource.current;
+    const sourceChanged = sourceTableId !== undefined && (
+      previous.rowId !== sourceRowId || (sourceRowId !== undefined && previous.tableId !== sourceTableId)
+    );
+    previousSource.current = { tableId: sourceTableId, rowId: sourceRowId };
     const liveActiveId = rt.getActiveRowId ? rt.getActiveRowId(tableId) : activeRowId;
+    // A sibling list may already have selected a row for this parent in this commit.
+    if (sourceChanged && liveActiveId === activeRowId && !visibleRows.some(row => row.id === liveActiveId)) {
+      rt.setActiveRow(tableId, firstVisibleId, sourceTableId);
+      return;
+    }
+    if (!firstVisibleId) return;
     const existsInCanonicalTable = Boolean(
       liveActiveId && canonicalRows.some((row) => row.id === liveActiveId),
     );
     if (!liveActiveId || !existsInCanonicalTable) {
-      rt.setActiveRow?.(tableId, firstVisibleId);
+      // A self-referenced master can still have a parent selected when it has no children.
+      if (!liveActiveId && !sourceTableId && canonicalRows.some(row => row.id === rt.activeParentRows[tableId])) return;
+      rt.setActiveRow(tableId, firstVisibleId, sourceTableId);
       return;
     }
     if (queryChanged && !visibleRows.some((row) => row.id === liveActiveId)) {
-      rt.setActiveRow?.(tableId, firstVisibleId);
+      rt.setActiveRow(tableId, firstVisibleId, sourceTableId);
     }
-  }, [rt, rt.isDesign, autoSelectFirst, tableId, activeRowId, firstVisibleId, canonicalRows, visibleRows, serializedQuery]);
+  }, [rt, autoSelectFirst, tableId, activeRowId, firstVisibleId, canonicalRows, visibleRows, serializedQuery, sourceTableId, sourceRowId]);
 }

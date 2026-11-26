@@ -2,6 +2,26 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.0.11] - 2026-11-26
+
+### Added
+
+- **PC 与移动端高阶视觉体系与合成器动效引擎（双端质感跃升）**：
+  - **页面级视觉与动效令牌**：PC `<Page>` 与移动 `<MobilePage>` 完整支持 `surfaceBg`（`mist` / `pure` / `warm_paper` / `sage_field` / `aurora` / `oled_carbon` / 移动 `ocean_glow`）、`accent`（含 `obsidian` 深曜石与 `lime_forest` 森林青柠）、`appearance`（`auto` / `light` / `dark`）与 `motion`（`smooth` / `snappy` / `none`），内置合成器友好的 `opacity / translate / scale` 错峰入场、`@starting-style` 声明式弹层进退场、跨页 View Transitions 以及 `prefers-reduced-motion` 与截图捕获静默降级。
+  - **高上限对标与流水物料**：新增移动端 `MProgressList`、`MActivityList`、`MFloatingBar` 及 `MHeroHeader(mode="wallet" | "metric_hero")`、`MAiInsightCard(tone="dark_brief")`，并在 PC 端对称落地 `ProgressBoard(variant="gauge" | "capsule")`、`ActivityFeed`、`Statistic(tone="inverted", splitDecimal, sparkline)`、`Card(variant="bento" | "glow" | "inverted")`（自动消隐内嵌表格/查询栏/图表的双重边框）与分段胶囊 `Tabs(type="segmented")`。
+- **全工程同源视觉闭环机制（One Product, One Visual System）**：
+  - **跨端主视觉基线归纳（`visualBaseline`）**：新增 `analyzeVisualConsistency` 分析器，在 `protoflow_get_project_overview`、内置多页工作流简报 `projectExecutionBrief` 与 `projectContext` 中自动提取已保存页面的主流 `appearance`、`surfaceBg`、`accent` 与 `motion`（含跨端同系映射），引导后续生成的新页面自动继承同源家族设计语言。
+  - **闭环审计跨页漂移护栏（`visualConsistencyWarnings`）**：`protoflow_audit_project` 自动检测同一工程内的多套品牌主色分裂（`accent-drift`）、底布跳变（`surface-drift`）、无故明暗切屏（`appearance-drift`）及冷调页面内混用森林青柠 `dark_brief` 卡片的色温冲突（`dark-brief-clash`），并同步升级内置 AI 生成规范、MCP Playbook 与 `alex-protoflow-designer` 插件技能的 `85 / 10 / 5` 黄金视觉层级规范。
+
+### Fixed & Hardened
+
+- **数据语义真实性、作用域隔离与长页面视口弹层定位加固**：
+  - **严格区分真实零值与缺失绑定**：`ActivityFeed` / `MActivityList` 与 `ProgressBoard` / `MProgressList` 绑表时强制校验显式数值列，空绑定或缺失字段在发布态均诚实呈现缺失占位而非回退示例金额或 `0%`；只读草稿预览严格传入预览行快照，杜绝触发全局表自动造数。
+  - **主从外键与行上下文防串扰**：`useSourceRow` 支持按外键声明反查来源主表 ID，确保关联子表开启 `autoSelectFirst` 时不覆盖父工单上下文；静态 `items` 列表行动作显式隔断父弹层行作用域；底栏确认后导航先完成 `confirm` 交互再进入视图过渡回调。
+  - **发布浏览端视口锚定与深浅色作用域**：`PublishedViewer` 将 `Modal` / `Drawer` Portal 宿主锚定至非滚动可视区域容器，彻底解决超长页面打开居中弹框落入视口外的问题；修复外层浅色工作台嵌套深色画布时最近层 `[data-pf-mode]` 选择器优先级。
+
+---
+
 ## [v0.0.10] - 2026-11-25
 
 ### Added

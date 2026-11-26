@@ -2,6 +2,7 @@ import { readPageHeader } from '../dsl/header';
 import { axureSourcePagePattern, axureCopyId, verifiedAxureSourceId } from '../axure/task';
 import { figmaSourcePagePattern, figmaCopyId, verifiedFigmaSourceId } from '../figma/task';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { ActionChain, PropValue, ProtoDoc, ProtoNode } from '../types';
 import { isActionChain, isNode } from '../types';
 import { walk } from '../dsl/tree';
@@ -28,13 +29,20 @@ import {
 
 export interface Scope {
   row?: Row;
+  /** Static list values can be interpolated but never identify a database record. */
+  staticItem?: Row;
+  /** A static entry point must not borrow a page selection or navigation source. */
+  isolatePageRow?: boolean;
   /** Physical table the current row belongs to */
   tableId?: string;
+  /** Parent table of the collection that supplied this row, when bound by a foreign key. */
+  collectionSourceTableId?: string;
   /** Enforced target table when nested inside an explicit `activeTable` detail container */
   expectedTableId?: string;
   params?: Record<string, unknown>;
   /** Index in the overlay stack when rendering inside a live overlay */
   overlayIndex?: number;
+  overlayKey?: string;
 }
 
 /**
@@ -66,11 +74,13 @@ export function resolveFormInstanceKey(formPfId: string, formTable?: unknown, sc
  * view's own `tableId` when bound so an ancestor detail container's `activeTable`
  * never blocks legitimate row actions on child detail tables.
  */
-export function childRowScope(scope: Scope, row: Row, tableId?: string): Scope {
+export function childRowScope(scope: Scope, row: Row, tableId?: string, collectionSourceTableId?: string): Scope {
   return {
     ...scope,
+    staticItem: undefined,
     row,
     tableId,
+    collectionSourceTableId,
     expectedTableId: tableId ?? scope.expectedTableId,
   };
 }
@@ -90,8 +100,23 @@ export interface OverlayEntry {
   id: string;
   params: Record<string, unknown>;
   expectedTableId?: string;
+  collectionSourceTableId?: string;
+  isolatePageRow?: boolean;
   submittedForms?: Record<string, Row>;
   picker?: PickerTargetSpec;
+}
+
+export function scopeForOverlay(entry: OverlayEntry, index: number): Scope {
+  return {
+    row: entry.params.row as Row | undefined,
+    tableId: entry.params.tableId as string | undefined,
+    expectedTableId: entry.expectedTableId,
+    collectionSourceTableId: entry.collectionSourceTableId,
+    isolatePageRow: entry.isolatePageRow,
+    params: entry.params,
+    overlayIndex: index,
+    overlayKey: entry.key,
+  };
 }
 
 export interface ToastItem {
@@ -117,7 +142,10 @@ export interface Runtime {
   filters: Record<string, Record<string, unknown>>;
   pageNo: Record<string, number>;
   selections: Record<string, string[]>;
-  activeRows: Record<string, string>;
+  /** A present, empty entry means a related list explicitly has no selectable child. */
+  activeRows: Partial<Record<string, string>>;
+  /** A selection inside a self-referencing collection must not replace its own parent. */
+  activeParentRows: Partial<Record<string, string>>;
   formValues: Record<string, Record<string, unknown>>;
   formErrors: Record<string, Record<string, string>>;
   pickerValues: Record<string, string>;
@@ -128,7 +156,7 @@ export interface Runtime {
   setFilter: (pfId: string, values: Record<string, unknown>) => void;
   setPageNo: (pfId: string, n: number) => void;
   setSelection: (pfId: string, ids: string[]) => void;
-  setActiveRow: (tableId: string, rowId: string | null) => void;
+  setActiveRow: (tableId: string, rowId: string | null, collectionSourceTableId?: string) => void;
   getActiveRowId?: (tableId: string) => string | undefined;
   setFormValue: (formId: string, name: string, value: unknown) => void;
   setFormValues: (formId: string, values: Record<string, unknown>) => void;
@@ -168,7 +196,7 @@ function lookupPlaceholderPath(
     return cur;
   }
   let cur: unknown = {
-    row: scope.row ?? scope.params?.row ?? {},
+    row: scope.staticItem ?? scope.row ?? scope.params?.row ?? {},
     params: scope.params ?? {},
     vars,
     form: forms ?? {},
@@ -311,13 +339,16 @@ function formIssueMessage(issue: FormIssue, locale: Locale): string {
 export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDesign: boolean, canNavigate?: (pageId: string) => boolean, publishedHeader?: (id:string) => readonly string[] | undefined): Runtime {
   const preview = useContext(PreviewDataContext);
   const [overlays, setOverlays] = useState<OverlayEntry[]>([]);
+  const overlaySequence = useRef(0);
   const [vars, setVars] = useState<Record<string, unknown>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [tabs, setTabs] = useState<Record<string, number>>({});
   const [filters, setFilters] = useState<Record<string, Record<string, unknown>>>({});
   const [pageNo, setPageNoState] = useState<Record<string, number>>({});
   const [selections, setSelections] = useState<Record<string, string[]>>({});
-  const [activeRows, setActiveRowsState] = useState<Record<string, string>>({});
+  const [{ activeRows, activeParentRows }, setActiveRowsState] = useState<Pick<Runtime, 'activeRows' | 'activeParentRows'>>({
+    activeRows: {}, activeParentRows: {},
+  });
   const [formValues, setFormValuesState] = useState<Record<string, Record<string, unknown>>>({});
   const locale = useLocale();
   const [formIssues, setFormIssues] = useState<Record<string, Record<string, FormIssue>>>({});
@@ -337,8 +368,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   docRef.current = doc;
   const isDesignRef = useRef(isDesign);
   isDesignRef.current = isDesign;
-  const stateRef = useRef({ overlays, formValues, selections, activeRows });
-  stateRef.current = { overlays, formValues, selections, activeRows };
+  const stateRef = useRef({ overlays, formValues, selections, activeRows, activeParentRows });
+  stateRef.current = { overlays, formValues, selections, activeRows, activeParentRows };
   const previewRef = useRef(preview);
   previewRef.current = preview;
 
@@ -386,15 +417,25 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     setFormValuesState(next);
   };
 
-  const setActiveRow = useCallback((tableId: string, rowId: string | null) => {
+  const setActiveRow = useCallback((tableId: string, rowId: string | null, collectionSourceTableId?: string) => {
     if (!tableId) return;
-    const prevId = stateRef.current.activeRows[tableId] ?? null;
-    if (prevId === rowId) return;
-    const nextActive = { ...stateRef.current.activeRows };
-    if (rowId === null || rowId === '') delete nextActive[tableId];
-    else nextActive[tableId] = rowId;
-    stateRef.current = { ...stateRef.current, activeRows: nextActive };
-    setActiveRowsState(nextActive);
+    const update = (rows: Runtime['activeRows'], keepEmpty = false) => {
+      // Legacy callers also use the empty string to clear a selection.
+      const selected = rowId === '' || rowId === null ? undefined : rowId;
+      if (rows[tableId] === selected && Object.hasOwn(rows, tableId) === (selected !== undefined || keepEmpty)) return rows;
+      const next = { ...rows };
+      if (selected === undefined && !keepEmpty) delete next[tableId];
+      else next[tableId] = selected;
+      return next;
+    };
+    const previous = stateRef.current;
+    const nextActive = update(previous.activeRows, collectionSourceTableId !== undefined);
+    const nextParents = tableId === collectionSourceTableId ? previous.activeParentRows : update(previous.activeParentRows);
+    if (nextActive === previous.activeRows && nextParents === previous.activeParentRows) return;
+    const selection = { activeRows: nextActive, activeParentRows: nextParents };
+    stateRef.current = { ...previous, ...selection };
+    setActiveRowsState(selection);
+    if (nextActive === previous.activeRows) return;
 
     // Clear inline (non-overlay, non-repeater) forms bound to this table so master-detail edit panels re-prefill cleanly
     if (docRef.current) {
@@ -463,14 +504,17 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   };
 
   const captureSubmittedFormsForScope = (s: Scope): Record<string, Row> => {
-    const parentOverlay = s.overlayIndex !== undefined ? stateRef.current.overlays[s.overlayIndex] : undefined;
-    const out: Record<string, Row> = {};
     const doc = docRef.current;
-    if (!doc) return out;
-    walk(doc.root, form => {
+    if (!doc || s.staticItem) return {};
+    const parent = s.overlayIndex !== undefined ? stateRef.current.overlays[s.overlayIndex] : undefined;
+    // Inside an independent flow, only forward forms saved in this overlay or inherited along this flow.
+    const root = s.isolatePageRow ? parent && findOverlay(doc, parent.id) : doc.root;
+    if (!root) return {};
+    const out: Record<string, Row> = s.isolatePageRow ? { ...parent?.submittedForms } : {};
+    walk(root, form => {
       if (form.type !== 'Form' && form.type !== 'MForm') return;
       if (typeof form.props.table !== 'string') return;
-      const saved = submittedFormForScope(form, s, parentOverlay?.submittedForms?.[form.pfId]);
+      const saved = submittedFormForScope(form, s, parent?.submittedForms?.[form.pfId]);
       if (saved) out[form.pfId] = saved;
     });
     return out;
@@ -480,7 +524,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     id: string,
     params: Record<string, unknown>,
     picker?: OverlayEntry['picker'],
-    meta?: { expectedTableId?: string; submittedForms?: Record<string, Row> },
+    meta?: Pick<OverlayEntry, 'expectedTableId' | 'collectionSourceTableId' | 'isolatePageRow' | 'submittedForms'>,
   ): boolean => {
     const node = findOverlay(docRef.current, id);
     if (!node) {
@@ -488,10 +532,13 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       return false;
     }
     clearFormsIn(node);
+    const key = `${id}-${++overlaySequence.current}`;
     setOverlays((o) => [
       ...o,
       {
-        key: `${id}-${Date.now()}-${o.length}`,
+        key,
+        isolatePageRow: meta?.isolatePageRow,
+        collectionSourceTableId: meta?.collectionSourceTableId,
         id,
         params,
         ...(meta?.expectedTableId ? { expectedTableId: meta.expectedTableId } : {}),
@@ -570,6 +617,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             if (
               !pushOverlay(str(0), params, undefined, {
                 expectedTableId: scope.expectedTableId,
+                collectionSourceTableId: scope.collectionSourceTableId,
+                isolatePageRow: scope.isolatePageRow,
                 submittedForms,
               })
             ) {
@@ -578,7 +627,11 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
             break;
           }
           case 'closeOverlay':
-            setOverlays((o) => o.slice(0, -1));
+            setOverlays((stack) =>
+              scope.overlayKey !== undefined && stack.at(-1)?.key !== scope.overlayKey
+                ? stack
+                : stack.slice(0, -1),
+            );
             break;
           case 'toast':
             toast(str(0), (str(1) as ToastItem['type']) || 'success');
@@ -811,7 +864,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               toast(tr('当前未选中目标记录，无法执行该操作', 'No active target record selected for this action'), 'error');
               return;
             }
-            if (row && table) setActiveRow(table, row.id);
+            if (row && table) setActiveRow(table, row.id, scope.collectionSourceTableId);
             break;
           }
           case 'deleteRow': {
@@ -825,6 +878,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               const undoMode = str(0) === 'undo';
               pages.getRows(table);
               const prevActiveId = stateRef.current.activeRows[table] ?? null;
+              const preserveParent = prevActiveId !== (stateRef.current.activeParentRows[table] ?? null);
               let undoPatch: ReturnType<typeof pages.deleteRow> = null;
               try {
                 undoPatch = pages.deleteRow(table, row.id);
@@ -833,7 +887,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
                 return;
               }
               if (prevActiveId === row.id) {
-                setActiveRow(table, null);
+                setActiveRow(table, null, preserveParent ? table : undefined);
               }
               if (undoMode && undoPatch) {
                 const capturedPatch = undoPatch;
@@ -846,7 +900,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
                       try {
                         usePageStore.getState().undoDeleteRow(capturedPatch);
                         if (prevActiveId && !stateRef.current.activeRows[table]) {
-                          setActiveRow(table, prevActiveId);
+                          setActiveRow(table, prevActiveId, preserveParent ? table : undefined);
                         }
                       } catch (err) {
                         toast(err instanceof Error ? err.message : String(err), 'error');
@@ -1007,14 +1061,61 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               toast(tr(`跳转目标不可用：${String(a[0])}`, `Navigation target unavailable: ${String(a[0])}`), 'error');
               return;
             }
+            let navSource: { tableId: string; rowId: string } | undefined;
             if (a[1] !== undefined) {
               const row = rowOf(), tableId = tableOf();
               if (a[1] !== 'row' || !row || !tableId || !pages.getRows(tableId).some(r => r.id === row.id)) {
                 toast(tr('缺少可追溯的来源行，无法带入目标页面', 'Missing traceable source row to pass into target page'), 'error'); return;
               }
-              st.setActivePage(target,{tableId,rowId:row.id});
-            } else st.setActivePage(target);
-            st.setViewMode('single_page');
+              navSource = { tableId, rowId: row.id };
+            }
+            const commitNavigation = () => {
+              if (navSource) st.setActivePage(target, navSource);
+              else st.setActivePage(target);
+              st.setViewMode('single_page');
+            };
+            const isMobileRoot = docRef.current?.root.type === 'MobilePage';
+            const rootMotion = isMobileRoot ? docRef.current?.root.props.motion : 'none';
+            const docWithVT =
+              typeof document !== 'undefined'
+                ? (document as Document & {
+                    startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+                  })
+                : null;
+            const reducedMotion =
+              typeof window !== 'undefined' &&
+              typeof window.matchMedia === 'function' &&
+              window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const inCapture =
+              typeof document !== 'undefined' &&
+              Boolean(document.querySelector('[data-capture-mode="1"]'));
+            if (
+              isMobileRoot &&
+              rootMotion !== 'none' &&
+              !isDesignRef.current &&
+              !reducedMotion &&
+              !inCapture &&
+              docWithVT &&
+              typeof docWithVT.startViewTransition === 'function'
+            ) {
+              const vt = docWithVT.startViewTransition(() => {
+                flushSync(commitNavigation);
+              });
+              void vt.finished.finally(() => {
+                if (typeof document === 'undefined') return;
+                const heading = document.querySelector<HTMLElement>(
+                  '[data-mobile-appearance].pf-mobile-scope h1, [data-mobile-appearance].pf-mobile-scope h2, [data-mobile-appearance].pf-mobile-scope header button',
+                );
+                if (heading) {
+                  if (!heading.hasAttribute('tabindex') && heading.tagName !== 'BUTTON') {
+                    heading.setAttribute('tabindex', '-1');
+                  }
+                  heading.focus({ preventScroll: true });
+                }
+              });
+            } else {
+              commitNavigation();
+            }
             return;
           }
           case 'setVar':
@@ -1045,7 +1146,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
     setFilters({});
     setPageNoState({});
     setSelections({});
-    setActiveRowsState({});
+    setActiveRowsState({ activeRows: {}, activeParentRows: {} });
     setFormValuesState({});
     setFormIssues({});
     setPickerValues({});
@@ -1063,6 +1164,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       pageNo,
       selections,
       activeRows,
+      activeParentRows,
       formValues,
       formErrors,
       pickerValues,
@@ -1096,6 +1198,8 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
           picker,
           {
             expectedTableId: scope.expectedTableId,
+            collectionSourceTableId: scope.collectionSourceTableId,
+            isolatePageRow: scope.isolatePageRow,
             submittedForms: captureSubmittedFormsForScope(scope),
           },
         );
@@ -1105,7 +1209,7 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
       reset,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isDesign, pageId, overlays, vars, hidden, tabs, filters, pageNo, selections, activeRows, setActiveRow, formValues, formErrors, pickerValues, toasts, confirmState, run, reset]
+    [isDesign, pageId, overlays, vars, hidden, tabs, filters, pageNo, selections, activeRows, activeParentRows, setActiveRow, formValues, formErrors, pickerValues, toasts, confirmState, run, reset]
   );
 }
 

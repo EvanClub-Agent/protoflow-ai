@@ -933,9 +933,9 @@ test('[P2 #2, #3 & #4] dark workbench CSS isolation, mirrored Repeater DOM ids, 
     const css = fsSync.readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8');
     assert.ok(
       css.includes(':is([data-pf-mode="dark"], :root[data-theme="dark"]) {') &&
-        css.includes('.pf-paper:not([data-pf-mode="light"], [data-pf-mode="light"] *)') &&
-        css.includes(':is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *)'),
-      'src/index.css must isolate .pf-paper dark overrides from explicit [data-pf-mode="light"] canvas',
+        css.includes('.pf-paper:not([data-pf-mode="light"], [data-pf-mode="light"] *') &&
+        css.includes(':is(.pf-paper, .pf-paper *):not([data-pf-mode="light"], [data-pf-mode="light"] *'),
+      'src/index.css must isolate .pf-paper dark overrides from explicit [data-pf-mode="light"] canvas while respecting nested [data-pf-mode="dark"] scopes',
     );
 
     // [P2 #3] Design-mode Repeater emits data-pf-id ONLY on row 0; mirrored rows emit data-pf-mirror-of

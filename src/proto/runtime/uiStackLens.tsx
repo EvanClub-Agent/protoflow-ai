@@ -97,6 +97,8 @@ export const DATA_LOADING_SKELETON_TYPES = new Set([
   'Repeater',
   'Kanban',
   'Calendar',
+  'ProgressBoard',
+  'ActivityFeed',
   'Descriptions',
   'Statistic',
   'MFeedList',
@@ -105,6 +107,8 @@ export const DATA_LOADING_SKELETON_TYPES = new Set([
   'MRepeater',
   'MKanban',
   'MCalendar',
+  'MProgressList',
+  'MActivityList',
   'MListGroup',
   'MStatCard',
 ]);
@@ -115,12 +119,16 @@ export const DATA_ERROR_VIEW_TYPES = new Set([
   'Repeater',
   'Kanban',
   'Calendar',
+  'ProgressBoard',
+  'ActivityFeed',
   'MFeedList',
   'MTaskList',
   'MCardGrid',
   'MRepeater',
   'MKanban',
   'MCalendar',
+  'MProgressList',
+  'MActivityList',
 ]);
 
 export const UIStackLoadingPlaceholder: React.FC<{ mobile?: boolean; compact?: boolean }> = ({ mobile, compact }) => {

@@ -34,20 +34,21 @@ Always build the data backbone **before** writing pages:
 
 ## Step 4: Contract-Verified Pages, Sticky Notes & Flows
 
-1. Call `protoflow_get_implementation_guide({ scenarioIds: [...] })` and `protoflow_get_contracts({ componentNames: [...] })` for the components needed.
-2. **Generate pages in dependency order**:
+1. **Establish or inherit one project-wide visual identity**: Before writing the first page, lock a single `(appearance, surfaceBg, accent, motion)` tuple for the entire project (if modifying an existing project, inherit `visualBaseline.dominant` from `protoflow_get_project_overview`). Never switch brand `accent`, base `surfaceBg`, or light/dark `appearance` from page to page unless the user explicitly asked for a separate night/wallboard terminal.
+2. Call `protoflow_get_implementation_guide({ scenarioIds: [...] })` and `protoflow_get_contracts({ componentNames: [...] })` for the components needed.
+3. **Generate pages in dependency order**:
    - First: master data & upstream source pages (e.g. Customers, Suppliers, Catalog).
    - Second: core transactional pages (e.g. Orders, Approvals, Inspections) linking upstream tables/pages.
-   - Third: overview dashboards/charts and mobile companion pages sharing the same physical `dbTables.id`.
-3. For each page:
+   - Third: overview dashboards/charts and mobile companion pages sharing the same physical `dbTables.id` and the exact same family visual identity.
+4. For each page:
    - Choose domain-appropriate layouts (`workspace` scenario for Master-Detail `activeTable`, `Kanban`/`MKanban`, `Calendar`/`MCalendar`, `Repeater`/`MRepeater`, `AiCopilotCard`/`MAiInsightCard` instead of repetitive Table+Modal screens).
-   - Call `protoflow_write_page` with valid TSX, unique `pfId`s, explicit `platform` in hybrid projects, `<Page>` / `<MobilePage>` `emptyTitle` + `errorFallback` UI Stack props, and declarative Poka-Yoke props (`minField`/`maxField`/`formatRule` on fields, `disabledWhenField`/`hiddenWhenField` on state-sensitive buttons/rowActions, `deleteRow("undo")`, and `confirm(msg, "{{row.code}}")` for high-risk actions).
+   - Call `protoflow_write_page` with valid TSX, unique `pfId`s, explicit `platform` in hybrid projects, unified `(appearance, surfaceBg, accent, motion)`, `<Page>` / `<MobilePage>` `emptyTitle` + `errorFallback` UI Stack props, and declarative Poka-Yoke props (`minField`/`maxField`/`formatRule` on fields, `disabledWhenField`/`hiddenWhenField` on state-sensitive buttons/rowActions, `deleteRow("undo")`, and `confirm(msg, "{{row.code}}")` for high-risk actions).
    - Attach business-rule sticky notes via `protoflow_manage_sticky_notes(action="upsert", ...)` pointing to exact existing component `pfId`s (validation limits, formulas, state preconditions).
-4. Optionally add PRD notes or Mermaid business flowcharts via `protoflow_manage_docs_and_flows` (`upsert_note` / `upsert_mindmap`) and durable project agreements (`upsert_agreement`).
+5. Optionally add PRD notes or Mermaid business flowcharts via `protoflow_manage_docs_and_flows` (`upsert_note` / `upsert_mindmap`) and durable project agreements (`upsert_agreement`).
 
 ## Step 5: Closed-Loop Audit & Honest Reporting
 
 1. Call `protoflow_audit_project()`.
-2. Resolve every reported `referenceIssues`, `databaseReview` error, `previewRelationIssues`, `danglingTableMenuBindings`, or `pageAudits[].contractErrors`.
-3. Re-run `protoflow_audit_project()` until `healthy: true`.
+2. Resolve every reported `referenceIssues`, `databaseReview` error, `previewRelationIssues`, `danglingTableMenuBindings`, `pageAudits[].contractErrors`, and any unintended `visualConsistencyWarnings`.
+3. Re-run `protoflow_audit_project()` until `healthy: true` (and `visualConsistencyWarnings` is empty unless a dedicated dark/light split was explicitly requested).
 4. Summarize created/updated `.pflow` file path, folders, ER tables (and any `modeling.pendingRules` for downstream production engineers), pages, and honest prototype boundaries (e.g., offline preview records, simulated upload/camera).

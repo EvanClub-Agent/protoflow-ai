@@ -15,8 +15,12 @@ require('node:test').after(() => {
   for (const channel of channels) { channel.port1.close(); channel.port2.close(); }
   globalThis.MessageChannel = NativeMessageChannel;
 });
+const cliFiles = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
+const entryPoints = cliFiles.length
+  ? cliFiles.map((file) => path.resolve(root, file))
+  : [path.join(root, 'tests/regressions.test.ts')];
 const result = buildSync({
-  entryPoints: [path.join(root, 'tests/regressions.test.ts')],
+  entryPoints,
   bundle: true, platform: 'node', format: 'cjs', write: false,
   external: ['react', 'react-dom', 'react-dom/server', 'react-test-renderer', 'scheduler', 'jsdom', 'mermaid', '@mermaid-js/mermaid-zenuml'],
   loader: { '.svg': 'dataurl' },

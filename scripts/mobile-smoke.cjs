@@ -156,6 +156,7 @@ if (process.versions.electron) {
       assert.equal(scrollMetrics.headerTop, scrollMetrics.scrollerTop, 'Sticky MTopBar must remain pinned at top through full scroll range');
       await waitFor(`(document.querySelector("[data-mobile-scroll-thumb='1']")?.getBoundingClientRect().top ?? 0) > ${scrollMetrics.thumbBefore}`);
 
+      await checkListInteractions(window.webContents, js, waitFor);
       assert.deepEqual(errors, []);
       console.log('PASS Gemini mobile materials, iPhone 393/402/440 viewports, pill tab filtering, dark surface elevation, and global dark-mode sync/isolation');
       app.exit(0);
@@ -182,6 +183,8 @@ import { findOverlay, RuntimeProvider, useRuntimeController } from './src/proto/
 import { MobileViewportShell } from './src/proto/mobile/MobileViewportShell';
 import { usePageStore } from './src/proto/store/usePageStore';
 import { useProtoStore } from './src/store/useProtoStore';
+import { PublishedPageView } from './src/viewer/PublishedViewer';
+import { interactionRows, interactionSource, MOBILE_TEST_TABLES } from './tests/fixtures/mobile-list-interactions';
 
 const starter = createMobileStarterDataset();
 useProtoStore.setState({ dbTables: starter.dbTables });
@@ -234,7 +237,19 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById('root')).render(<App />);
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+const fixture = parsePageSource(interactionSource).doc;
+function DesignFixture() {
+  const runtime = useRuntimeController(fixture, 'mobile-list-test', true);
+  return <RuntimeProvider value={runtime}><MobileViewportShell motion="smooth"><NodeView node={fixture.root}/></MobileViewportShell></RuntimeProvider>;
+}
+window.showListFixture = design => {
+  useProtoStore.setState({ dbTables: MOBILE_TEST_TABLES, activePageId: 'mobile-list-test', navigationSource: null });
+  usePageStore.setState({ tableRows: interactionRows() });
+  root.render(design ? <DesignFixture/> : <PublishedPageView page={{ pageId: 'mobile-list-test', title: 'Ledger', folderId: 'mobile', doc: fixture }}/>);
+};
+window.ledgerRows = () => usePageStore.getState().tableRows.t_ledger;
 `;
     const result = buildSync({
       stdin: { contents: code, resolveDir: root, loader: 'tsx' },
@@ -259,4 +274,121 @@ createRoot(document.getElementById('root')).render(<App />);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+async function checkListInteractions(contents, js, waitFor) {
+  const query = (selector) => `document.querySelector(${JSON.stringify(selector)})`;
+  const center = (selector) => js(`(() => {
+    const el = ${query(selector)};
+    el.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    const r = el.getBoundingClientRect();
+    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+    const hit = document.elementFromPoint(x,y);
+    if (!el.contains(hit)) throw Error('Unreachable ' + el.outerHTML.slice(0,100) + ' at ' + [x,y] + ', hit ' + hit?.outerHTML.slice(0,200));
+    return {x,y};
+  })()`);
+  contents.debugger.attach('1.3');
+  await contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await contents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{name:'prefers-reduced-motion',value:'no-preference'}],
+  });
+  const input = (method, args) => contents.debugger.sendCommand('Input.' + method, args);
+  const clickAt = async (point) => {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await input('dispatchMouseEvent', {type, ...point, button: 'left', clickCount: 1});
+    }
+  };
+  const click = async (selector) => clickAt(await center(selector));
+  const settle = () => js('Promise.allSettled(document.getAnimations().map(a => a.finished)).then(() => true)');
+  const swipeLeft = async (x, y, distance) => {
+    await input('dispatchTouchEvent', {type:'touchStart',touchPoints:[{x,y}]});
+    for (let step = 1; step <= 6; step++) {
+      await input('dispatchTouchEvent', {type:'touchMove',touchPoints:[{x:x-distance*step/6,y}]});
+      await new Promise(resolve => setTimeout(resolve, 18));
+    }
+    await input('dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
+  };
+
+  await js('showListFixture(true)');
+  const fill = '[data-pf-id=progress] .pf-capsule-fill';
+  await waitFor(query(fill));
+  assert.equal(await js(`getComputedStyle(${query(fill)}).animationName`), 'none');
+  await js('showListFixture(false)');
+  await waitFor(`getComputedStyle(${query(fill)}).animationName === "pf-capsule-grow"`);
+  await settle();
+  const row = '[data-row-id=parent]';
+  const surface = row + ' [data-activity-row-surface]';
+  assert.equal(await js(`${query(row + ' [data-split-metric]')}.textContent`), '-13.00');
+  assert.ok(await js(`Boolean(${query(row + ' .lucide-arrow-up-right')})`));
+  await contents.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {enabled:true,maxTouchPoints:1});
+  const point = await center(surface);
+  await swipeLeft(point.x + 60, point.y, 120);
+  await waitFor(`${query(row)}.dataset.swiped === '1'`);
+  await settle();
+
+  const tray = row + ' [data-swipe-actions]';
+  assert.ok(await js(`${query(tray)}.scrollWidth > ${query(tray)}.clientWidth`));
+  const trayPoint = await center(tray);
+  await swipeLeft(trayPoint.x + 90, trayPoint.y, 180);
+  await waitFor(`${query(tray)}.scrollLeft > 0`);
+  const toggle = row + ' button[aria-expanded]';
+  for (const index of [4, 1, 2, 3]) {
+    const action = tray + ' button:nth-child(' + index + ')';
+    await click(action);
+    await waitFor(`Array.from(document.querySelectorAll('[role=status]')).some(el => el.textContent.includes('Action ${index}'))`);
+    if (index !== 3) {
+      await settle();
+      await click(toggle);
+      await settle();
+    }
+  }
+
+  await settle();
+  const key = async (name, virtualCode) => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await input('dispatchKeyEvent', {
+        type, key: name, code: name, windowsVirtualKeyCode: virtualCode,
+        ...(type === 'keyDown' && name === 'Enter' ? { text: '\r' } : {}),
+      });
+    }
+  };
+  await js(`${query(toggle)}.focus()`);
+  await key('Enter', 13);
+  await waitFor(`${query(toggle)}.getAttribute('aria-expanded') === 'true'`);
+  for (let i = 1; i <= 4; i++) {
+    await key('Tab', 9);
+    assert.equal(await js(`document.activeElement === ${query(tray + ' button:nth-child(' + i + ')')}`), true);
+  }
+  await key('Enter', 13);
+  await waitFor(`${query(toggle)}.getAttribute('aria-expanded') === 'false'`);
+  await waitFor('!document.querySelector("[role=status]")');
+  await settle();
+  await click(surface);
+  await waitFor(`${query('[data-pf-id=bound-details]')}?.textContent.includes("Parent detail")`);
+  await settle();
+  await click('[data-pf-id=static-activity] [data-activity-row-surface]');
+  await waitFor(`${query('[data-pf-id=create-details]')}?.textContent.includes("No linked rows")`);
+  await settle();
+  await click('[data-pf-id=more] button');
+  await waitFor(`${query('[data-pf-id=nested-details]')}?.textContent.includes("No linked rows")`);
+  await settle();
+  const cancel = await center('[data-pf-id=nested] button');
+  await clickAt(cancel);
+  await waitFor(query('.pf-dialog-panel[data-closing][inert]'));
+  await clickAt(cancel);
+  await waitFor(`!${query('[data-pf-id=nested]')}`);
+  assert.ok(await js(`Boolean(${query('[data-pf-id=create]')})`));
+
+  for (const [id, value] of [['title', 'New ledger'], ['time', '10:00'], ['direction', '入库']]) {
+    await click('[data-pf-id=' + id + '] input');
+    await input('insertText', {text: value});
+  }
+  await click('[data-pf-id=save] button');
+  await waitFor('ledgerRows().length === 2');
+  assert.equal(await js('ledgerRows().find(r => r.id !== "parent").item_title'), 'New ledger');
+  assert.equal(await js('ledgerRows().find(r => r.id === "parent").item_title'), 'Parent ledger');
+  await waitFor(`!${query('[data-pf-id=create]')}`);
+  assert.ok(await js(`Boolean(${query('[data-pf-id=parent-sheet]')})`));
+  contents.debugger.detach();
+  console.log('PASS static create and nested FK isolation, double-click during exit, four swipe actions, signed amount, and designer motion');
 }

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
   Bell,
@@ -34,6 +35,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Trash2,
   TrendingDown,
   TrendingUp,
   User,
@@ -42,6 +44,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { CaptureMode } from '../../capture/CaptureMode';
 import type { CompProps, RootAttrs } from '../registry/components';
 import { isActionChain, type PropValue, type ProtoNode } from '../types';
 import { resolveFormInstanceKey } from '../runtime/runtime';
@@ -53,10 +56,14 @@ import { columnLabel, defaultDisplayColumns, type Row } from '../runtime/mock';
 import { resolveBoundForeignKeySpec } from '../ai/templates';
 import { mobileOptions } from './options';
 import { OVERLAY_TYPES } from '../registry/meta';
-import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
+import {
+  collectionBindingErrors,
+  rowsForSource,
+  sourceForeignKeyErrors,
+} from '../table/model';
 import { declaredColumnOptions } from '../database/enumContract';
 import { childRowScope } from '../runtime/runtime';
-import { resolveCanonicalRow, useAutoSelectFirstRow, useSourceRow } from '../runtime/sourceRow';
+import { resolveCanonicalRow, useAutoSelectFirstRow, useCollectionSourceRow, useSourceRow } from '../runtime/sourceRow';
 import { matchesWhenCondition, resolveKanbanStatusColumn } from '../runtime/pokaYoke';
 import {
   applyUIStackRows,
@@ -82,18 +89,138 @@ function rootWith(
 
 // ───────────────────────── Gemini Mobile Design Tokens ─────────────────────────
 
-export type MobileAccent = 'gemini' | 'blue' | 'violet' | 'emerald' | 'amber' | 'rose';
+export type MobileAccent = 'gemini' | 'blue' | 'violet' | 'emerald' | 'amber' | 'rose' | 'obsidian' | 'lime_forest';
 export type MobileAppearance = 'light' | 'dark';
+export type MobileSurfaceBg = 'mist' | 'pure' | 'warm_paper' | 'sage_field' | 'oled_carbon' | 'ocean_glow';
+export type MobileMotionMode = 'smooth' | 'snappy' | 'none';
+
+const VALID_SURFACE_BGS = new Set<MobileSurfaceBg>([
+  'mist',
+  'pure',
+  'warm_paper',
+  'sage_field',
+  'oled_carbon',
+  'ocean_glow',
+]);
+
+export function normalizeMobileSurfaceBg(raw: unknown): MobileSurfaceBg {
+  return typeof raw === 'string' && VALID_SURFACE_BGS.has(raw as MobileSurfaceBg)
+    ? (raw as MobileSurfaceBg)
+    : 'mist';
+}
+
+export function normalizeMobileMotion(raw: unknown): MobileMotionMode {
+  return raw === 'none' ? 'none' : raw === 'snappy' ? 'snappy' : 'smooth';
+}
+
+export function canAnimateMobileOverlayExit(
+  isCapture: boolean,
+  motionMode: MobileMotionMode,
+  staticOverlay?: boolean,
+): boolean {
+  return (
+    !staticOverlay &&
+    !isCapture &&
+    motionMode !== 'none' &&
+    typeof window !== 'undefined' &&
+    typeof Element !== 'undefined' &&
+    typeof Element.prototype.getAnimations === 'function' &&
+    !(typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  );
+}
 
 export const MobileAppearanceOverrideContext = createContext<MobileAppearance | null>(null);
 export const MobileScreenPortalContext = createContext<HTMLDivElement | null>(null);
+export const MobileMotionContext = createContext<MobileMotionMode>('smooth');
+export const MobileOverlayExitContext = createContext<(() => void) | null>(null);
 
-function interactiveBoxProps(enabled: boolean, onActivate: () => void) {
+const ROW_CONTEXT_REQUIRED_CALLS = new Set(['deleteRow', 'updateRow', 'selectRow']);
+
+export function actionChainRequiresBoundRow(chain: PropValue | undefined): boolean {
+  if (!isActionChain(chain)) return false;
+  return chain.calls.some(
+    (c) =>
+      ROW_CONTEXT_REQUIRED_CALLS.has(c.name) ||
+      (c.name === 'navigate' && c.args.length >= 2 && c.args[1] !== undefined),
+  );
+}
+
+export function isolatedStaticItemScope(
+  scope: CompProps['scope'],
+  staticRecord: Row | undefined,
+): CompProps['scope'] {
+  const cleanParams = { ...(scope.params ?? {}) };
+  delete cleanParams.row;
+  delete cleanParams.tableId;
+  return {
+    ...scope,
+    staticItem: staticRecord,
+    isolatePageRow: true,
+    row: undefined,
+    tableId: undefined,
+    expectedTableId: undefined,
+    params: cleanParams,
+  };
+}
+
+export type ParsedProgressValue =
+  | { kind: 'valid'; pct: number }
+  | { kind: 'missing' }
+  | { kind: 'invalid' };
+
+export function parseProgressMetric(raw: unknown): ParsedProgressValue {
+  if (raw === null || raw === undefined) return { kind: 'missing' };
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw)
+      ? { kind: 'valid', pct: Math.max(0, Math.min(100, raw)) }
+      : { kind: 'invalid' };
+  }
+  const str = String(raw).trim();
+  if (!str) return { kind: 'missing' };
+  const cleaned = str.endsWith('%') ? str.slice(0, -1).trim() : str;
+  if (!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(cleaned)) return { kind: 'invalid' };
+  const num = Number(cleaned);
+  return Number.isFinite(num)
+    ? { kind: 'valid', pct: Math.max(0, Math.min(100, num)) }
+    : { kind: 'invalid' };
+}
+
+export const SplitMetricText: React.FC<{
+  value: string | number;
+  splitDecimal?: boolean;
+  className?: string;
+  decimalClassName?: string;
+}> = ({ value, splitDecimal = true, className, decimalClassName }) => {
+  const raw = String(value ?? '');
+  if (!splitDecimal) {
+    return <span className={cx('tabular-nums', className)}>{raw}</span>;
+  }
+  const match = raw.match(/^(.*?\d)(\.\d+)(.*)$/);
+  if (!match) {
+    return <span className={cx('tabular-nums', className)}>{raw}</span>;
+  }
+  const [, whole, decimal, suffix] = match;
+  return (
+    <span className={cx('tabular-nums', className)} data-split-metric="1">
+      <span>{whole}</span>
+      <span
+        data-metric-decimal="1"
+        className={cx('text-[0.64em] font-semibold opacity-55', decimalClassName)}
+      >
+        {decimal}
+      </span>
+      {suffix ? <span className="text-[0.68em] font-semibold opacity-75 ml-0.5">{suffix}</span> : null}
+    </span>
+  );
+};
+
+export function interactiveBoxProps(enabled: boolean, onActivate: () => void) {
   if (!enabled) return {};
   return {
     role: 'button' as const,
     tabIndex: 0,
     onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         onActivate();
@@ -102,6 +229,7 @@ function interactiveBoxProps(enabled: boolean, onActivate: () => void) {
       }
     },
     onKeyUp: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return;
       if (e.key === ' ') {
         e.preventDefault();
         onActivate();
@@ -114,16 +242,19 @@ export function resolveMobileAppearance(
   rawAppearance: unknown,
   workspaceTheme: 'light' | 'dark',
   previewOverride?: MobileAppearance | null,
+  rawSurfaceBg?: unknown,
 ): MobileAppearance {
   if (previewOverride === 'light' || previewOverride === 'dark') return previewOverride;
   if (rawAppearance === 'dark') return 'dark';
+  if (rawAppearance === 'light') return 'light';
+  if (rawSurfaceBg === 'oled_carbon' || rawSurfaceBg === 'ocean_glow') return 'dark';
   return workspaceTheme === 'dark' ? 'dark' : 'light';
 }
 
 export interface MobileTheme {
   appearance: MobileAppearance;
   accent: MobileAccent;
-  surfaceBg: 'mist' | 'pure';
+  surfaceBg: MobileSurfaceBg;
   isDark: boolean;
   elevated: boolean;
   pageBg: string;
@@ -217,58 +348,143 @@ const ACCENT_MAP: Record<
     textLight: 'text-rose-600',
     textDark: 'text-rose-300',
   },
+  obsidian: {
+    solidLight: 'bg-[#111315] text-white',
+    solidDark: 'bg-[#F4F5F6] text-[#111315]',
+    softBgLight: 'bg-[#E5E7EB]',
+    softTextLight: 'text-[#111315]',
+    softBgDark: 'bg-white/14 ring-1 ring-inset ring-white/20',
+    softTextDark: 'text-[#F4F5F6]',
+    textLight: 'text-[#111315]',
+    textDark: 'text-[#F4F5F6]',
+  },
+  lime_forest: {
+    solidLight: 'bg-[#143021] text-[#D9F99D]',
+    solidDark: 'bg-[#A3E635] text-[#0B1911]',
+    softBgLight: 'bg-[#E2F0DC]',
+    softTextLight: 'text-[#122B1D]',
+    softBgDark: 'bg-[#1A3525] ring-1 ring-inset ring-[#A3E635]/30',
+    softTextDark: 'text-[#D9F99D]',
+    textLight: 'text-[#164E32]',
+    textDark: 'text-[#A3E635]',
+  },
 };
 
 function createMobileTheme(
   appearance: MobileAppearance = 'light',
   accent: MobileAccent = 'gemini',
-  surfaceBg: 'mist' | 'pure' = 'mist',
+  surfaceBg: MobileSurfaceBg = 'mist',
   elevated = false,
 ): MobileTheme {
   const isDark = appearance === 'dark';
   const ac = ACCENT_MAP[accent] ?? ACCENT_MAP.gemini;
   const softSurface = isDark ? ac.softBgDark : ac.softBgLight;
   const softText = isDark ? ac.softTextDark : ac.softTextLight;
+
+  const pageBg = isDark
+    ? surfaceBg === 'ocean_glow'
+      ? 'pf-mobile-surface-ocean bg-[#08111E] text-[#F1F5F9]'
+      : surfaceBg === 'oled_carbon'
+      ? 'pf-mobile-surface-oled bg-[#0B0C0E] text-[#F3F4F6]'
+      : surfaceBg === 'pure'
+      ? 'bg-[#0E0E0F] text-[#E3E3E3]'
+      : 'bg-[#131314] text-[#E3E3E3]'
+    : surfaceBg === 'warm_paper'
+    ? 'pf-mobile-surface-warm bg-[#F8F5F0] text-[#1C1917]'
+    : surfaceBg === 'sage_field'
+    ? 'pf-mobile-surface-sage bg-[#EEF2EB] text-[#132018]'
+    : surfaceBg === 'pure'
+    ? 'bg-white text-[#1F1F1F]'
+    : 'bg-[#F0F4F9] text-[#1F1F1F]';
+
+  const cardBg = isDark
+    ? elevated
+      ? surfaceBg === 'ocean_glow'
+        ? 'bg-[#182840] ring-1 ring-inset ring-sky-300/[0.12]'
+        : 'bg-[#282A2E] ring-1 ring-inset ring-white/[0.07]'
+      : surfaceBg === 'ocean_glow'
+      ? 'bg-[#101C2E]/92 ring-1 ring-inset ring-sky-300/[0.12] shadow-[0_10px_28px_-10px_rgba(2,6,23,0.8)]'
+      : surfaceBg === 'oled_carbon'
+      ? 'bg-[#16181D] ring-1 ring-inset ring-white/[0.08] shadow-[0_10px_28px_-10px_rgba(0,0,0,0.75)]'
+      : surfaceBg === 'pure'
+      ? 'bg-[#1A1B1E] ring-1 ring-inset ring-white/[0.07]'
+      : 'bg-[#1E1F20] ring-1 ring-inset ring-white/[0.06] shadow-[0_6px_22px_-8px_rgba(0,0,0,0.55)]'
+    : elevated
+    ? 'bg-white ring-1 ring-inset ring-slate-200/75 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.04)]'
+    : surfaceBg === 'warm_paper'
+    ? 'bg-white shadow-[0_4px_18px_-6px_rgba(28,25,23,0.06)] ring-1 ring-inset ring-stone-900/[0.04]'
+    : surfaceBg === 'sage_field'
+    ? 'bg-white shadow-[0_4px_18px_-6px_rgba(16,40,24,0.06)] ring-1 ring-inset ring-emerald-950/[0.04]'
+    : surfaceBg === 'pure'
+    ? 'bg-[#F4F7FC]'
+    : 'bg-white shadow-[0_2px_14px_-4px_rgba(15,23,42,0.05)]';
+
+  const subtleBg = isDark
+    ? surfaceBg === 'ocean_glow'
+      ? elevated
+        ? 'bg-[#203350]'
+        : 'bg-[#17263C]'
+      : surfaceBg === 'oled_carbon'
+      ? elevated
+        ? 'bg-[#282C35]'
+        : 'bg-[#20232A]'
+      : elevated
+      ? 'bg-[#32353B]'
+      : 'bg-[#282A2E]'
+    : surfaceBg === 'warm_paper'
+    ? 'bg-[#EDE8E0]/90'
+    : surfaceBg === 'sage_field'
+    ? 'bg-[#E1E8DC]/90'
+    : 'bg-[#E6ECF5]/85';
+
+  const inputBg = isDark
+    ? surfaceBg === 'ocean_glow'
+      ? 'bg-[#16243A] text-[#F1F5F9] ring-1 ring-inset ring-sky-300/[0.12]'
+      : elevated
+      ? 'bg-[#34373D] text-[#E3E3E3] ring-1 ring-inset ring-white/[0.08]'
+      : 'bg-[#282B30] text-[#E3E3E3] ring-1 ring-inset ring-white/[0.07]'
+    : elevated
+    ? 'bg-[#EEF3FA] text-[#1F1F1F]'
+    : surfaceBg === 'warm_paper'
+    ? 'bg-[#EFEAE2] text-[#1C1917]'
+    : surfaceBg === 'sage_field'
+    ? 'bg-[#E4EBE0] text-[#132018]'
+    : 'bg-[#E9EEF6] text-[#1F1F1F]';
+
+  const glassBg = isDark
+    ? surfaceBg === 'ocean_glow'
+      ? 'bg-[#0E1929]/88 backdrop-blur-xl'
+      : 'bg-[#1B1C20]/90 backdrop-blur-xl'
+    : surfaceBg === 'warm_paper'
+    ? 'bg-[#FAF8F5]/90 backdrop-blur-xl shadow-[0_8px_30px_-8px_rgba(28,25,23,0.12)]'
+    : surfaceBg === 'sage_field'
+    ? 'bg-[#F5F8F3]/90 backdrop-blur-xl shadow-[0_8px_30px_-8px_rgba(16,40,24,0.12)]'
+    : 'bg-white/88 backdrop-blur-xl shadow-[0_8px_30px_-8px_rgba(15,23,42,0.12)]';
+
   return {
     appearance,
     accent,
     surfaceBg,
     isDark,
     elevated,
-    pageBg: isDark
-      ? surfaceBg === 'pure'
-        ? 'bg-[#0E0E0F] text-[#E3E3E3]'
-        : 'bg-[#131314] text-[#E3E3E3]'
-      : surfaceBg === 'pure'
-      ? 'bg-white text-[#1F1F1F]'
-      : 'bg-[#F0F4F9] text-[#1F1F1F]',
-    cardBg: isDark
-      ? elevated
-        ? 'bg-[#282A2E] ring-1 ring-inset ring-white/[0.07]'
-        : surfaceBg === 'pure'
-        ? 'bg-[#1A1B1E] ring-1 ring-inset ring-white/[0.07]'
-        : 'bg-[#1E1F20] ring-1 ring-inset ring-white/[0.06] shadow-[0_6px_22px_-8px_rgba(0,0,0,0.55)]'
-      : elevated
-      ? 'bg-white ring-1 ring-inset ring-slate-200/75 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.04)]'
-      : surfaceBg === 'pure'
-      ? 'bg-[#F4F7FC]'
-      : 'bg-white shadow-[0_2px_14px_-4px_rgba(15,23,42,0.05)]',
-    subtleBg: isDark ? (elevated ? 'bg-[#32353B]' : 'bg-[#282A2E]') : 'bg-[#E6ECF5]/85',
-    inputBg: isDark
-      ? elevated
-        ? 'bg-[#34373D] text-[#E3E3E3] ring-1 ring-inset ring-white/[0.08]'
-        : 'bg-[#282B30] text-[#E3E3E3] ring-1 ring-inset ring-white/[0.07]'
-      : elevated
-      ? 'bg-[#EEF3FA] text-[#1F1F1F]'
-      : 'bg-[#E9EEF6] text-[#1F1F1F]',
+    pageBg,
+    cardBg,
+    subtleBg,
+    inputBg,
     placeholderCls: isDark ? 'placeholder:text-[#8E918F]' : 'placeholder:text-[#747775]',
-    textPrimary: isDark ? 'text-[#E3E3E3]' : 'text-[#1F1F1F]',
+    textPrimary: isDark
+      ? surfaceBg === 'ocean_glow'
+        ? 'text-[#F1F5F9]'
+        : 'text-[#E3E3E3]'
+      : surfaceBg === 'warm_paper'
+      ? 'text-[#1C1917]'
+      : surfaceBg === 'sage_field'
+      ? 'text-[#132018]'
+      : 'text-[#1F1F1F]',
     textSecondary: isDark ? 'text-[#C4C7C5]' : 'text-[#444746]',
-    textMuted: isDark ? 'text-[#9AA0A6]' : 'text-[#747775]',
+    textMuted: isDark ? 'text-[#9AA0A6]' : 'text-[#6E7270]',
     dangerText: isDark ? 'text-rose-400' : 'text-rose-600',
-    glassBg: isDark
-      ? 'bg-[#1B1C20]/90 backdrop-blur-xl'
-      : 'bg-white/88 backdrop-blur-xl shadow-[0_8px_30px_-8px_rgba(15,23,42,0.12)]',
+    glassBg,
     pillActiveSurface: softSurface,
     pillActiveBg: `${softSurface} ${softText}`,
     pillActiveText: softText,
@@ -302,7 +518,7 @@ export function MobilePageTheme({
       createMobileTheme(
         appearance,
         typeof accent === 'string' && Object.hasOwn(ACCENT_MAP, accent) ? (accent as MobileAccent) : 'gemini',
-        surfaceBg === 'pure' ? 'pure' : 'mist',
+        normalizeMobileSurfaceBg(surfaceBg),
         elevated,
       ),
     [appearance, accent, surfaceBg, elevated],
@@ -388,90 +604,117 @@ const MobilePage: React.FC<CompProps> = ({ p, kids, children, root, rt, renderNo
   const { tr } = useI18n();
   const workspaceTheme = useResolvedTheme();
   const uiState = useUIStackState();
+  const isCapture = useContext(CaptureMode);
   const previewOverride = useContext(MobileAppearanceOverrideContext);
-  const appearance = resolveMobileAppearance(p.appearance, workspaceTheme, previewOverride);
+  const surfaceBg = normalizeMobileSurfaceBg(p.surfaceBg);
+  const appearance = resolveMobileAppearance(p.appearance, workspaceTheme, previewOverride, surfaceBg);
   const accent: MobileAccent =
     typeof p.accent === 'string' && Object.hasOwn(ACCENT_MAP, p.accent) ? (p.accent as MobileAccent) : 'gemini';
-  const surfaceBg: 'mist' | 'pure' = p.surfaceBg === 'pure' ? 'pure' : 'mist';
+  const motionMode: MobileMotionMode =
+    p.motion === 'none' ? 'none' : p.motion === 'snappy' ? 'snappy' : 'smooth';
   const theme = useMemo(() => createMobileTheme(appearance, accent, surfaceBg, false), [appearance, accent, surfaceBg]);
 
   const topNodes = kids.filter((k) => k.type === 'MTopBar');
-  const bottomNodes = kids.filter(
+  const rawBottomNodes = kids.filter(
     (k) =>
+      k.type === 'MFloatingBar' ||
       k.type === 'MTabBar' ||
       k.type === 'MBottomDock' ||
       (k.type === 'MComposerBar' && k.props.docked !== false),
   );
-  const pinnedSet = new Set<ProtoNode>([...topNodes, ...bottomNodes]);
+  const bottomNodes = [
+    ...rawBottomNodes.filter((k) => k.type === 'MFloatingBar'),
+    ...rawBottomNodes.filter((k) => k.type !== 'MFloatingBar'),
+  ];
+  const pinnedSet = new Set<ProtoNode>([...topNodes, ...rawBottomNodes]);
   const bodyNodes = kids.filter((k) => !pinnedSet.has(k) && !OVERLAY_TYPES.has(k.type));
   const leadingAnnotation = children.length > kids.length ? children[0] : null;
+  const shouldStagger = !rt.isDesign && !isCapture && motionMode !== 'none';
 
   const padCls =
     p.padding === 'none' ? 'px-0 py-0' : p.padding === 'compact' ? 'px-3 py-2.5' : 'px-4 py-3.5';
 
   return (
-    <MobileThemeContext.Provider value={theme}>
-      <div
-        {...rootWith(root, {
-          className: cx(
-            'pf-mobile-scope pf-mobile-page flex-[1_0_auto] flex flex-col min-h-full w-full min-w-0 relative',
-            theme.pageBg,
-          ),
-          style: {
-            containerType: 'inline-size',
-            colorScheme: theme.isDark ? 'dark' : 'light',
-          },
-        })}
-        data-mobile-appearance={appearance}
-      >
-        {leadingAnnotation}
-        {topNodes.length > 0 && (
-          <div className="sticky top-0 z-20 shrink-0">{topNodes.map((n) => renderNode(n))}</div>
-        )}
-
-        <div className={cx('flex-1 flex flex-col gap-3.5 min-w-0', padCls, bottomNodes.length > 0 && 'pb-5')}>
-          {uiState === 'empty' && typeof p.emptyTitle === 'string' && p.emptyTitle.trim() && (
-            <UIStackEmptyBannerHint emptyTitle={p.emptyTitle.trim()} />
+    <MobileMotionContext.Provider value={motionMode}>
+      <MobileThemeContext.Provider value={theme}>
+        <div
+          {...rootWith(root, {
+            className: cx(
+              'pf-mobile-scope pf-mobile-page flex-[1_0_auto] flex flex-col min-h-full w-full min-w-0 relative',
+              theme.pageBg,
+            ),
+            style: {
+              containerType: 'inline-size',
+              colorScheme: theme.isDark ? 'dark' : 'light',
+            },
+          })}
+          data-mobile-appearance={appearance}
+          data-surface-bg={surfaceBg}
+          data-motion={motionMode}
+          data-capture-mode={isCapture ? '1' : undefined}
+          data-design-mode={rt.isDesign ? '1' : undefined}
+        >
+          {leadingAnnotation}
+          {topNodes.length > 0 && (
+            <div className="sticky top-0 z-20 shrink-0">{topNodes.map((n) => renderNode(n))}</div>
           )}
-          {uiState === 'error' && (p.errorFallback === 'result_403' || p.errorFallback === 'result_500') ? (
-            <UIStackPageErrorResult
-              mobile
-              mode={p.errorFallback}
-              title={typeof p.errorTitle === 'string' ? p.errorTitle : undefined}
-              description={typeof p.errorDescription === 'string' ? p.errorDescription : undefined}
-              onRecover={() => useProtoStore.getState().setUIState('normal')}
-            />
-          ) : bodyNodes.length > 0 ? (
-            bodyNodes.map((n) => renderNode(n))
-          ) : (
-            <div
-              className={cx(
-                'rounded-[22px] p-7 text-center my-4 border border-dashed',
-                theme.isDark
-                  ? 'border-white/15 bg-white/[0.03] text-[#9AA0A6]'
-                  : 'border-slate-300/80 bg-white/60 text-slate-400',
-              )}
-            >
-              <Sparkles className="w-6 h-6 mx-auto mb-2 opacity-60" aria-hidden="true" />
-              <div className="text-[13px] font-medium">
-                {rt.isDesign
-                  ? tr('从左侧拖入 Gemini 现代移动物料开始设计', 'Drop mobile materials from the left palette to start designing')
-                  : tr('暂无页面内容', 'No content')}
+
+          <div className={cx('flex-1 flex flex-col gap-3.5 min-w-0', padCls, bottomNodes.length > 0 && 'pb-5')}>
+            {uiState === 'empty' && typeof p.emptyTitle === 'string' && p.emptyTitle.trim() && (
+              <UIStackEmptyBannerHint emptyTitle={p.emptyTitle.trim()} />
+            )}
+            {uiState === 'error' && (p.errorFallback === 'result_403' || p.errorFallback === 'result_500') ? (
+              <UIStackPageErrorResult
+                mobile
+                mode={p.errorFallback}
+                title={typeof p.errorTitle === 'string' ? p.errorTitle : undefined}
+                description={typeof p.errorDescription === 'string' ? p.errorDescription : undefined}
+                onRecover={() => useProtoStore.getState().setUIState('normal')}
+              />
+            ) : bodyNodes.length > 0 ? (
+              bodyNodes.map((n, idx) =>
+                shouldStagger ? (
+                  <div
+                    key={n.pfId}
+                    className="pf-mobile-stagger-item min-w-0"
+                    style={{ '--pf-stagger-idx': idx } as React.CSSProperties}
+                  >
+                    {renderNode(n)}
+                  </div>
+                ) : (
+                  renderNode(n)
+                ),
+              )
+            ) : (
+              <div
+                className={cx(
+                  'rounded-[22px] p-7 text-center my-4 border border-dashed',
+                  theme.isDark
+                    ? 'border-white/15 bg-white/[0.03] text-[#9AA0A6]'
+                    : 'border-slate-300/80 bg-white/60 text-slate-400',
+                )}
+              >
+                <Sparkles className="w-6 h-6 mx-auto mb-2 opacity-60" aria-hidden="true" />
+                <div className="text-[13px] font-medium">
+                  {rt.isDesign
+                    ? tr('从左侧拖入 Gemini 现代移动物料开始设计', 'Drop mobile materials from the left palette to start designing')
+                    : tr('暂无页面内容', 'No content')}
+                </div>
               </div>
+            )}
+          </div>
+
+          {bottomNodes.length > 0 && (
+            <div
+              className="sticky bottom-0 z-20 shrink-0 mt-auto"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            >
+              {bottomNodes.map((n) => renderNode(n))}
             </div>
           )}
         </div>
-
-        {bottomNodes.length > 0 && (
-          <div
-            className="sticky bottom-0 z-20 shrink-0 mt-auto"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-          >
-            {bottomNodes.map((n) => renderNode(n))}
-          </div>
-        )}
-      </div>
-    </MobileThemeContext.Provider>
+      </MobileThemeContext.Provider>
+    </MobileMotionContext.Provider>
   );
 };
 
@@ -480,13 +723,37 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
   const theme = useMobileTheme();
   const padCls = p.padding === 'sm' ? 'p-3' : p.padding === 'lg' ? 'p-5' : 'p-4';
   const tone = (p.tone as string) || 'card';
+  const isInverted = tone === 'inverted';
 
-  const surfaceCls =
-    tone === 'subtle'
-      ? cx(theme.subtleBg, theme.textPrimary)
-      : tone === 'accent'
-      ? theme.accentSoftBg
-      : cx(theme.cardBg, theme.textPrimary);
+  const surfaceCls = isInverted
+    ? 'pf-mobile-wallet-mesh text-[#F4F5F6] ring-1 ring-inset ring-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.45)]'
+    : tone === 'subtle'
+    ? cx(theme.subtleBg, theme.textPrimary)
+    : tone === 'accent'
+    ? theme.accentSoftBg
+    : cx(theme.cardBg, theme.textPrimary);
+
+  const bodyContent =
+    children.length > 0 ? (
+      isInverted ? (
+        <MobilePageTheme appearance="dark" accent={theme.accent} surfaceBg="oled_carbon" elevated={true}>
+          <div className="space-y-2.5">{children}</div>
+        </MobilePageTheme>
+      ) : (
+        <div className="space-y-2.5">{children}</div>
+      )
+    ) : (
+      rt.isDesign && (
+        <div
+          className={cx(
+            'py-4 text-center text-[12px] rounded-2xl',
+            isInverted ? 'bg-white/[0.06] text-white/60' : cx(theme.subtleBg, theme.textMuted),
+          )}
+        >
+          {tr('拖入子组件至此卡片', 'Drop child components into this card')}
+        </div>
+      )
+    );
 
   const inner = (
     <div
@@ -495,6 +762,8 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
         surfaceCls,
         padCls,
       )}
+      style={isInverted ? { colorScheme: 'dark' } : undefined}
+      data-surface-tone={tone}
     >
       {(p.title || p.extra || p.subtitle) && (
         <div className="flex items-start justify-between gap-2">
@@ -503,14 +772,18 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
               <h3
                 className={cx(
                   'text-[15px] font-semibold tracking-tight leading-snug',
-                  tone === 'accent' ? theme.pillActiveText : theme.textPrimary,
+                  isInverted ? 'text-white' : tone === 'accent' ? theme.pillActiveText : theme.textPrimary,
                 )}
                 style={{ textWrap: 'balance' } as React.CSSProperties}
               >
                 {p.title}
               </h3>
             )}
-            {p.subtitle && <p className={cx('text-[12px] mt-0.5', theme.textMuted)}>{p.subtitle}</p>}
+            {p.subtitle && (
+              <p className={cx('text-[12px] mt-0.5', isInverted ? 'text-white/65' : theme.textMuted)}>
+                {p.subtitle}
+              </p>
+            )}
           </div>
           {p.extra && (
             <button
@@ -518,7 +791,7 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
               onClick={() => rt.run(p.onExtraClick as PropValue, scope)}
               className={cx(
                 "relative min-h-[36px] px-2.5 rounded-full text-[12px] font-medium inline-flex items-center gap-0.5 shrink-0 cursor-pointer transition hover:opacity-80 after:content-[''] after:absolute after:-inset-y-1 after:-inset-x-1",
-                theme.accentText,
+                isInverted ? 'text-white/85' : theme.accentText,
               )}
             >
               <span>{p.extra}</span>
@@ -527,15 +800,7 @@ const MSurface: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
           )}
         </div>
       )}
-      {children.length > 0 ? (
-        <div className="space-y-2.5">{children}</div>
-      ) : (
-        rt.isDesign && (
-          <div className={cx('py-4 text-center text-[12px] rounded-2xl', theme.subtleBg, theme.textMuted)}>
-            {tr('拖入子组件至此卡片', 'Drop child components into this card')}
-          </div>
-        )
-      )}
+      {bodyContent}
     </div>
   );
 
@@ -829,6 +1094,80 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 
   const activeKey = localActive ?? ((p.activeKey as string) || items[0]?.key || '0');
   const floating = p.variant !== 'docked';
+  const avatarText = typeof p.avatarText === 'string' ? p.avatarText.trim() : '';
+  const avatarImage = typeof p.avatarImage === 'string' ? p.avatarImage.trim() : '';
+  const showDetachedAvatar = floating && Boolean(avatarText || avatarImage);
+
+  const tabIsland = (
+    <div
+      className={cx(
+        'flex items-center justify-around',
+        showDetachedAvatar && 'flex-1 min-w-0',
+        theme.glassBg,
+        floating
+          ? cx(
+              'rounded-full px-2 py-1.5',
+              theme.isDark
+                ? 'border border-white/12 shadow-[0_14px_34px_-6px_rgba(0,0,0,0.75)]'
+                : 'border border-white/80 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.14)]',
+            )
+          : cx('px-2 py-1.5', theme.isDark ? 'border-t border-white/10' : 'border-t border-slate-200/70'),
+      )}
+    >
+      {items.map((it, idx) => {
+        const key = it.key || String(idx);
+        const isActive = key === activeKey;
+        const Icon = resolveMobileIcon(it.icon, idx === 0 ? Sparkles : idx === 1 ? Layers : User);
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-current={isActive ? 'page' : undefined}
+            onClick={() => {
+              const hasConfirmGate =
+                isActionChain(it.onClick) && it.onClick.calls.some((c) => c.name === 'confirm');
+              const actionNavigates =
+                Boolean(it.page) ||
+                !it.onClick ||
+                (isActionChain(it.onClick) && it.onClick.calls.some((c) => c.name === 'navigate'));
+              if (!rt.isDesign && actionNavigates && !hasConfirmGate) setLocalActive(key);
+              if (it.onClick) {
+                void rt.run(it.onClick, scope);
+              } else if (it.page) {
+                void rt.run({ $kind: 'actions', calls: [{ name: 'navigate', args: [it.page] }] }, scope);
+              }
+            }}
+            className="relative flex-1 min-h-[46px] flex flex-col items-center justify-center gap-0.5 rounded-full cursor-pointer transition-transform active:scale-[0.96]"
+          >
+            <span
+              className={cx(
+                'px-4 py-1 rounded-full inline-flex items-center justify-center relative transition-all duration-200',
+                isActive ? cx(theme.pillActiveSurface, 'scale-100') : 'bg-transparent',
+              )}
+            >
+              <Icon
+                className={cx('w-[18px] h-[18px]', isActive ? theme.pillActiveText : theme.textMuted)}
+                aria-hidden="true"
+              />
+              {it.badge && (
+                <span className="absolute -top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold inline-flex items-center justify-center">
+                  {it.badge}
+                </span>
+              )}
+            </span>
+            <span
+              className={cx(
+                'text-[11px] leading-tight truncate max-w-full px-1',
+                isActive ? cx('font-semibold', theme.textPrimary) : theme.textMuted,
+              )}
+            >
+              {it.title || tr(`导航${idx + 1}`, `Tab ${idx + 1}`)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <nav
@@ -839,71 +1178,33 @@ const MTabBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         ),
       })}
     >
-      <div
-        className={cx(
-          'flex items-center justify-around',
-          theme.glassBg,
-          floating
-            ? cx(
-                'rounded-full px-2 py-1.5',
-                theme.isDark
-                  ? 'border border-white/12 shadow-[0_14px_34px_-6px_rgba(0,0,0,0.75)]'
-                  : 'border border-white/80 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.14)]',
-              )
-            : cx('px-2 py-1.5', theme.isDark ? 'border-t border-white/10' : 'border-t border-slate-200/70'),
-        )}
-      >
-        {items.map((it, idx) => {
-          const key = it.key || String(idx);
-          const isActive = key === activeKey;
-          const Icon = resolveMobileIcon(it.icon, idx === 0 ? Sparkles : idx === 1 ? Layers : User);
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-current={isActive ? 'page' : undefined}
-              onClick={() => {
-                const actionNavigates =
-                  Boolean(it.page) ||
-                  !it.onClick ||
-                  (isActionChain(it.onClick) && it.onClick.calls.some((c) => c.name === 'navigate'));
-                if (!rt.isDesign && actionNavigates) setLocalActive(key);
-                if (it.onClick) {
-                  void rt.run(it.onClick, scope);
-                } else if (it.page) {
-                  void rt.run({ $kind: 'actions', calls: [{ name: 'navigate', args: [it.page] }] }, scope);
-                }
-              }}
-              className="relative flex-1 min-h-[46px] flex flex-col items-center justify-center gap-0.5 rounded-full cursor-pointer transition"
-            >
-              <span
-                className={cx(
-                  'px-4 py-1 rounded-full inline-flex items-center justify-center relative transition-colors',
-                  isActive ? theme.pillActiveSurface : 'bg-transparent',
-                )}
-              >
-                <Icon
-                  className={cx('w-[18px] h-[18px]', isActive ? theme.pillActiveText : theme.textMuted)}
-                  aria-hidden="true"
-                />
-                {it.badge && (
-                  <span className="absolute -top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold inline-flex items-center justify-center">
-                    {it.badge}
-                  </span>
-                )}
+      {showDetachedAvatar ? (
+        <div className="flex items-center gap-2.5" data-tabbar-layout="split-avatar">
+          {tabIsland}
+          <button
+            type="button"
+            aria-label={tr('个人中心', 'Profile')}
+            onClick={() => void rt.run(p.onAvatarClick as PropValue, scope)}
+            className={cx(
+              'w-[54px] h-[54px] rounded-full shrink-0 inline-flex items-center justify-center overflow-hidden cursor-pointer transition-transform active:scale-95',
+              theme.glassBg,
+              theme.isDark
+                ? 'border border-white/14 shadow-[0_14px_34px_-6px_rgba(0,0,0,0.75)]'
+                : 'border border-white/85 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.16)]',
+            )}
+          >
+            {avatarImage ? (
+              <img src={avatarImage} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className={cx('w-10 h-10 rounded-full inline-flex items-center justify-center text-[13px] font-bold', theme.accentSolidBg)}>
+                {avatarText.slice(0, 2)}
               </span>
-              <span
-                className={cx(
-                  'text-[11px] leading-tight',
-                  isActive ? cx('font-semibold', theme.textPrimary) : theme.textMuted,
-                )}
-              >
-                {it.title || tr(`导航${idx + 1}`, `Tab ${idx + 1}`)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+            )}
+          </button>
+        </div>
+      ) : (
+        tabIsland
+      )}
     </nav>
   );
 };
@@ -1122,9 +1423,189 @@ const MSearchPill: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 const MHeroHeader: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const { tr } = useI18n();
   const theme = useMobileTheme();
-  const isBanner = p.mode === 'banner';
+  const mode = (p.mode as string) || 'greeting';
+  const splitDec = p.splitDecimal !== false;
 
-  if (isBanner) {
+  if (mode === 'wallet') {
+    const rawValue = p.value !== undefined && p.value !== null ? String(p.value).trim() : '';
+    const hasValue = rawValue.length > 0;
+    return (
+      <div
+        {...rootWith(root, {
+          className:
+            'pf-mobile-wallet-mesh rounded-[26px] p-5 text-[#F8FAFC] space-y-4 ring-1 ring-inset ring-white/12 shadow-[0_18px_38px_-12px_rgba(15,23,42,0.48)]',
+          style: { colorScheme: 'dark' },
+        })}
+        data-hero-mode="wallet"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-white/70">
+            <Wallet className="w-3.5 h-3.5 text-white/80" aria-hidden="true" />
+            <span>{p.eyebrow || p.title || tr('总资产估值', 'Available Balance')}</span>
+          </span>
+          {Boolean(p.accountMask) && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-white/10 ring-1 ring-inset ring-white/15 text-[11px] font-mono tracking-wider text-white/90">
+              {String(p.accountMask)}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            {hasValue ? (
+              <SplitMetricText
+                value={rawValue}
+                splitDecimal={splitDec}
+                className="text-[34px] font-bold tracking-tight leading-none text-white"
+              />
+            ) : (
+              <span
+                data-missing-value="1"
+                className="text-[32px] font-semibold tracking-tight leading-none text-white/45 tabular-nums"
+              >
+                —
+              </span>
+            )}
+            {Boolean(p.statusBadge) && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-400/18 text-emerald-300 ring-1 ring-inset ring-emerald-400/30 text-[11px] font-semibold">
+                {String(p.statusBadge)}
+              </span>
+            )}
+          </div>
+          {hasValue && p.title && (
+            <div className="text-[13px] font-medium text-white/85">{String(p.title)}</div>
+          )}
+          {Boolean(p.subtitle) && (
+            <p className="text-[12px] text-white/65 leading-relaxed">{String(p.subtitle)}</p>
+          )}
+        </div>
+
+        {(Boolean(p.actionText) || Boolean(p.secondaryActionText)) && (
+          <div className="flex items-center gap-2.5 pt-0.5">
+            {Boolean(p.actionText) && (
+              <button
+                type="button"
+                onClick={() => rt.run(p.onAction as PropValue, scope)}
+                className="flex-1 min-h-[42px] px-4 rounded-full bg-white text-[#0F172A] text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-transform active:scale-[0.98]"
+              >
+                <span>{String(p.actionText)}</span>
+                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+            {Boolean(p.secondaryActionText) && (
+              <button
+                type="button"
+                onClick={() => rt.run(p.onSecondaryAction as PropValue, scope)}
+                className="flex-1 min-h-[42px] px-4 rounded-full bg-white/12 text-white ring-1 ring-inset ring-white/16 text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-transform active:scale-[0.98]"
+              >
+                <span>{String(p.secondaryActionText)}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'metric_hero') {
+    const rawValue = p.value !== undefined && p.value !== null ? String(p.value).trim() : '';
+    const hasValue = rawValue.length > 0;
+    return (
+      <div
+        {...rootWith(root, {
+          className: cx('rounded-[24px] p-5 space-y-3', theme.cardBg),
+        })}
+        data-hero-mode="metric_hero"
+      >
+        <div className="flex items-center justify-between gap-2">
+          {Boolean(p.eyebrow) && (
+            <span className={cx('text-[12px] font-semibold tracking-wide', theme.textMuted)}>
+              {String(p.eyebrow)}
+            </span>
+          )}
+          {Boolean(p.accountMask) && (
+            <span className={cx('inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold', theme.pillActiveBg)}>
+              {String(p.accountMask)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <div className="space-y-1 min-w-0">
+            {hasValue ? (
+              <SplitMetricText
+                value={rawValue}
+                splitDecimal={splitDec}
+                className={cx('text-[38px] font-semibold tracking-tight leading-none', theme.textPrimary)}
+              />
+            ) : (
+              <span
+                data-missing-value="1"
+                className={cx('text-[36px] font-semibold tracking-tight leading-none opacity-45 tabular-nums', theme.textMuted)}
+              >
+                —
+              </span>
+            )}
+            <h2
+              className={cx('text-[15px] font-semibold leading-snug pt-0.5', theme.textPrimary)}
+              style={{ textWrap: 'balance' } as React.CSSProperties}
+            >
+              {p.title || tr('整体履约达成率', 'Overall Fulfillment Progress')}
+            </h2>
+          </div>
+          {Boolean(p.statusBadge) && (
+            <span
+              className={cx(
+                'inline-flex items-center px-3 py-1 rounded-full text-[11.5px] font-semibold',
+                theme.isDark
+                  ? 'bg-amber-400/16 text-amber-200 ring-1 ring-inset ring-amber-400/25'
+                  : 'bg-amber-100/90 text-amber-900',
+              )}
+            >
+              {String(p.statusBadge)}
+            </span>
+          )}
+        </div>
+
+        {Boolean(p.subtitle) && (
+          <p className={cx('text-[12.5px] leading-relaxed', theme.textMuted)}>{String(p.subtitle)}</p>
+        )}
+
+        {(Boolean(p.actionText) || Boolean(p.secondaryActionText)) && (
+          <div className="flex items-center gap-2 pt-1">
+            {Boolean(p.actionText) && (
+              <button
+                type="button"
+                onClick={() => rt.run(p.onAction as PropValue, scope)}
+                className={cx(
+                  'min-h-[38px] px-4 rounded-full text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-transform active:scale-95',
+                  theme.accentSolidBg,
+                )}
+              >
+                <span>{String(p.actionText)}</span>
+                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+            {Boolean(p.secondaryActionText) && (
+              <button
+                type="button"
+                onClick={() => rt.run(p.onSecondaryAction as PropValue, scope)}
+                className={cx(
+                  'min-h-[38px] px-4 rounded-full text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-transform active:scale-95',
+                  theme.subtleBg,
+                  theme.textPrimary,
+                )}
+              >
+                <span>{String(p.secondaryActionText)}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'banner') {
     return (
       <div
         {...rootWith(root, {
@@ -1226,7 +1707,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const rawRows = useTableDataRows(tableId);
-  const {row:sourceRow, tableId:sourceTableId} = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const { row: sourceRow, tableId: sourceTableId, fkSourceTableId } = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
   const bindingErrors = sourceForeignKeyErrors(p, tables);
   const runtimeFilter = rt.filters[node.pfId];
   const layout = (p.layout as string) || 'waterfall';
@@ -1295,7 +1776,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       <div {...rootWith(root, { className: 'space-y-2.5' })}>
         {cards.map((c, idx) => {
           const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-          const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
+          const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId, fkSourceTableId));
           return (
             <div
               key={c.id}
@@ -1350,7 +1831,7 @@ const MFeedList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     >
       {cards.map((c, idx) => {
         const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
+        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId, fkSourceTableId));
         return (
           <div
             key={c.id}
@@ -1442,7 +1923,8 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const schema = tables.find((t) => t.id === tableId);
   const rawRows = useTableDataRows(tableId);
-  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const source = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const { fkSourceTableId } = source;
   const bindingErrors = sourceForeignKeyErrors(p, tables);
   const runtimeFilter = rt.filters[node.pfId];
 
@@ -1484,6 +1966,8 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   useAutoSelectFirstRow({
     rt,
     tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: source.row?.id,
     visibleRows: resolvedBoundRows,
     autoSelectFirst,
     runtimeQuery: runtimeFilter,
@@ -1661,11 +2145,11 @@ const MTaskList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   return (
     <div {...rootWith(root, { className: 'space-y-2.5' })}>
       {rows.map((r) => {
-        const rowScope = childRowScope(scope, r, tableId);
+        const rowScope = childRowScope(scope, r, tableId, fkSourceTableId);
         const statusVal = statusField && r[statusField] != null ? String(r[statusField]) : '';
         const isActive = Boolean(tableId && activeRowId === r.id);
         const activateCard = () => {
-          if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id);
+          if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id, fkSourceTableId);
           void rt.run(p.onCardClick as PropValue, rowScope);
         };
         const hasCardClick = (Boolean(p.onCardClick) || autoSelectFirst) && !rt.isDesign;
@@ -1896,14 +2380,18 @@ const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const theme = useMobileTheme();
   const gradId = useId();
   const tone = (p.trendTone as string) || 'up';
+  const isInverted = p.tone === 'inverted';
+  const effectiveDark = isInverted || theme.isDark;
   const trendCls =
     tone === 'down'
-      ? theme.isDark
+      ? effectiveDark
         ? 'bg-rose-500/16 text-rose-300 ring-1 ring-inset ring-rose-400/25'
         : 'bg-rose-100/90 text-rose-700'
       : tone === 'neutral'
-      ? cx(theme.subtleBg, theme.textSecondary)
-      : theme.isDark
+      ? isInverted
+        ? 'bg-white/12 text-white/80'
+        : cx(theme.subtleBg, theme.textSecondary)
+      : effectiveDark
       ? 'bg-emerald-500/16 text-emerald-300 ring-1 ring-inset ring-emerald-400/25'
       : 'bg-emerald-100/90 text-emerald-800';
 
@@ -1912,17 +2400,31 @@ const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
     <div
       {...rootWith(root, {
         onClick: p.onClick ? activate : undefined,
-        className: cx('rounded-[22px] p-4 flex items-end justify-between gap-3', theme.cardBg, p.onClick && 'cursor-pointer'),
+        className: cx(
+          'rounded-[22px] p-4 flex items-end justify-between gap-3 transition-transform',
+          isInverted
+            ? 'pf-mobile-wallet-mesh text-[#F8FAFC] ring-1 ring-inset ring-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.45)]'
+            : theme.cardBg,
+          p.onClick && 'cursor-pointer active:scale-[0.98]',
+        ),
+        style: isInverted ? { colorScheme: 'dark' } : undefined,
       })}
       {...interactiveBoxProps(Boolean(p.onClick) && !rt.isDesign, activate)}
+      data-stat-tone={isInverted ? 'inverted' : 'card'}
     >
       <div className="space-y-1.5 min-w-0">
-        <div className={cx('text-[12.5px] font-medium', theme.textMuted)}>{p.title || tr('核心指标', 'Key Metric')}</div>
+        <div className={cx('text-[12.5px] font-medium', isInverted ? 'text-white/70' : theme.textMuted)}>
+          {p.title || tr('核心指标', 'Key Metric')}
+        </div>
         <div className="flex items-baseline gap-1">
-          <span className={cx('text-[24px] font-bold tracking-tight tabular-nums', theme.textPrimary)}>
-            {p.value ?? '0'}
-          </span>
-          {p.unit && <span className={cx('text-[12px]', theme.textMuted)}>{p.unit}</span>}
+          <SplitMetricText
+            value={String(p.value ?? '0')}
+            splitDecimal={p.splitDecimal !== false}
+            className={cx('text-[24px] font-bold tracking-tight', isInverted ? 'text-white' : theme.textPrimary)}
+          />
+          {p.unit && (
+            <span className={cx('text-[12px]', isInverted ? 'text-white/65' : theme.textMuted)}>{p.unit}</span>
+          )}
         </div>
         {p.trend && (
           <span className={cx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold', trendCls)}>
@@ -1936,8 +2438,8 @@ const MStatCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
         <svg viewBox="0 0 88 38" className="w-20 h-9 shrink-0 overflow-visible" aria-hidden="true">
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={theme.isDark ? '#8AB4F8' : '#4285F4'} />
-              <stop offset="100%" stopColor={theme.isDark ? '#C58AF9' : '#9B72CB'} />
+              <stop offset="0%" stopColor={isInverted ? '#A3E635' : effectiveDark ? '#8AB4F8' : '#4285F4'} />
+              <stop offset="100%" stopColor={isInverted ? '#34D399' : effectiveDark ? '#C58AF9' : '#9B72CB'} />
             </linearGradient>
           </defs>
           <path
@@ -2865,9 +3367,84 @@ const MBottomDock: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 
 // ───────────────────────── 6. In-Viewport Touch Overlays ─────────────────────────
 
+function useOverlayExitAnimation(
+  live: boolean | undefined,
+  staticOverlay: boolean | undefined,
+  isCapture: boolean,
+  motionMode: MobileMotionMode,
+) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const onHostExitSettled = useContext(MobileOverlayExitContext);
+  const onHostExitSettledRef = useRef(onHostExitSettled);
+  onHostExitSettledRef.current = onHostExitSettled;
+
+  const effectiveLive = Boolean(live) && onHostExitSettled === null;
+  const [closing, setClosing] = useState(false);
+  const prevLiveRef = useRef(effectiveLive);
+  const canAnimate = canAnimateMobileOverlayExit(isCapture, motionMode, staticOverlay);
+  const initiatingClose = !effectiveLive && prevLiveRef.current && canAnimate;
+  const effectiveClosing = !effectiveLive && (closing || initiatingClose);
+
+  useEffect(() => {
+    if (effectiveLive) {
+      prevLiveRef.current = true;
+      setClosing(false);
+      return undefined;
+    }
+
+    if (prevLiveRef.current && canAnimate) {
+      prevLiveRef.current = false;
+      setClosing(true);
+      let cancelled = false;
+      const settle = async () => {
+        await Promise.race([
+          new Promise<void>((r) => requestAnimationFrame(() => r())),
+          new Promise<void>((r) => setTimeout(r, 32)),
+        ]);
+        if (cancelled) return;
+        const anims = [
+          ...(typeof panelRef.current?.getAnimations === 'function' ? panelRef.current.getAnimations() : []),
+          ...(typeof backdropRef.current?.getAnimations === 'function' ? backdropRef.current.getAnimations() : []),
+        ];
+        if (anims.length > 0) {
+          await Promise.race([
+            Promise.allSettled(anims.map((a) => a.finished)),
+            new Promise((r) => setTimeout(r, 340)),
+          ]);
+        }
+        if (!cancelled) {
+          setClosing(false);
+          onHostExitSettledRef.current?.();
+        }
+      };
+      void settle();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    prevLiveRef.current = false;
+    setClosing(false);
+    onHostExitSettledRef.current?.();
+    return undefined;
+  }, [effectiveLive, canAnimate]);
+
+  return {
+    mounted: effectiveLive || effectiveClosing,
+    closing: effectiveClosing,
+    panelRef,
+    backdropRef,
+    inertProps: effectiveClosing ? { inert: '' } : undefined,
+  };
+}
+
 const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope, live, staticOverlay, renderNode }) => {
   const { tr } = useI18n();
   const theme = useMobileTheme();
+  const isCapture = useContext(CaptureMode);
+  const motionMode = useContext(MobileMotionContext);
+  const sheetExit = useOverlayExitAnimation(live, staticOverlay, isCapture, motionMode);
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
   const maxHeightCls =
     p.size === 'compact' ? 'max-h-[52%]' : p.size === 'tall' ? 'max-h-[88%]' : 'max-h-[72%]';
@@ -2890,6 +3467,9 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
         style: { overscrollBehavior: 'contain', colorScheme: theme.isDark ? 'dark' : 'light' },
       })}
       data-mobile-appearance={theme.appearance}
+      data-motion={motionMode}
+      data-design-mode={rt.isDesign ? '1' : undefined}
+      data-capture-mode={isCapture ? '1' : undefined}
       role="dialog"
       aria-modal="true"
       aria-label={String(p.title ?? tr('底部面板', 'Bottom sheet'))}
@@ -2964,21 +3544,32 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
       </div>
     );
   }
-  if (!live) return null;
+  if (!sheetExit.mounted) return null;
   const z = 40 + (scope.overlayIndex ?? 0) * 2;
   return (
     <div
       className="absolute inset-0 flex flex-col justify-end overflow-hidden"
       style={{ zIndex: z, overscrollBehavior: 'contain' }}
+      aria-hidden={sheetExit.closing ? 'true' : undefined}
     >
       <div
+        ref={sheetExit.backdropRef}
+        {...sheetExit.inertProps}
+        data-closing={sheetExit.closing ? '' : undefined}
         className={cx(
-          'absolute inset-0 backdrop-blur-[1.5px] pf-fade-in',
+          'absolute inset-0 backdrop-blur-[1.5px] pf-sheet-backdrop',
           theme.isDark ? 'bg-black/65' : 'bg-black/45',
         )}
         onClick={close}
       />
-      <div className="relative z-10 h-full pointer-events-none w-full flex flex-col justify-end pf-slide-up">{sheetCard}</div>
+      <div
+        ref={sheetExit.panelRef}
+        {...sheetExit.inertProps}
+        data-closing={sheetExit.closing ? '' : undefined}
+        className="relative z-10 h-full pointer-events-none w-full flex flex-col justify-end pf-sheet-panel"
+      >
+        {sheetCard}
+      </div>
     </div>
   );
 };
@@ -2986,6 +3577,9 @@ const MBottomSheet: React.FC<CompProps> = ({ p, kids, children, root, rt, scope,
 const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, staticOverlay }) => {
   const { tr } = useI18n();
   const theme = useMobileTheme();
+  const isCapture = useContext(CaptureMode);
+  const motionMode = useContext(MobileMotionContext);
+  const dialogExit = useOverlayExitAnimation(live, staticOverlay, isCapture, motionMode);
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
 
   const card = (
@@ -3001,6 +3595,9 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
         style: { overscrollBehavior: 'contain', colorScheme: theme.isDark ? 'dark' : 'light' },
       })}
       data-mobile-appearance={theme.appearance}
+      data-motion={motionMode}
+      data-design-mode={rt.isDesign ? '1' : undefined}
+      data-capture-mode={isCapture ? '1' : undefined}
       role="dialog"
       aria-modal="true"
       aria-label={String(p.title ?? tr('确认弹窗', 'Confirm dialog'))}
@@ -3031,7 +3628,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
         <button
           type="button"
           onClick={close}
-          className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer', theme.subtleBg, theme.textPrimary)}
+          className={cx('flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer transition-transform active:scale-[0.98]', theme.subtleBg, theme.textPrimary)}
         >
           {(p.cancelText as string) || tr('取消', 'Cancel')}
         </button>
@@ -3039,7 +3636,7 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
           type="button"
           onClick={() => (p.onConfirm ? rt.run(p.onConfirm as PropValue, scope) : close())}
           className={cx(
-            'flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer',
+            'flex-1 min-h-[44px] rounded-full text-[13.5px] font-semibold cursor-pointer transition-transform active:scale-[0.98]',
             p.danger ? 'bg-rose-600 text-white' : theme.accentSolidBg,
           )}
         >
@@ -3062,21 +3659,30 @@ const MDialog: React.FC<CompProps> = ({ p, children, root, rt, scope, live, stat
       </div>
     );
   }
-  if (!live) return null;
+  if (!dialogExit.mounted) return null;
   const z = 40 + (scope.overlayIndex ?? 0) * 2;
   return (
     <div
       className="absolute inset-0 flex items-center justify-center overflow-hidden p-4"
       style={{ zIndex: z, overscrollBehavior: 'contain' }}
+      aria-hidden={dialogExit.closing ? 'true' : undefined}
     >
       <div
+        ref={dialogExit.backdropRef}
+        {...dialogExit.inertProps}
+        data-closing={dialogExit.closing ? '' : undefined}
         className={cx(
-          'absolute inset-0 backdrop-blur-[1.5px] pf-fade-in',
+          'absolute inset-0 backdrop-blur-[1.5px] pf-sheet-backdrop',
           theme.isDark ? 'bg-black/65' : 'bg-black/45',
         )}
         onClick={close}
       />
-      <div className="relative z-10 flex items-center justify-center w-full h-full min-h-0 pointer-events-none pf-pop-in">
+      <div
+        ref={dialogExit.panelRef}
+        {...dialogExit.inertProps}
+        data-closing={dialogExit.closing ? '' : undefined}
+        className="relative z-10 flex items-center justify-center w-full h-full min-h-0 pointer-events-none pf-dialog-panel"
+      >
         <div className="pointer-events-auto flex items-center justify-center w-full max-h-full min-h-0">{card}</div>
       </div>
     </div>
@@ -3407,7 +4013,7 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tables = useMaterialTables();
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const rawRows = useTableDataRows(tableId);
-  const { row: sourceRow, tableId: sourceTableId } = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const { row: sourceRow, tableId: sourceTableId, fkSourceTableId } = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
   const bindingErrors = sourceForeignKeyErrors(p, tables);
   const runtimeFilter = rt.filters[node.pfId];
   const cols = Math.min(2, Math.max(1, Math.round(Number(p.cols ?? 2))));
@@ -3491,7 +4097,7 @@ const MCardGrid: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     >
       {cards.map((c, idx) => {
         const grad = (theme.isDark ? FEED_GRADIENTS_DARK : FEED_GRADIENTS)[idx % 4];
-        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId));
+        const activate = () => void rt.run(p.onItemClick as PropValue, childRowScope(scope, c.row, tableId, fkSourceTableId));
         return (
           <div
             key={c.id}
@@ -3548,7 +4154,8 @@ const MRepeater: React.FC<CompProps> = ({ node, p, kids, root, rt, scope, render
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const schema = tables.find((t) => t.id === tableId);
   const rawRows = useTableDataRows(tableId);
-  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const source = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const { fkSourceTableId } = source;
   const runtimeFilter = rt.filters[node.pfId];
   const layout = p.layout === 'grid' || p.layout === 'scroll' ? p.layout : 'stack';
   const cols = Math.max(1, Math.min(2, Math.round(Number(p.cols ?? 2))));
@@ -3597,6 +4204,8 @@ const MRepeater: React.FC<CompProps> = ({ node, p, kids, root, rt, scope, render
   useAutoSelectFirstRow({
     rt,
     tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: source.row?.id,
     visibleRows: validRows,
     autoSelectFirst,
     runtimeQuery: runtimeFilter,
@@ -3658,8 +4267,8 @@ const MRepeater: React.FC<CompProps> = ({ node, p, kids, root, rt, scope, render
             data-active-row={isActive ? '1' : undefined}
             onClick={() => {
               if (!clickable) return;
-              if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
-              if (p.onItemClick) void rt.run(p.onItemClick as PropValue, childRowScope(scope, row, tableId));
+              if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id, fkSourceTableId);
+              if (p.onItemClick) void rt.run(p.onItemClick as PropValue, childRowScope(scope, row, tableId, fkSourceTableId));
             }}
             className={cx(
               'min-w-0 rounded-[22px] transition',
@@ -3669,7 +4278,7 @@ const MRepeater: React.FC<CompProps> = ({ node, p, kids, root, rt, scope, render
               rt.isDesign && idx > 0 && 'opacity-90',
             )}
           >
-            {kids.map((k) => renderFn(k, { row, tableId }))}
+            {kids.map((k) => renderFn(k, { row, tableId, collectionSourceTableId: fkSourceTableId }))}
           </div>
         );
       })}
@@ -3686,7 +4295,8 @@ const MKanban: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const schema = tables.find((t) => t.id === tableId);
   const rawRows = useTableDataRows(tableId);
-  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const source = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const { fkSourceTableId } = source;
   const runtimeFilter = rt.filters[node.pfId];
   const allowMove = p.allowMove !== false;
   const autoSelectFirst = Boolean(p.autoSelectFirst);
@@ -3766,6 +4376,8 @@ const MKanban: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   useAutoSelectFirstRow({
     rt,
     tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: source.row?.id,
     visibleRows: validRows,
     autoSelectFirst,
     runtimeQuery: runtimeFilter,
@@ -3872,8 +4484,8 @@ const MKanban: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 data-active-row={isActive ? '1' : undefined}
                 onClick={() => {
                   if (!clickable) return;
-                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
-                  if (p.onCardClick) void rt.run(p.onCardClick as PropValue, childRowScope(scope, row, tableId));
+                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id, fkSourceTableId);
+                  if (p.onCardClick) void rt.run(p.onCardClick as PropValue, childRowScope(scope, row, tableId, fkSourceTableId));
                 }}
                 className={cx(
                   'rounded-[22px] p-4 space-y-2.5 transition',
@@ -3930,7 +4542,7 @@ const MKanban: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                             disabled={actDisabled}
                             title={actDisabled && act.disabledReason ? act.disabledReason : undefined}
                             onClick={() => {
-                              if (!rt.isDesign && !actDisabled && act.onClick) void rt.run(act.onClick, childRowScope(scope, row, tableId));
+                              if (!rt.isDesign && !actDisabled && act.onClick) void rt.run(act.onClick, childRowScope(scope, row, tableId, fkSourceTableId));
                             }}
                             className={cx(
                               'rounded-full px-3 py-1 text-[11.5px] font-semibold',
@@ -3970,7 +4582,8 @@ const MCalendar: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
   const schema = tables.find((t) => t.id === tableId);
   const rawRows = useTableDataRows(tableId);
-  const source = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const source = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const { fkSourceTableId } = source;
   const runtimeFilter = rt.filters[node.pfId];
   const autoSelectFirst = Boolean(p.autoSelectFirst);
 
@@ -4037,6 +4650,8 @@ const MCalendar: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   useAutoSelectFirstRow({
     rt,
     tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: source.row?.id,
     visibleRows: validRows,
     autoSelectFirst,
     runtimeQuery: runtimeFilter,
@@ -4148,8 +4763,8 @@ const MCalendar: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 data-active-row={isActive ? '1' : undefined}
                 onClick={() => {
                   if (!clickable) return;
-                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id);
-                  if (p.onEventClick) void rt.run(p.onEventClick as PropValue, childRowScope(scope, row, tableId));
+                  if (autoSelectFirst && tableId) rt.setActiveRow?.(tableId, row.id, fkSourceTableId);
+                  if (p.onEventClick) void rt.run(p.onEventClick as PropValue, childRowScope(scope, row, tableId, fkSourceTableId));
                 }}
                 className={cx(
                   'flex items-start justify-between gap-2.5 rounded-2xl p-3 transition',
@@ -4180,6 +4795,92 @@ const MAiInsightCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const { tr } = useI18n();
   const theme = useMobileTheme();
   const items = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+  const tone = (p.tone as string) || 'glow';
+
+  if (tone === 'dark_brief') {
+    return (
+      <div
+        {...rootWith(root, {
+          className:
+            'pf-mobile-brief-mesh rounded-[24px] p-5 text-[#F4F7F4] space-y-3.5 ring-1 ring-inset ring-[#A3E635]/20 shadow-[0_16px_34px_-10px_rgba(9,18,14,0.5)]',
+          style: { colorScheme: 'dark' },
+        })}
+        data-insight-tone="dark_brief"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#A3E635]/18 text-[#D9F99D] ring-1 ring-inset ring-[#A3E635]/35 text-[11px] font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635]" aria-hidden="true" />
+            <span>{String(p.badge || tr('今日简报', "Today's Brief"))}</span>
+          </span>
+          {Boolean(p.timestamp) && (
+            <span className="text-[11.5px] font-medium text-white/60">{String(p.timestamp)}</span>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="text-[17px] font-semibold tracking-tight text-white">
+            {String(p.title || tr('AI 智能助手建议', 'AI Assistant Insight'))}
+          </div>
+          {Boolean(p.summary) && (
+            <p className="text-[13px] leading-relaxed text-white/80">{String(p.summary)}</p>
+          )}
+        </div>
+
+        {items.length > 0 && (
+          <div className="space-y-2">
+            {items.map((it, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between gap-2.5 rounded-2xl px-3.5 py-2.5 bg-white/[0.07] ring-1 ring-inset ring-white/10"
+              >
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-semibold truncate text-white">{String(it.title ?? '')}</div>
+                  {Boolean(it.detail) && (
+                    <div className="text-[11px] truncate mt-0.5 text-white/65">{String(it.detail)}</div>
+                  )}
+                </div>
+                {Boolean(it.actionLabel) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!rt.isDesign && it.onClick) void rt.run(it.onClick as PropValue, scope);
+                    }}
+                    className="shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold bg-[#ECFCCB] text-[#0F2417] cursor-pointer transition-transform active:scale-95"
+                  >
+                    {String(it.actionLabel)}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {Boolean(p.primaryActionLabel) && (
+          <div className="flex items-center gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!rt.isDesign && p.onPrimaryAction) void rt.run(p.onPrimaryAction as PropValue, scope);
+              }}
+              className="flex-1 min-h-[42px] px-4 rounded-full bg-[#ECFCCB] text-[#0F2417] text-[13px] font-semibold inline-flex items-center justify-center cursor-pointer transition-transform active:scale-[0.98]"
+            >
+              {String(p.primaryActionLabel)}
+            </button>
+            <button
+              type="button"
+              aria-label={String(p.primaryActionLabel)}
+              onClick={() => {
+                if (!rt.isDesign && p.onPrimaryAction) void rt.run(p.onPrimaryAction as PropValue, scope);
+              }}
+              className="w-[42px] h-[42px] rounded-full bg-white/12 text-[#ECFCCB] ring-1 ring-inset ring-white/16 inline-flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95"
+            >
+              <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -4251,6 +4952,946 @@ const MAiInsightCard: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   );
 };
 
+const PROGRESS_TONE_FILL: Record<string, { fill: string; stroke: string }> = {
+  forest: { fill: 'bg-[#1B4332]', stroke: '#22C55E' },
+  emerald: { fill: 'bg-emerald-600', stroke: '#10B981' },
+  amber: { fill: 'bg-amber-500', stroke: '#F59E0B' },
+  rose: { fill: 'bg-rose-500', stroke: '#F43F5E' },
+  blue: { fill: 'bg-blue-600', stroke: '#3B82F6' },
+  violet: { fill: 'bg-violet-600', stroke: '#8B5CF6' },
+  obsidian: { fill: 'bg-[#181A1F]', stroke: '#94A3B8' },
+};
+
+const MProgressList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { isEn, tr, td } = useI18n();
+  const preview = useContext(PreviewDataContext);
+  const uiState = useUIStackState();
+  const theme = useMobileTheme();
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const schema = useMemo(() => tables.find((t) => t.id === tableId), [tables, tableId]);
+  const rawRows = useTableDataRows(tableId);
+  const { row: sourceRow, tableId: sourceTableId, fkSourceTableId } = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const bindingErrors = useMemo(
+    () => collectionBindingErrors('MProgressList', p, tables),
+    [p, tables],
+  );
+  const scopedRows = useMemo(
+    () =>
+      tableId
+        ? bindingErrors.length > 0
+          ? []
+          : typeof p.sourceForeignKey === 'string'
+          ? rowsForSource(rawRows, p.sourceForeignKey, tableId, { row: sourceRow, tableId: sourceTableId }, tables)
+          : rawRows
+        : [],
+    [rawRows, tables, tableId, p.sourceForeignKey, sourceRow, sourceTableId, bindingErrors.length],
+  );
+  const runtimeFilter = rt.filters[node.pfId];
+  const filteredRows = useMemo(
+    () => scopedRows.filter((r) => matchesFilter(r, p.filter, runtimeFilter)),
+    [scopedRows, p.filter, runtimeFilter],
+  );
+
+  const entries = useMemo(() => {
+    if (tableId) {
+      const cols = schema ? defaultDisplayColumns(schema) : [];
+      const labelKey = typeof p.labelField === 'string' && p.labelField ? p.labelField : cols[0]?.name || 'id';
+      const valKey = typeof p.valueField === 'string' ? p.valueField.trim() : '';
+      const targetKey = typeof p.targetField === 'string' ? p.targetField.trim() : '';
+      const statusKey = typeof p.statusField === 'string' ? p.statusField.trim() : '';
+      return filteredRows.map((row, idx) => {
+        const parsedVal = valKey && Object.prototype.hasOwnProperty.call(row, valKey)
+          ? parseProgressMetric(row[valKey])
+          : { kind: 'missing' as const };
+        const parsedTarget =
+          targetKey && Object.prototype.hasOwnProperty.call(row, targetKey)
+            ? parseProgressMetric(row[targetKey])
+            : null;
+        const pct = parsedVal.kind === 'valid' ? parsedVal.pct : null;
+        const target = parsedTarget?.kind === 'valid' ? parsedTarget.pct : undefined;
+        const statusStr = statusKey && row[statusKey] != null ? String(row[statusKey]) : '';
+        const tone =
+          parsedVal.kind !== 'valid' ||
+          /异常|风险|驳回|滞后|overdue|risk|low/i.test(statusStr) ||
+          (pct !== null && target !== undefined && pct + 10 < target)
+            ? 'amber'
+            : idx % 2 === 0
+            ? 'forest'
+            : 'emerald';
+        return {
+          id: String(row.id ?? idx),
+          label: td(String(row[labelKey] ?? row.id)),
+          metricState: parsedVal.kind,
+          value: pct,
+          target,
+          subtitle: statusStr ? td(statusStr) : undefined,
+          tone,
+          row,
+          staticRecord: undefined as Row | undefined,
+          onClick: undefined as PropValue | undefined,
+        };
+      });
+    }
+
+    const rawStaticItems = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+    const projectedItems = applyUIStackRows(
+      rawStaticItems.map((it, idx) => ({ id: `prog-${idx}`, ...it })),
+      undefined,
+      uiState,
+      isEn,
+    );
+
+    return projectedItems
+      .filter((it) =>
+        matchesFilter(
+          {
+            id: String(it.id ?? ''),
+            label: String(it.label ?? it.title ?? ''),
+            subtitle: String(it.subtitle ?? ''),
+            tone: String(it.tone ?? ''),
+          },
+          p.filter,
+          runtimeFilter,
+        ),
+      )
+      .map((it, idx) => {
+        const parsedVal = parseProgressMetric(it.value);
+        const parsedTarget = it.target !== undefined ? parseProgressMetric(it.target) : null;
+        const label = String(it.label ?? it.title ?? tr(`分项 ${idx + 1}`, `Item ${idx + 1}`));
+        const staticRecord: Row = {
+          id: String(it.id ?? `prog-${idx}`),
+          label,
+          value: parsedVal.kind === 'valid' ? parsedVal.pct : '',
+          subtitle: it.subtitle ? String(it.subtitle) : '',
+          tone: typeof it.tone === 'string' ? it.tone : 'forest',
+        };
+        return {
+          id: String(it.id ?? idx),
+          label,
+          metricState: parsedVal.kind,
+          value: parsedVal.kind === 'valid' ? parsedVal.pct : null,
+          target: parsedTarget?.kind === 'valid' ? parsedTarget.pct : undefined,
+          subtitle: it.subtitle ? String(it.subtitle) : undefined,
+          tone: typeof it.tone === 'string' && PROGRESS_TONE_FILL[it.tone] ? it.tone : 'forest',
+          row: undefined as Row | undefined,
+          staticRecord,
+          onClick: it.onClick as PropValue | undefined,
+        };
+      });
+  }, [
+    tableId,
+    schema,
+    p.labelField,
+    p.valueField,
+    p.targetField,
+    p.statusField,
+    p.items,
+    p.filter,
+    runtimeFilter,
+    filteredRows,
+    uiState,
+    isEn,
+    tr,
+    td,
+  ]);
+
+  if (bindingErrors.length) {
+    return (
+      <div
+        {...rootWith(root, {
+          className: 'rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800',
+        })}
+        role="alert"
+      >
+        {td(bindingErrors[0])}
+      </div>
+    );
+  }
+
+  const variant = p.variant === 'gauge' ? 'gauge' : 'capsule';
+
+  const getEntryActivation = (entry: (typeof entries)[number]) => {
+    const action = entry.onClick ?? (p.onItemClick as PropValue | undefined);
+    const canonicalRow =
+      tableId && entry.row ? resolveCanonicalRow(tableId, entry.row, preview?.rows) ?? entry.row : undefined;
+    const blockedByMissingRow =
+      actionChainRequiresBoundRow(action) && (!tableId || !canonicalRow);
+    const clickable = !rt.isDesign && Boolean(action) && !blockedByMissingRow;
+    const activate = () => {
+      if (!clickable || !action) return;
+      const nextScope =
+        tableId && canonicalRow
+          ? childRowScope(scope, canonicalRow, tableId, fkSourceTableId)
+          : isolatedStaticItemScope(scope, entry.staticRecord);
+      void rt.run(action, nextScope);
+    };
+    const displayValue =
+      entry.metricState === 'valid' && entry.value !== null
+        ? `${entry.value}%`
+        : entry.metricState === 'invalid'
+        ? tr('无效值', 'Invalid')
+        : '—';
+    return { clickable, activate, displayValue };
+  };
+
+  return (
+    <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3', theme.cardBg) })} data-progress-variant={variant}>
+      {(p.title || p.extra) && (
+        <div className="flex items-center justify-between gap-2">
+          {p.title && <h3 className={cx('text-[15px] font-semibold tracking-tight', theme.textPrimary)}>{String(p.title)}</h3>}
+          {p.extra && (
+            <button
+              type="button"
+              onClick={() => rt.run(p.onExtraClick as PropValue, scope)}
+              className={cx('text-[12px] font-semibold inline-flex items-center gap-0.5 cursor-pointer', theme.accentText)}
+            >
+              <span>{String(p.extra)}</span>
+              {Boolean(p.onExtraClick) && <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />}
+            </button>
+          )}
+        </div>
+      )}
+
+      {entries.length === 0 ? (
+        <div className={cx('rounded-2xl py-6 text-center text-[12.5px]', theme.subtleBg, theme.textMuted)}>
+          {String(p.emptyText || tr('暂无进度数据', 'No progress records'))}
+        </div>
+      ) : variant === 'gauge' ? (
+        <div className="space-y-3">
+          <div className={cx('grid gap-2.5', entries.length === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+            {entries.slice(0, 2).map((entry) => {
+              const palette = PROGRESS_TONE_FILL[entry.tone] ?? PROGRESS_TONE_FILL.forest;
+              const arcLen = 125.6;
+              const fillPct = entry.value ?? 0;
+              const dashOffset = arcLen * (1 - fillPct / 100);
+              const { clickable, activate, displayValue } = getEntryActivation(entry);
+              return (
+                <div
+                  key={entry.id}
+                  data-progress-item-id={entry.id}
+                  onClick={clickable ? activate : undefined}
+                  {...interactiveBoxProps(clickable, activate)}
+                  className={cx(
+                    'rounded-[18px] p-3 flex flex-col items-center text-center gap-1',
+                    theme.subtleBg,
+                    clickable && 'cursor-pointer active:scale-[0.98] transition-transform',
+                  )}
+                >
+                  <svg viewBox="0 0 100 58" className="w-28 h-16 overflow-visible" aria-hidden="true">
+                    <path
+                      d="M 10 50 A 40 40 0 0 1 90 50"
+                      fill="none"
+                      stroke={theme.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
+                      strokeWidth="9"
+                      strokeLinecap="round"
+                    />
+                    {entry.value !== null && (
+                      <path
+                        d="M 10 50 A 40 40 0 0 1 90 50"
+                        fill="none"
+                        stroke={palette.stroke}
+                        strokeWidth="9"
+                        strokeLinecap="round"
+                        strokeDasharray={arcLen}
+                        strokeDashoffset={dashOffset}
+                      />
+                    )}
+                  </svg>
+                  {entry.value !== null ? (
+                    <SplitMetricText
+                      value={displayValue}
+                      className={cx('text-[20px] font-bold -mt-5', theme.textPrimary)}
+                    />
+                  ) : (
+                    <span
+                      data-missing-value="1"
+                      className={cx('text-[18px] font-semibold -mt-5 tabular-nums', theme.textMuted)}
+                    >
+                      {displayValue}
+                    </span>
+                  )}
+                  <div className={cx('text-[12px] font-semibold truncate max-w-full', theme.textPrimary)}>
+                    {entry.label}
+                  </div>
+                  {entry.target !== undefined && (
+                    <div className={cx('text-[10.5px] font-medium', theme.textMuted)}>
+                      {tr(`计划 ${entry.target}%`, `Plan ${entry.target}%`)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {entries.slice(2).map((entry) => {
+            const palette = PROGRESS_TONE_FILL[entry.tone] ?? PROGRESS_TONE_FILL.forest;
+            const { clickable, activate, displayValue } = getEntryActivation(entry);
+            return (
+              <div
+                key={entry.id}
+                data-progress-item-id={entry.id}
+                onClick={clickable ? activate : undefined}
+                {...interactiveBoxProps(clickable, activate)}
+                className={cx(
+                  'space-y-1 rounded-xl p-2 -mx-1',
+                  clickable && 'cursor-pointer active:scale-[0.99] transition-transform',
+                )}
+              >
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className={cx('font-medium truncate', theme.textPrimary)}>{entry.label}</span>
+                  <span className={cx('font-semibold tabular-nums', theme.textSecondary)}>
+                    {displayValue}{entry.target !== undefined ? ` / ${entry.target}%` : ''}
+                  </span>
+                </div>
+                <div className={cx('h-2.5 rounded-full overflow-hidden', theme.subtleBg)}>
+                  {entry.value !== null && entry.value > 0 && (
+                    <div
+                      className={cx('h-full rounded-full pf-capsule-fill', palette.fill)}
+                      style={{ width: `${entry.value}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {entries.map((entry) => {
+            const palette = PROGRESS_TONE_FILL[entry.tone] ?? PROGRESS_TONE_FILL.forest;
+            const { clickable, activate, displayValue } = getEntryActivation(entry);
+            return (
+              <div
+                key={entry.id}
+                data-progress-item-id={entry.id}
+                onClick={clickable ? activate : undefined}
+                {...interactiveBoxProps(clickable, activate)}
+                className={cx(
+                  'relative min-h-[48px] rounded-[18px] overflow-hidden flex items-center justify-between gap-2 px-3.5 py-2',
+                  theme.subtleBg,
+                  clickable && 'cursor-pointer active:scale-[0.98] transition-transform',
+                )}
+              >
+                {entry.value !== null && entry.value > 0 && (
+                  <div
+                    className={cx('absolute inset-y-0 left-0 rounded-[18px] pf-capsule-fill opacity-90', palette.fill)}
+                    style={{ width: `${Math.max(entry.value, 8)}%` }}
+                    aria-hidden="true"
+                  />
+                )}
+                {entry.target !== undefined && (
+                  <div
+                    className="absolute inset-y-1.5 w-[2px] rounded-full bg-white/75 dark:bg-white/65 z-[1]"
+                    style={{ left: `${entry.target}%` }}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="relative z-10 min-w-0 flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full bg-black/55 backdrop-blur-xs text-white text-[12.5px] font-semibold truncate">
+                    {entry.label}
+                  </span>
+                  {entry.subtitle && (
+                    <span className="px-2 py-0.5 rounded-full bg-white/85 text-slate-900 text-[10.5px] font-semibold shrink-0">
+                      {entry.subtitle}
+                    </span>
+                  )}
+                </div>
+                <div className="relative z-10 shrink-0 flex items-center gap-1.5">
+                  {entry.target !== undefined && (
+                    <span className="px-2 py-0.5 rounded-full bg-white/85 text-slate-800 text-[10.5px] font-semibold tabular-nums">
+                      {tr(`目标 ${entry.target}%`, `Plan ${entry.target}%`)}
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 rounded-full bg-black/65 text-white text-[12px] font-bold">
+                    {entry.value !== null ? (
+                      <SplitMetricText value={displayValue} />
+                    ) : (
+                      <span data-missing-value="1">{displayValue}</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export type ActivityTone = 'inflow' | 'outflow' | 'neutral';
+
+export function activityAmount(amount: string, unsignedTone: ActivityTone, formatUnsigned: boolean) {
+  if (/^[+-]?\p{Sc}?0+(?:\.0+)?(?:\s+[\p{L}%]+)?$/u.test(amount)) {
+    return { amount: amount.replace(/^[+-]/, ''), tone: 'neutral' as const };
+  }
+  const tone = amount.startsWith('-') ? 'outflow' : amount.startsWith('+') ? 'inflow' : unsignedTone;
+  if (formatUnsigned && /^\d/.test(amount) && tone !== 'neutral') {
+    return { amount: (tone === 'outflow' ? '-' : '+') + amount, tone };
+  }
+  return { amount, tone };
+}
+
+const MActivityList: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
+  const { isEn, tr, td } = useI18n();
+  const preview = useContext(PreviewDataContext);
+  const uiState = useUIStackState();
+  const theme = useMobileTheme();
+  const tables = useMaterialTables();
+  const tableId = typeof p.table === 'string' && p.table ? p.table : undefined;
+  const schema = useMemo(() => tables.find((t) => t.id === tableId), [tables, tableId]);
+  const rawRows = useTableDataRows(tableId);
+  const { row: sourceRow, tableId: sourceTableId, fkSourceTableId } = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
+  const bindingErrors = useMemo(
+    () => collectionBindingErrors('MActivityList', p, tables),
+    [p, tables],
+  );
+  const scopedRows = useMemo(
+    () =>
+      tableId
+        ? bindingErrors.length > 0
+          ? []
+          : typeof p.sourceForeignKey === 'string'
+          ? rowsForSource(rawRows, p.sourceForeignKey, tableId, { row: sourceRow, tableId: sourceTableId }, tables)
+          : rawRows
+        : [],
+    [rawRows, tables, tableId, p.sourceForeignKey, sourceRow, sourceTableId, bindingErrors.length],
+  );
+  const runtimeFilter = rt.filters[node.pfId];
+  const filteredRows = useMemo(
+    () => scopedRows.filter((r) => matchesFilter(r, p.filter, runtimeFilter)),
+    [scopedRows, p.filter, runtimeFilter],
+  );
+  const autoSelectFirst = Boolean(p.autoSelectFirst);
+  useAutoSelectFirstRow({
+    rt,
+    tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: sourceRow?.id,
+    visibleRows: filteredRows,
+    autoSelectFirst,
+    runtimeQuery: runtimeFilter,
+  });
+  const activeRowId = tableId ? rt.activeRows?.[tableId] : undefined;
+
+  const [openRowKey, setOpenRowKey] = useState<string | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
+
+  const rowActions = (Array.isArray(p.rowActions) ? p.rowActions : []) as Record<string, PropValue>[];
+  const splitDec = p.splitDecimal !== false;
+
+  const entries = useMemo(() => {
+    if (tableId) {
+      const cols = schema ? defaultDisplayColumns(schema) : [];
+      const titleKey = typeof p.titleField === 'string' && p.titleField ? p.titleField : cols[0]?.name || 'id';
+      const subKey = typeof p.subtitleField === 'string' ? p.subtitleField : '';
+      const amtKey = typeof p.amountField === 'string' ? p.amountField.trim() : '';
+      const typeKey = typeof p.typeField === 'string' ? p.typeField : '';
+      const iconKey = typeof p.iconField === 'string' ? p.iconField : '';
+      return filteredRows.map((row, idx) => {
+        const rawCell = amtKey && Object.prototype.hasOwnProperty.call(row, amtKey) ? row[amtKey] : undefined;
+        const rawAmt =
+          rawCell !== undefined && rawCell !== null && String(rawCell).trim() !== ''
+            ? String(rawCell).trim()
+            : '';
+        const typeStr = typeKey && row[typeKey] != null ? String(row[typeKey]) : '';
+        const unsignedTone = /inflow|income|return|退回|入库|收入|已退/i.test(typeStr)
+          ? 'inflow'
+          : /outflow|expense|claim|领用|出库|支出|扣减/i.test(typeStr) ? 'outflow' : 'neutral';
+        const { amount, tone } = activityAmount(rawAmt, unsignedTone, true);
+        return {
+          id: String(row.id ?? idx),
+          title: td(String(row[titleKey] ?? row.id)),
+          subtitle: subKey && row[subKey] != null ? td(String(row[subKey])) : typeStr ? td(typeStr) : '',
+          amount,
+          missingAmount: !rawAmt,
+          icon: iconKey && row[iconKey] != null ? String(row[iconKey]) : undefined,
+          tone,
+          row,
+          staticRecord: undefined as Row | undefined,
+          onClick: undefined as PropValue | undefined,
+        };
+      });
+    }
+
+    const rawStaticItems = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+    const projectedItems = applyUIStackRows(
+      rawStaticItems.map((it, idx) => ({ id: `act-${idx}`, ...it })),
+      undefined,
+      uiState,
+      isEn,
+    );
+
+    return projectedItems
+      .filter((it) =>
+        matchesFilter(
+          {
+            id: String(it.id ?? ''),
+            title: String(it.title ?? ''),
+            subtitle: String(it.subtitle ?? ''),
+            amount: String(it.amount ?? ''),
+            tone: String(it.tone ?? ''),
+          },
+          p.filter,
+          runtimeFilter,
+        ),
+      )
+      .map((it, idx) => {
+        const amt = it.amount !== undefined && it.amount !== null ? String(it.amount).trim() : '';
+        const unsignedTone = it.tone === 'inflow' || it.tone === 'outflow' ? it.tone : 'neutral';
+        const { amount, tone } = activityAmount(amt, unsignedTone, false);
+        const title = String(it.title ?? tr(`记录 ${idx + 1}`, `Activity ${idx + 1}`));
+        const subtitle = it.subtitle ? String(it.subtitle) : '';
+        const staticRecord: Row = {
+          id: String(it.id ?? `act-${idx}`),
+          title,
+          subtitle,
+          amount: amt,
+          icon: typeof it.icon === 'string' ? it.icon : '',
+          tone: it.tone === 'inflow' || it.tone === 'outflow' || it.tone === 'neutral' ? it.tone : tone,
+        };
+        return {
+          id: String(it.id ?? idx),
+          title,
+          subtitle,
+          amount,
+          missingAmount: !amt,
+          icon: typeof it.icon === 'string' ? it.icon : undefined,
+          tone,
+          row: undefined as Row | undefined,
+          staticRecord,
+          onClick: it.onClick as PropValue | undefined,
+        };
+      });
+  }, [
+    tableId,
+    schema,
+    p.titleField,
+    p.subtitleField,
+    p.amountField,
+    p.typeField,
+    p.iconField,
+    p.items,
+    p.filter,
+    runtimeFilter,
+    filteredRows,
+    uiState,
+    isEn,
+    tr,
+    td,
+  ]);
+
+  if (bindingErrors.length) {
+    return (
+      <div
+        {...rootWith(root, {
+          className: 'rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800',
+        })}
+        role="alert"
+      >
+        {td(bindingErrors[0])}
+      </div>
+    );
+  }
+
+  return (
+    <div {...rootWith(root, { className: cx('rounded-[22px] p-4 space-y-3', theme.cardBg) })} data-activity-list="1">
+      {(p.title || p.extra) && (
+        <div className="flex items-center justify-between gap-2">
+          {p.title && <h3 className={cx('text-[15px] font-semibold tracking-tight', theme.textPrimary)}>{String(p.title)}</h3>}
+          {p.extra && (
+            <button
+              type="button"
+              onClick={() => rt.run(p.onExtraClick as PropValue, scope)}
+              className={cx('text-[12px] font-semibold inline-flex items-center gap-0.5 cursor-pointer', theme.accentText)}
+            >
+              <span>{String(p.extra)}</span>
+              <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {entries.length === 0 ? (
+        <div className={cx('rounded-2xl py-6 text-center text-[12.5px]', theme.subtleBg, theme.textMuted)}>
+          {String(p.emptyText || tr('暂无流水记录', 'No activity records'))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((entry) => {
+            const canonicalRow =
+              tableId && entry.row
+                ? resolveCanonicalRow(tableId, entry.row, preview?.rows) ?? entry.row
+                : undefined;
+            const guardTargetRecord: Row | undefined = tableId ? canonicalRow : entry.staticRecord;
+            const actionScope =
+              tableId && canonicalRow
+                ? childRowScope(scope, canonicalRow, tableId, fkSourceTableId)
+                : isolatedStaticItemScope(scope, entry.staticRecord);
+
+            const visibleActions = rowActions.filter(
+              (ra) => !matchesWhenCondition(guardTargetRecord, ra.hiddenWhenField, ra.hiddenWhenValue),
+            );
+            const hasSwipeActions = visibleActions.length > 0;
+            const isSwipedOpen = hasSwipeActions && openRowKey === entry.id;
+            const isActive = Boolean(tableId && canonicalRow && activeRowId === canonicalRow.id);
+            const DefaultIcon =
+              entry.tone === 'inflow'
+                ? ArrowDownLeft
+                : entry.tone === 'outflow'
+                ? ArrowUpRight
+                : Wallet;
+            const Icon = entry.icon ? resolveMobileIcon(entry.icon, DefaultIcon) : DefaultIcon;
+            const iconBadgeCls =
+              entry.tone === 'inflow'
+                ? theme.isDark
+                  ? 'bg-emerald-500/18 text-emerald-300'
+                  : 'bg-emerald-100 text-emerald-700'
+                : entry.tone === 'outflow'
+                ? theme.isDark
+                  ? 'bg-rose-500/18 text-rose-300'
+                  : 'bg-rose-100/90 text-rose-700'
+                : cx(theme.subtleBg, theme.textSecondary);
+            const amountCls =
+              entry.tone === 'inflow'
+                ? theme.isDark
+                  ? 'text-emerald-400'
+                  : 'text-emerald-600'
+                : entry.tone === 'outflow'
+                ? theme.isDark
+                  ? 'text-rose-300'
+                  : 'text-[#1F1F1F]'
+                : theme.textPrimary;
+
+            const rowActionChain = entry.onClick ?? (p.onItemClick as PropValue | undefined);
+            const rowActionBlocked =
+              actionChainRequiresBoundRow(rowActionChain) && (!tableId || !canonicalRow);
+
+            const activateRow = () => {
+              if (rt.isDesign) return;
+              if (isSwipedOpen) {
+                setOpenRowKey(null);
+                return;
+              }
+              if (autoSelectFirst && tableId && canonicalRow) {
+                rt.setActiveRow?.(tableId, canonicalRow.id, fkSourceTableId);
+              }
+              if (rowActionBlocked || !rowActionChain) return;
+              void rt.run(rowActionChain, actionScope);
+            };
+
+            const clickable =
+              !rt.isDesign &&
+              ((Boolean(rowActionChain) && !rowActionBlocked) || Boolean(autoSelectFirst && tableId && canonicalRow));
+
+            const hiddenActionTrayAttrs =
+              !isSwipedOpen && !rt.isDesign
+                ? ({ 'aria-hidden': 'true', inert: '' } as unknown as React.HTMLAttributes<HTMLDivElement>)
+                : {};
+
+            return (
+              <div
+                key={entry.id}
+                data-row-id={canonicalRow?.id ?? entry.id}
+                data-active-row={isActive ? '1' : undefined}
+                data-swiped={isSwipedOpen ? '1' : undefined}
+                className="relative overflow-clip rounded-[18px] [container-type:inline-size]"
+              >
+                {/* The track spans the row and its tray. The difference is the actual reveal width. */}
+                <div
+                  className="flex w-max transition-[translate] duration-200 ease-out motion-reduce:transition-none"
+                  style={{ translate: isSwipedOpen ? 'calc(100cqw - 100%) 0' : undefined }}
+                >
+                  <div
+                    data-activity-row-surface="1"
+                    onClick={clickable || isSwipedOpen ? activateRow : undefined}
+                    {...interactiveBoxProps(clickable, activateRow)}
+                    onTouchStart={(e) => {
+                      if (!hasSwipeActions || rt.isDesign) return;
+                      touchStartXRef.current = e.touches[0]?.clientX ?? null;
+                    }}
+                    onTouchEnd={(e) => {
+                      if (!hasSwipeActions || rt.isDesign || touchStartXRef.current === null) return;
+                      const endX = e.changedTouches[0]?.clientX ?? touchStartXRef.current;
+                      const dx = endX - touchStartXRef.current;
+                      touchStartXRef.current = null;
+                      if (dx < -32) setOpenRowKey(entry.id);
+                      else if (dx > 24 && isSwipedOpen) setOpenRowKey(null);
+                    }}
+                    className={cx(
+                      'relative w-[100cqw] shrink-0 touch-pan-y min-h-[58px] rounded-[18px] px-3 py-2.5 flex items-center justify-between gap-2.5 transition-transform duration-200 ease-out',
+                      theme.subtleBg,
+                      clickable && 'cursor-pointer active:scale-[0.99]',
+                      isActive && 'ring-2 ring-blue-500/60',
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={cx('w-10 h-10 rounded-full inline-flex items-center justify-center shrink-0', iconBadgeCls)}>
+                        <Icon className="w-4 h-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className={cx('text-[13.5px] font-semibold truncate', theme.textPrimary)}>{entry.title}</div>
+                        {entry.subtitle && (
+                          <div className={cx('text-[11.5px] truncate mt-0.5', theme.textMuted)}>{entry.subtitle}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {entry.missingAmount ? (
+                        <span
+                          data-missing-value="1"
+                          className={cx('text-[14px] font-semibold tabular-nums opacity-50', theme.textMuted)}
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <SplitMetricText
+                          value={entry.amount}
+                          splitDecimal={splitDec}
+                          className={cx('text-[14.5px] font-bold tracking-tight', amountCls)}
+                        />
+                      )}
+                      {hasSwipeActions && !rt.isDesign && (
+                        <button
+                          type="button"
+                          aria-label={tr('展开行操作', 'Toggle row actions')}
+                          aria-expanded={isSwipedOpen}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenRowKey((prev) => (prev === entry.id ? null : entry.id));
+                          }}
+                          className={cx(
+                            'w-8 h-8 rounded-full inline-flex items-center justify-center cursor-pointer transition hover:opacity-80',
+                            theme.textMuted,
+                          )}
+                        >
+                          <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {hasSwipeActions && (
+                    <div
+                      data-swipe-actions="1"
+                      {...hiddenActionTrayAttrs}
+                      className={cx(
+                        'flex w-max max-w-[calc(100cqw-44px)] shrink-0 items-center overflow-x-auto overscroll-x-contain gap-1.5 pr-1.5 pl-3',
+                        !isSwipedOpen && !rt.isDesign && 'pointer-events-none',
+                      )}
+                    >
+                      {visibleActions.map((ra, aIdx) => {
+                        const lbl = String(ra.label ?? tr(`操作${aIdx + 1}`, `Action ${aIdx + 1}`));
+                        const danger = Boolean(ra.danger);
+                        const primary = Boolean(ra.primary);
+                        const requiresRow = actionChainRequiresBoundRow(ra.onClick);
+                        const missingTargetRecord = requiresRow && (!tableId || !canonicalRow);
+                        const guardDisabled =
+                          missingTargetRecord ||
+                          matchesWhenCondition(
+                            guardTargetRecord,
+                            ra.disabledWhenField,
+                            ra.disabledWhenValue,
+                          );
+                        const reason = missingTargetRecord
+                          ? tr('静态演示项无物理表记录，已禁用行变更动作', 'Disabled: static item has no bound table row')
+                          : typeof ra.disabledReason === 'string'
+                          ? ra.disabledReason
+                          : undefined;
+                        return (
+                          <button
+                            key={aIdx}
+                            type="button"
+                            tabIndex={isSwipedOpen || rt.isDesign ? 0 : -1}
+                            disabled={guardDisabled}
+                            title={guardDisabled ? reason : undefined}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (guardDisabled || rt.isDesign) return;
+                              setOpenRowKey(null);
+                              if (ra.onClick) void rt.run(ra.onClick, actionScope);
+                            }}
+                            className={cx(
+                              'min-h-[38px] px-3.5 rounded-full text-[11.5px] font-semibold inline-flex items-center gap-1 shrink-0 transition-transform active:scale-95',
+                              guardDisabled
+                                ? 'opacity-45 cursor-not-allowed bg-slate-500/20 text-slate-400'
+                                : danger
+                                ? 'bg-rose-600 text-white cursor-pointer'
+                                : primary
+                                ? cx(theme.accentSolidBg, 'cursor-pointer')
+                                : cx(theme.subtleBg, theme.textPrimary, 'cursor-pointer'),
+                            )}
+                          >
+                            {danger && <Trash2 className="w-3 h-3" aria-hidden="true" />}
+                            <span>{lbl}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MFloatingBar: React.FC<CompProps> = ({ p, root, rt, scope }) => {
+  const { tr } = useI18n();
+  const theme = useMobileTheme();
+  const tone = (p.tone as string) || 'inverted';
+  const isInverted = tone === 'inverted';
+  const isAccent = tone === 'accent';
+  const Icon = resolveMobileIcon(p.icon as string | undefined, Zap);
+  const SecondaryIcon =
+    typeof p.secondaryIcon === 'string' && p.secondaryIcon
+      ? resolveMobileIcon(p.secondaryIcon, ChevronRight)
+      : null;
+  const progress =
+    typeof p.progress === 'number' && Number.isFinite(p.progress)
+      ? Math.max(0, Math.min(100, p.progress))
+      : undefined;
+
+  const barCls = isInverted
+    ? 'bg-[#12151B]/95 text-[#F8FAFC] backdrop-blur-xl ring-1 ring-inset ring-white/14 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.58)]'
+    : isAccent
+    ? cx(theme.accentSolidBg, 'shadow-[0_12px_28px_-8px_rgba(15,23,42,0.3)]')
+    : cx(
+        theme.glassBg,
+        theme.textPrimary,
+        theme.isDark ? 'border border-white/12' : 'border border-white/85',
+      );
+
+  const activateWhole = () => {
+    if (!rt.isDesign && p.onClick) void rt.run(p.onClick as PropValue, scope);
+  };
+
+  return (
+    <div
+      {...rootWith(root, {
+        className: 'px-4 pb-1.5 pt-1',
+      })}
+      data-floating-bar={tone}
+    >
+      <div
+        onClick={p.onClick ? activateWhole : undefined}
+        {...interactiveBoxProps(Boolean(p.onClick) && !rt.isDesign, activateWhole)}
+        style={isInverted ? { colorScheme: 'dark' } : undefined}
+        className={cx(
+          'relative overflow-hidden rounded-[22px] px-3 py-2.5 flex items-center justify-between gap-2.5',
+          barCls,
+          Boolean(p.onClick) && !rt.isDesign && 'cursor-pointer active:scale-[0.99] transition-transform',
+        )}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          {typeof p.image === 'string' && p.image.trim() ? (
+            <img src={p.image.trim()} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />
+          ) : (
+            <span
+              className={cx(
+                'w-9 h-9 rounded-full inline-flex items-center justify-center shrink-0',
+                isInverted
+                  ? 'bg-white/12 text-[#A3E635]'
+                  : isAccent
+                  ? 'bg-black/15 text-current'
+                  : cx(theme.pillActiveBg),
+              )}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+            </span>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[13px] font-semibold truncate">
+                {String(p.title || tr('实时任务状态', 'Live Status'))}
+              </span>
+              {Boolean(p.badge) && (
+                <span
+                  className={cx(
+                    'px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0',
+                    isInverted ? 'bg-[#A3E635]/20 text-[#D9F99D]' : 'bg-black/15 text-current',
+                  )}
+                >
+                  {String(p.badge)}
+                </span>
+              )}
+            </div>
+            {Boolean(p.subtitle) && (
+              <div
+                className={cx(
+                  'text-[11px] truncate',
+                  isInverted ? 'text-white/65' : isAccent ? 'opacity-80' : theme.textMuted,
+                )}
+              >
+                {String(p.subtitle)}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {Boolean(p.actionText) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!rt.isDesign) void rt.run((p.onAction ?? p.onClick) as PropValue, scope);
+              }}
+              className={cx(
+                'min-h-[34px] px-3.5 rounded-full text-[12px] font-semibold inline-flex items-center justify-center cursor-pointer transition-transform active:scale-95',
+                isInverted
+                  ? 'bg-white text-[#0F172A]'
+                  : isAccent
+                  ? 'bg-white/95 text-[#0F172A]'
+                  : theme.accentSolidBg,
+              )}
+            >
+              {String(p.actionText)}
+            </button>
+          )}
+          {SecondaryIcon && (
+            <button
+              type="button"
+              aria-label={tr('快捷次要操作', 'Secondary action')}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!rt.isDesign) void rt.run(p.onSecondaryClick as PropValue, scope);
+              }}
+              className={cx(
+                'w-8 h-8 rounded-full inline-flex items-center justify-center cursor-pointer transition-transform active:scale-95',
+                isInverted ? 'bg-white/10 text-white' : 'bg-black/10 text-current',
+              )}
+            >
+              <SecondaryIcon className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+
+        {progress !== undefined && (
+          <div
+            className={cx(
+              'absolute inset-x-3 bottom-0 h-[2.5px] rounded-full overflow-hidden',
+              isInverted ? 'bg-white/12' : 'bg-black/10',
+            )}
+            aria-hidden="true"
+          >
+            <div
+              className={cx(
+                'h-full rounded-full pf-capsule-fill',
+                isInverted ? 'bg-[#A3E635]' : 'bg-current',
+              )}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MobilePage,
   MSurface,
@@ -4269,6 +5910,8 @@ export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MKanban,
   MCalendar,
   MAiInsightCard,
+  MProgressList,
+  MActivityList,
   MTaskList,
   MListGroup,
   MListItem,
@@ -4282,6 +5925,7 @@ export const MOBILE_REGISTRY: Record<string, React.FC<CompProps>> = {
   MMediaInput,
   MButton,
   MBottomDock,
+  MFloatingBar,
   MBottomSheet,
   MDialog,
 };

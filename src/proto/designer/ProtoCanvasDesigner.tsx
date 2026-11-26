@@ -29,9 +29,15 @@ import {
 } from 'lucide-react';
 import { useProtoStore } from '../../store/useProtoStore';
 import { useResolvedTheme } from '../registry/AntdSurface';
-import { MobileViewportShell } from '../mobile/MobileViewportShell';
+import { DesktopOverlayStack } from '../registry/DesktopOverlayStack';
+import { MobileOverlayStack, MobileViewportShell } from '../mobile/MobileViewportShell';
 import { resolveMobileAppearance, ToastStatusIcon, type MobileAppearance } from '../mobile/components';
 import { localizeMobileDeviceLabel, MOBILE_DEVICE_LIST, resolvePagePlatform } from '../mobile/types';
+import {
+  effectiveCanvasColorMode,
+  resolveDesktopAppearance,
+  type DesktopAppearance,
+} from '../theme/designTokens';
 import { useHermesStore } from '../../store/useHermesStore';
 import { runCanvasAiWithHermes, runScanStickiesAndAstToDbWithHermes, runProjectAi, reportAiError } from '../../services/hermesBridge';
 import {
@@ -72,8 +78,7 @@ import {
   parseSnippetNode,
   validatePageDoc,
 } from '../ai/assistant';
-import { RuntimeProvider, useRuntimeController } from '../runtime/runtime';
-import type { Row } from '../runtime/mock';
+import { RuntimeProvider, scopeForOverlay, useRuntimeController } from '../runtime/runtime';
 import { DesignProvider, NodeView, ScopeProvider, StickyPinProvider, type DesignApi } from '../renderer/NodeView';
 import { MaterialsAndOutlinePane, type LeftPaneTab } from './MaterialsAndOutlinePane';
 import { NodeInspectorPanel, type OverlayBinding } from './NodeInspectorPanel';
@@ -169,13 +174,23 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
   const isMobilePage = doc.root.type === 'MobilePage';
   const workspaceTheme = useResolvedTheme();
   const [mobilePreviewAppearance, setMobilePreviewAppearance] = useState<MobileAppearance | null>(null);
+  const [desktopPreviewAppearance, setDesktopPreviewAppearance] = useState<DesktopAppearance | null>(null);
   useEffect(() => {
     setMobilePreviewAppearance(null);
-  }, [workspaceTheme]);
+    setDesktopPreviewAppearance(null);
+  }, [workspaceTheme, designTokens?.colorMode]);
   const effectiveMobileAppearance = resolveMobileAppearance(
     doc.root.props.appearance,
     workspaceTheme,
     mobilePreviewAppearance,
+    doc.root.props.surfaceBg,
+  );
+  const baseDesktopCanvasMode = effectiveCanvasColorMode(designTokens, workspaceTheme);
+  const effectiveDesktopAppearance = resolveDesktopAppearance(
+    doc.root.props.appearance,
+    baseDesktopCanvasMode,
+    desktopPreviewAppearance,
+    doc.root.props.surfaceBg,
   );
   const [mobileFramed, setMobileFramed] = useState(true);
   const [mobileExpandHeight, setMobileExpandHeight] = useState(false);
@@ -1199,6 +1214,36 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         )}
                       </div>
                     )}
+                    {!isMobilePage && mode !== 'code' && (
+                      <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
+                        <button
+                          type="button"
+                          data-testid="desktop-appearance-toggle"
+                          onClick={() =>
+                            setDesktopPreviewAppearance(
+                              effectiveDesktopAppearance === 'dark' ? 'light' : 'dark',
+                            )
+                          }
+                          title={tr(
+                            '切换桌面端画布预览外观（浅色高颜底布 / 曜石深色，不修改页面源码）',
+                            'Toggle desktop canvas light/dark preview without mutating page source',
+                          )}
+                          className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[10.5px] font-medium text-slate-700 inline-flex items-center gap-1 cursor-pointer transition"
+                        >
+                          {effectiveDesktopAppearance === 'dark' ? (
+                            <>
+                              <Moon className="w-3 h-3 text-indigo-600" />
+                              <span>{tr('深色画布', 'Dark')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sun className="w-3 h-3 text-amber-500" />
+                              <span>{tr('浅色画布', 'Light')}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1496,7 +1541,15 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                   </div>
 
                   {/* Isolated Paper Frame for the Modal or Drawer */}
-                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
+                  <ProtoCanvasThemeScope
+                    tokens={designTokens}
+                    hostTheme={workspaceTheme}
+                    pageAppearance={doc.root.props.appearance}
+                    previewAppearance={desktopPreviewAppearance}
+                    surfaceBg={doc.root.props.surfaceBg}
+                    accent={doc.root.props.accent}
+                    motion={doc.root.props.motion}
+                  >
                   {isMobilePage ? (
                     <div className="pf-mobile-canvas-stage flex-1 min-h-0 py-4 flex justify-center items-start rounded-2xl border border-slate-200/80 overflow-y-auto">
                       <MobileViewportShell
@@ -1514,7 +1567,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                       </MobileViewportShell>
                     </div>
                   ) : (
-                    <div className="pf-paper pf-ai-aura-surface flex-[1_0_auto] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm p-5 min-h-[360px]">
+                    <div
+                      className={`pf-paper pf-ai-aura-surface flex-[1_0_auto] flex flex-col rounded-2xl border shadow-sm p-5 min-h-[360px] ${
+                        effectiveDesktopAppearance === 'dark'
+                          ? 'border-zinc-800 bg-[#101114]'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                    >
                       <NodeView
                         node={activeOverlay.node}
                         options={{ staticOverlay: true }}
@@ -1527,14 +1586,24 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                 /* MAIN PAGE CANVAS + ADAPTIVE BOTTOM STICKY NOTES DOCK (Design or Live Preview) */
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {/* Upper Primary Canvas Region: takes all remaining height and stretches <Page> to 100%, while expanding freely when content exceeds viewport */}
-                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
+                  <ProtoCanvasThemeScope
+                    tokens={designTokens}
+                    hostTheme={workspaceTheme}
+                    pageAppearance={doc.root.props.appearance}
+                    previewAppearance={desktopPreviewAppearance}
+                    surfaceBg={doc.root.props.surfaceBg}
+                    accent={doc.root.props.accent}
+                    motion={doc.root.props.motion}
+                  >
                   {isMobilePage ? (
                     <div className="pf-mobile-canvas-stage flex-1 min-h-0 overflow-y-auto py-5 px-4 flex flex-col items-center">
                       <MobileViewportShell
                         device={mobileDevice}
                         appearance={doc.root.props.appearance}
                         previewAppearance={mobilePreviewAppearance}
-                        accent={doc.root.props.accent} surfaceBg={doc.root.props.surfaceBg}
+                        accent={doc.root.props.accent}
+                        surfaceBg={doc.root.props.surfaceBg}
+                        motion={doc.root.props.motion}
                         framed={mobileFramed}
                         expandHeight={mode === 'design' && mobileExpandHeight}
                         runtimeFeedback={
@@ -1548,26 +1617,10 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                         }
                         overlaySlot={
                           mode === 'preview' ? (
-                            <>
-                              {runtime.overlays.map((entry, stackIdx) => {
-                                const target = overlays.find((o) => o.overlayId === entry.id);
-                                if (!target) return null;
-                                return (
-                                  <ScopeProvider
-                                    key={entry.key}
-                                    value={{
-                                      row: entry.params.row as Row | undefined,
-                                      tableId: entry.params.tableId as string | undefined,
-                                      expectedTableId: entry.expectedTableId,
-                                      params: entry.params,
-                                      overlayIndex: stackIdx,
-                                    }}
-                                  >
-                                    <NodeView node={target.node} live />
-                                  </ScopeProvider>
-                                );
-                              })}
-                            </>
+                            <MobileOverlayStack
+                              overlays={runtime.overlays}
+                              resolveNode={(id) => overlays.find((o) => o.overlayId === id)?.node}
+                            />
                           ) : undefined
                         }
                       >
@@ -1576,7 +1629,13 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     </div>
                   ) : (
                     <div className="flex-1 min-h-0 overflow-y-auto p-1 flex flex-col">
-                      <div className="pf-paper pf-ai-aura-surface flex-[1_0_auto] flex flex-col rounded-[16px] border border-slate-200/85 bg-white relative overflow-visible">
+                      <div
+                        className={`pf-paper pf-ai-aura-surface flex-[1_0_auto] flex flex-col rounded-[16px] border relative overflow-visible ${
+                          effectiveDesktopAppearance === 'dark'
+                            ? 'border-zinc-800/90 bg-[#101114]'
+                            : 'border-slate-200/85 bg-white'
+                        }`}
+                      >
                         <NodeView node={doc.root} />
                       </div>
                     </div>
@@ -1716,28 +1775,22 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
               )}
               </div>
 
-              {/* LIVE PREVIEW STACKED OVERLAYS (Supports unlimited Modal -> Drawer -> Modal nesting!) */}
+              {/* LIVE PREVIEW STACKED OVERLAYS (Supports unlimited Modal -> Drawer -> Modal nesting + exit animations!) */}
               {mode === 'preview' &&
                 !isMobilePage && (
-                  <ProtoCanvasThemeScope tokens={designTokens} hostTheme={workspaceTheme}>
-                    {runtime.overlays.map((entry, stackIdx) => {
-                      const target = overlays.find((o) => o.overlayId === entry.id);
-                      if (!target) return null;
-                      return (
-                        <ScopeProvider
-                          key={entry.key}
-                          value={{
-                            row: entry.params.row as Row | undefined,
-                            tableId: entry.params.tableId as string | undefined,
-                            expectedTableId: entry.expectedTableId,
-                            params: entry.params,
-                            overlayIndex: stackIdx,
-                          }}
-                        >
-                          <NodeView node={target.node} live />
-                        </ScopeProvider>
-                      );
-                    })}
+                  <ProtoCanvasThemeScope
+                    tokens={designTokens}
+                    hostTheme={workspaceTheme}
+                    pageAppearance={doc.root.props.appearance}
+                    previewAppearance={desktopPreviewAppearance}
+                    surfaceBg={doc.root.props.surfaceBg}
+                    accent={doc.root.props.accent}
+                    motion={doc.root.props.motion}
+                  >
+                    <DesktopOverlayStack
+                      overlays={runtime.overlays}
+                      resolveNode={(id) => overlays.find((o) => o.overlayId === id)?.node}
+                    />
                   </ProtoCanvasThemeScope>
                 )}
 

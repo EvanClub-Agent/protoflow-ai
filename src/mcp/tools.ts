@@ -12,6 +12,7 @@ import { noteHtmlToMarkdown, noteHtmlToPlainText } from '../proto/notes';
 import { FIELD_TYPES } from '../proto/registry/meta';
 import { buildSitemap } from '../proto/sitemap';
 import { exportDesignTokensSpec } from '../proto/theme/designTokens';
+import { analyzeVisualConsistency } from '../proto/theme/visualConsistency';
 import { isNode, type PropValue, type ProtoNode } from '../proto/types';
 import { analyzeProject, projectSpecification } from '../services/projectAnalysis';
 import { reviewPageDependencies } from '../services/projectDependencies';
@@ -663,6 +664,7 @@ export function executeSpecTool(
       const notes = (s.projectNotes?.nodes ?? []).filter((n) => n.kind === 'note');
       const mindmaps = (s.mindmaps?.nodes ?? []).filter((n) => n.kind === 'mindmap');
       const dbReview = includeDiagnostics ? reviewDatabaseDesign(s.dbTables) : null;
+      const visualBaseline = analyzeVisualConsistency(s);
 
       return {
         project: {
@@ -676,6 +678,7 @@ export function executeSpecTool(
           entryPageId: s.activePageId,
         },
         designTokens: exportDesignTokensSpec(s.designTokens, isEnLocale() ? 'en-US' : 'zh-CN'),
+        visualBaseline,
         counts: {
           pages: pages.filter((p) => !p.deprecated).length,
           archivedPages: pages.filter((p) => p.deprecated).length,
@@ -704,6 +707,7 @@ export function executeSpecTool(
                 tableErrors: dbReview?.tableErrors ?? [],
                 relationErrors: dbReview?.relationErrors ?? [],
                 designRisks: dbReview?.risks ?? [],
+                visualConsistencyWarnings: visualBaseline.warnings,
               },
             }
           : {}),

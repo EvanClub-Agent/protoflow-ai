@@ -1,17 +1,34 @@
 import { AXURE_LEAF_KINDS } from '../axure/metadata';
 import { AxureCanvas, AxureWidget, DynamicPanel, OutlineTree, TreeItem, StaticTable, textFrameStyle } from '../axure/materials';
 import { FIGMA_COMPONENTS } from '../figma/materials';
-import { MODERN_DESKTOP_COMPONENTS } from './modernComponents';
+import { MODERN_DESKTOP_COMPONENTS, resolveSemanticIcon } from './modernComponents';
 import { rowsForSource, sourceForeignKeyErrors } from '../table/model';
-import { resolveCanonicalRow, useAutoSelectFirstRow, useSourceRow } from '../runtime/sourceRow';
+import { resolveCanonicalRow, useAutoSelectFirstRow, useCollectionSourceRow, useSourceRow } from '../runtime/sourceRow';
 import { matchesWhenCondition } from '../runtime/pokaYoke';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useId, useMemo, useState } from 'react';
 import AntButton from 'antd/es/button';
 import AntPagination from 'antd/es/pagination';
 import Skeleton from 'antd/es/skeleton';
 import Spin from 'antd/es/spin';
-import { AntdSurface } from './AntdSurface';
-import { useCanvasTheme } from '../theme/ProtoCanvasThemeScope';
+import { CaptureMode } from '../../capture/CaptureMode';
+import { AntdSurface, useResolvedTheme } from './AntdSurface';
+import { useDesktopOverlayExitAnimation } from './DesktopOverlayStack';
+import {
+  CanvasThemeContext,
+  CardBodyContext,
+  DesktopOverlayPositionContext,
+  useCanvasTheme,
+  useInsideCardBody,
+  type CanvasThemeContextValue,
+} from '../theme/ProtoCanvasThemeScope';
+import {
+  normalizeDesktopAccent,
+  normalizeDesktopMotion,
+  normalizeDesktopSurfaceBg,
+  resolveDesktopAccentColor,
+  resolveDesktopAppearance,
+  resolveDesignTokens,
+} from '../theme/designTokens';
 import {
   applyUIStackRows,
   UIStackEmptyBannerHint,
@@ -49,7 +66,7 @@ import { AntdFieldControl, ANTD_FIELD_KINDS } from './AntdFieldControl';
 import { materialOptions } from './antdOptions';
 import { ANTD_COMPONENTS } from './antdComponents';
 import { FreeformMaterial } from '../freeform/FreeformMaterial';
-import { MOBILE_REGISTRY } from '../mobile/components';
+import { MOBILE_REGISTRY, SplitMetricText } from '../mobile/components';
 import { EditableCell } from '../table/EditableCell';
 import { defaultTableColumns, missingMergeRow, SAMPLE_FIELDS, SAMPLE_ROWS, prepareTableRows, tableCellSpans, tableConfigErrors, visibleTableRows, type TableColumn, type TableSort } from '../table/model';
 import { ChartMaterial } from '../charts/ChartMaterial';
@@ -487,6 +504,8 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       : form?.labelWidth;
   const labelSuffix = effColon ? tr('：', ': ') : '';
 
+  const isFieldDark = useCanvasTheme()?.effectiveMode === 'dark';
+  const fieldLabelToneCls = isFieldDark ? 'text-zinc-300' : 'text-slate-600';
   // 1. Compact inline toolbar mode (when placed inside <Toolbar>, horizontal <Space>, or labelLayout === 'inline')
   if (effLayout === 'inline') {
     const ctrlWidthCls =
@@ -508,7 +527,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       >
         {def.label && (
           <label
-            className="shrink-0 text-[12px] font-medium text-slate-600 whitespace-nowrap"
+            className={cx('shrink-0 text-[12px] font-medium whitespace-nowrap', fieldLabelToneCls)}
             title={def.label}
           >
             {def.required && <span className="text-rose-500 mr-0.5">*</span>}
@@ -536,7 +555,7 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       >
         {def.label && (
           <label
-            className="text-[12px] font-medium text-slate-600 flex items-center gap-0.5 truncate"
+            className={cx('text-[12px] font-medium flex items-center gap-0.5 truncate', fieldLabelToneCls)}
             title={def.label}
           >
             {def.required && <span className="text-rose-500 shrink-0">*</span>}
@@ -567,7 +586,8 @@ const FieldControl: React.FC<{ def: FieldDef; rt: Runtime; scope: Scope; inline?
       {def.label && (
         <label
           className={cx(
-            'shrink-0 text-[12px] font-medium text-slate-600 whitespace-nowrap truncate',
+            'shrink-0 text-[12px] font-medium whitespace-nowrap truncate',
+            fieldLabelToneCls,
             useAutoLabel
               ? 'min-w-[44px] max-w-[112px]'
               : effLabelAlign === 'left'
@@ -598,41 +618,65 @@ const fieldFromProps = (type: string) =>
 
 // ───────────────────────── Components ─────────────────────────
 const STATUS_COLOR: Record<string, string> = {
-  已通过: 'green', 启用: 'green', 合格: 'green', qualified: 'green', confirmed: 'green', 已完成: 'green', 已入库: 'green',
-  Approved: 'green', Enabled: 'green', Active: 'green', Pass: 'green', Completed: 'green', Done: 'green', Stored: 'green',
-  待审批: 'orange', 审批中: 'orange', pending: 'orange', 待处理: 'orange',
-  Pending: 'orange', 'In Progress': 'orange', Reviewing: 'orange',
-  已驳回: 'red', 停用: 'red', rejected: 'red', 异常: 'red',
-  Rejected: 'red', Disabled: 'red', Fail: 'red', Error: 'red',
+  已通过: 'green', 启用: 'green', 合格: 'green', qualified: 'green', confirmed: 'green', 已完成: 'green', 已入库: 'green', 已结单: 'green', 正常: 'green',
+  Approved: 'green', Enabled: 'green', Active: 'green', Pass: 'green', Completed: 'green', Done: 'green', Stored: 'green', Closed: 'green',
+  上门中: 'blue', 处理中: 'blue', 进行中: 'blue', 执行中: 'blue', 派单中: 'blue',
+  'On-Site': 'blue', 'In Progress': 'blue', Processing: 'blue',
+  待审批: 'orange', 审批中: 'orange', pending: 'orange', 待处理: 'orange', 待签字: 'orange', 待接单: 'orange', 待验收: 'orange',
+  Pending: 'orange', Reviewing: 'orange', Queued: 'orange',
+  已驳回: 'red', 停用: 'red', rejected: 'red', 异常: 'red', 超时: 'red', 高危: 'red',
+  Rejected: 'red', Disabled: 'red', Fail: 'red', Error: 'red', Overdue: 'red',
   草稿: 'default', draft: 'default', Draft: 'default',
 };
-const TAG_CLS: Record<string, string> = {
-  default: 'bg-slate-100 text-slate-600 border-slate-200',
-  blue: 'bg-blue-50 text-blue-700 border-blue-200',
-  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  orange: 'bg-amber-50 text-amber-700 border-amber-200',
-  red: 'bg-rose-50 text-rose-700 border-rose-200',
-  purple: 'bg-purple-50 text-purple-700 border-purple-200',
-  cyan: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+const TAG_CLS_LIGHT: Record<string, string> = {
+  default: 'bg-slate-100/90 text-slate-600 border-slate-200/80',
+  blue: 'bg-blue-50/90 text-blue-700 border-blue-200/80',
+  green: 'bg-emerald-50/90 text-emerald-700 border-emerald-200/80',
+  orange: 'bg-amber-50/90 text-amber-700 border-amber-200/80',
+  red: 'bg-rose-50/90 text-rose-700 border-rose-200/80',
+  purple: 'bg-purple-50/90 text-purple-700 border-purple-200/80',
+  cyan: 'bg-cyan-50/90 text-cyan-700 border-cyan-200/80',
+};
+const TAG_CLS_DARK: Record<string, string> = {
+  default: 'bg-zinc-800/90 text-zinc-300 border-zinc-700/80',
+  blue: 'bg-blue-500/16 text-blue-300 border-blue-400/25',
+  green: 'bg-emerald-500/16 text-emerald-300 border-emerald-400/25',
+  orange: 'bg-amber-500/16 text-amber-300 border-amber-400/25',
+  red: 'bg-rose-500/16 text-rose-300 border-rose-400/25',
+  purple: 'bg-purple-500/16 text-purple-300 border-purple-400/25',
+  cyan: 'bg-cyan-500/16 text-cyan-300 border-cyan-400/25',
+};
+const TAG_DOT_CLS: Record<string, string> = {
+  default: 'bg-slate-400',
+  blue: 'bg-blue-500',
+  green: 'bg-emerald-500',
+  orange: 'bg-amber-500',
+  red: 'bg-rose-500',
+  purple: 'bg-purple-500',
+  cyan: 'bg-cyan-500',
 };
 const TagPill: React.FC<{
   color?: string;
   bordered?: boolean;
   round?: boolean;
+  dot?: boolean;
   closable?: boolean;
   onClose?: () => void;
   children: React.ReactNode;
-}> = ({ color = 'default', bordered = true, round, closable, onClose, children }) => {
+}> = ({ color = 'default', bordered = true, round, dot, closable, onClose, children }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
+  const palette = isDark ? TAG_CLS_DARK : TAG_CLS_LIGHT;
   return (
     <span
       className={cx(
-        'inline-flex items-center gap-1 px-2 py-px text-[12px] leading-5',
-        round ? 'rounded-full' : 'rounded',
+        'inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11.5px] font-medium leading-4',
+        round ? 'rounded-full' : 'rounded-md',
         bordered ? 'border' : 'border border-transparent',
-        TAG_CLS[color] ?? TAG_CLS.default
+        palette[color] ?? palette.default,
       )}
     >
+      {dot && <span className={cx('h-1.5 w-1.5 rounded-full shrink-0', TAG_DOT_CLS[color] ?? TAG_DOT_CLS.default)} aria-hidden="true" />}
       {children}
       {closable && <button type="button" aria-label={tr('关闭标签', 'Close tag')} onClick={onClose} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>}
     </span>
@@ -683,31 +727,92 @@ const Button: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
 const Page: React.FC<CompProps> = ({ p, children, root, rt }) => {
   const { tr } = useI18n();
   const canvasTheme = useCanvasTheme();
+  const resolvedHostMode = useResolvedTheme();
+  const isCapture = useContext(CaptureMode);
   const uiState = useUIStackState();
   const density = canvasTheme?.resolved.density ?? 'comfortable';
   const effectivePad =
     p.padding === 'compact' || (p.padding === undefined && density === 'compact')
-      ? 'p-3 gap-y-2.5'
+      ? 'p-3.5 gap-y-3'
       : p.padding === 'loose' || (p.padding === undefined && density === 'spacious')
       ? 'p-6 gap-y-5'
-      : 'p-4 gap-y-3.5';
-  const isDarkCanvas = canvasTheme?.effectiveMode === 'dark';
+      : 'p-5 gap-y-4';
+
+  const surfaceBg = normalizeDesktopSurfaceBg(p.surfaceBg) ?? canvasTheme?.surfaceBg ?? null;
+  const accent = normalizeDesktopAccent(p.accent) ?? canvasTheme?.accent ?? null;
+  const motion = p.motion !== undefined ? normalizeDesktopMotion(p.motion) : (canvasTheme?.motion ?? 'smooth');
+  const effectiveMode = canvasTheme?.hasPageScope
+    ? canvasTheme.effectiveMode
+    : resolveDesktopAppearance(p.appearance, resolvedHostMode, undefined, p.surfaceBg);
+  const isDarkCanvas = effectiveMode === 'dark';
+
+  const fallbackCtx = useMemo<CanvasThemeContextValue>(() => {
+    const resolved = canvasTheme?.resolved ?? resolveDesignTokens(null);
+    return {
+      rawTokens: canvasTheme?.rawTokens ?? null,
+      resolved,
+      effectiveMode,
+      surfaceBg,
+      accent,
+      accentColor: resolveDesktopAccentColor(accent, effectiveMode, resolved.primaryColor),
+      motion,
+      hasPageScope: true,
+    };
+  }, [canvasTheme, effectiveMode, surfaceBg, accent, motion]);
+
   const bgCls = isDarkCanvas
-    ? 'bg-zinc-950 text-zinc-100'
+    ? surfaceBg === 'oled_carbon'
+      ? 'pf-desktop-surface-oled bg-[#0B0C0E] text-zinc-100'
+      : surfaceBg === 'aurora'
+      ? 'pf-desktop-surface-aurora-dark bg-[#0D1017] text-zinc-100'
+      : surfaceBg === 'sage_field'
+      ? 'pf-desktop-surface-sage-dark bg-[#0D1310] text-zinc-100'
+      : surfaceBg === 'pure'
+      ? 'bg-[#0E0E11] text-zinc-100'
+      : surfaceBg !== null
+      ? 'bg-[#101114] text-zinc-100'
+      : 'bg-[#0a0a0a] text-zinc-100'
+    : surfaceBg === 'sage_field'
+    ? 'pf-desktop-surface-sage bg-[#EAEEE8] text-[#132018]'
+    : surfaceBg === 'warm_paper'
+    ? 'pf-desktop-surface-warm bg-[#F6F3EC] text-[#1C1917]'
+    : surfaceBg === 'aurora'
+    ? 'pf-desktop-surface-aurora bg-[#F3F5FB] text-slate-900'
+    : surfaceBg === 'mist'
+    ? 'pf-desktop-surface-mist bg-[#F1F5F9] text-slate-900'
+    : surfaceBg === 'pure'
+    ? 'bg-white text-slate-900'
     : p.bg === 'white'
-    ? 'bg-white'
+    ? 'bg-white text-slate-900'
     : p.bg === 'gray'
-    ? 'bg-slate-100/80'
+    ? 'bg-slate-100/80 text-slate-900'
     : canvasTheme?.rawTokens
-    ? 'bg-[var(--pf-bg-layout)]'
-    : 'bg-[#f8fafc]';
+    ? 'bg-[var(--pf-bg-layout)] text-[var(--pf-text)]'
+    : 'bg-[#f8fafc] text-slate-900';
+
   const pageErrorMode =
     uiState === 'error' && (p.errorFallback === 'result_403' || p.errorFallback === 'result_500')
       ? (p.errorFallback as 'result_403' | 'result_500')
       : null;
 
-  return (
-    <div {...rootWith(root, { className: cx('flex-[1_0_auto] grid grid-cols-12 gap-x-4 items-start content-start rounded-[15px]', effectivePad, bgCls) })}>
+  const content = (
+    <div
+      data-pf-mode={!canvasTheme?.hasPageScope ? effectiveMode : undefined}
+      data-desktop-appearance={effectiveMode}
+      data-surface-bg={surfaceBg ?? undefined}
+      data-accent={accent ?? undefined}
+      data-motion={motion}
+      data-design-mode={rt.isDesign ? '1' : undefined}
+      data-capture-mode={isCapture ? '1' : undefined}
+      {...rootWith(root, {
+        className: cx(
+          'pf-desktop-page pf-desktop-bento flex-[1_0_auto] grid grid-cols-12 gap-x-4 items-start content-start rounded-[16px]',
+          effectivePad,
+          bgCls,
+        ),
+        style: { colorScheme: effectiveMode },
+      })}
+    >
       {uiState === 'empty' && typeof p.emptyTitle === 'string' && p.emptyTitle.trim() && (
         <UIStackEmptyBannerHint emptyTitle={p.emptyTitle.trim()} />
       )}
@@ -726,71 +831,147 @@ const Page: React.FC<CompProps> = ({ p, children, root, rt }) => {
       {!p.title && null}
     </div>
   );
+
+  return canvasTheme?.hasPageScope ? (
+    content
+  ) : (
+    <CanvasThemeContext.Provider value={fallbackCtx}>{content}</CanvasThemeContext.Provider>
+  );
 };
 
-const Card: React.FC<CompProps> = ({ p, children, root, rt }) => {
+const Card: React.FC<CompProps> = ({ node, p, children, root, rt }) => {
   const canvasTheme = useCanvasTheme();
   const isSmall = p.size === 'small' || (!p.size && canvasTheme?.resolved.density === 'compact');
   const isDark = canvasTheme?.effectiveMode === 'dark';
-  const variant = (p.variant as 'default' | 'subtle' | 'accent' | 'bento') || 'default';
+  const variant =
+    (p.variant as 'default' | 'subtle' | 'accent' | 'bento' | 'inverted' | 'glow') || 'default';
+  const isInverted = variant === 'inverted';
+  const effectiveDark = isDark || isInverted;
   const surfaceMode = canvasTheme?.resolved.surfaceVariant ?? 'bordered';
   const cardRadiusStyle = canvasTheme?.rawTokens ? { borderRadius: canvasTheme.resolved.cardRadiusPx } : undefined;
+  const hasExplicitHeaderBg = node.props.headerBg !== undefined;
 
-  const boxVariantCls = isDark
+  const invertedCtx = useMemo<CanvasThemeContextValue | null>(() => {
+    if (!isInverted || isDark) return null;
+    const resolved = canvasTheme?.resolved ?? resolveDesignTokens(null);
+    return {
+      rawTokens: canvasTheme?.rawTokens ?? null,
+      resolved,
+      effectiveMode: 'dark',
+      surfaceBg: canvasTheme?.surfaceBg ?? null,
+      accent: canvasTheme?.accent ?? null,
+      accentColor: resolveDesktopAccentColor(canvasTheme?.accent ?? null, 'dark', resolved.primaryColor),
+      motion: canvasTheme?.motion ?? 'smooth',
+      hasPageScope: true,
+    };
+  }, [isInverted, isDark, canvasTheme]);
+
+  const boxVariantCls = isInverted
+    ? 'pf-desktop-card-inverted bg-[#14171D] text-zinc-100 ring-1 ring-inset ring-white/[0.1] shadow-[0_14px_34px_-12px_rgba(0,0,0,0.45)]'
+    : isDark
     ? variant === 'subtle'
-      ? 'bg-zinc-900/70 border border-zinc-800/80 text-zinc-100'
+      ? 'bg-zinc-900/65 ring-1 ring-inset ring-white/[0.06] text-zinc-100'
       : variant === 'accent'
-      ? 'bg-gradient-to-br from-indigo-950/60 via-zinc-900 to-zinc-900 border border-indigo-500/30 text-zinc-100'
+      ? 'bg-gradient-to-br from-indigo-950/65 via-[#16181D] to-[#16181D] ring-1 ring-inset ring-indigo-400/25 text-zinc-100 shadow-[0_8px_24px_-10px_rgba(0,0,0,0.6)]'
+      : variant === 'glow'
+      ? 'pf-desktop-card-glow-dark bg-[#16181D] ring-1 ring-inset ring-indigo-400/35 shadow-[0_10px_28px_-10px_rgba(79,70,229,0.28)] text-zinc-100'
       : variant === 'bento'
-      ? 'bg-zinc-900 border border-zinc-800 shadow-sm text-zinc-100'
-      : 'bg-zinc-900 border border-zinc-800 text-zinc-100'
+      ? 'bg-[#16181D] ring-1 ring-inset ring-white/[0.08] shadow-[0_8px_24px_-10px_rgba(0,0,0,0.65)] text-zinc-100'
+      : cx('bg-[#16181D] text-zinc-100 shadow-[0_6px_20px_-8px_rgba(0,0,0,0.6)]', p.bordered === false ? '' : 'ring-1 ring-inset ring-white/[0.08]')
     : variant === 'subtle'
-    ? 'bg-slate-50/90 border border-slate-200/60'
+    ? 'bg-slate-50/90 ring-1 ring-inset ring-slate-900/[0.05]'
     : variant === 'accent'
-    ? 'bg-gradient-to-br from-blue-50/60 via-white to-indigo-50/30 border border-blue-200/80 shadow-2xs'
+    ? 'bg-gradient-to-br from-blue-50/75 via-white to-indigo-50/35 ring-1 ring-inset ring-blue-500/20 shadow-[0_4px_18px_-6px_rgba(37,99,235,0.08)]'
+    : variant === 'glow'
+    ? 'pf-desktop-card-glow bg-white ring-1 ring-inset ring-indigo-500/25 shadow-[0_8px_26px_-8px_rgba(79,70,229,0.14)]'
     : variant === 'bento'
-    ? 'bg-white border border-slate-200/75 shadow-sm'
+    ? 'bg-white ring-1 ring-inset ring-slate-900/[0.05] shadow-[0_6px_22px_-8px_rgba(15,23,42,0.07)]'
     : surfaceMode === 'subtle'
-    ? 'bg-white shadow-2xs border border-slate-100'
+    ? 'bg-white shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] ring-1 ring-inset ring-slate-900/[0.04]'
     : surfaceMode === 'elevated'
-    ? 'bg-white shadow-sm border border-zinc-200/80'
-    : cx('bg-white shadow-2xs', p.bordered === false ? '' : 'border border-slate-200/90');
+    ? 'bg-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.07)] ring-1 ring-inset ring-slate-900/[0.05]'
+    : cx('bg-white shadow-[0_2px_14px_-4px_rgba(15,23,42,0.05)]', p.bordered === false ? '' : 'ring-1 ring-inset ring-slate-900/[0.06]');
 
-  const headerBgCls = isDark
-    ? 'bg-zinc-900/90 border-zinc-800'
-    : p.headerBg === 'white' || variant === 'bento' || surfaceMode === 'elevated'
-    ? 'bg-white border-slate-100'
+  const headerTinted = hasExplicitHeaderBg && (p.headerBg === 'gray' || p.headerBg === 'blue');
+  const headerBgCls = effectiveDark
+    ? headerTinted
+      ? 'bg-white/[0.03] border-b border-white/[0.07]'
+      : 'border-b border-white/[0.06]'
     : p.headerBg === 'blue' || variant === 'accent'
-    ? 'bg-blue-50/50 border-blue-100/80'
-    : 'bg-slate-50/40 border-slate-100';
+    ? 'bg-blue-50/45 border-b border-blue-100/80'
+    : headerTinted
+    ? 'bg-slate-50/60 border-b border-slate-100'
+    : 'border-b border-slate-900/[0.05]';
+
+  const bodyNode = (
+    <CardBodyContext.Provider value={true}>
+      <div className={cx('grid grid-cols-12 gap-x-4 items-start', isSmall ? 'p-3.5 gap-y-2.5' : 'p-4 sm:p-5 gap-y-3.5')}>
+        {p.loading ? (
+          <div className="col-span-12"><AntdSurface><Skeleton active /></AntdSurface></div>
+        ) : children.length ? (
+          children
+        ) : (
+          <div className="col-span-12"><DropHint rt={rt} /></div>
+        )}
+      </div>
+    </CardBodyContext.Provider>
+  );
 
   return (
     <div
+      data-card-variant={variant}
+      data-pf-mode={isInverted ? 'dark' : undefined}
       {...rootWith(root, {
         className: cx(
-          'rounded-xl transition',
+          'rounded-[18px] transition duration-200',
           boxVariantCls,
-          p.hoverable && 'hover:shadow-md hover:border-blue-200'
+          p.hoverable &&
+            (effectiveDark
+              ? 'hover:-translate-y-0.5 hover:ring-white/20 hover:shadow-[0_14px_32px_-10px_rgba(0,0,0,0.75)]'
+              : 'hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-8px_rgba(15,23,42,0.1)] hover:ring-blue-500/25'),
         ),
-        style: cardRadiusStyle,
+        style: isInverted ? { ...cardRadiusStyle, colorScheme: 'dark' } : cardRadiusStyle,
       })}
     >
       {(p.title || p.extra) && (
         <div
           className={cx(
-            'flex items-center justify-between border-b rounded-t-xl',
-            isSmall ? 'px-3 h-8' : 'px-4 h-10',
-            headerBgCls
+            'flex items-center justify-between gap-2 rounded-t-[18px]',
+            isSmall ? 'px-3.5 py-2.5' : 'px-5 py-3.5',
+            headerBgCls,
           )}
-          style={cardRadiusStyle ? { borderTopLeftRadius: cardRadiusStyle.borderRadius, borderTopRightRadius: cardRadiusStyle.borderRadius } : undefined}
+          style={
+            cardRadiusStyle
+              ? { borderTopLeftRadius: cardRadiusStyle.borderRadius, borderTopRightRadius: cardRadiusStyle.borderRadius }
+              : undefined
+          }
         >
-          <span className={cx('font-bold', isDark ? 'text-zinc-100' : 'text-slate-900', isSmall ? 'text-[12px]' : 'text-[13px]')}>{p.title}</span>
-          {p.extra && <span className={cx('text-[11px] font-medium', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.extra}</span>}
+          <span
+            className={cx(
+              'font-semibold tracking-tight',
+              effectiveDark ? 'text-zinc-100' : 'text-slate-900',
+              isSmall ? 'text-[12.5px]' : 'text-[14px]',
+            )}
+          >
+            {p.title}
+          </span>
+          {p.extra && (
+            <span
+              className={cx(
+                'text-[11.5px] font-medium',
+                effectiveDark ? 'text-zinc-400' : 'text-slate-500',
+              )}
+            >
+              {p.extra}
+            </span>
+          )}
         </div>
       )}
-      <div className={cx('grid grid-cols-12 gap-x-4 items-start', isSmall ? 'p-3 gap-y-2' : 'p-4 gap-y-3')}>
-        {p.loading ? <div className="col-span-12"><AntdSurface><Skeleton active /></AntdSurface></div> : children.length ? children : <div className="col-span-12"><DropHint rt={rt} /></div>}
-      </div>
+      {invertedCtx ? (
+        <CanvasThemeContext.Provider value={invertedCtx}>{bodyNode}</CanvasThemeContext.Provider>
+      ) : (
+        bodyNode
+      )}
     </div>
   );
 };
@@ -845,26 +1026,26 @@ const Space: React.FC<CompProps> = ({ p, children, root, rt }) => {
 
 const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const active = Math.min(rt.tabs[node.pfId] ?? 0, Math.max(0, kids.length - 1));
   const pos = (p.tabPosition as 'top' | 'left' | 'bottom' | 'right') ?? 'top';
   const isSide = pos === 'left' || pos === 'right';
   const tabSizeCls =
     p.size === 'small' ? 'px-2.5 h-7 text-[12px]' : p.size === 'large' ? 'px-4 h-10 text-[14px]' : 'px-3 h-9 text-[13px]';
+  const borderLineCls = isDark ? 'border-zinc-800' : 'border-slate-200';
 
   const tabBar = (
     <div
       className={cx(
         'flex gap-1 shrink-0',
         isSide
-          ? cx('flex-col min-w-[128px]', pos === 'left' ? 'border-r border-slate-200 pr-2' : 'border-l border-slate-200 pl-2')
+          ? cx('flex-col min-w-[128px]', pos === 'left' ? `border-r ${borderLineCls} pr-2` : `border-l ${borderLineCls} pl-2`)
           : cx(
               'items-center',
-              pos === 'bottom' ? 'mt-3 border-t border-slate-200 pt-1' : 'mb-3',
+              pos === 'bottom' ? `mt-3 border-t ${borderLineCls} pt-1` : 'mb-3',
               p.type === 'segmented'
-                ? 'bg-slate-100 p-1 rounded-lg w-fit'
-                : p.type === 'card'
-                ? 'border-b border-slate-200'
-                : 'border-b border-slate-200',
+                ? cx('p-1 rounded-xl w-fit', isDark ? 'bg-zinc-800/80' : 'bg-slate-100/90')
+                : `border-b ${borderLineCls}`,
               p.centered && 'justify-center'
             )
       )}
@@ -883,18 +1064,32 @@ const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
             tabSizeCls,
             p.type === 'segmented'
               ? cx(
-                  'rounded-md',
-                  i === active ? 'bg-white text-slate-900 font-semibold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  'rounded-lg',
+                  i === active
+                    ? isDark
+                      ? 'bg-zinc-900 text-zinc-100 font-semibold shadow-2xs ring-1 ring-inset ring-white/10'
+                      : 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : isDark
+                    ? 'text-zinc-400 hover:text-zinc-100'
+                    : 'text-slate-600 hover:text-slate-900'
                 )
               : p.type === 'card'
               ? cx(
-                  'rounded-t-md border border-b-0 -mb-px',
+                  'rounded-t-lg border border-b-0 -mb-px',
                   i === active
-                    ? 'bg-white border-slate-200 text-blue-600 font-medium'
+                    ? isDark
+                      ? 'bg-[#16181D] border-zinc-800 text-blue-400 font-medium'
+                      : 'bg-white border-slate-200 text-blue-600 font-medium'
+                    : isDark
+                    ? 'bg-zinc-900/60 border-transparent text-zinc-400'
                     : 'bg-slate-50 border-transparent text-slate-600'
                 )
               : i === active
-              ? 'text-blue-600 font-medium'
+              ? isDark
+                ? 'text-blue-400 font-medium'
+                : 'text-blue-600 font-medium'
+              : isDark
+              ? 'text-zinc-400 hover:text-zinc-100'
               : 'text-slate-600 hover:text-slate-900'
           )}
         >
@@ -905,7 +1100,8 @@ const Tabs: React.FC<CompProps> = ({ node, p, kids, root, rt, renderNode }) => {
           {p.type !== 'card' && p.type !== 'segmented' && i === active && (
             <span
               className={cx(
-                'absolute bg-blue-600 rounded',
+                'absolute rounded',
+                isDark ? 'bg-blue-400' : 'bg-blue-600',
                 isSide ? 'top-1.5 bottom-1.5 -right-2 w-0.5' : 'left-2 right-2 -bottom-px h-0.5'
               )}
             />
@@ -941,18 +1137,29 @@ const Tab: React.FC<CompProps> = ({ children, root, rt }) => (
 );
 
 const Divider: React.FC<CompProps> = ({ p, root }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const orient = (p.orientation as 'left' | 'center' | 'right') ?? 'center';
-  const lineCls = cx(' border-t', p.dashed ? 'border-dashed border-slate-300' : 'border-slate-200');
+  const lineCls = cx(
+    'border-t',
+    p.dashed
+      ? isDark
+        ? 'border-dashed border-zinc-700'
+        : 'border-dashed border-slate-300'
+      : isDark
+      ? 'border-zinc-800'
+      : 'border-slate-200/80',
+  );
   return (
     <div {...rootWith(root, { className: 'flex items-center gap-3 my-2' })}>
       <div className={cx(lineCls, p.text && orient === 'left' ? 'w-6 shrink-0' : 'flex-1')} />
-      {p.text && <span className="text-[12px] text-slate-500 font-medium shrink-0">{p.text}</span>}
+      {p.text && <span className={cx('text-[12px] font-medium shrink-0', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.text}</span>}
       {p.text && <div className={cx(lineCls, orient === 'right' ? 'w-6 shrink-0' : 'flex-1')} />}
     </div>
   );
 };
 
 const Steps: React.FC<CompProps> = ({ p, root }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const items = asOptions(p.items);
   const cur = Number(p.current ?? 0);
   const isVert = p.direction === 'vertical';
@@ -972,11 +1179,15 @@ const Steps: React.FC<CompProps> = ({ p, root }) => {
                 'rounded-full flex items-center justify-center border font-medium',
                 isSmall ? 'w-5 h-5 text-[11px]' : 'w-6 h-6 text-[12px]',
                 i < cur
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/40'
+                  ? isDark
+                    ? 'border-blue-400 text-blue-300 bg-blue-500/15'
+                    : 'border-blue-600 text-blue-600 bg-blue-50/40'
                   : i === cur
                   ? isErr
                     ? 'bg-rose-600 border-rose-600 text-white'
                     : 'bg-blue-600 border-blue-600 text-white'
+                  : isDark
+                  ? 'border-zinc-700 text-zinc-500'
                   : 'border-slate-300 text-slate-400'
               )}
             >
@@ -987,8 +1198,12 @@ const Steps: React.FC<CompProps> = ({ p, root }) => {
                 isSmall ? 'text-[12px]' : 'text-[13px]',
                 i === cur
                   ? isErr
-                    ? 'text-rose-600 font-semibold'
+                    ? 'text-rose-500 font-semibold'
+                    : isDark
+                    ? 'text-zinc-100 font-semibold'
                     : 'text-slate-900 font-medium'
+                  : isDark
+                  ? 'text-zinc-400'
                   : 'text-slate-500'
               )}
             >
@@ -996,7 +1211,7 @@ const Steps: React.FC<CompProps> = ({ p, root }) => {
             </span>
           </div>
           {i < items.length - 1 && !isVert && (
-            <div className={cx('flex-1 h-px', i < cur ? 'bg-blue-600' : 'bg-slate-200')} />
+            <div className={cx('flex-1 h-px', i < cur ? 'bg-blue-500' : isDark ? 'bg-zinc-800' : 'bg-slate-200')} />
           )}
         </React.Fragment>
       ))}
@@ -1005,43 +1220,63 @@ const Steps: React.FC<CompProps> = ({ p, root }) => {
 };
 
 const PageHeader: React.FC<CompProps> = ({ p, children, root, rt, scope }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const subTitle = p.subTitle ?? p.subtitle;
   return (
-    <div {...rootWith(root, { className: cx('space-y-1 pb-1', p.divider && 'border-b border-slate-200 pb-3') })}>
+    <div {...rootWith(root, { className: cx('space-y-1.5 pb-1', p.divider && (isDark ? 'border-b border-zinc-800 pb-3' : 'border-b border-slate-200/80 pb-3')) })}>
       {Array.isArray(p.breadcrumb) && p.breadcrumb.length > 0 && (
-        <div className="flex items-center gap-1 text-[11px] text-slate-500">
+        <div className={cx('flex items-center gap-1 text-[11.5px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>
           {asOptions(p.breadcrumb).map((b, i, arr) => (
             <React.Fragment key={i}>
-              <span className={i === arr.length - 1 ? 'text-slate-700 font-medium' : ''}>{b}</span>
-              {i < arr.length - 1 && <ChevronRight className="w-3 h-3 text-slate-400" />}
+              <span className={i === arr.length - 1 ? (isDark ? 'text-zinc-200 font-medium' : 'text-slate-700 font-medium') : ''}>{b}</span>
+              {i < arr.length - 1 && <ChevronRight className={cx('w-3 h-3', isDark ? 'text-zinc-600' : 'text-slate-400')} />}
             </React.Fragment>
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2.5 flex-wrap">
-        {p.back && (
-          <button type="button" onClick={() => rt.run(p.onBack as PropValue, scope)} className="p-1 rounded hover:bg-slate-200/60 text-slate-600">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-        )}
-        <h1 className="text-[17px] font-bold text-slate-900 tracking-tight">{p.title}</h1>
-        {p.tagText && <TagPill color={(p.tagColor as string) || 'blue'}>{p.tagText}</TagPill>}
-        {subTitle && <span className="text-[12px] text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">{subTitle}</span>}
-        <div className="ml-auto flex items-center gap-2">{children}</div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+          {p.back && (
+            <button
+              type="button"
+              onClick={() => rt.run(p.onBack as PropValue, scope)}
+              className={cx(
+                'p-1.5 rounded-lg cursor-pointer transition',
+                isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-slate-200/60 text-slate-600',
+              )}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          <h1 className={cx('text-[19px] font-bold tracking-tight', isDark ? 'text-zinc-50' : 'text-slate-900')}>{p.title}</h1>
+          {p.tagText && <TagPill color={(p.tagColor as string) || 'blue'} round dot>{p.tagText}</TagPill>}
+          {subTitle && (
+            <span
+              className={cx(
+                'text-[12px] px-2.5 py-0.5 rounded-full',
+                isDark ? 'text-zinc-400 bg-white/[0.06] ring-1 ring-inset ring-white/[0.06]' : 'text-slate-500 bg-slate-900/[0.045]',
+              )}
+            >
+              {subTitle}
+            </span>
+          )}
+        </div>
+        {children.length > 0 && <div className="flex items-center gap-2 flex-wrap">{children}</div>}
       </div>
     </div>
   );
 };
 
 const Breadcrumb: React.FC<CompProps> = ({ p, root }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const sep = (p.separator as string) || '>';
   return (
-    <div {...rootWith(root, { className: 'flex items-center gap-1.5 text-[12px] text-slate-500' })}>
+    <div {...rootWith(root, { className: cx('flex items-center gap-1.5 text-[12px]', isDark ? 'text-zinc-400' : 'text-slate-500') })}>
       {asOptions(p.items).map((b, i, arr) => (
         <React.Fragment key={i}>
-          <span className={i === arr.length - 1 ? 'text-slate-800 font-medium' : 'hover:text-blue-600 cursor-pointer'}>{b}</span>
+          <span className={i === arr.length - 1 ? (isDark ? 'text-zinc-100 font-medium' : 'text-slate-800 font-medium') : 'hover:text-blue-500 cursor-pointer'}>{b}</span>
           {i < arr.length - 1 && (
-            sep === '>' ? <ChevronRight className="w-3 h-3" /> : <span className="text-slate-400">{sep}</span>
+            sep === '>' ? <ChevronRight className="w-3 h-3" /> : <span className={isDark ? 'text-zinc-600' : 'text-slate-400'}>{sep}</span>
           )}
         </React.Fragment>
       ))}
@@ -1267,18 +1502,18 @@ const SAMPLE_FIELD_EN_TITLES: Record<string, string> = {
   enabled: 'Enabled',
 };
 
-function renderCell(v: unknown, render?: string, dataIndex?: string): React.ReactNode {
-  if (v === undefined || v === null || v === '') return <span className="text-slate-300">—</span>;
+function renderCell(v: unknown, render?: string, dataIndex?: string, isDark = false): React.ReactNode {
+  if (v === undefined || v === null || v === '') return <span className={isDark ? 'text-zinc-600' : 'text-slate-300'}>—</span>;
   const s = String(v);
-  if (render === 'tag' || (!render && dataIndex && /status/i.test(dataIndex))) return <TagPill color={STATUS_COLOR[s] ?? 'blue'}>{s}</TagPill>;
+  if (render === 'tag' || (!render && dataIndex && /status/i.test(dataIndex))) return <TagPill color={STATUS_COLOR[s] ?? 'blue'} round dot>{s}</TagPill>;
   if (render === 'money' || (!render && dataIndex && /(price|amount|tax)/i.test(dataIndex) && !/rate/i.test(dataIndex))) {
     const num = Number(v);
     if (!Number.isNaN(num)) {
       const digits = dataIndex && /no_tax/i.test(dataIndex) ? 6 : 2;
-      return <span className="tabular-nums font-medium text-slate-800">¥ {num.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}</span>;
+      return <span className={cx('tabular-nums font-semibold', isDark ? 'text-zinc-100' : 'text-slate-900')}>¥ {num.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}</span>;
     }
   }
-  if (render === 'link') return <span className="text-blue-600 hover:underline cursor-pointer">{s}</span>;
+  if (render === 'link') return <span className={cx('hover:underline cursor-pointer font-medium', isDark ? 'text-blue-400' : 'text-blue-600')}>{s}</span>;
   if (typeof v === 'boolean') return v ? trStatic('是', 'Yes') : trStatic('否', 'No');
   if (typeof v === 'number') return <span className="tabular-nums">{v}</span>;
   return s;
@@ -1299,7 +1534,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   const tableId = typeof p.table === 'string' && p.table !== '' ? p.table : undefined;
   const table = tables.find(t => t.id === tableId);
   const boundRows = useTableRows(table?.id);
-  const {row:sourceRow, tableId:sourceTableId} = useSourceRow(scope, rt.pageId, p.sourceForeignKey !== undefined);
+  const { row: sourceRow, tableId: sourceTableId, fkSourceTableId } = useCollectionSourceRow(scope, rt.pageId, tableId, p.sourceForeignKey, tables);
   const [sampleRows, setSampleRows] = useState(SAMPLE_ROWS);
   const [sortCol, setSortCol] = useState<TableSort | null>(null);
   const [toggled, setToggled] = useState<Set<string>>(() => new Set());
@@ -1336,6 +1571,8 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
   useAutoSelectFirstRow({
     rt,
     tableId,
+    sourceTableId: fkSourceTableId,
+    sourceRowId: sourceRow?.id,
     visibleRows: validRootRows,
     autoSelectFirst,
     runtimeQuery: query,
@@ -1388,7 +1625,13 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
       : tblSize === 'large'
       ? 'px-4 py-3.5 text-[14px]'
       : 'px-3 py-2.5 text-[13px]';
-  const borderCellCls = isBordered ? 'border-r border-slate-200 last:border-r-0' : '';
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
+  const insideCard = useInsideCardBody();
+  const borderCellCls = isBordered
+    ? isDark
+      ? 'border-r border-zinc-800 last:border-r-0'
+      : 'border-r border-slate-200 last:border-r-0'
+    : '';
 
   const totalColumns = columns.length + Number(expandable) + Number(Boolean(p.selectable)) + Number(showIndex) + Number(actions.length > 0);
   const toggleRow = (id: string) => setToggled(previous => {
@@ -1397,28 +1640,48 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
     return next;
   });
 
+  const tableRegionLabel = String(
+    p.title || table?.cnName || table?.tableName || tr('数据表格', 'Data table'),
+  );
+
   return (
     <div {...rootWith(root, { className: 'space-y-2.5 min-w-0' })}>
-      <p className="text-[10px] text-slate-400">{table ? tr('原型预览数据 · 保存在工程内', 'Prototype preview data · Stored in project') : tr('未绑定数据表 · 示例预览', 'Unbound table · Sample preview')}</p>
-      {mergeWarning && <p role="alert" className="text-xs text-amber-700">{td(mergeWarning)}</p>}
+      {rt.isDesign && (
+        <p className={cx('text-[10px]', isDark ? 'text-zinc-500' : 'text-slate-400')}>
+          {table ? tr('原型预览数据 · 保存在工程内', 'Prototype preview data · Stored in project') : tr('未绑定数据表 · 示例预览', 'Unbound table · Sample preview')}
+        </p>
+      )}
+      {mergeWarning && <p role="alert" className={cx('text-xs', isDark ? 'text-amber-300' : 'text-amber-700')}>{td(mergeWarning)}</p>}
       {!table && rt.isDesign && (
-        <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+        <div className={cx('text-[11px] rounded px-2 py-1 border', isDark ? 'text-amber-200 bg-amber-500/15 border-amber-400/25' : 'text-amber-700 bg-amber-50 border-amber-200')}>
           {tr('未绑定物理表：在右侧属性中选择「绑定物理表」，列和数据会自动生成', 'Unbound table: select a physical table in the right inspector to auto-generate columns and data')}
         </div>
       )}
-      <AntdSurface><Spin spinning={Boolean(p.loading)}><div className="overflow-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: p.scrollY }}>
+      <AntdSurface><Spin spinning={Boolean(p.loading)}><div
+        role="region"
+        aria-label={tableRegionLabel}
+        tabIndex={0}
+        className={cx(
+          'table-wrapper overflow-auto transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500',
+          insideCard ? 'rounded-xl' : 'rounded-[16px]',
+          isDark
+            ? cx('bg-[#16181D] ring-1 ring-inset ring-white/[0.08]', !insideCard && 'shadow-[0_6px_20px_-8px_rgba(0,0,0,0.6)]')
+            : cx('bg-white ring-1 ring-inset ring-slate-900/[0.06]', !insideCard && 'shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)]'),
+        )}
+        style={{ maxHeight: p.scrollY }}
+      >
         {p.title && (
-          <div className="px-3.5 py-2 bg-slate-50/70 border-b border-slate-200 text-[13px] font-bold text-slate-800">
+          <div className={cx('px-4 py-2.5 border-b text-[13.5px] font-semibold tracking-tight', isDark ? 'bg-white/[0.02] border-white/[0.07] text-zinc-100' : 'bg-slate-50/50 border-slate-200/75 text-slate-900')}>
             {p.title}
           </div>
         )}
         <table className="w-full text-[13px] border-collapse" style={{ minWidth: p.scrollX }}>
           {showHeader && (
-            <thead className={p.sticky ? 'sticky top-0 z-10 bg-slate-50' : undefined}>
-              <tr className="bg-slate-50/90 text-slate-600 text-[12px]">
-                {expandable && <th aria-label={tr('展开行', 'Expand row')} className={cx('w-8 border-b border-slate-200', cellPadCls, borderCellCls)} />}
+            <thead className={p.sticky ? cx('sticky top-0 z-10', isDark ? 'bg-[#1A1D24]' : 'bg-slate-50') : undefined}>
+              <tr className={cx('text-[11.5px] tracking-tight', isDark ? 'bg-white/[0.03] text-zinc-400' : 'bg-slate-50/75 text-slate-500')}>
+                {expandable && <th aria-label={tr('展开行', 'Expand row')} className={cx('w-8 border-b', isDark ? 'border-white/[0.07]' : 'border-slate-200/75', cellPadCls, borderCellCls)} />}
                 {p.selectable && (
-                  <th className={cx('w-10 text-left border-b border-slate-200', cellPadCls, borderCellCls)}>
+                  <th className={cx('w-10 text-left border-b', isDark ? 'border-white/[0.07]' : 'border-slate-200/75', cellPadCls, borderCellCls)}>
                     {!isRadioSel && (
                       <input
                         type="checkbox"
@@ -1430,7 +1693,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                   </th>
                 )}
                 {showIndex && (
-                  <th className={cx('w-12 text-left font-semibold border-b border-slate-200 whitespace-nowrap', cellPadCls, borderCellCls)}>
+                  <th className={cx('w-12 text-left font-semibold border-b whitespace-nowrap', isDark ? 'border-white/[0.07]' : 'border-slate-200/75', cellPadCls, borderCellCls)}>
                     {tr('序号', '#')}
                   </th>
                 )}
@@ -1448,22 +1711,23 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                         }
                       }}
                       className={cx(
-                        'font-semibold border-b border-slate-200 whitespace-nowrap',
+                        'font-semibold border-b whitespace-nowrap',
+                        isDark ? 'border-white/[0.07]' : 'border-slate-200/75',
                         cellPadCls,
                         alignCls,
                         borderCellCls,
-                        c.sortable && 'cursor-pointer hover:bg-slate-100 select-none'
+                        c.sortable && (isDark ? 'cursor-pointer hover:bg-white/[0.05] select-none' : 'cursor-pointer hover:bg-slate-100/80 select-none')
                       )}
                     >
                       <span className="inline-flex items-center gap-1">
                         {c.title}
-                        {c.sortable && <ArrowUpDown className="w-3 h-3 text-slate-400" />}
+                        {c.sortable && <ArrowUpDown className={cx('w-3 h-3', isDark ? 'text-zinc-500' : 'text-slate-400')} />}
                       </span>
                     </th>
                   );
                 })}
                 {actions.length > 0 && (
-                  <th className={cx('text-left font-semibold border-b border-l border-slate-200 whitespace-nowrap sticky right-0 bg-slate-50 z-10 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.06)]', cellPadCls)}>
+                  <th className={cx('text-left font-semibold border-b border-l whitespace-nowrap sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.06)]', isDark ? 'border-white/[0.07] bg-[#1A1D24]' : 'border-slate-200/75 bg-slate-50', cellPadCls)}>
                     {tr('操作', 'Actions')}
                   </th>
                 )}
@@ -1471,26 +1735,31 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
             </thead>
           )}
           <tbody>
-            {visible.map(({ row: r, depth, ordinal, hasChildren }, i) => (
+            {visible.map(({ row: r, depth, ordinal, hasChildren }, i) => {
+              const isRowActive = Boolean(tableId && activeRowId === r.id);
+              return (
               <React.Fragment key={r.id}>
               <tr data-row-id={r.id}
-                data-active-row={tableId && activeRowId === r.id ? '1' : undefined}
+                data-active-row={isRowActive ? '1' : undefined}
                 onClick={() => {
-                  if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id);
-                  void rt.run(p.onRowClick as PropValue, childRowScope(scope, r, tableId));
+                  if (!rt.isDesign && autoSelectFirst && tableId) rt.setActiveRow?.(tableId, r.id, fkSourceTableId);
+                  void rt.run(p.onRowClick as PropValue, childRowScope(scope, r, tableId, fkSourceTableId));
                 }}
                 className={cx(
-                  'group/row hover:bg-blue-50/40 border-b border-slate-100 last:border-0 transition-colors',
+                  'group/row border-b last:border-0 transition-colors',
+                  isDark ? 'border-white/[0.05] hover:bg-white/[0.04]' : 'border-slate-100 hover:bg-blue-50/35',
                   (autoSelectFirst || Boolean(p.onRowClick)) && !rt.isDesign && 'cursor-pointer',
-                  tableId && activeRowId === r.id
-                    ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200'
-                    : isStriped && i % 2 === 1 && 'bg-slate-50/75'
+                  isRowActive
+                    ? isDark
+                      ? 'bg-blue-500/14 shadow-[inset_3px_0_0_0_var(--pf-primary,#60a5fa)]'
+                      : 'bg-blue-50/75 shadow-[inset_3px_0_0_0_var(--pf-primary,#2563eb)]'
+                    : isStriped && i % 2 === 1 && (isDark ? 'bg-white/[0.015]' : 'bg-slate-50/60')
                 )}
               >
                 {expandable && <td className={cx('w-8 text-center', cellPadCls, borderCellCls)}>
                   {(isDetail || hasChildren) && <button type="button" aria-expanded={isOpen(r.id)} aria-label={tr(`${isOpen(r.id) ? '收起' : '展开'}记录 ${r.id}`, `${isOpen(r.id) ? 'Collapse' : 'Expand'} record ${r.id}`)}
                     disabled={model.forcedOpen.has(r.id)} onClick={e => { if (!rt.isDesign) e.stopPropagation(); toggleRow(r.id); }}
-                    className="inline-flex items-center justify-center rounded border border-slate-300 bg-white p-0.5 text-slate-600 hover:border-blue-400">
+                    className={cx('inline-flex items-center justify-center rounded border p-0.5', isDark ? 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-blue-400' : 'border-slate-300 bg-white text-slate-600 hover:border-blue-400')}>
                     {isOpen(r.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   </button>}
                 </td>}
@@ -1515,7 +1784,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                   </td>
                 )}
                 {showIndex && (
-                  <td className={cx('text-slate-500 tabular-nums', cellPadCls, borderCellCls)}>
+                  <td className={cx('tabular-nums', isDark ? 'text-zinc-500' : 'text-slate-400', cellPadCls, borderCellCls)}>
                     {ordinal}
                   </td>
                 )}
@@ -1523,11 +1792,11 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                   const span = spanAt(i, columnIndex);
                   if (span === null) return null;
                   const alignCls = c.align === 'center' ? 'text-center' : c.align === 'right' ? 'text-right' : 'text-left';
-                  const content = renderCell(r[c.dataIndex], c.render, c.dataIndex);
+                  const content = renderCell(r[c.dataIndex], c.render, c.dataIndex, isDark);
                   return (
                     <td key={c.dataIndex} {...span} data-field={c.dataIndex}
                       style={depth && columnIndex === 0 ? { paddingInlineStart: 12 + depth * 18 } : undefined}
-                      className={cx('text-slate-800 whitespace-nowrap max-w-[240px] truncate', cellPadCls, alignCls, borderCellCls)}>
+                      className={cx('whitespace-nowrap max-w-[240px] truncate', isDark ? 'text-zinc-200' : 'text-slate-800', cellPadCls, alignCls, borderCellCls)}>
                       {c.editor ? <EditableCell key={c.editor} column={c} value={r[c.dataIndex]} readOnly={rt.isDesign || Boolean(preview) || uiState !== 'normal'}
                         required={table?.columns.find(field => field.name === c.dataIndex)?.nullable === false}
                         onSave={value => {
@@ -1540,12 +1809,14 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                 {actions.length > 0 && (
                   <td
                     className={cx(
-                      'whitespace-nowrap border-l border-slate-100 sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.06)]',
-                      isStriped && i % 2 === 1 ? 'bg-[#f8fafc] group-hover/row:bg-[#f5f9ff]' : 'bg-white group-hover/row:bg-[#f5f9ff]',
+                      'whitespace-nowrap border-l sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.06)]',
+                      isDark
+                        ? cx('border-white/[0.06]', isRowActive ? 'bg-[#182235]' : 'bg-[#16181D] group-hover/row:bg-[#1C2028]')
+                        : cx('border-slate-100', isRowActive ? 'bg-[#eff6ff]' : isStriped && i % 2 === 1 ? 'bg-[#f8fafc] group-hover/row:bg-[#f5f9ff]' : 'bg-white group-hover/row:bg-[#f5f9ff]'),
                       cellPadCls
                     )}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-1.5">
                       {actions.map((a, ai) => {
                         if (!rt.isDesign && matchesWhenCondition(r, a.hiddenWhenField, a.hiddenWhenValue)) return null;
                         const actDisabled = !rt.isDesign && matchesWhenCondition(r, a.disabledWhenField, a.disabledWhenValue);
@@ -1558,13 +1829,24 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                             onClick={(e) => {
                               if (rt.isDesign || actDisabled) return;
                               e.stopPropagation();
-                              rt.run(a.onClick, childRowScope(scope, r, tableId));
+                              rt.run(a.onClick, childRowScope(scope, r, tableId, fkSourceTableId));
                             }}
                             className={cx(
-                              'text-[12px] font-medium transition',
+                              'rounded-md px-2 py-0.5 text-[12px] font-medium transition',
                               actDisabled
-                                ? 'text-slate-400 opacity-50 cursor-not-allowed'
-                                : cx('cursor-pointer', a.danger ? 'text-rose-600 hover:text-rose-700' : 'text-blue-600 hover:text-blue-700')
+                                ? isDark
+                                  ? 'text-zinc-600 opacity-50 cursor-not-allowed'
+                                  : 'text-slate-400 opacity-50 cursor-not-allowed'
+                                : cx(
+                                    'cursor-pointer',
+                                    a.danger
+                                      ? isDark
+                                        ? 'text-rose-400 hover:bg-rose-500/15'
+                                        : 'text-rose-600 hover:bg-rose-50'
+                                      : isDark
+                                      ? 'text-blue-400 hover:bg-blue-500/15'
+                                      : 'text-blue-600 hover:bg-blue-50',
+                                  )
                             )}
                           >
                             {a.label}
@@ -1575,17 +1857,18 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                   </td>
                 )}
               </tr>
-              {isDetail && isOpen(r.id) && <tr><td colSpan={totalColumns} className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+              {isDetail && isOpen(r.id) && <tr><td colSpan={totalColumns} className={cx('border-b px-5 py-3', isDark ? 'border-white/[0.07] bg-white/[0.02]' : 'border-slate-200 bg-slate-50')}>
                 <dl className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-x-6 gap-y-2">{detailFields.map(field => (
-                  <div key={field}><dt className="text-xs text-slate-500">{fieldTitle(field)}</dt><dd className="mt-1 whitespace-pre-wrap break-words">{renderCell(r[field], undefined, field)}</dd></div>
+                  <div key={field}><dt className={cx('text-xs', isDark ? 'text-zinc-400' : 'text-slate-500')}>{fieldTitle(field)}</dt><dd className="mt-1 whitespace-pre-wrap break-words">{renderCell(r[field], undefined, field, isDark)}</dd></div>
                 ))}</dl>
               </td></tr>}
               </React.Fragment>
-            ))}
+              );
+            })}
             {pageRows.length === 0 && (
               <tr>
-                <td colSpan={totalColumns} className="py-10 text-center text-slate-400 text-[13px]">
-                  <Inbox className="w-8 h-8 mx-auto mb-1 text-slate-300" />
+                <td colSpan={totalColumns} className={cx('py-10 text-center text-[13px]', isDark ? 'text-zinc-500' : 'text-slate-400')}>
+                  <Inbox className={cx('w-8 h-8 mx-auto mb-1', isDark ? 'text-zinc-600' : 'text-slate-300')} />
                   {(p.emptyText as string) || tr('暂无数据', 'No data')}
                 </td>
               </tr>
@@ -1593,25 +1876,25 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
           </tbody>
           {Boolean(p.showSummary) && pageRows.length > 0 && (
             <tfoot>
-              <tr className="bg-amber-50/45 border-t border-slate-200 font-semibold text-slate-800 text-[12px]">
+              <tr className={cx('border-t font-semibold text-[12px]', isDark ? 'bg-amber-500/10 border-white/[0.08] text-zinc-100' : 'bg-amber-50/45 border-slate-200 text-slate-800')}>
                 {expandable && <td className={cx(cellPadCls, borderCellCls)} />}
                 {p.selectable && <td className={cx(cellPadCls, borderCellCls)} />}
                 {showIndex && (
-                  <td className={cx('text-amber-800 font-bold whitespace-nowrap', cellPadCls, borderCellCls)}>
+                  <td className={cx('font-bold whitespace-nowrap', isDark ? 'text-amber-300' : 'text-amber-800', cellPadCls, borderCellCls)}>
                     {tr('合计', 'Total')}
                   </td>
                 )}
                 {columns.map((c, idx) => {
                   if (idx === 0 && !showIndex) {
                     return (
-                      <td key={c.dataIndex} className={cx('text-amber-800 font-bold', cellPadCls, borderCellCls)}>
+                      <td key={c.dataIndex} className={cx('font-bold', isDark ? 'text-amber-300' : 'text-amber-800', cellPadCls, borderCellCls)}>
                         {(p.summaryText as string) || tr('合计', 'Total')}
                       </td>
                     );
                   }
                   if (idx === 0 && p.summaryText) {
                     return (
-                      <td key={c.dataIndex} className={cx('text-slate-700', cellPadCls, borderCellCls)}>
+                      <td key={c.dataIndex} className={cx(isDark ? 'text-zinc-300' : 'text-slate-700', cellPadCls, borderCellCls)}>
                         {p.summaryText as string}
                       </td>
                     );
@@ -1623,14 +1906,14 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
                   if (isNumericCol) {
                     const sum = nums.reduce((acc, v) => acc + v, 0);
                     return (
-                      <td key={c.dataIndex} className={cx('tabular-nums text-slate-900', cellPadCls, borderCellCls)}>
-                        {renderCell(sum, c.render, c.dataIndex)}
+                      <td key={c.dataIndex} className={cx('tabular-nums', isDark ? 'text-zinc-100' : 'text-slate-900', cellPadCls, borderCellCls)}>
+                        {renderCell(sum, c.render, c.dataIndex, isDark)}
                       </td>
                     );
                   }
-                  return <td key={c.dataIndex} className={cx('text-slate-400', cellPadCls, borderCellCls)}>—</td>;
+                  return <td key={c.dataIndex} className={cx(isDark ? 'text-zinc-600' : 'text-slate-400', cellPadCls, borderCellCls)}>—</td>;
                 })}
-                {actions.length > 0 && <td className={cx('border-l border-slate-200 bg-amber-50/45 sticky right-0', cellPadCls)} />}
+                {actions.length > 0 && <td className={cx('border-l sticky right-0', isDark ? 'border-white/[0.08] bg-[#1E1C16]' : 'border-slate-200 bg-amber-50/45', cellPadCls)} />}
               </tr>
             </tfoot>
           )}
@@ -1645,6 +1928,7 @@ const TableView: React.FC<CompProps> = ({ node, p, root, rt, scope }) => {
 
 const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const tables = useMaterialTables();
   const table = tables.find((t) => t.id === p.table);
   const rows = useTableRows(table?.id);
@@ -1657,9 +1941,9 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const row = (scopedRow ?? (!navSource.tableId ? rows[0] : undefined)) as Row | undefined;
   const items: { label: string; value: React.ReactNode }[] =
     Array.isArray(p.items) && p.items.length
-      ? (p.items as { label: string; field?: string; value?: string }[]).map((it) => ({ label: it.label, value: it.field ? renderCell(row?.[it.field], undefined, it.field) : it.value ?? '—' }))
+      ? (p.items as { label: string; field?: string; value?: string }[]).map((it) => ({ label: it.label, value: it.field ? renderCell(row?.[it.field], undefined, it.field, isDark) : it.value ?? '—' }))
       : table
-      ? table.columns.filter((c) => !c.isPrimaryKey).slice(0, 10).map((c) => ({ label: columnLabel(c), value: renderCell(row?.[c.name], undefined, c.name) }))
+      ? table.columns.filter((c) => !c.isPrimaryKey).slice(0, 10).map((c) => ({ label: columnLabel(c), value: renderCell(row?.[c.name], undefined, c.name, isDark) }))
       : [
           { label: tr('字段一', 'Field 1'), value: tr('示例值', 'Sample') },
           { label: tr('字段二', 'Field 2'), value: tr('示例值', 'Sample') },
@@ -1674,37 +1958,44 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const customLabelW = typeof p.labelWidth === 'number' && p.labelWidth > 0 ? p.labelWidth : undefined;
 
   return (
-    <div {...rootWith(root, { className: 'space-y-2' })}>
+    <div {...rootWith(root, { className: 'space-y-2.5' })}>
       {(p.title || p.extra) && (
         <div className="flex items-center justify-between">
-          {p.title && <div className="text-[14px] font-semibold text-slate-900">{p.title}</div>}
-          {p.extra && <div className="text-[12px] text-slate-500">{p.extra}</div>}
+          {p.title && <div className={cx('text-[14px] font-semibold', isDark ? 'text-zinc-100' : 'text-slate-900')}>{p.title}</div>}
+          {p.extra && <div className={cx('text-[12px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.extra}</div>}
         </div>
       )}
       {isBordered ? (
         <div
-          className="grid border-t border-l border-slate-200 rounded-lg overflow-hidden bg-white"
+          className={cx(
+            'grid border-t border-l rounded-xl overflow-hidden',
+            isDark ? 'border-white/[0.08] bg-[#16181D]' : 'border-slate-200/85 bg-white',
+          )}
           style={{ gridTemplateColumns: `repeat(${column}, minmax(0, 1fr))` }}
         >
           {items.map((it, i) => (
             <div
               key={i}
               className={cx(
-                'min-w-0 border-r border-b border-slate-200',
+                'min-w-0 border-r border-b',
+                isDark ? 'border-white/[0.08]' : 'border-slate-200/85',
                 isVert ? 'flex flex-col' : 'flex items-stretch'
               )}
             >
               <div
                 className={cx(
-                  'bg-slate-50/90 text-slate-600 font-medium shrink-0',
+                  'font-medium shrink-0',
+                  isDark ? 'bg-white/[0.03] text-zinc-400' : 'bg-slate-50/80 text-slate-500',
                   cellPad,
-                  isVert ? 'border-b border-slate-200' : 'border-r border-slate-200 flex items-center'
+                  isVert
+                    ? cx('border-b', isDark ? 'border-white/[0.08]' : 'border-slate-200/85')
+                    : cx('border-r flex items-center', isDark ? 'border-white/[0.08]' : 'border-slate-200/85'),
                 )}
                 style={!isVert ? { width: customLabelW ?? 116 } : undefined}
               >
                 <span className="truncate">{it.label}</span>
               </div>
-              <div className={cx('flex-1 min-w-0 text-slate-800 flex items-center truncate', cellPad)}>
+              <div className={cx('flex-1 min-w-0 flex items-center truncate', isDark ? 'text-zinc-100' : 'text-slate-800', cellPad)}>
                 {it.value}
               </div>
             </div>
@@ -1718,13 +2009,13 @@ const Descriptions: React.FC<CompProps> = ({ p, root, rt, scope }) => {
           {items.map((it, i) => (
             <div key={i} className={cx('min-w-0', isVert ? 'flex flex-col gap-0.5' : 'flex items-baseline')}>
               <span
-                className="shrink-0 text-slate-500 mr-1.5"
+                className={cx('shrink-0 mr-1.5', isDark ? 'text-zinc-400' : 'text-slate-500')}
                 style={customLabelW ? { width: customLabelW } : undefined}
               >
                 {it.label}
                 {showColon ? tr('：', ': ') : ''}
               </span>
-              <span className="text-slate-800 truncate">{it.value}</span>
+              <span className={cx('truncate', isDark ? 'text-zinc-100' : 'text-slate-800')}>{it.value}</span>
             </div>
           ))}
         </div>
@@ -1740,75 +2031,163 @@ const STAT_COLOR: Record<string, string> = {
   orange: 'text-amber-600',
   red: 'text-rose-600',
 };
-const Statistic: React.FC<CompProps> = ({ p, root }) => {
+const STAT_COLOR_DARK: Record<string, string> = {
+  default: 'text-zinc-50',
+  blue: 'text-blue-400',
+  green: 'text-emerald-400',
+  orange: 'text-amber-400',
+  red: 'text-rose-400',
+};
+const Statistic: React.FC<CompProps> = ({ node, p, root }) => {
+  const sparkGradId = useId();
   const canvasTheme = useCanvasTheme();
+  const insideCard = useInsideCardBody();
   const isDark = canvasTheme?.effectiveMode === 'dark';
+  const tone = (p.tone as 'card' | 'inverted' | 'subtle') || 'card';
+  const effectiveDark = isDark || tone === 'inverted';
   const rows = useTableRows((p.table as string) || undefined);
-  const rawVal = p.table ? rows.length : p.value ?? 0;
+  const hasTable = typeof p.table === 'string' && p.table.trim().length > 0;
+  const isMissingValue =
+    !hasTable &&
+    (p.value === undefined || p.value === null || String(p.value).trim() === '');
+  const rawVal = hasTable ? rows.length : p.value;
   const formattedVal =
-    typeof p.precision === 'number' && !Number.isNaN(Number(rawVal))
+    !isMissingValue && typeof p.precision === 'number' && !Number.isNaN(Number(rawVal))
       ? Number(rawVal).toFixed(p.precision)
       : rawVal;
   const trendText = typeof p.trendText === 'string' ? p.trendText.trim() : '';
+  const statusBadge = typeof p.statusBadge === 'string' ? p.statusBadge.trim() : '';
   const isDown = p.trend === 'down' || trendText.startsWith('-');
   const showSparkline = Boolean(p.sparkline);
+  const splitDec = p.splitDecimal !== false;
+  const IconComp = typeof p.icon === 'string' && p.icon.trim() ? resolveSemanticIcon(p.icon) : null;
   const radiusStyle = canvasTheme?.rawTokens ? { borderRadius: canvasTheme.resolved.cardRadiusPx } : undefined;
+  const strokeColor = isDown
+    ? effectiveDark
+      ? '#fb7185'
+      : '#e11d48'
+    : tone === 'inverted'
+    ? '#34d399'
+    : canvasTheme?.accentColor || canvasTheme?.resolved.primaryColor || '#2563eb';
+  const linePath = isDown
+    ? 'M2 6 C18 8, 28 14, 44 19 S62 24, 78 26'
+    : 'M2 25 C18 23, 30 18, 46 11 S62 5, 78 3';
+  const areaPath = `${linePath} L78 30 L2 30 Z`;
+
+  const surfaceCls =
+    tone === 'inverted'
+      ? 'pf-mobile-wallet-mesh text-white ring-1 ring-inset ring-white/12 shadow-[0_14px_32px_-10px_rgba(0,0,0,0.45)]'
+      : effectiveDark
+      ? tone === 'subtle'
+        ? 'bg-white/[0.04] ring-1 ring-inset ring-white/[0.06] text-zinc-100'
+        : 'bg-[#16181D] ring-1 ring-inset ring-white/[0.08] shadow-[0_6px_22px_-8px_rgba(0,0,0,0.6)] text-zinc-100'
+      : tone === 'subtle'
+      ? 'bg-slate-50/90 ring-1 ring-inset ring-slate-900/[0.05] text-slate-900'
+      : insideCard && node.props.bordered === undefined
+      ? 'bg-slate-50/65 ring-1 ring-inset ring-slate-900/[0.045] text-slate-900'
+      : cx(
+          'bg-white text-slate-900 shadow-[0_2px_14px_-4px_rgba(15,23,42,0.05)]',
+          p.bordered === false ? '' : 'ring-1 ring-inset ring-slate-900/[0.06]',
+        );
 
   return (
     <div
+      data-stat-tone={tone}
       {...rootWith(root, {
-        className: cx(
-          'rounded-lg px-4 py-3 flex items-end justify-between gap-3',
-          isDark
-            ? 'bg-zinc-900 border border-zinc-800 text-zinc-100'
-            : cx(
-                'bg-white',
-                canvasTheme?.resolved.surfaceVariant === 'elevated'
-                  ? 'border border-zinc-200/80 shadow-xs'
-                  : p.bordered === false
-                  ? ''
-                  : 'border border-slate-200'
-              )
-        ),
-        style: radiusStyle,
+        className: cx('rounded-[18px] px-4 py-3.5 flex items-end justify-between gap-3 min-w-0', surfaceCls),
+        style: tone === 'inverted' ? { ...radiusStyle, colorScheme: 'dark' } : radiusStyle,
       })}
     >
-      <div className="min-w-0">
-        <div className={cx('text-[13px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.title}</div>
-        <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
-          {p.prefix && <span className={cx('text-[15px] font-medium', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.prefix}</span>}
-          <span
-            className={cx(
-              'text-[24px] font-semibold tabular-nums',
-              isDark && (!p.valueColor || p.valueColor === 'default')
-                ? 'text-zinc-50'
-                : STAT_COLOR[(p.valueColor as string) || 'default'] ?? STAT_COLOR.default
-            )}
-          >
-            {formattedVal}
-          </span>
-          {p.suffix && <span className={cx('text-[13px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.suffix}</span>}
-          {p.trend === 'up' && !trendText && <TrendingUp className="w-4 h-4 text-emerald-600 ml-1" />}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className={cx('text-[12.5px] font-medium truncate', effectiveDark ? 'text-zinc-400' : 'text-slate-500')}>
+            {p.title}
+          </div>
+          {IconComp && (
+            <span
+              className={cx(
+                'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                effectiveDark ? 'bg-white/[0.08] text-zinc-200' : 'bg-slate-900/[0.045] text-slate-700',
+              )}
+            >
+              <IconComp className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          )}
+        </div>
+        <div className="mt-2 flex items-baseline gap-1.5 flex-wrap">
+          {!isMissingValue && p.prefix && (
+            <span className={cx('text-[15px] font-semibold', effectiveDark ? 'text-zinc-400' : 'text-slate-500')}>
+              {p.prefix}
+            </span>
+          )}
+          {isMissingValue ? (
+            <span
+              data-missing-value="1"
+              className={cx('text-[28px] font-bold tracking-tight tabular-nums opacity-45 leading-none', effectiveDark ? 'text-zinc-400' : 'text-slate-400')}
+            >
+              —
+            </span>
+          ) : (
+            <SplitMetricText
+              value={formattedVal as string | number}
+              splitDecimal={splitDec}
+              className={cx(
+                'text-[28px] font-bold tracking-tight leading-none',
+                effectiveDark
+                  ? STAT_COLOR_DARK[(p.valueColor as string) || 'default'] ?? STAT_COLOR_DARK.default
+                  : STAT_COLOR[(p.valueColor as string) || 'default'] ?? STAT_COLOR.default,
+              )}
+            />
+          )}
+          {!isMissingValue && p.suffix && (
+            <span className={cx('text-[12.5px] font-medium', effectiveDark ? 'text-zinc-400' : 'text-slate-500')}>
+              {p.suffix}
+            </span>
+          )}
+          {p.trend === 'up' && !trendText && <TrendingUp className="w-4 h-4 text-emerald-500 ml-1" />}
           {p.trend === 'down' && !trendText && <TrendingDown className="w-4 h-4 text-rose-500 ml-1" />}
           {trendText && (
             <span
               className={cx(
                 'ml-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums',
-                isDown ? 'bg-rose-500/12 text-rose-600' : 'bg-emerald-500/12 text-emerald-600'
+                isDown
+                  ? effectiveDark
+                    ? 'bg-rose-500/20 text-rose-300'
+                    : 'bg-rose-500/12 text-rose-600'
+                  : effectiveDark
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-emerald-500/12 text-emerald-600',
               )}
             >
               {isDown ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
               <span>{trendText}</span>
             </span>
           )}
+          {statusBadge && (
+            <span
+              className={cx(
+                'inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium',
+                effectiveDark ? 'bg-white/[0.08] text-zinc-300' : 'bg-slate-900/[0.05] text-slate-600',
+              )}
+            >
+              {statusBadge}
+            </span>
+          )}
         </div>
       </div>
       {showSparkline && (
-        <svg viewBox="0 0 72 28" className="w-[72px] h-[28px] shrink-0 overflow-visible" aria-hidden="true">
+        <svg viewBox="0 0 80 32" className="w-[80px] h-[32px] shrink-0 overflow-visible" aria-hidden="true">
+          <defs>
+            <linearGradient id={sparkGradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={strokeColor} stopOpacity={effectiveDark ? 0.32 : 0.22} />
+              <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <path d={areaPath} fill={`url(#${sparkGradId})`} />
           <path
-            d={isDown ? 'M2 6 C18 8, 26 14, 42 18 S58 24, 70 25' : 'M2 24 C16 22, 28 18, 42 12 S58 6, 70 4'}
+            d={linePath}
             fill="none"
-            stroke={isDown ? '#e11d48' : canvasTheme?.resolved.primaryColor || '#2563eb'}
+            stroke={strokeColor}
             strokeWidth="2.2"
             strokeLinecap="round"
           />
@@ -1831,16 +2210,22 @@ const Tag: React.FC<CompProps> = ({ p, text, root, rt, scope }) => {
 };
 
 const Timeline: React.FC<CompProps> = ({ p, root }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const rawItems = (Array.isArray(p.items) ? p.items : []) as { title: string; time?: string; status?: string }[];
   const items = p.reverse ? [...rawItems].reverse() : rawItems;
-  const dot: Record<string, string> = { done: 'bg-blue-600', current: 'bg-white border-2 border-blue-600', wait: 'bg-slate-300', error: 'bg-rose-500' };
+  const dot: Record<string, string> = {
+    done: 'bg-blue-600',
+    current: isDark ? 'bg-[#16181D] border-2 border-blue-400' : 'bg-white border-2 border-blue-600',
+    wait: isDark ? 'bg-zinc-700' : 'bg-slate-300',
+    error: 'bg-rose-500',
+  };
   const isRight = p.mode === 'right';
   return (
     <div {...rootWith(root, { className: 'space-y-0' })}>
       {items.map((it, i) => (
         <div key={i} className={cx('relative pb-4 last:pb-0', isRight ? 'pr-6 text-right' : 'pl-6')}>
           {i < items.length - 1 && (
-            <span className={cx('absolute top-3 bottom-0 w-px bg-slate-200', isRight ? 'right-[5px]' : 'left-[5px]')} />
+            <span className={cx('absolute top-3 bottom-0 w-px', isDark ? 'bg-zinc-800' : 'bg-slate-200', isRight ? 'right-[5px]' : 'left-[5px]')} />
           )}
           <span
             className={cx(
@@ -1849,8 +2234,8 @@ const Timeline: React.FC<CompProps> = ({ p, root }) => {
               dot[it.status ?? 'done'] ?? dot.done
             )}
           />
-          <div className="text-[13px] text-slate-800">{it.title}</div>
-          {it.time && <div className="text-[12px] text-slate-400">{it.time}</div>}
+          <div className={cx('text-[13px]', isDark ? 'text-zinc-200' : 'text-slate-800')}>{it.title}</div>
+          {it.time && <div className={cx('text-[12px]', isDark ? 'text-zinc-500' : 'text-slate-400')}>{it.time}</div>}
         </div>
       ))}
     </div>
@@ -1858,21 +2243,24 @@ const Timeline: React.FC<CompProps> = ({ p, root }) => {
 };
 
 const TEXT_CLS: Record<string, string> = { default: 'text-slate-700', secondary: 'text-slate-500', success: 'text-emerald-600', warning: 'text-amber-600', danger: 'text-rose-600' };
+const TEXT_CLS_DARK: Record<string, string> = { default: 'text-zinc-200', secondary: 'text-zinc-400', success: 'text-emerald-400', warning: 'text-amber-400', danger: 'text-rose-400' };
 const TEXT_SIZE: Record<string, string> = { xs: 'text-[11px]', sm: 'text-[13px]', base: 'text-[14px]', lg: 'text-[16px]' };
 const Text: React.FC<CompProps> = ({ p, text, root }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
+  const palette = isDark ? TEXT_CLS_DARK : TEXT_CLS;
   return (
     <p
       {...rootWith(root, {
         className: cx(
           'leading-relaxed inline-flex items-center gap-1',
           TEXT_SIZE[(p.size as string) || 'sm'] ?? TEXT_SIZE.sm,
-          TEXT_CLS[p.type as string] ?? TEXT_CLS.default,
+          palette[p.type as string] ?? palette.default,
           p.strong && 'font-semibold',
           p.italic && 'italic',
           p.underline && 'underline',
           p.delete && 'line-through',
-          p.code && 'font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[12px]'
+          p.code && (isDark ? 'font-mono bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-[12px]' : 'font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[12px]')
         ),
         style: p.layoutFrame && textFrameStyle(p.layoutFrame),
       })}
@@ -1885,13 +2273,15 @@ const Text: React.FC<CompProps> = ({ p, text, root }) => {
 
 const Title: React.FC<CompProps> = ({ p, text, root }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const size = ['', 'text-[22px]', 'text-[18px]', 'text-[15px]', 'text-[14px]', 'text-[13px]'][Number(p.level ?? 3)] ?? 'text-[15px]';
   const alignCls = p.align === 'center' ? 'text-center' : p.align === 'right' ? 'text-right' : 'text-left';
   return (
     <div
       {...rootWith(root, {
         className: cx(
-          'font-semibold text-slate-900',
+          'font-semibold tracking-tight',
+          isDark ? 'text-zinc-100' : 'text-slate-900',
           size,
           alignCls,
           p.mark && 'pl-2.5 border-l-4 border-blue-600'
@@ -1905,10 +2295,11 @@ const Title: React.FC<CompProps> = ({ p, text, root }) => {
 
 const Empty: React.FC<CompProps> = ({ p, root }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const iconSz = p.size === 'small' ? 'w-7 h-7' : p.size === 'large' ? 'w-14 h-14' : 'w-10 h-10';
   return (
-    <div {...rootWith(root, { className: cx('text-center text-[13px] text-slate-400', p.size === 'small' ? 'py-4' : 'py-8') })}>
-      <Inbox className={cx('mx-auto mb-2 text-slate-300', iconSz)} />
+    <div {...rootWith(root, { className: cx('text-center text-[13px]', isDark ? 'text-zinc-500' : 'text-slate-400', p.size === 'small' ? 'py-4' : 'py-8') })}>
+      <Inbox className={cx('mx-auto mb-2', isDark ? 'text-zinc-600' : 'text-slate-300', iconSz)} />
       {p.description ?? tr('暂无数据', 'No data')}
     </div>
   );
@@ -1989,46 +2380,52 @@ const Form: React.FC<CompProps> = ({ node, p, children, root, rt, scope }) => {
 
 const Toolbar: React.FC<CompProps> = ({ p, children, root, rt }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const bgCls =
     p.bg === 'gray'
-      ? 'bg-slate-50/90 px-3 py-2 rounded-lg border border-slate-200/80'
+      ? isDark
+        ? 'bg-white/[0.04] px-3.5 py-2 rounded-xl ring-1 ring-inset ring-white/[0.07]'
+        : 'bg-slate-50/90 px-3.5 py-2 rounded-xl ring-1 ring-inset ring-slate-900/[0.06]'
       : p.bg === 'blue'
-      ? 'bg-blue-50/50 px-3 py-2 rounded-lg border border-blue-100'
+      ? isDark
+        ? 'bg-blue-500/12 px-3.5 py-2 rounded-xl ring-1 ring-inset ring-blue-400/25'
+        : 'bg-blue-50/55 px-3.5 py-2 rounded-xl ring-1 ring-inset ring-blue-200/70'
       : '';
   return (
     <div
       {...rootWith(root, {
         className: cx(
-          'flex flex-wrap items-center gap-2.5 min-h-8',
+          'flex flex-wrap items-center gap-2 min-h-8 min-w-0',
           p.align === 'right' && 'justify-end',
           p.align === 'center' && 'justify-center',
           (p.align === 'between' || p.title) && 'justify-between',
           bgCls,
-          p.bordered && 'border-b border-slate-200 pb-2.5'
+          p.bordered && (isDark ? 'border-b border-white/[0.07] pb-2.5' : 'border-b border-slate-200/80 pb-2.5')
         ),
       })}
     >
       <InlineToolbarCtx.Provider value={true}>
         {(p.title || p.subTitle) && (
-          <div className="flex items-baseline gap-2 mr-2">
-            {p.title && <span className="text-[14px] font-semibold text-slate-900">{p.title}</span>}
-            {p.subTitle && <span className="text-[12px] text-slate-500">{p.subTitle}</span>}
+          <div className="flex items-baseline gap-2 mr-2 min-w-0">
+            {p.title && <span className={cx('text-[14px] font-semibold truncate', isDark ? 'text-zinc-100' : 'text-slate-900')}>{p.title}</span>}
+            {p.subTitle && <span className={cx('text-[12px] truncate', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.subTitle}</span>}
           </div>
         )}
-        {children.length ? (p.title || p.subTitle ? <div className="flex flex-wrap items-center gap-2.5">{children}</div> : children) : <DropHint rt={rt} label={tr('拖入按钮或筛选控件', 'Drop buttons or inline filters')} />}
+        {children.length ? (p.title || p.subTitle ? <div className="flex flex-wrap items-center gap-2">{children}</div> : children) : <DropHint rt={rt} label={tr('拖入按钮或筛选控件', 'Drop buttons or inline filters')} />}
       </InlineToolbarCtx.Provider>
     </div>
   );
 };
 
-const ALERT_CLS: Record<string, { cls: string; Icon: React.ComponentType<{ className?: string }> }> = {
-  info: { cls: 'bg-blue-50 border-blue-200 text-blue-800', Icon: Info },
-  success: { cls: 'bg-emerald-50 border-emerald-200 text-emerald-800', Icon: CheckCircle2 },
-  warning: { cls: 'bg-amber-50 border-amber-200 text-amber-800', Icon: AlertTriangle },
-  error: { cls: 'bg-rose-50 border-rose-200 text-rose-800', Icon: XCircle },
+const ALERT_CLS: Record<string, { light: string; dark: string; Icon: React.ComponentType<{ className?: string }> }> = {
+  info: { light: 'bg-blue-50/85 border-blue-200/80 text-blue-900', dark: 'bg-blue-500/15 border-blue-400/25 text-blue-200', Icon: Info },
+  success: { light: 'bg-emerald-50/85 border-emerald-200/80 text-emerald-900', dark: 'bg-emerald-500/15 border-emerald-400/25 text-emerald-200', Icon: CheckCircle2 },
+  warning: { light: 'bg-amber-50/85 border-amber-200/80 text-amber-900', dark: 'bg-amber-500/15 border-amber-400/25 text-amber-200', Icon: AlertTriangle },
+  error: { light: 'bg-rose-50/85 border-rose-200/80 text-rose-900', dark: 'bg-rose-500/15 border-rose-400/25 text-rose-200', Icon: XCircle },
 };
 const Alert: React.FC<CompProps> = ({ p, root, rt, scope }) => {
   const { tr } = useI18n();
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const [closed, setClosed] = useState(false);
   if (closed && !rt.isDesign) return null;
   const a = ALERT_CLS[p.type as string] ?? ALERT_CLS.info;
@@ -2037,9 +2434,9 @@ const Alert: React.FC<CompProps> = ({ p, root, rt, scope }) => {
     <div
       {...rootWith(root, {
         className: cx(
-          'flex items-start gap-2 px-3 py-2 border text-[13px]',
-          p.banner ? 'rounded-none border-x-0' : 'rounded-md',
-          a.cls
+          'flex items-start gap-2.5 px-3.5 py-2.5 border text-[13px]',
+          p.banner ? 'rounded-none border-x-0' : 'rounded-xl',
+          isDark ? a.dark : a.light,
         ),
       })}
     >
@@ -2054,13 +2451,14 @@ const Alert: React.FC<CompProps> = ({ p, root, rt, scope }) => {
 };
 
 const Result: React.FC<CompProps> = ({ p, children, root }) => {
+  const isDark = useCanvasTheme()?.effectiveMode === 'dark';
   const Icon = p.status === 'error' ? XCircle : p.status === 'warning' ? AlertTriangle : p.status === 'info' ? Info : CheckCircle2;
   const color = p.status === 'error' ? 'text-rose-500' : p.status === 'warning' ? 'text-amber-500' : p.status === 'info' ? 'text-blue-500' : 'text-emerald-500';
   return (
     <div {...rootWith(root, { className: 'py-8 text-center space-y-2' })}>
       <Icon className={cx('w-12 h-12 mx-auto', color)} />
-      <div className="text-[18px] font-semibold text-slate-900">{p.title}</div>
-      {p.subTitle && <div className="text-[13px] text-slate-500">{p.subTitle}</div>}
+      <div className={cx('text-[18px] font-semibold', isDark ? 'text-zinc-100' : 'text-slate-900')}>{p.title}</div>
+      {p.subTitle && <div className={cx('text-[13px]', isDark ? 'text-zinc-400' : 'text-slate-500')}>{p.subTitle}</div>}
       {children.length > 0 && <div className="flex justify-center gap-2 pt-2">{children}</div>}
     </div>
   );
@@ -2069,14 +2467,26 @@ const Result: React.FC<CompProps> = ({ p, children, root }) => {
 /** Modal / Drawer: live = stacked overlay in the preview frame; staticOverlay = framed editor in design mode. */
 const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind, p, children, root, rt, scope, live, staticOverlay }) => {
   const { tr } = useI18n();
+  const canvasTheme = useCanvasTheme();
+  const overlayPosition = useContext(DesktopOverlayPositionContext);
+  const isDark = canvasTheme?.effectiveMode === 'dark';
+  const isCapture = useContext(CaptureMode);
+  const motionMode = canvasTheme?.motion ?? 'smooth';
+  const overlayExit = useDesktopOverlayExitAnimation(live, staticOverlay, isCapture, motionMode);
   const width = Number(p.width ?? (kind === 'modal' ? 640 : 520));
+  const placement = p.placement === 'left' ? 'left' : 'right';
   const close = () => rt.run({ $kind: 'actions', calls: [{ name: 'closeOverlay', args: [] }] }, scope);
   const showFooter = p.footer === undefined ? kind === 'modal' : p.footer !== false;
   const body = (
     <>
-      <div className="flex items-center justify-between px-5 h-12 border-b border-slate-100 shrink-0">
-        <span className="text-[15px] font-semibold text-slate-900">{p.title ?? (kind === 'modal' ? tr('弹框', 'Modal') : tr('抽屉', 'Drawer'))}</span>
-        <button type="button" onClick={close} className="p-1 rounded hover:bg-slate-100 text-slate-500">
+      <div className={cx('flex items-center justify-between px-5 h-13 border-b shrink-0', isDark ? 'border-white/[0.08]' : 'border-slate-100')}>
+        <span className={cx('text-[15px] font-semibold tracking-tight', isDark ? 'text-zinc-100' : 'text-slate-900')}>{p.title ?? (kind === 'modal' ? tr('弹框', 'Modal') : tr('抽屉', 'Drawer'))}</span>
+        <button
+          type="button"
+          aria-label={tr('关闭弹层', 'Close overlay')}
+          onClick={close}
+          className={cx('p-1.5 rounded-lg transition cursor-pointer', isDark ? 'hover:bg-white/10 text-zinc-400' : 'hover:bg-slate-100 text-slate-500')}
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -2084,11 +2494,20 @@ const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind
         {children.length ? children : <div className="col-span-12"><DropHint rt={rt} label={kind === 'modal' ? tr('拖入组件设计弹框内容', 'Drop components to design modal content') : tr('拖入组件设计抽屉内容', 'Drop components to design drawer content')} /></div>}
       </div>
       {showFooter && (
-        <div className="flex items-center justify-end gap-2 px-5 h-14 border-t border-slate-100 shrink-0">
-          <button type="button" onClick={close} className={cx('h-8 px-3.5 rounded-md border text-[13px] cursor-pointer', BTN_CLS.default)}>
+        <div className={cx('flex items-center justify-end gap-2 px-5 h-14 border-t shrink-0', isDark ? 'border-white/[0.08]' : 'border-slate-100')}>
+          <button
+            type="button"
+            onClick={close}
+            className={cx(
+              'h-8 px-3.5 rounded-lg border text-[13px] cursor-pointer transition',
+              isDark
+                ? 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-700'
+                : BTN_CLS.default,
+            )}
+          >
             {(p.cancelText as string) || tr('取消', 'Cancel')}
           </button>
-          <button type="button" onClick={() => (p.onOk ? rt.run(p.onOk as PropValue, scope) : close())} className={cx('h-8 px-3.5 rounded-md border text-[13px] cursor-pointer', BTN_CLS.primary)}>
+          <button type="button" onClick={() => (p.onOk ? rt.run(p.onOk as PropValue, scope) : close())} className={cx('h-8 px-4 rounded-lg border text-[13px] font-medium cursor-pointer transition', BTN_CLS.primary)}>
             {(p.okText as string) || tr('确定', 'OK')}
           </button>
         </div>
@@ -2098,30 +2517,59 @@ const OverlayFrame: React.FC<CompProps & { kind: 'modal' | 'drawer' }> = ({ kind
 
   if (staticOverlay) {
     return (
-      <div className="min-h-full p-8 bg-slate-500/25 flex items-start" style={{ justifyContent: kind === 'drawer' ? (p.placement === 'left' ? 'flex-start' : 'flex-end') : 'center' }}>
-        <div {...rootWith(root, { className: cx('bg-white shadow-2xl flex flex-col', kind === 'modal' ? 'rounded-lg' : 'rounded-md min-h-[560px]'), style: { width, maxWidth: '100%' } })}>{body}</div>
+      <div className="min-h-full p-8 bg-slate-500/25 flex items-start" style={{ justifyContent: kind === 'drawer' ? (placement === 'left' ? 'flex-start' : 'flex-end') : 'center' }}>
+        <div
+          {...rootWith(root, {
+            className: cx(
+              'shadow-2xl flex flex-col',
+              isDark ? 'bg-[#16181D] text-zinc-100 ring-1 ring-inset ring-white/10' : 'bg-white text-slate-900',
+              kind === 'modal' ? 'rounded-[20px]' : 'rounded-xl min-h-[560px]',
+            ),
+            style: { width, maxWidth: '100%' },
+          })}
+        >
+          {body}
+        </div>
       </div>
     );
   }
-  if (!live) return null;
+  if (!overlayExit.mounted) return null;
   const z = 40 + (scope.overlayIndex ?? 0) * 2;
   return (
     <div
-      className="absolute inset-0 flex"
+      data-overlay-kind={kind}
+      data-motion={motionMode}
+      data-closing={overlayExit.closing ? '1' : undefined}
+      {...(overlayExit.inertProps as unknown as React.HTMLAttributes<HTMLDivElement>)}
+      className={overlayPosition === 'fixed' ? 'fixed inset-0 flex' : 'absolute inset-0 flex'}
       style={{
         zIndex: z,
-        justifyContent: kind === 'drawer' ? (p.placement === 'left' ? 'flex-start' : 'flex-end') : 'center',
+        justifyContent: kind === 'drawer' ? (placement === 'left' ? 'flex-start' : 'flex-end') : 'center',
         alignItems: kind === 'modal' ? (p.centered !== false ? 'center' : 'flex-start') : 'stretch',
       }}
     >
-      <div className="absolute inset-0 bg-slate-900/45 pf-fade-in" onClick={close} />
       <div
+        ref={overlayExit.backdropRef}
+        data-closing={overlayExit.closing ? '1' : undefined}
+        className="pf-modal-backdrop absolute inset-0 bg-slate-950/48 backdrop-blur-[2px]"
+        onClick={close}
+      />
+      <div
+        ref={overlayExit.panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={String(p.title ?? (kind === 'modal' ? tr('弹框', 'Modal') : tr('抽屉', 'Drawer')))}
+        data-closing={overlayExit.closing ? '1' : undefined}
+        data-placement={kind === 'drawer' ? placement : undefined}
         {...rootWith(root, {
           className: cx(
-            'pf-paper relative bg-white shadow-2xl flex flex-col',
+            'pf-paper relative shadow-2xl flex flex-col',
+            isDark
+              ? 'bg-[#16181D] text-zinc-100 ring-1 ring-inset ring-white/[0.1]'
+              : 'bg-white text-slate-900 ring-1 ring-inset ring-slate-900/[0.06]',
             kind === 'modal'
-              ? cx('rounded-xl max-h-[calc(100%-3rem)] pf-pop-in', p.centered === false && 'mt-10')
-              : 'h-full pf-slide-in'
+              ? cx('rounded-[20px] max-h-[calc(100%-3rem)] pf-modal-panel', p.centered === false && 'mt-10')
+              : 'h-full pf-drawer-panel',
           ),
           style: { width, maxWidth: 'calc(100% - 32px)' },
         })}

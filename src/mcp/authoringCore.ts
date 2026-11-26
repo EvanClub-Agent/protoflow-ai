@@ -52,6 +52,7 @@ import {
   isDefaultDesignTokens,
   validateDesignTokens,
 } from '../proto/theme/designTokens';
+import { analyzeVisualConsistency } from '../proto/theme/visualConsistency';
 import { prepareMenuDeletion } from '../services/menuDeletion';
 import { analyzeProject } from '../services/projectAnalysis';
 import { applyProjectAgreement } from '../services/projectKnowledge';
@@ -1935,6 +1936,10 @@ export async function executeAuthoringTool(
 
       const pagesWithErrors = pageAudits.filter((pa) => pa.contractErrors.length > 0).length;
       const pagesWithoutSource = pageAudits.filter((pa) => !pa.hasSource).length;
+      const visualCheck = analyzeVisualConsistency(s);
+      const visualConsistencyWarnings = pageId
+        ? visualCheck.warnings.filter((w) => w.pageIds.includes(pageId))
+        : visualCheck.warnings;
       const healthy =
         analysis.issues.length === 0 &&
         dbReview.tableErrors.length === 0 &&
@@ -1956,11 +1961,14 @@ export async function executeAuthoringTool(
           databaseDesignRisks: dbReview.risks.length,
           previewRelationIssues: previewIssues.length,
           danglingTableMenuBindings: danglingTableMenuBindings.length,
+          visualConsistencyWarnings: visualConsistencyWarnings.length,
         },
         referenceIssues: analysis.issues,
         databaseReview: dbReview,
         previewRelationIssues: previewIssues,
         danglingTableMenuBindings,
+        visualBaseline: visualCheck.dominant,
+        visualConsistencyWarnings,
         pageAudits,
       };
     }
@@ -2000,8 +2008,8 @@ export function getAuthoringPrompt(
                 '1. **工作区与现状**：先调用 `protoflow_workspace(action="status")`；若尚未打开目标工程，按需求创建或切换到对应 `.pflow` 文件（注意设置 `projectMode`）。已有工程则调用 `protoflow_get_project_overview` 与 `protoflow_get_database_schema` 摸底。',
                 '2. **澄清与确认**：若核心业务边界、状态枚举或关键唯一性约束存在歧义，先向用户提问澄清后再动手；常规页面布局自行决策。',
                 '3. **目录 + 共享 ER 表 + 预览数据**：先用 `protoflow_manage_sitemap` 建好模块目录；再用 `protoflow_upsert_db_tables` 批量建好共享物理表（每表必须包含 `modeling.entity/grain/reason`、明确主键/外键/唯一约束与 `sharedByMenus`）；随后用 `protoflow_manage_table_rows(action="seed")` 灌入主子表外键自洽的真实样例行。',
-                '4. **按需查契约 + 逐页实现 + 便签规则**：先调用 `protoflow_get_implementation_guide` 选定场景，再调用 `protoflow_get_contracts` 读取所用组件与动作的真实契约（PC 用 `<Page>`，移动用 `<MobilePage>` + `M*` 组件，严禁混用）。按依赖顺序用 `protoflow_write_page` 生成页面，并确保按钮/表格触发真实动作链（`submitForm`/`updateRow`/`deleteRow`/`navigate`/`openModal`/`openDrawer`），再用 `protoflow_manage_sticky_notes` 钉上关键业务规则便签，必要时用 `protoflow_manage_docs_and_flows` 补充 PRD 笔记与 Mermaid 流程图。',
-                '5. **全工程闭环审计**：最后调用 `protoflow_audit_project` 检查所有跨页引用、外键关联、预览数据与页面契约，确保 `healthy: true` 并如实汇报成果与原型边界。',
+                '4. **同源视觉定调 + 按需查契约 + 逐页实现**：先确定整套工程唯一的一组视觉母题 `(appearance, surfaceBg, accent, motion)`（已有页面时读取 `protoflow_get_project_overview.visualBaseline.dominant` 并全端严格继承，严禁每页换一套底色或主按钮色造成拼盘感；遵循 85% 统一底布 Bento 容器 + 10% 单页唯一反色压舱主卡 + 5% 绿/琥珀/红业务语义色）。调用 `protoflow_get_implementation_guide` 选定场景，再调用 `protoflow_get_contracts` 读取所用组件与动作的真实契约（PC 用 `<Page>`，移动用 `<MobilePage>` + `M*` 组件，严禁混用）。按依赖顺序用 `protoflow_write_page` 生成页面，并确保按钮/表格触发真实动作链（`submitForm`/`updateRow`/`deleteRow`/`navigate`/`openModal`/`openDrawer`），再用 `protoflow_manage_sticky_notes` 钉上关键业务规则便签，必要时用 `protoflow_manage_docs_and_flows` 补充 PRD 笔记与 Mermaid 流程图。',
+                '5. **全工程闭环与同源审计**：最后调用 `protoflow_audit_project` 检查所有跨页引用、外键关联、预览数据、页面契约与 `visualConsistencyWarnings`，消除跨页视觉漂移并确保 `healthy: true`，如实汇报成果与原型边界。',
               ].join('\n'),
               [
                 `Design and build a complete Alex (ProtoFlow AI) prototype project in ${projectLabel}.`,
@@ -2012,8 +2020,8 @@ export function getAuthoringPrompt(
                 '1. **Workspace & Discovery**: Call `protoflow_workspace(action="status")`. Create or switch to the target `.pflow` file with the right `projectMode` if none is loaded, or inspect existing structure with `protoflow_get_project_overview` and `protoflow_get_database_schema`.',
                 '2. **Clarify Ambiguities**: Ask the user only for critical business ambiguities (status transitions, uniqueness rules, ownership); decide standard UI layout yourself.',
                 '3. **Sitemap + Shared ER Tables + Seed Data**: Create folders via `protoflow_manage_sitemap`, create normalized shared tables in batches via `protoflow_upsert_db_tables` (with `modeling.entity/grain/reason`, PK/FK/uniqueConstraints, and `sharedByMenus`), and seed coherent parent/child rows via `protoflow_manage_table_rows(action="seed")`.',
-                '4. **Contracts + Pages + Stickies/Docs**: Call `protoflow_get_implementation_guide` and `protoflow_get_contracts` before writing TSX (`<Page>` for desktop, `<MobilePage>` + `M*` for mobile — never mix). Build pages via `protoflow_write_page` with real action chains, attach requirement pins via `protoflow_manage_sticky_notes`, and optionally add notes/Mermaid flows via `protoflow_manage_docs_and_flows`.',
-                '5. **Closed-Loop Audit**: Run `protoflow_audit_project` and resolve every error until `healthy: true`, then summarize what was built and any prototype boundaries.',
+                '4. **Unified Visual Identity + Contracts + Pages**: Lock ONE cohesive visual system `(appearance, surfaceBg, accent, motion)` across all desktop `<Page>` and mobile `<MobilePage>` screens (inherit `visualBaseline.dominant` if pages already exist — never vary brand accent or canvas surface per page; follow 85% unified Bento canvas + 10% single inverted focal card + 5% semantic status colors). Call `protoflow_get_implementation_guide` and `protoflow_get_contracts` before writing TSX (never mix desktop and `M*` components), build pages via `protoflow_write_page` with real action chains, attach requirement pins via `protoflow_manage_sticky_notes`, and optionally add notes/Mermaid flows via `protoflow_manage_docs_and_flows`.',
+                '5. **Closed-Loop & Visual Consistency Audit**: Run `protoflow_audit_project`, resolve every contract/FK error AND any `visualConsistencyWarnings` until `healthy: true`, then summarize what was built and any prototype boundaries.',
               ].join('\n')
             ),
           },
@@ -2040,18 +2048,18 @@ export function getAuthoringPrompt(
                 `页面目标：${pageGoal}`,
                 '',
                 '执行要求：',
-                '1. 先调用 `protoflow_get_project_overview` 和 `protoflow_get_database_schema` 复用现有物理表与字段，确认确实需要新字段或新表时再用 `protoflow_upsert_db_tables` 补齐。',
+                '1. 先调用 `protoflow_get_project_overview` 和 `protoflow_get_database_schema` 复用现有物理表、字段以及 `visualBaseline.dominant` 同源视觉基线（保持与兄弟页面一致的 `appearance`、`surfaceBg`、`accent` 与 `motion`），确认确实需要新字段或新表时再用 `protoflow_upsert_db_tables` 补齐。',
                 '2. 调用 `protoflow_get_implementation_guide` 与 `protoflow_get_contracts` 核对将要使用的组件（PC 仅用桌面物料，移动仅用 `M*` 物料）与动作契约。',
-                '3. 用 `protoflow_write_page` 写入完整页面（所有节点必须带唯一稳定 `pfId`），必要时用 `protoflow_manage_sticky_notes` 添加需求便签，最后用 `protoflow_audit_project` 校验通过。',
+                '3. 用 `protoflow_write_page` 写入完整页面（所有节点必须带唯一稳定 `pfId`），必要时用 `protoflow_manage_sticky_notes` 添加需求便签，最后用 `protoflow_audit_project` 校验零错误且无 `visualConsistencyWarnings`。',
               ].join('\n'),
               [
                 `Design a page in ${projectLabel} (${pageIdHint}, ${folderHint}, platform: ${platformHint}).`,
                 `Page goal: ${pageGoal}`,
                 '',
                 'Requirements:',
-                '1. Call `protoflow_get_project_overview` and `protoflow_get_database_schema` first to reuse existing tables/columns; extend schema via `protoflow_upsert_db_tables` only when needed.',
+                '1. Call `protoflow_get_project_overview` and `protoflow_get_database_schema` first to reuse existing tables/columns and inherit `visualBaseline.dominant` (`appearance`, `surfaceBg`, `accent`, `motion`) from sibling pages; extend schema via `protoflow_upsert_db_tables` only when needed.',
                 '2. Call `protoflow_get_implementation_guide` and `protoflow_get_contracts` for exact props and actions before writing TSX (never mix desktop and mobile `M*` materials).',
-                '3. Write the page via `protoflow_write_page` with unique stable `pfId`s, attach sticky notes if needed, and verify with `protoflow_audit_project`.',
+                '3. Write the page via `protoflow_write_page` with unique stable `pfId`s, attach sticky notes if needed, and verify zero contract errors and zero `visualConsistencyWarnings` via `protoflow_audit_project`.',
               ].join('\n')
             ),
           },
@@ -2146,8 +2154,9 @@ export function readAuthoringResource(uri: string): { contents: { uri: string; m
       '5. Run `protoflow_audit_project` and resolve all contract, FK, and reference errors before concluding.',
       '',
       '## 2. UX Architecture & Material Selection Heuristics',
+      '- **Project-Wide Cohesive Visual System (One Product, One Visual Language)**: Lock ONE unified `(appearance, surfaceBg, accent, motion)` identity across EVERY `<Page>` and `<MobilePage>` in the project (read `protoflow_get_project_overview.visualBaseline.dominant` when adding pages to an existing project). Never mix different brand accents or canvas atmospheres across sibling screens (e.g., avoid green on Page 1, indigo on Page 2, and pitch-black OLED on Page 3 unless a dedicated dark wallboard/night terminal was explicitly requested). Follow the **85 / 10 / 5 hierarchy**: 85% unified canvas + clean Bento containers (`Card variant="bento"`), 10% single inverted hero anchor per screen (`Statistic tone="inverted"` or `MHeroHeader mode="wallet" | "metric_hero"`), and 5% strict semantic status accents (`emerald` = healthy, `amber` = warning, `rose` = danger/undo). Reserve `tone="dark_brief"` exclusively for `lime_forest`/`emerald`/`sage_field` palettes; on `obsidian`/`mist`/`indigo`/`blue` palettes use `AiCopilotCard tone="indigo"` and `MAiInsightCard tone="glow"`.',
       '- **Brand Design Tokens**: Match industry temperament via `protoflow_workspace(action="update_project_meta", designTokens={ preset })` (`modern_minimal` for AI/SaaS, `collab_soft` for collaborative workspaces, `enterprise_compact` for finance/ERP/customs, `classic_antd` for general backoffice).',
-      '- **Break CRUD Monotony**: Use Master-Detail (`autoSelectFirst={true}` + `selectRow()` paired with `<Card activeTable="...">` or `<MSurface activeTable="...">`) for高频审单/客诉处理; `Kanban` / `MKanban` for state-machine pipelines; `Calendar` / `MCalendar` for schedules/bookings; `Repeater` / `MRepeater` for rich custom cards; `AiCopilotCard` / `MAiInsightCard` for AI triage summaries.',
+      '- **Break CRUD Monotony**: Use Master-Detail (`autoSelectFirst={true}` + `selectRow()` paired with `<Card activeTable="...">` or `<MSurface activeTable="...">`) for高频审单/客诉处理; `Kanban` / `MKanban` for state-machine pipelines; `Calendar` / `MCalendar` for schedules/bookings; `Repeater` / `MRepeater` for rich custom cards; `ProgressBoard` / `MProgressList` for semicircle gauges & capsule goal bars; `ActivityFeed` / `MActivityList` for signed split-decimal ledgers; `AiCopilotCard` / `MAiInsightCard` for AI triage summaries; and `<MFloatingBar>` for live mobile status.',
       '- **UI Stack 5-State & Poka-Yoke**: Configure `<Page>` / `<MobilePage>` `emptyTitle` and `errorFallback` (`result_403` / `result_500`); attach cross-field `minField`/`maxField` (e.g. `inbound_qty <= remaining_qty`, `end_date >= start_date`), `disabledWhenField`/`hiddenWhenField` state guards on buttons/rowActions, `deleteRow("undo")` for recoverable deletes, and `confirm(msg, "{{row.code}}")` for irreversible high-risk actions.',
       '',
       '## 3. Hard Rules (Never Violate)',

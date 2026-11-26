@@ -1,23 +1,29 @@
 import { publishedMenuIndex } from '../services/publishedSitemap';
 import { PublishedSitemap, PublishedMenuPlaceholder } from './PublishedSitemap';
 import { emptySitemapOverrides } from '../proto/sitemap';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, ArrowRight, Blocks, CheckCircle2, ChevronRight, LockKeyhole, Moon, PanelLeft, RotateCcw, ShieldCheck, Smartphone, Sun } from 'lucide-react';
 import { McpConnectModal } from '../components/McpConnectModal';
 import type { Publication } from '../services/publishingClient';
 import { useResolvedTheme } from '../proto/registry/AntdSurface';
-import { ProtoCanvasThemeScope } from '../proto/theme/ProtoCanvasThemeScope';
+import { DesktopOverlayStack } from '../proto/registry/DesktopOverlayStack';
+import { ProtoCanvasThemeScope, useCanvasTheme } from '../proto/theme/ProtoCanvasThemeScope';
+import {
+  effectiveCanvasColorMode,
+  resolveDesktopAppearance,
+  type DesktopAppearance,
+} from '../proto/theme/designTokens';
 import { UIStackSwitcher } from '../proto/designer/UIStackSwitcher';
-import { MobileViewportShell } from '../proto/mobile/MobileViewportShell';
+import { MobileOverlayStack, MobileViewportShell } from '../proto/mobile/MobileViewportShell';
 import { resolveMobileAppearance, ToastStatusIcon, type MobileAppearance } from '../proto/mobile/components';
 import { MOBILE_DEVICE_LIST, type MobileDevicePreset } from '../proto/mobile/types';
 import { normalizePublishedSnapshot, type ReadablePublishedSnapshot, type PublishedPage } from '../services/publishedSnapshot';
 import { useProtoStore } from '../store/useProtoStore';
 import { usePageStore } from '../proto/store/usePageStore';
-import { NodeView, ScopeProvider } from '../proto/renderer/NodeView';
+import { NodeView } from '../proto/renderer/NodeView';
 import { findOverlay, RuntimeProvider, useRuntimeController } from '../proto/runtime/runtime';
 import { DesktopConfirmDialog } from '../proto/runtime/ConfirmModalContent';
-import type { Row } from '../proto/runtime/mock';
 import { PublishedNotesButton, PublishedNotesProvider } from './PublishedNotes';
 import { PublishedProjectNotes } from './PublishedProjectNotes';
 import { ThemeSwitch, useThemePreference } from '../components/ThemeSwitch';
@@ -46,19 +52,48 @@ export function hydratePublishedSnapshot(snapshot: unknown) {
   useProtoStore.setState({ dbTables: copy.tables, activePageId: copy.entryPageId, navigationSource: null, stickyNotes: [], suppliers: [], purchaseOrderItems: [], acceptanceOrders: [], closedLoopIssues: [], draftAcceptanceLines: [], showAllComponentPins: false, isWebPlayerMode: true });
 }
 
-export function PublishedPageView({ page, canNavigate, publishedHeader }: { page: PublishedPage; canNavigate?: (pageId: string) => boolean; publishedHeader?: (id:string) => readonly string[] | undefined }) {
+const PublishedViewportHostContext = createContext<HTMLDivElement | null>(null);
+
+export function PublishedPageView({
+  page,
+  canNavigate,
+  publishedHeader,
+  showAppearanceToggle,
+}: {
+  page: PublishedPage;
+  canNavigate?: (pageId: string) => boolean;
+  publishedHeader?: (id: string) => readonly string[] | undefined;
+  showAppearanceToggle?: boolean;
+}) {
   const { tr } = useI18n();
   const runtime = useRuntimeController(page.doc, page.pageId, false, canNavigate, publishedHeader);
   const isMobile = page.doc.root.type === 'MobilePage';
+  const outerCanvasTheme = useCanvasTheme();
+  const publishedViewportHost = useContext(PublishedViewportHostContext);
+  const canPortalToViewport = Boolean(
+    publishedViewportHost &&
+      typeof Element !== 'undefined' &&
+      publishedViewportHost instanceof Element,
+  );
   const workspaceTheme = useResolvedTheme();
   const [previewAppearance, setPreviewAppearance] = useState<MobileAppearance | null>(null);
+  const [desktopPreviewAppearance, setDesktopPreviewAppearance] = useState<DesktopAppearance | null>(null);
   useEffect(() => {
     setPreviewAppearance(null);
-  }, [workspaceTheme]);
+    setDesktopPreviewAppearance(null);
+  }, [workspaceTheme, outerCanvasTheme?.rawTokens?.colorMode]);
   const effectiveAppearance = resolveMobileAppearance(
     page.doc.root.props.appearance,
     workspaceTheme,
     previewAppearance,
+    page.doc.root.props.surfaceBg,
+  );
+  const baseDesktopMode = effectiveCanvasColorMode(outerCanvasTheme?.rawTokens, workspaceTheme);
+  const effectiveDesktopAppearance = resolveDesktopAppearance(
+    page.doc.root.props.appearance,
+    baseDesktopMode,
+    desktopPreviewAppearance,
+    page.doc.root.props.surfaceBg,
   );
   const [device, setDevice] = useState<MobileDevicePreset>('iphone');
   const [isNarrowScreen, setIsNarrowScreen] = useState(() =>
@@ -72,23 +107,37 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const overlayNodes = runtime.overlays.map((entry, index) => {
-    const node = findOverlay(page.doc, entry.id);
-    return node ? (
-      <ScopeProvider
-        key={entry.key}
-        value={{
-          row: entry.params.row as Row | undefined,
-          tableId: entry.params.tableId as string | undefined,
-          expectedTableId: entry.expectedTableId,
-          params: entry.params,
-          overlayIndex: index,
-        }}
-      >
-        <NodeView node={node} live />
-      </ScopeProvider>
-    ) : null;
-  });
+  const desktopLayers = !isMobile && <>
+    <DesktopOverlayStack
+      position={canPortalToViewport ? 'absolute' : 'fixed'}
+      overlays={runtime.overlays}
+      resolveNode={(id) => findOverlay(page.doc, id)}
+    />
+    {runtime.confirmState && (
+      <DesktopConfirmDialog
+        confirmState={runtime.confirmState}
+        onResolve={runtime.resolveConfirm}
+      />
+    )}
+    <div role="status" className="fixed bottom-5 right-5 z-[100] space-y-2 pointer-events-none">
+      {runtime.toasts.map(t => (
+        <div key={t.id} className="pointer-events-auto flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/95 backdrop-blur-xs px-4 py-2.5 text-white text-xs font-medium shadow-xl">
+          <ToastStatusIcon type={t.type} size={14} />
+          <span>{t.message}</span>
+          {t.undoAction && (
+            <button
+              type="button"
+              data-testid="toast-undo-btn"
+              onClick={() => t.undoAction?.onUndo()}
+              className="ml-1.5 rounded-md bg-blue-500/25 px-2 py-0.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/40 cursor-pointer transition"
+            >
+              {t.undoAction.label}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  </>;
 
   return <RuntimeProvider value={runtime}>
     {isMobile ? (
@@ -139,7 +188,9 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
           device={device}
           appearance={page.doc.root.props.appearance}
           previewAppearance={previewAppearance}
-          accent={page.doc.root.props.accent} surfaceBg={page.doc.root.props.surfaceBg}
+          accent={page.doc.root.props.accent}
+          surfaceBg={page.doc.root.props.surfaceBg}
+          motion={page.doc.root.props.motion}
           framed={!isNarrowScreen}
           fullBleed={isNarrowScreen}
           runtimeFeedback={{
@@ -147,42 +198,80 @@ export function PublishedPageView({ page, canNavigate, publishedHeader }: { page
             confirmState: runtime.confirmState,
             onResolveConfirm: runtime.resolveConfirm,
           }}
-          overlaySlot={<>{overlayNodes}</>}
+          overlaySlot={
+            <MobileOverlayStack
+              overlays={runtime.overlays}
+              resolveNode={(id) => findOverlay(page.doc, id)}
+            />
+          }
         >
           <NodeView node={page.doc.root} />
         </MobileViewportShell>
       </div>
     ) : (
-      <>
-        <NodeView node={page.doc.root} />
-        {overlayNodes}
-      </>
-    )}
-    {!isMobile && runtime.confirmState && (
-      <DesktopConfirmDialog
-        confirmState={runtime.confirmState}
-        onResolve={runtime.resolveConfirm}
-      />
-    )}
-    {!isMobile && (
-      <div role="status" className="fixed bottom-5 right-5 z-[100] space-y-2 pointer-events-none">
-        {runtime.toasts.map(t => (
-          <div key={t.id} className="pointer-events-auto flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/95 backdrop-blur-xs px-4 py-2.5 text-white text-xs font-medium shadow-xl">
-            <ToastStatusIcon type={t.type} size={14} />
-            <span>{t.message}</span>
-            {t.undoAction && (
-              <button
-                type="button"
-                data-testid="toast-undo-btn"
-                onClick={() => t.undoAction?.onUndo()}
-                className="ml-1.5 rounded-md bg-blue-500/25 px-2 py-0.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/40 cursor-pointer transition"
-              >
-                {t.undoAction.label}
-              </button>
-            )}
+      <ProtoCanvasThemeScope
+        tokens={outerCanvasTheme?.rawTokens}
+        hostTheme={workspaceTheme}
+        pageAppearance={page.doc.root.props.appearance}
+        previewAppearance={desktopPreviewAppearance}
+        surfaceBg={page.doc.root.props.surfaceBg}
+        accent={page.doc.root.props.accent}
+        motion={page.doc.root.props.motion}
+        className="flex-1 flex flex-col min-h-full"
+      >
+        {page.doc.root.type === 'Page' &&
+          Boolean(
+            showAppearanceToggle ||
+              page.doc.root.props.surfaceBg !== undefined ||
+              page.doc.root.props.appearance !== undefined,
+          ) && (
+          <div className="mb-2.5 flex justify-end">
+            <button
+              type="button"
+              data-testid="desktop-appearance-toggle"
+              onClick={() =>
+                setDesktopPreviewAppearance(effectiveDesktopAppearance === 'dark' ? 'light' : 'dark')
+              }
+              title={tr('切换桌面端页面明暗预览', 'Toggle desktop page light/dark preview')}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition border shadow-2xs ${
+                effectiveDesktopAppearance === 'dark'
+                  ? 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:bg-zinc-800'
+                  : 'bg-white border-slate-200/90 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {effectiveDesktopAppearance === 'dark' ? (
+                <>
+                  <Moon size={12} className="text-indigo-400" />
+                  <span>{tr('深色', 'Dark')}</span>
+                </>
+              ) : (
+                <>
+                  <Sun size={12} className="text-amber-500" />
+                  <span>{tr('浅色', 'Light')}</span>
+                </>
+              )}
+            </button>
           </div>
-        ))}
-      </div>
+        )}
+        <NodeView node={page.doc.root} />
+        {canPortalToViewport && publishedViewportHost
+          ? createPortal(
+              <ProtoCanvasThemeScope
+                tokens={outerCanvasTheme?.rawTokens}
+                hostTheme={workspaceTheme}
+                pageAppearance={page.doc.root.props.appearance}
+                previewAppearance={desktopPreviewAppearance}
+                surfaceBg={page.doc.root.props.surfaceBg}
+                accent={page.doc.root.props.accent}
+                motion={page.doc.root.props.motion}
+                className="contents"
+              >
+                {desktopLayers}
+              </ProtoCanvasThemeScope>,
+              publishedViewportHost,
+            )
+          : desktopLayers}
+      </ProtoCanvasThemeScope>
     )}
   </RuntimeProvider>;
 }
@@ -260,6 +349,7 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
   const [reset, setReset] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 540);
+  const [publishedViewportHost, setPublishedViewportHost] = useState<HTMLDivElement | null>(null);
   const menuIndex = useMemo(() => publishedMenuIndex(snapshot && snapshot.formatVersion !== 2 ? snapshot.sitemap : []), [snapshot]);
   const canVisit = (content: ReadablePublishedSnapshot, pageId: string) => content.formatVersion !== 2 ? publishedMenuIndex(content.sitemap).has(pageId) : content.pages.some(p => p.pageId === pageId);
   const activeId = useProtoStore(s => s.activePageId);
@@ -632,30 +722,38 @@ function PublishedShareViewer({ onOpenReleaseCenter }: { onOpenReleaseCenter: ()
               }}
             />
           )}
-          <main data-testid="published-content" style={hasAxureCanvas ? { contain:'layout' } : undefined}
-            className={`min-h-0 min-w-0 flex-1 ${hasAxureCanvas ? 'overflow-hidden' : 'overflow-auto p-3 sm:p-5'} ${page?.doc.root.type === 'MobilePage' ? 'max-[540px]:p-0' : ''}`}>
-            <div className={hasAxureCanvas ? 'h-full overflow-auto p-3 sm:p-5' : 'contents'}>
-            <ProtoCanvasThemeScope tokens={'designTokens' in snapshot ? snapshot.designTokens : null}>
+          <PublishedViewportHostContext.Provider value={publishedViewportHost}>
             <div
-              data-testid="published-canvas"
-              className={
-                page?.doc.root.type === 'MobilePage'
-                  ? 'pf-mobile-canvas-stage w-full rounded-xl border border-slate-200/90 shadow-xs min-h-full p-4 sm:p-6 max-[540px]:h-full max-[540px]:p-0 max-[540px]:border-0 max-[540px]:rounded-none'
-                  : 'pf-paper w-full rounded-xl border border-slate-200/90 bg-white shadow-xs min-h-full p-4 sm:p-6'
-              }
+              ref={setPublishedViewportHost}
+              data-testid="published-viewport"
+              className="relative min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden"
             >
-              {page ? (
-                <PublishedPageView key={`${page.pageId}:${reset}`} page={page} canNavigate={id => canVisit(snapshot,id)}
-                  publishedHeader={id => snapshot.pages.find(p => p.pageId === id)?.doc.header} />
-              ) : menuIndex.has(activeId) ? (
-                <PublishedMenuPlaceholder item={menuIndex.get(activeId)!.item} />
-              ) : (
-                <div role="alert" className="p-8 text-sm text-slate-500">{tr('目标页面未发布，请从左侧目录选择页面。', 'Target page is not published. Please select a page from the sidebar.')}</div>
-              )}
+              <main data-testid="published-content" style={hasAxureCanvas ? { contain:'layout' } : undefined}
+                className={`min-h-0 min-w-0 flex-1 ${hasAxureCanvas ? 'overflow-hidden' : 'overflow-auto p-3 sm:p-5'} ${page?.doc.root.type === 'MobilePage' ? 'max-[540px]:p-0' : ''}`}>
+                <div className={hasAxureCanvas ? 'h-full overflow-auto p-3 sm:p-5' : 'contents'}>
+                <ProtoCanvasThemeScope tokens={'designTokens' in snapshot ? snapshot.designTokens : null}>
+                <div
+                  data-testid="published-canvas"
+                  className={
+                    page?.doc.root.type === 'MobilePage'
+                      ? 'pf-mobile-canvas-stage w-full rounded-xl border border-slate-200/90 shadow-xs min-h-full p-4 sm:p-6 max-[540px]:h-full max-[540px]:p-0 max-[540px]:border-0 max-[540px]:rounded-none'
+                      : 'pf-paper w-full rounded-xl border border-slate-200/90 bg-white shadow-xs min-h-full p-4 sm:p-6'
+                  }
+                >
+                  {page ? (
+                    <PublishedPageView key={`${page.pageId}:${reset}`} page={page} showAppearanceToggle canNavigate={id => canVisit(snapshot,id)}
+                      publishedHeader={id => snapshot.pages.find(p => p.pageId === id)?.doc.header} />
+                  ) : menuIndex.has(activeId) ? (
+                    <PublishedMenuPlaceholder item={menuIndex.get(activeId)!.item} />
+                  ) : (
+                    <div role="alert" className="p-8 text-sm text-slate-500">{tr('目标页面未发布，请从左侧目录选择页面。', 'Target page is not published. Please select a page from the sidebar.')}</div>
+                  )}
+                </div>
+                </ProtoCanvasThemeScope>
+                </div>
+              </main>
             </div>
-            </ProtoCanvasThemeScope>
-            </div>
-          </main>
+          </PublishedViewportHostContext.Provider>
         </div>
         {!isStaticDemo && (
           <McpConnectModal

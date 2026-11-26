@@ -63,11 +63,19 @@ function Preview({ snapshot }: { snapshot: PreviewSnapshot }) {
     };
     void render().catch(e => host!.ready({ error: String(e) }));
   }, [snapshot, mobile]);
-  return <ProtoCanvasThemeScope tokens={snapshot.state.designTokens} hostTheme={snapshot.theme}><AntdSurface><RuntimeProvider value={runtime}>
+  return <ProtoCanvasThemeScope
+    tokens={snapshot.state.designTokens}
+    hostTheme={snapshot.theme}
+    pageAppearance={snapshot.doc.root.props.appearance}
+    surfaceBg={snapshot.doc.root.props.surfaceBg}
+    accent={snapshot.doc.root.props.accent}
+    motion={snapshot.doc.root.props.motion}
+    captureMode
+  ><AntdSurface><RuntimeProvider value={runtime}>
     <div ref={stage} style={snapshot.fullPage ? { minHeight: snapshot.height } : undefined}
       className={`pf-canvas-viewport-shell box-border flex w-full bg-slate-100 p-[12px] ${snapshot.fullPage ? '' : 'h-dvh overflow-hidden'}`}>
       {mobile ? <div className="m-auto"><MobileViewportShell device={snapshot.device} expandHeight={snapshot.fullPage} appearance={snapshot.doc.root.props.appearance}
-        accent={snapshot.doc.root.props.accent} surfaceBg={snapshot.doc.root.props.surfaceBg}>
+        accent={snapshot.doc.root.props.accent} surfaceBg={snapshot.doc.root.props.surfaceBg} motion={snapshot.doc.root.props.motion}>
         <NodeView node={snapshot.doc.root} />
       </MobileViewportShell></div> :
         <div data-preview-viewport className={`pf-paper flex min-w-0 flex-1 flex-col rounded-xl bg-white ${snapshot.fullPage ? '' : 'overflow-auto'}`}><NodeView node={snapshot.doc.root} /></div>}

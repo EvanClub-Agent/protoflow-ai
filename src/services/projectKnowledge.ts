@@ -9,6 +9,7 @@ import { buildGeneratingTargetStatus } from './dependencyFootprint';
 import { parsePageSource } from '../proto/dsl/parser';
 import { walk } from '../proto/dsl/tree';
 import { isActionChain, type PropValue } from '../proto/types';
+import { analyzeVisualConsistency } from '../proto/theme/visualConsistency';
 
 /** Only host-applied records belong here. A proposed record lives in the change review. */
 export interface ProjectAgreement {
@@ -121,9 +122,15 @@ export function projectExecutionBrief(
   const completed = (approvedPlan?.pages ?? []).filter(page => approvedPlan!.generatedPageIds.includes(page.pageId) &&
     Object.prototype.hasOwnProperty.call(snapshot.pageSources, page.pageId) && !pagePrototypeIssue(snapshot.pageSources[page.pageId])).map(page => page.pageId);
   const generatingTargetPageId = options?.generatingTargetPageId;
+  const visualBaseline = analyzeVisualConsistency(snapshot);
   return {
     version: 1,
     scope: focus,
+    visualBaseline: {
+      established: visualBaseline.established,
+      dominant: visualBaseline.dominant,
+      warnings: visualBaseline.warnings,
+    },
     agreementCatalog: (snapshot.projectAgreements ?? []).map(({id,kind,title,pageIds}) => ({id,kind,title,pageIds})),
     agreements: (snapshot.projectAgreements ?? []).filter(row => !row.pageIds.length || row.pageIds.some(id => selected.has(id))),
     plan: approvedPlan

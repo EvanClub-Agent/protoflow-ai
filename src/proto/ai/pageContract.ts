@@ -3,7 +3,7 @@ import { parsePageSource } from '../dsl/parser';
 import { validateMaterialSource } from '../registry/materialContract';
 import { PAGE_ROOT_TYPES } from '../registry/meta';
 import { diagramRelations } from '../database/relations';
-import { tableBindingErrors, sourceForeignKeyErrors } from '../table/model';
+import { COLLECTION_BINDING_TYPES, collectionBindingErrors, tableBindingErrors } from '../table/model';
 import { freeformBindingErrors } from '../freeform/contract';
 import { isNode, type ProtoNode } from '../types';
 import { isChartType, chartConfigErrors, prepareChartData } from '../charts/model';
@@ -49,8 +49,19 @@ export function pageContractErrors(
       }
     }
     if (n.type === 'Table') errors.push(...tableBindingErrors(n.props, tables, data?.tableRows).map(message => `${n.pfId}:${message}`));
-    if (['MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'].includes(n.type)) {
-      errors.push(...sourceForeignKeyErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
+    if (COLLECTION_BINDING_TYPES.has(n.type)) {
+      errors.push(...collectionBindingErrors(n.type, n.props, tables).map(message => `${n.pfId}:${message}`));
+    }
+    if (n.type === 'MSheetPicker' && typeof n.props.table === 'string') {
+      const bound = tables.find((t) => t.id === n.props.table);
+      if (bound) {
+        for (const key of ['labelField', 'valueField'] as const) {
+          const val = n.props[key];
+          if (typeof val === 'string' && val && !bound.columns.some((col) => col.name === val)) {
+            errors.push(`${n.pfId}:未知字段 ${bound.id}.${val}`);
+          }
+        }
+      }
     }
     if (n.type === 'Freeform') errors.push(...freeformBindingErrors(n.props, tables).map(message => `${n.pfId}:${message}`));
     if (
@@ -96,46 +107,6 @@ export function pageContractErrors(
         }
       });
     if (
-      ["Table", "CardGrid", "Kanban", "MTaskList", "MKanban"].includes(n.type) &&
-      typeof n.props.table === "string" &&
-      Array.isArray(n.props.rowActions)
-    ) {
-      const bound = tables.find((t) => t.id === n.props.table);
-      if (bound) {
-        for (const act of n.props.rowActions) {
-          if (act && typeof act === "object" && !Array.isArray(act)) {
-            for (const guardKey of ["disabledWhenField", "hiddenWhenField"] as const) {
-              const colName = (act as Record<string, unknown>)[guardKey];
-              if (typeof colName === "string" && colName && !bound.columns.some((col) => col.name === colName)) {
-                errors.push(`${n.pfId}:未知字段 ${bound.id}.${colName}`);
-              }
-            }
-          }
-        }
-      }
-    }
-    if (
-      ["MFeedList", "MCardGrid", "MRepeater", "MKanban", "MCalendar", "CardGrid", "Repeater", "Kanban", "Calendar", "MTaskList", "MSheetPicker"].includes(n.type) &&
-      typeof n.props.table === "string"
-    ) {
-      const bound = tables.find((t) => t.id === n.props.table);
-      if (bound) {
-        for (const key of ["titleField", "subtitleField", "imageField", "priceField", "tagField", "statusField", "metricField", "dateField", "endDateField", "labelField", "valueField"]) {
-          const val = n.props[key];
-          if (typeof val === "string" && val && !bound.columns.some((col) => col.name === val)) {
-            errors.push(`${n.pfId}:未知字段 ${bound.id}.${val}`);
-          }
-        }
-        if (n.type === "MTaskList" && Array.isArray(n.props.fields)) {
-          for (const f of n.props.fields) {
-            if (f && typeof f === "object" && !Array.isArray(f) && "dataIndex" in f && typeof f.dataIndex === "string" && !bound.columns.some((col) => col.name === f.dataIndex)) {
-              errors.push(`${n.pfId}:未知字段 ${bound.id}.${f.dataIndex}`);
-            }
-          }
-        }
-      }
-    }
-    if (
       n.type === "MPillTabs" &&
       typeof n.props.target === "string" &&
       typeof n.props.filterField === "string" &&
@@ -144,7 +115,7 @@ export function pageContractErrors(
       const targetNode = nodesByPfId.get(n.props.target);
       if (
         targetNode &&
-        ["MFeedList", "MTaskList", "MCardGrid", "MRepeater", "MKanban", "MCalendar"].includes(targetNode.type) &&
+        COLLECTION_BINDING_TYPES.has(targetNode.type) &&
         typeof targetNode.props.table === "string"
       ) {
         const bound = tables.find((t) => t.id === targetNode.props.table);

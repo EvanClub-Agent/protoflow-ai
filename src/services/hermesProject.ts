@@ -34,6 +34,7 @@ import type { PflowBinaryPayload } from "../utils/pflowBinaryCodec";
 import { checkAiPagePlatform, type RequestedPage } from './projectPagePlatform';
 import { OVERLAY_TYPES } from '../proto/registry/meta';
 import { isDefaultDesignTokens } from '../proto/theme/designTokens';
+import { analyzeVisualConsistency } from '../proto/theme/visualConsistency';
 import { verifyDependencyFootprint, type DependencyFootprintV3 } from './dependencyFootprint';
 import { reshapeAxurePage } from '../proto/axure/optimization';
 import { reshapeFigmaPage } from '../proto/figma/optimization';
@@ -50,6 +51,7 @@ export function projectContext(requestedPage?: RequestedPage, payloadOverride?: 
     projectName: p.meta.projectName,
     projectMode: p.meta.projectMode,
     ...(s.designTokens && !isDefaultDesignTokens(s.designTokens) ? { designTokens: s.designTokens } : {}),
+    visualBaseline: analyzeVisualConsistency(s),
     ...(requestedPage && { requestedPage }),
     mindmaps: s.mindmaps,
     /** Compact catalog of PM notes; full Markdown is read through protoflow_get_project_notes. */

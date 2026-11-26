@@ -10,7 +10,7 @@ import { ACTION_MAP } from '../proto/runtime/actions';
 import { object } from './projectValidation';
 import { validateStickyNoteIndex } from '../proto/stickyNoteIndex';
 import { validateMaterialDoc } from '../proto/registry/materialContract';
-import { tableBindingErrors, sourceForeignKeyErrors } from '../proto/table/model';
+import { COLLECTION_BINDING_TYPES, collectionBindingErrors, tableBindingErrors } from '../proto/table/model';
 import { freeformBindingErrors } from '../proto/freeform/contract';
 import { walk } from '../proto/dsl/tree';
 import { isChartType, chartConfigErrors, prepareChartData } from '../proto/charts/model';
@@ -182,8 +182,8 @@ export function validatePublishedSnapshot(value: unknown): asserts value is Read
         const issues = tableBindingErrors(node.props, value.tables as DBTableSchema[], value.tableRows);
         if (issues.length) throw new Error(tr(`表格 ${node.pfId} 未通过发布检查：${issues.join('，')}`, `Table ${node.pfId} failed publish check: ${issues.join(', ')}`));
       }
-      if (['MTaskList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'CardGrid', 'Repeater', 'Kanban', 'Calendar'].includes(node.type)) {
-        const issues = sourceForeignKeyErrors(node.props, value.tables as DBTableSchema[]);
+      if (COLLECTION_BINDING_TYPES.has(node.type)) {
+        const issues = collectionBindingErrors(node.type, node.props, value.tables as DBTableSchema[]);
         if (issues.length) {
           const kindZh = node.type.startsWith('M') ? '移动列表' : '数据组件';
           const kindEn = node.type.startsWith('M') ? 'Mobile list' : 'Data view';

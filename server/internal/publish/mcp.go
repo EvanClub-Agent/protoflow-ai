@@ -20,7 +20,7 @@ import (
 
 const (
 	mcpServerName       = "protoflow-spec"
-	mcpServerVersion    = "0.0.10"
+	mcpServerVersion    = "0.0.11"
 	maxMcpRequestBytes  = 64 << 10 // 64 KiB cap for read-only MCP JSON-RPC request bodies
 	maxMcpBatchSize     = 16
 	maxMcpResponseBytes = 4 << 20 // 4 MiB cumulative response cap per HTTP request
@@ -1669,7 +1669,7 @@ func printRemoteExpr(v any) string {
 
 func buildRemoteOutline(n mcpNode, depth int) gin.H {
 	summary := gin.H{}
-	for _, k := range []string{"id", "title", "subtitle", "label", "name", "table", "sourceForeignKey", "statusField", "placeholder", "type", "variant", "xField", "yField", "seriesField", "categoryField", "valueField"} {
+	for _, k := range []string{"id", "title", "subtitle", "label", "name", "table", "sourceForeignKey", "statusField", "placeholder", "type", "variant", "tone", "appearance", "accent", "surfaceBg", "motion", "xField", "yField", "seriesField", "categoryField", "valueField", "targetField", "amountField", "labelField"} {
 		if val, ok := n.Props[k]; ok {
 			switch val.(type) {
 			case string, float64, bool:

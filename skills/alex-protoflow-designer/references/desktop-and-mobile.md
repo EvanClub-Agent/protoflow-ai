@@ -26,6 +26,9 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
 
 - **Allowed components**: Desktop + Universal (`Freeform` + 12 ECharts types). Never use `M*` components.
 - **Grid layout**: `<Row gutter={16}>` accepts ONLY `<Col span={...}>`. Keep `Col.span` sums per row at `24` (e.g. `12 + 12` or `16 + 8` or `6 + 6 + 6 + 6`). Note `width="full"` inside a `Col` fills that column, not the full page.
+- **Cohesive Designer Surfaces & 85/10/5 Hierarchy on Desktop**:
+  - Choose ONE `<Page appearance="..." surfaceBg="..." accent="..." motion="smooth">` system for the **entire project** (or inherit `visualBaseline.dominant` from `protoflow_get_project_overview`) and keep it identical across every screen: e.g. `appearance="light" surfaceBg="mist" accent="obsidian"` for executive/fintech/industrial ops; `sage_field` + `lime_forest` for green/ESG suites; `warm_paper` + `indigo` for editorial/collaborative suites; `oled_carbon` only when the whole product is dark.
+  - Anchor the top KPI row with **one** `<Statistic tone="inverted" splitDecimal={true} sparkline={true} />` (or `<Card variant="inverted">`), keep sibling KPIs clean `tone="card"` without rainbow `valueColor` overrides, and pair with `<ProgressBoard variant="gauge" | "capsule">` and `<ActivityFeed>` (signed split-decimal ledger + guarded `rowActions`). Reserve `AiCopilotCard tone="dark_brief"` for `lime_forest`/`emerald`/`sage_field` projects; on `obsidian`/`mist`/`indigo`/`blue` projects use `AiCopilotCard tone="indigo"`. Charts and tables inside `<Card variant="bento">` automatically melt duplicate inner borders.
 - **Query + Table + Create/Edit**:
   - Bind `<QueryForm target="tbl_main" cols={3} layout="horizontal" size="middle">` to `<Table pfId="tbl_main" table="t_..." ... />`.
   - Remember `QueryForm` filters scalar substring matches; array filters (`dateRange`, multi-select, `cascader`) are UI-only and do not execute array filtering in preview runtime — note this honestly if used.
@@ -41,12 +44,15 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
 ## 3. Mobile (`<MobilePage>`) Patterns
 
 - **Allowed components**: `MobilePage`, `M*` components, and Universal (`Freeform` + charts). Never use `Table`, `QueryForm`, `Card`, `Row`/`Col`, `Modal`, or `Drawer`.
+- **Cohesive Designer Surfaces & Focal Contrast on Mobile**:
+  - Lock the **exact same** `(appearance, surfaceBg, accent, motion)` family across all `<MobilePage>` tabs (and match any companion desktop `<Page>` screens via `visualBaseline.dominant`): e.g. `appearance="light" surfaceBg="mist" accent="obsidian"` across every tab, never jumping from green on Tab 1 to blue on Tab 2 to pitch-black OLED on Tab 3.
+  - Anchor the top of each screen with `<MHeroHeader mode="wallet" value="$24,680.00" accountMask="**** 3287" />` or `<MHeroHeader mode="metric_hero" value="98.6%" statusBadge="Plan 95%" />`, paired with `<MAiInsightCard tone="glow" />` (`tone="dark_brief"` only on `lime_forest`/`sage_field` green projects) and `<MProgressList variant="gauge" | "capsule">`.
 - **3-tier viewport structure**:
   1. Top sticky bar: `<MTopBar>`
-  2. Middle single-column flow: `<MHeroHeader>`, `<MBentoGrid>`, `<MSurface>`, `<MAiInsightCard>`, `<MSearchPill target="list_id" />`, `<MPillTabs target="list_id" filterField="status" />`, `<MFeedList>` (C-end feed/cards), `<MTaskList>` (B-end task/document list), `<MRepeater>` (custom repeating mobile card template), `<MKanban>` (touch stage board), `<MCalendar>` (week/month date strip + daily agenda), `<MListGroup>` + `<MListItem>`, `<MStatCard>`, `<MChatStream>`
-  3. Bottom dock: `<MTabBar>` (top-level tabs), `<MBottomDock>` (detail/form primary/secondary CTA), or `<MComposerBar>` (AI input bar)
+  2. Middle single-column flow: `<MHeroHeader>`, `<MAiInsightCard>`, `<MProgressList variant="capsule" | "gauge">`, `<MActivityList>` (signed split-decimal ledger + swipe-left `rowActions`), `<MBentoGrid>`, `<MSurface>`, `<MSearchPill target="list_id" />`, `<MPillTabs target="list_id" filterField="status" />`, `<MFeedList>` (C-end feed/cards), `<MTaskList>` (B-end task/document list), `<MRepeater>` (custom repeating mobile card template), `<MKanban>` (touch stage board), `<MCalendar>` (week/month date strip + daily agenda), `<MListGroup>` + `<MListItem>`, `<MStatCard>`, `<MChatStream>`
+  3. Bottom dock: `<MFloatingBar>` (persistent SLA timer / mini-player capsule above tab bar) + `<MTabBar>` (supports `avatarText` for split pill island + circular avatar), `<MBottomDock>`, or `<MComposerBar>`
 - **Mobile forms & overlays**: Place `<MForm>` with `<MField>`, `<MSheetPicker>`, `<MChipSelect>`, `<MMediaInput>` inside `<MBottomSheet>` (`openDrawer`) or a dedicated mobile form page.
-- **Related detail rows on mobile**: Set `table` + `sourceForeignKey` on `<MTaskList>` or `<MFeedList>` inside an overlay opened from row click (`openDrawer`) or target page navigated with `'row'`.
+- **Related detail rows on mobile**: Set `table` + `sourceForeignKey` on `<MTaskList>`, `<MActivityList>`, `<MProgressList>`, or `<MFeedList>` inside an overlay opened from row click (`openDrawer`) or target page navigated with `'row'`.
 
 ## 4. Charts & Freeform
 
