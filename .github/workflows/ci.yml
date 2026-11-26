@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
 jobs:
   frontend:
     name: Frontend Tests & Build

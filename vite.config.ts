@@ -15,8 +15,8 @@ export default defineConfig(({ mode }) => ({
   },
   build:
     mode === 'viewer'
-      ? { outDir: 'dist-viewer', rollupOptions: { input: 'viewer.html' } }
+      ? { outDir: 'dist-viewer', reportCompressedSize: false, rollupOptions: { input: 'viewer.html' } }
       : mode === 'website-demo'
-        ? { outDir: 'website/demo', emptyOutDir: true, rollupOptions: { input: 'demo.html' } }
-        : { rollupOptions: { input: ['index.html', 'capture.html'] } },
+        ? { outDir: 'website/demo', emptyOutDir: true, reportCompressedSize: false, rollupOptions: { input: 'demo.html' } }
+        : { reportCompressedSize: false, rollupOptions: { input: ['index.html', 'capture.html'] } },
 }))
