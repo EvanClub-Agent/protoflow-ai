@@ -130,7 +130,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_workspace',
     description:
-      'Inspect or manage the active Alex (.pflow) project workspace: check current editor/file context ("status"), list .pflow projects ("list_projects"), create a new project from scratch or starter template ("create_project"), switch to another .pflow file ("switch_project"), or update project name/mode/activePageId/designTokens ("update_project_meta").',
+      'Inspect or manage the active .pflow workspace: status, list_projects, create_project, switch_project, or update_project_meta (name, mode, activePageId, designTokens).',
     annotations: { ...WRITE_ANNOTATIONS, title: 'Manage Alex Project Workspace' },
     inputSchema: {
       type: 'object',
@@ -138,19 +138,18 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         action: {
           type: 'string',
           enum: ['status', 'list_projects', 'create_project', 'switch_project', 'update_project_meta'],
-          description: 'Workspace action to perform (default: "status").',
+          description: 'Workspace action (default: "status").',
         },
         directory: {
           type: 'string',
-          description: 'Directory path to scan for list_projects (optional; defaults to workspace directory).',
+          description: 'Directory to scan for list_projects.',
         },
         filePath: {
           type: 'string',
-          description: 'Target .pflow file path for create_project or switch_project (relative paths resolve against workspaceDir).',
+          description: 'Target .pflow path for create_project or switch_project.',
         },
         projectName: {
           type: 'string',
-          description: 'Display project name for create_project or update_project_meta.',
         },
         templateId: {
           type: 'string',
@@ -160,11 +159,9 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         projectMode: {
           type: 'string',
           enum: projectModes,
-          description: 'Target platform mode for create_project or update_project_meta.',
         },
         activePageId: {
           type: 'string',
-          description: 'Set the active/entry pageId for update_project_meta.',
         },
         designTokens: {
           oneOf: [
@@ -183,16 +180,14 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
               },
             },
           ],
-          description:
-            'Brand Design Tokens isolated to prototype canvas & viewer (classic_antd | modern_minimal | collab_soft | enterprise_compact). Pass null to reset to default classic_antd.',
+          description: 'Canvas Design Tokens (pass null to reset to classic_antd).',
         },
         overwrite: {
           type: 'boolean',
-          description: 'Allow overwriting an existing .pflow file in create_project (default: false).',
         },
         expectedRevision: {
           type: 'string',
-          description: 'Optional revision token for optimistic concurrency control on update_project_meta.',
+          description: 'Optimistic concurrency revision token.',
         },
       },
       additionalProperties: false,
@@ -201,7 +196,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_implementation_guide',
     description:
-      'Get Alex scenario recipes and selection rules (list, form, detail, picker, dashboard, workflow, layout, mobile, axure, custom). Omit scenarioIds to list available scenario IDs first, then request applicable scenarioIds before writing pages.',
+      'Get scenario recipes (list, form, detail, picker, dashboard, workflow, layout, mobile, axure, custom). Omit scenarioIds to list IDs first.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Scenario Implementation Guide' },
     inputSchema: {
       type: 'object',
@@ -209,7 +204,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         scenarioIds: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Scenario IDs to load in full. Omit to list the scenario catalog.',
+          description: 'Scenario IDs to load (omit to list catalog).',
         },
       },
       additionalProperties: false,
@@ -218,7 +213,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_contracts',
     description:
-      'Get registered Alex TSX material component contracts (exact props, valueSchema, events, child rules, snippets, examples) and runtime action contracts. Omit componentNames to list compact names grouped by desktop/mobile/universal; pass componentNames to inspect exact schemas before writing TSX.',
+      'Get registered TSX component contracts (props, valueSchema, events, child rules, snippets) and runtime actions. Omit componentNames to list catalog.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Material & Action Contracts' },
     inputSchema: {
       type: 'object',
@@ -226,15 +221,13 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         componentNames: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Specific component names to inspect in full (e.g. ["Page", "Table", "Form", "Modal"]).',
+          description: 'Component names to inspect in full.',
         },
         includeAxure: {
           type: 'boolean',
-          description: 'Include legacy Axure compatibility component names when listing catalog (default: false).',
         },
         includeFigma: {
           type: 'boolean',
-          description: 'Include Figma restoration primitive component names when listing catalog (default: false).',
         },
       },
       additionalProperties: false,
@@ -662,7 +655,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_reshape_imported_page',
     description:
-      'Inspect and reshape imported Axure RP (`rp-page-*`) or Figma (`fig-page-*`) pages into clean, flow-layout Alex native `<Page>` / `<MobilePage>` optimized copies (`rp-optimized-*` / `fig-optimized-*`) while preserving the original imported canvas intact, verifying widget/layer coverage accounting, enforcing non-inverted table column mappings, and auto-retargeting cross-page navigation links.',
+      'Inspect and reshape imported Axure RP (`rp-page-*`) or Figma (`fig-page-*`) pages into flow-layout `<Page>` / `<MobilePage>` optimized copies (`rp-optimized-*` / `fig-optimized-*`) while preserving original canvases.',
     annotations: { ...WRITE_ANNOTATIONS, title: 'Inspect & Reshape Imported Axure RP / Figma Pages' },
     inputSchema: {
       type: 'object',
@@ -677,73 +670,68 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
             'optimize_axure_block',
             'reshape_figma_page',
           ],
-          description:
-            'Import migration action: inspect_project / inspect_page (read-only) or reshape_axure_page / bind_axure_table / optimize_axure_block / reshape_figma_page (writes sibling optimized copy).',
+          description: 'Read (inspect_project, inspect_page) or write sibling optimized copy.',
         },
         sourceType: {
           type: 'string',
           enum: ['axure', 'figma', 'auto'],
-          description: 'Import source family for inspect_project or inspect_page (default: "auto").',
+          description: 'Source family for inspect actions (default: "auto").',
         },
         pageId: {
           type: 'string',
-          description:
-            'Source imported page ID (`rp-page-<guid>` or `fig-page-<hash>`). Optional scope filter for inspect_project; required for inspect_page and all write actions.',
+          description: 'Source page ID (`rp-page-*` or `fig-page-*`).',
         },
         folderId: {
           type: 'string',
-          description: 'Optional folderId scope filter for inspect_project (mutually exclusive with pageId).',
+          description: 'Folder scope for inspect_project (exclusive with pageId).',
         },
         selectedPfId: {
           type: 'string',
-          description: 'Optional subtree pfId filter for inspect_page.',
+          description: 'Subtree pfId filter for inspect_page.',
         },
         offset: {
           type: 'integer',
           minimum: 0,
-          description: 'Pagination offset for inspect_project or inspect_page (default: 0).',
         },
         limit: {
           type: 'integer',
           minimum: 1,
           maximum: 80,
-          description: 'Pagination limit (1..8 for inspect_project; 1..80 for inspect_page).',
+          description: '1..8 for inspect_project; 1..80 for inspect_page.',
         },
         source: {
           type: 'string',
-          description:
-            'Complete flow-layout `<Page>` or `<MobilePage>` TSX using standard Alex materials (without AxureCanvas/FigmaCanvas) for reshape_axure_page or reshape_figma_page.',
+          description: 'Complete flow-layout `<Page>` / `<MobilePage>` TSX without AxureCanvas/FigmaCanvas.',
         },
         coverage: {
           anyOf: [AXURE_RESHAPE_COVERAGE_SCHEMA, FIGMA_RESHAPE_COVERAGE_SCHEMA],
-          description:
-            'Required source-widget accounting manifest (`converted`, plus `retained`/`pending` for Axure or `pending` for Figma) for reshape_axure_page or reshape_figma_page.',
+          description: 'Source-widget accounting manifest for reshape_axure_page / reshape_figma_page.',
         },
         targetPfId: {
           type: 'string',
-          description: 'Exact source StaticTable or positioned widget pfId on pageId for bind_axure_table or optimize_axure_block.',
+          description: 'Source StaticTable or widget pfId for bind_axure_table / optimize_axure_block.',
         },
         tableId: {
           type: 'string',
-          description: 'Exact existing dbTables.id for bind_axure_table.',
+          description: 'Bound dbTables.id for bind_axure_table.',
         },
         mappings: {
           type: 'array',
           minItems: 1,
           items: AXURE_COLUMN_MAPPING_SCHEMA,
-          description: 'Per-header column mappings for bind_axure_table covering every first-row StaticTableCell.',
+          description: 'First-row StaticTableCell column mappings for bind_axure_table.',
         },
         tsx: {
           type: 'string',
-          description: 'Single complete Alex component TSX preserving targetPfId for optimize_axure_block.',
+          description: 'Replacement component TSX preserving targetPfId for optimize_axure_block.',
         },
         setActive: {
           type: 'boolean',
-          description: 'Switch activePageId to the generated optimized copy after writing (default: false).',
+          description: 'Set generated optimized copy as activePageId.',
         },
         expectedRevision: {
           type: 'string',
-          description: 'Optional revision token for optimistic concurrency control on write actions.',
+          description: 'Revision token for optimistic concurrency on write actions.',
         },
       },
       required: ['action'],

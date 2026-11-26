@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { stringify } from 'lossless-json';
 import { parseStdioPayload } from './wire';
-import { handleSpecMcpPayload } from './protocol';
+import { handleSpecMcpPayload, handleSpecMcpRequest, type JsonRpcRequest, type JsonRpcResponse } from './protocol';
 import type { AuthoringWorkspace } from './authoringTypes';
 
 function disconnectedDesktopWorkspace(message: string): AuthoringWorkspace {
@@ -25,7 +25,8 @@ function disconnectedDesktopWorkspace(message: string): AuthoringWorkspace {
 /** Only the desktop's loopback port and per-session secret come from disk. */
 export function createDesktopRelay(connectionPath: string) {
   if (!path.isAbsolute(connectionPath)) throw new Error('--desktop-bridge requires an absolute connection file path');
-  return async (payload: unknown) => {
+  const connection = { modern: false };
+  const forward = async (request: JsonRpcRequest): Promise<JsonRpcResponse | null> => {
     let connected = false;
     try {
       const { port, token } = JSON.parse(await fs.readFile(connectionPath, 'utf8'));
@@ -36,16 +37,17 @@ export function createDesktopRelay(connectionPath: string) {
       const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: stringify(payload),
+        body: stringify(request),
       });
       if (!response.ok) throw new Error(`Desktop bridge HTTP ${response.status}`);
-      return response.status === 204 ? null : parseStdioPayload(await response.text());
+      return response.status === 204 ? null : parseStdioPayload(await response.text()) as JsonRpcResponse;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const message = connected
         ? `Alex desktop connection unavailable. Open a project in Alex Desktop and enable MCP → Bidirectional design. Check the result of any submitted edit before retrying. ${detail}`
         : `Alex desktop connection unavailable. Open a project in Alex Desktop and enable MCP → Bidirectional design. ${detail}`;
-      return handleSpecMcpPayload(disconnectedDesktopWorkspace(message), payload);
+      return handleSpecMcpRequest(disconnectedDesktopWorkspace(message), request);
     }
   };
+  return (payload: unknown) => handleSpecMcpPayload(forward, payload, connection);
 }

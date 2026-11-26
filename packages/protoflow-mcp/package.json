@@ -1,6 +1,6 @@
 {
   "name": "@protoflow-ai/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Alex prototype specifications, local .pflow authoring, and live desktop editing and preview capture.",
   "license": "Apache-2.0",
   "repository": {

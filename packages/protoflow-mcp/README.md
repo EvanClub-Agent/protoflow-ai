@@ -7,9 +7,9 @@ Connect AI Coding & Design Agents (**Codex**, **Google Antigravity**, **Claude D
 ## Modes
 
 * **Read-Only Spec Mode (`--mode readonly`, default)**: Exposes 6 read-only specification tools, 2 dev prompts, and 3 direct spec/DDL resources against a local `.pflow` file or a remote published share URL (`/p/<shareId>`).
-* **Read-Write Authoring Mode (`--mode readwrite`)**: Exposes all 6 spec tools + 12 contract-enforced authoring tools, 5 authoring prompts (`design-full-project`, `design-page`, `refine-page`, `reshape-imported-pages`, `design-database`), and `protoflow://authoring/playbook` against a local `.pflow` project or `--workspace <dir>`.
+* **Read-Write Authoring Mode (`--mode readwrite`)**: Exposes all 6 spec tools + 12 contract-enforced authoring tools, 5 authoring prompts (`design-full-project`, `design-page`, `refine-page`, `reshape-imported-pages`, `design-database`), `protoflow://authoring/playbook`, and native **Skills over MCP** (`io.modelcontextprotocol/skills` serving `skill://alex-protoflow-designer/SKILL.md` + `references/*.md` on demand over MCP `2026-07-28`+) against a local `.pflow` project or `--workspace <dir>`.
 
-> Companion Agent Skill: install [skills/alex-protoflow-designer](../../skills/alex-protoflow-designer/SKILL.md) into your client's skills directory (or rely on the built-in MCP Prompts in Claude Desktop).
+> Companion Agent Skill: compatible clients (such as Claude and Claude Code with MCP `2026-07-28`+) discover `alex-protoflow-designer` automatically via **Skills over MCP** (`skills/list` + `resources/read`); for clients without the extension, install [skills/alex-protoflow-designer](../../skills/alex-protoflow-designer/SKILL.md) into your client's local skills directory via Alex Desktop.
 
 ## Quick Start
 

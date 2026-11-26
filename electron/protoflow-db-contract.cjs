@@ -4,7 +4,7 @@ const text = { type: "string" };
 const identifier = { type: "string", pattern: "\\S" };
 const columnSchema = {
   type: "object",
-  description: "Complete DBColumnSchema. Preserve existing column IDs.",
+  description: "DBColumnSchema (preserve existing column IDs).",
   additionalProperties: false,
   // Hermes 0.22.5 tool_search_validation removes every key named "nullable",
   // including the entry in a properties map. This exact-name constraint keeps
@@ -13,15 +13,15 @@ const columnSchema = {
   patternProperties: { "^nullable$": { type: "boolean" } },
   required: ["id", "name", "dataType", "nullable", "comment"],
   properties: {
-    id: { ...identifier, description: "Stable column ID; preserve it when editing." },
-    name: { ...identifier, description: "Physical field name, used by Form name and Table dataIndex. Not the column ID." },
+    id: { ...identifier, description: "Stable column ID." },
+    name: { ...identifier, description: "Physical field name (Form.name / Table dataIndex, not column ID)." },
     dataType: text,
     nullable: { type: "boolean" },
     comment: text,
     isPrimaryKey: { type: "boolean" },
-    isUnique: { type: "boolean", description: "Single-column UNIQUE constraint, only with a business basis." },
+    isUnique: { type: "boolean", description: "Single-column UNIQUE when backed by business rule." },
     isForeignKey: { type: "boolean" },
-    references: { ...text, description: "Physical tableName(columnName), e.g. actual_supplier(id); not table ID." },
+    references: { ...text, description: "Physical tableName(columnName), not table ID." },
     foreignKeyOptions: {
       type: "object", additionalProperties: false, required: [],
       properties: {
@@ -30,7 +30,7 @@ const columnSchema = {
         onDelete: { type: "string", enum: ["RESTRICT", "CASCADE", "SET NULL"] },
       },
     },
-    defaultValue: { ...text, description: "SQL DEFAULT expression. For a business text literal use SQL single quotes inside the JSON string, e.g. 'todo'. Database-only expressions require an explicit value for offline preview writes." },
+    defaultValue: { ...text, description: "SQL DEFAULT literal (quote strings, e.g. 'todo')." },
     sourceWidgetOrSticky: text,
     isNew: { type: "boolean" },
   },
@@ -40,47 +40,47 @@ const sharedMenuSchema = {
   additionalProperties: false,
   required: ["pageId", "menuTitle", "accessMode", "fieldMappingNote"],
   properties: {
-    pageId: { ...identifier, description: "Exact menu pageId; not a folder ID, menu node ID, component pfId or Modal id. A same-turn new menu can be declared by a page patch or by pages[].pageId in the final full project proposal. The host creates proposed menus and schema together only on confirmation." },
-    menuTitle: { ...text, description: "The referenced menu page's display title." },
+    pageId: { ...identifier, description: "Exact menu pageId (existing or proposed in this turn; never folder/pfId/modal ID)." },
+    menuTitle: { ...text, description: "Menu display title." },
     accessMode: { type: "string", enum: ["CRUD 读写", "READ 查询", "FK 外键引用", "STATE 状态流转"] },
-    fieldMappingNote: { ...text, description: "Describe how the page uses this table and its fields. Use an explicit empty string when no note is needed." },
+    fieldMappingNote: { ...text, description: "How the page uses this table (or '' if none)." },
   },
 };
 const tableSchema = {
   type: "object",
-  description: "Complete DBTableSchema. Preserve existing table and column IDs.",
+  description: "DBTableSchema (preserve existing table and column IDs).",
   additionalProperties: false,
   required: ["id", "tableName", "cnName", "domain", "description", "columns", "sharedByMenus"],
   properties: {
-    id: { ...identifier, description: "Stable table ID, used in Form/Table table bindings; preserve existing IDs." },
-    tableName: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]*$", description: "Physical table name; never substitute for the table ID." },
+    id: { ...identifier, description: "Stable dbTables.id bound by Form/Table." },
+    tableName: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]*$", description: "Physical SQL table name (never use as table ID)." },
     cnName: text,
-    domain: { ...identifier, maxLength: 80, description: "Explicit business domain from this project. Reuse existing domain names precisely, or declare a new one for a genuinely distinct domain." },
+    domain: { ...identifier, maxLength: 80, description: "Business domain name (reuse existing domains when applicable)." },
     description: text,
     modeling: {
       type: "object", additionalProperties: false, required: ["entity", "grain", "reason"],
-      description: "Required for new AI tables. Preserve on updates. Use project-wide business concepts.",
+      description: "Required on new tables; preserve on updates.",
       properties: {
         pendingRules: {
-          type: "array", description: "Explicitly requested business rules this schema cannot enforce. Never add speculative future constraints or deletion policies; an explicit exclusion creates no pending rule. Keep these visible for developer review; do not simulate them with weaker constraints.",
+          type: "array", description: "Explicit requested rules SQL DDL cannot enforce (no speculative rules; explicit exclusions are not pending).",
           items: { type: "object", required: ["rule", "reason"], additionalProperties: false, properties: { rule: identifier, reason: identifier } },
         },
-        entity: { ...identifier, description: "Business entity or event, independent of menus." },
-        grain: { ...identifier, description: "Exactly what one row represents, including applicable time or version." },
-        reason: { ...identifier, description: "Why this fact needs separate persistence after comparing existing and planned tables. Explain ownership and any intentional snapshots." },
+        entity: { ...identifier, description: "Business entity/event." },
+        grain: { ...identifier, description: "Exact meaning of one row." },
+        reason: { ...identifier, description: "Why persisted separately vs existing/planned tables." },
       },
     },
     uniqueConstraints: {
-      type: "array", description: "Named UNIQUE keys, independent of the primary key. Preserve existing constraints on updates. Use [] to explicitly remove all.",
+      type: "array", description: "Named composite/table UNIQUE keys (preserve on updates; [] clears all).",
       items: { type: "object", required: ["name", "columnIds"], additionalProperties: false, properties: {
         name: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]{0,62}$" },
-        columnIds: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: identifier, description: "Ordered exact columns[].id of this table, never physical column names." },
+        columnIds: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: identifier, description: "Ordered columns[].id (not column names)." },
       } },
     },
     columns: { type: "array", items: columnSchema },
     sharedByMenus: {
       type: "array",
-      description: "One complete object per menu page, never an array of page ID strings. A list and its nested Modal share the owning menu page reference. Use [] only for a deliberately unbound table.",
+      description: "Objects per owning menu page ([] only if intentionally unbound).",
       items: sharedMenuSchema,
     },
   },

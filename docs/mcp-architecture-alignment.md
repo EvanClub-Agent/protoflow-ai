@@ -65,3 +65,17 @@ Alex 当前同时维护两条 AI 协同轨道，面向不同用户群体与并�
    - `HermesRuntime` 在具备离屏渲染能力（桌面主窗口就绪）时启动仅绑定 `127.0.0.1:0` 的临时预览桥接服务，每次请求校验 256-bit Bearer Token、精确 `runId`、活动会话未取消状态，并将取消信号透传给 `capturePreview(captureUrl, snapshot, signal)`；
    - `protoflow-mcp.cjs` 仅在单页交互、项目对话精修/重构等需要视觉核对的场景调用该桥接；批量无人值守生成阶段不在默认必调路径中强制截图，避免多模态 Token 放大触发上游 TPM 限流。
 3. **多模态模型兼容**：返回标准 MCP `[ImageContent(image/png), TextContent(metadata)]`。Hermes `v0.23.1` 原生 MCP 客户端（`native_images=True`）自动对视觉模型缩放嵌入图片，对纯文本模型降级保留文本元数据而不报错中断。
+
+---
+
+## 5. 上下文与 Token 渐进式披露机制（Hermes 分相裁剪 + Skills over MCP）
+
+1. **内置 Hermes 按会话画像裁剪 `tools/list`（`PROTOFLOW_TOOL_PROFILE`）**：
+   - `HermesRuntime` 在拉起或重载 ACP 会话时按会话边界注入确定性画像，避免无关工具污染每轮上下文：
+     - `note-assistant`（6 个只读盘点工具）：仅供笔记助手查询真实菜单与表名，隔离全部写操作；
+     - `page` 提供 19 个单页交互工具，包含当前菜单的历史检索、数据库需求原文核对与页面编辑。项目方案审批、目录移动与 RP/Figma 项目级迁移由项目会话处理。
+     - `page-exec`（18 个批量子页生成工具）：保留 `get_project_brief`、历史检索及页面/数据表暂存工具，剥离方案讨论、巡检与无人值守阶段不调用的导入重塑/截图工具；
+     - `project`（33 个全量项目对话工具）：保持与预热会话（`warmProjectSession`）的稳定契约，避免中途导入 RP/Figma 时触发额外 `session/load` 重绑。
+2. **外部生态原生支持 `Skills over MCP`（`io.modelcontextprotocol/skills` / SEP-2640）与 MCP `2026-07-28`**：
+   - `@protoflow-ai/mcp` 同时兼容 `2026-07-28`（`server/discover`、逐请求 `_meta` 协议协商与 `resultType`/`ttlMs`/`cacheScope` 缓存语义）及旧版 `initialize` 握手协议；
+   - 在 `readwrite` 模式下声明 `extensions["io.modelcontextprotocol/skills"] = { directoryRead: true }`，构建期将 `skills/alex-protoflow-designer/SKILL.md` 及 `references/*.md` 连同精确字节长度与 `sha256` 摘要内嵌进独立 CLI 包，使支持的客户端免本地安装即可按需懒加载专家规程，同时精简工具 Schema 中的教学长文以降低非 Lazy 客户端的常驻上下文开销。

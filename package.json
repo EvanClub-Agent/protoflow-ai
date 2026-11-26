@@ -1,7 +1,7 @@
 {
   "name": "alex",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "description": "Alex (ProtoFlow AI) — AI 原型设计、ER 数据建模与多端协同工作台",
   "author": {
@@ -115,6 +115,7 @@
     "electron-builder": "26.18.0",
     "esbuild": "^0.25.12",
     "fflate": "0.8.2",
+    "js-yaml": "4.3.2",
     "jsdom": "^26.1.0",
     "react-test-renderer": "^18.3.1",
     "tailwindcss": "^4.0.0",

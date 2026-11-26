@@ -189,6 +189,7 @@ export function startStdioMcpServer(loader: WorkspaceLoader | ReturnType<typeof 
 
   let buffer = Buffer.alloc(0);
   let queue = Promise.resolve();
+  const connection = { modern: false };
 
   const dispatchMessage = (rawJson: string, useContentLength: boolean) => {
     const trimmed = rawJson.trim();
@@ -213,7 +214,7 @@ export function startStdioMcpServer(loader: WorkspaceLoader | ReturnType<typeof 
         }
         const response = typeof loader === 'function'
           ? await loader(parsed)
-          : await handleSpecMcpPayload(loader, parsed);
+          : await handleSpecMcpPayload(loader, parsed, connection);
         if (!response) return;
         const encoded = stringify(response)!;
         if (useContentLength) {

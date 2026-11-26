@@ -28,19 +28,19 @@ const identifier: JsonSchemaNode = { type: 'string', pattern: '\\S' };
 
 export const DB_COLUMN_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
-  description: 'Complete DBColumnSchema. Preserve existing column IDs when editing.',
+  description: 'DBColumnSchema (preserve existing column IDs).',
   additionalProperties: false,
   required: ['id', 'name', 'dataType', 'nullable', 'comment'],
   properties: {
-    id: { ...identifier, description: 'Stable column ID; preserve it when editing.' },
-    name: { ...identifier, description: 'Physical field name used by Form.name and Table.columns[].dataIndex.' },
-    dataType: { ...identifier, description: 'SQL column type, e.g. VARCHAR(64), INT, DECIMAL(12,2), BOOLEAN, TIMESTAMP.' },
-    nullable: { type: 'boolean', description: 'Whether NULL values are permitted.' },
+    id: { ...identifier, description: 'Stable column ID.' },
+    name: { ...identifier, description: 'Physical field name (Form.name / Table dataIndex).' },
+    dataType: { ...identifier, description: 'SQL type, e.g. VARCHAR(64), INT, DECIMAL(12,2), BOOLEAN, TIMESTAMP.' },
+    nullable: { type: 'boolean' },
     comment: text,
     isPrimaryKey: { type: 'boolean' },
-    isUnique: { type: 'boolean', description: 'Single-column UNIQUE constraint, only when backed by business semantics.' },
+    isUnique: { type: 'boolean' },
     isForeignKey: { type: 'boolean' },
-    references: { ...text, description: 'Physical target reference in tableName(columnName) form, e.g. t_customers(id).' },
+    references: { ...text, description: 'FK target as tableName(columnName), e.g. t_customers(id).' },
     foreignKeyOptions: {
       type: 'object',
       additionalProperties: false,
@@ -53,7 +53,7 @@ export const DB_COLUMN_JSON_SCHEMA: Record<string, unknown> = {
     },
     defaultValue: {
       ...text,
-      description: "SQL DEFAULT expression. Wrap string literals in single quotes, e.g. 'draft'.",
+      description: "SQL DEFAULT literal (quote strings, e.g. 'draft').",
     },
     sourceWidgetOrSticky: text,
     isNew: { type: 'boolean' },
@@ -67,51 +67,50 @@ export const DB_SHARED_MENU_JSON_SCHEMA: Record<string, unknown> = {
   properties: {
     pageId: {
       ...identifier,
-      description: 'Exact menu pageId (never a folder ID, component pfId, or modal/drawer ID).',
+      description: 'Exact menu pageId (never folder/pfId/modal ID).',
     },
-    menuTitle: { ...text, description: 'Display title of the menu page.' },
+    menuTitle: text,
     accessMode: {
       type: 'string',
       enum: ['CRUD 读写', 'READ 查询', 'FK 外键引用', 'STATE 状态流转'],
     },
     fieldMappingNote: {
       ...text,
-      description: 'How the page reads/writes this table. Use "" when no extra note is needed.',
+      description: 'How the page uses this table (or "").',
     },
   },
 };
 
 export const DB_TABLE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
-  description: 'Complete DBTableSchema. Preserve existing table and column IDs on update.',
+  description: 'DBTableSchema (preserve existing table/column IDs).',
   additionalProperties: false,
   required: ['id', 'tableName', 'cnName', 'domain', 'description', 'columns', 'sharedByMenus'],
   properties: {
-    id: { ...identifier, description: 'Stable internal table ID referenced by Table.table / Form.table.' },
+    id: { ...identifier, description: 'Stable dbTables.id bound by Table.table / Form.table.' },
     tableName: {
       type: 'string',
       pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
-      description: 'Physical SQL table name (never substitute for table id).',
+      description: 'Physical SQL table name (not table ID).',
     },
     cnName: text,
     domain: {
       ...identifier,
       maxLength: 80,
-      description: 'Business domain label (1-80 single-line chars, no leading/trailing whitespace).',
+      description: 'Business domain (1-80 single-line chars).',
     },
     description: text,
     modeling: {
       type: 'object',
       additionalProperties: false,
       required: ['entity', 'grain', 'reason'],
-      description: 'Modeling rationale (entity, row grain, and reason for independent table).',
       properties: {
-        entity: { ...identifier, description: 'Business entity or event modeled by this table.' },
-        grain: { ...identifier, description: 'Exact meaning of a single row.' },
-        reason: { ...identifier, description: 'Why this entity/grain is persisted separately.' },
+        entity: { ...identifier, description: 'Business entity/event.' },
+        grain: { ...identifier, description: 'Meaning of one row.' },
+        reason: { ...identifier, description: 'Why persisted separately.' },
         pendingRules: {
           type: 'array',
-          description: 'Explicit business constraints that SQL DDL alone cannot enforce.',
+          description: 'Rules SQL DDL cannot enforce.',
           items: {
             type: 'object',
             required: ['rule', 'reason'],
@@ -126,7 +125,7 @@ export const DB_TABLE_JSON_SCHEMA: Record<string, unknown> = {
     },
     uniqueConstraints: {
       type: 'array',
-      description: 'Table-level named UNIQUE constraints using exact columns[].id values.',
+      description: 'Named composite UNIQUE constraints using columns[].id.',
       items: {
         type: 'object',
         required: ['name', 'columnIds'],

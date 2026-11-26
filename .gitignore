@@ -9,6 +9,7 @@ dist-viewer/
 electron/generated/
 packages/protoflow-mcp/dist/
 src/proto/freeform/generatedRuntime.ts
+src/mcp/generatedSkillBundle.ts
 server/bin/
 dist-ssr/
 release/

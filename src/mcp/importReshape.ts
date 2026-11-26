@@ -42,10 +42,10 @@ export const AXURE_COLUMN_MAPPING_SCHEMA = {
 export const AXURE_RESHAPE_COLUMN_MAPPING_SCHEMA = {
   type: 'object',
   properties: {
-    headerPfId: { type: 'string', description: 'Exact firstRow[].pfId from inspect_page(view="axure").' },
+    headerPfId: { type: 'string', description: 'firstRow[].pfId from inspect_page(view="axure").' },
     role: { enum: ['field', 'index', 'checkbox', 'radio', 'actions', 'pending'] },
-    columnId: { type: 'string', description: 'Exact columns[].id in tableId when role is "field".' },
-    reason: { type: 'string', description: 'Optional explanation when role is "pending".' },
+    columnId: { type: 'string', description: 'columns[].id when role="field".' },
+    reason: { type: 'string', description: 'Reason when role="pending".' },
   },
   required: ['headerPfId', 'role'],
   additionalProperties: false,
@@ -53,8 +53,7 @@ export const AXURE_RESHAPE_COLUMN_MAPPING_SCHEMA = {
 
 export const AXURE_RESHAPE_COVERAGE_SCHEMA = {
   type: 'object',
-  description:
-    'Explicit source-widget accounting so no RP table, input, dynamic panel, outline tree, placeholder or action is silently dropped or misbound.',
+  description: 'RP source-widget accounting (converted/retained/pending).',
   properties: {
     converted: {
       type: 'array',
@@ -64,17 +63,17 @@ export const AXURE_RESHAPE_COVERAGE_SCHEMA = {
           sourcePfIds: { type: 'array', minItems: 1, items: { type: 'string' } },
           targetPfId: {
             type: 'string',
-            description: 'Exact target material pfId in source (for StaticTable -> Table, point directly to the Table pfId).',
+            description: 'Target material pfId in source (Table pfId for StaticTable -> Table).',
           },
           summary: { type: 'string' },
           tableId: {
             type: 'string',
-            description: 'Required when converting a StaticTable into a Table: exact dbTables.id bound on that Table.',
+            description: 'Bound dbTables.id (required for StaticTable -> Table).',
           },
           columnMappings: {
             type: 'array',
             minItems: 1,
-            description: 'Required when converting a StaticTable into a Table: account for every first-row headerPfId in source table order.',
+            description: 'Ordered first-row headerPfId mappings (required for StaticTable -> Table).',
             items: AXURE_RESHAPE_COLUMN_MAPPING_SCHEMA,
           },
         },
@@ -113,7 +112,7 @@ export const AXURE_RESHAPE_COVERAGE_SCHEMA = {
 
 export const FIGMA_RESHAPE_COVERAGE_SCHEMA = {
   type: 'object',
-  description: 'Explicit accounting mapping source Figma layers to target standard materials.',
+  description: 'Figma source-layer accounting (converted/pending).',
   properties: {
     converted: {
       type: 'array',

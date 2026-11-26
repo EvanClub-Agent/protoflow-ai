@@ -685,7 +685,13 @@ class HermesRuntime {
         throw new Error(tr('这条会话在其他 Hermes 环境中有记录，请切回原环境后重试', 'This conversation belongs to another Hermes environment; please switch back to the original environment and retry'));
     }
   }
-  mcp(dir, binding) {
+  toolProfileForScope(scope, isPageExec = false) {
+    if (isPageExec) return 'page-exec';
+    if (scope?.kind === undefined) return 'page';
+    if (scope?.kind === 'project' && scope?.threadId === 'note-assistant') return 'note-assistant';
+    return 'project';
+  }
+  mcp(dir, binding, toolProfile = 'project') {
     return [
       {
         name: "protoflow",
@@ -697,6 +703,7 @@ class HermesRuntime {
         env: [
           { name: "ELECTRON_RUN_AS_NODE", value: "1" },
           ...(binding ? [{ name: 'PROTOFLOW_TOOL_BINDING', value: binding }] : []),
+          ...(toolProfile && toolProfile !== 'project' ? [{ name: 'PROTOFLOW_TOOL_PROFILE', value: toolProfile }] : []),
           ...(isMainEn() ? [{ name: 'PROTOFLOW_LOCALE', value: 'en-US' }] : []),
         ],
       },
@@ -811,7 +818,8 @@ class HermesRuntime {
     // A new binding changes the ACP server spec, forcing the gateway to
     // rediscover tools in the SAME session instead of reusing its frozen list.
     const binding = usesMaterials ? randomUUID() : undefined;
-    const params = { cwd: dir, mcpServers: this.mcp(dir, binding) };
+    const toolProfile = this.toolProfileForScope(scope, false);
+    const params = { cwd: dir, mcpServers: this.mcp(dir, binding, toolProfile) };
     const abandonedFile = path.join(dir, 'context.json');
     const abandoned = draftRecovery.read(abandonedFile);
     if (abandoned?.active && abandoned.recovery && !previous?.running) {
@@ -1009,7 +1017,7 @@ class HermesRuntime {
       if (!reload) return s.models;
       const response = await this.client.request(
         "session/load",
-        { sessionId: s.sessionId, cwd: s.dir, mcpServers: this.mcp(s.dir, s.binding) },
+        { sessionId: s.sessionId, cwd: s.dir, mcpServers: this.mcp(s.dir, s.binding, this.toolProfileForScope(s, Boolean(s.isPageExec))) },
         120000,
       );
       if (response.sessionId !== undefined && response.sessionId !== s.sessionId)
@@ -1504,7 +1512,7 @@ class HermesRuntime {
           'session/new',
           {
             cwd: execDir,
-            mcpServers: this.mcp(execDir, activeBinding),
+            mcpServers: this.mcp(execDir, activeBinding, 'page-exec'),
             _meta: { alex_request_id: pending.opId },
           },
           120000,
@@ -1532,7 +1540,7 @@ class HermesRuntime {
           {
             cwd: execDir,
             sessionId: targetSessionId,
-            mcpServers: this.mcp(execDir, activeBinding),
+            mcpServers: this.mcp(execDir, activeBinding, 'page-exec'),
           },
           120000,
         );
@@ -1548,7 +1556,7 @@ class HermesRuntime {
           {
             cwd: execDir,
             sessionId: targetSessionId,
-            mcpServers: this.mcp(execDir, activeBinding),
+            mcpServers: this.mcp(execDir, activeBinding, 'page-exec'),
           },
           120000,
         );
@@ -1699,7 +1707,7 @@ class HermesRuntime {
       try {
         response = await this.client.request(
           'session/load',
-          { cwd: execDir, sessionId: saved.sessionId, mcpServers: this.mcp(execDir, binding) },
+          { cwd: execDir, sessionId: saved.sessionId, mcpServers: this.mcp(execDir, binding, 'page-exec') },
           120000,
         );
         if (!response) loadNotFound = true;
@@ -1830,7 +1838,7 @@ class HermesRuntime {
     const acpStarted = performance.now();
     const created = await this.client.request(
       'session/new',
-      { cwd: execDir, mcpServers: this.mcp(execDir, binding) },
+      { cwd: execDir, mcpServers: this.mcp(execDir, binding, 'page-exec') },
       120000,
     );
     const acpSessionRpcMs = roundMs(performance.now() - acpStarted);

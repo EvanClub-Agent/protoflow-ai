@@ -2,6 +2,24 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.1.1] - 2026-11-26
+
+### Added
+
+- **原生支持 `Skills over MCP`（`io.modelcontextprotocol/skills` / SEP-2640）与 MCP `2026-07-28` 双代协议**：
+  - **随服务自发版专家技能包**：`@protoflow-ai/mcp`（含独立 CLI、`.mcpb` 扩展包及桌面端 `--desktop-bridge` 实时桥接）在 `readwrite` 模式下原生声明 `io.modelcontextprotocol/skills`（`directoryRead: true`），完整实现 `server/discover`、`skills/list`、`skills/get`、`resources/directory/read` 及 `skill://alex-protoflow-designer/*` 的按需懒加载；构建期基于标准 YAML `CORE_SCHEMA` 固化完整 Frontmatter 并预计算精确 UTF-8 字节长度与 `sha256` 摘要，使兼容客户端免手动安装即可零漂移获取最新设计规程。
+  - **现代与经典双代协议协商**：完整支持 MCP `2026-07-28` 逐请求 `_meta`（`protocolVersion` 与对象型 `clientCapabilities` 校验、`-32022` 版本协商错误以及 `resultType`/`ttlMs`/`cacheScope` 缓存提示），同时无损兼容 `server/discover` 探测后回退 `initialize` 握手的双代及旧版客户端。
+- **内置 Hermes 按会话画像渐进式裁剪与双端 Schema 瘦身（最高节省 93.7% 工具底噪）**：
+  - **四级确定性工具画像（`PROTOFLOW_TOOL_PROFILE`）**：按 ACP 会话边界将内置工具集精准拆分为 `note-assistant`（6 工具，字符量缩减 **93.7%**）、`page-exec` 多页批量生成（18 工具，缩减 **67.1%**）、`page` 单页交互（19 工具，完整保留菜单级历史检索与数据库需求原文核销，缩减 **62.2%**）及 `project` 全局会话（33 工具，缩减 **27.7%** 且保持预热会话零重绑），并同步收敛外部 MCP 工具 Schema 中的教学冗余描述。
+
+### Fixed & Hardened
+
+- **资源分派前置判别与 CI 内存水位加固**：
+  - `resources/read` 前置校验已知资源 URI 白名单，清晰隔离客户端未知 URI 参数错误（`-32602` / 旧版 `-32002`）与工作区读取故障（`-32603`）。
+  - 统一放宽 CI、桌面多架构发版与 Docker 镜像构建的 Node.js V8 堆上限至 4 GB 并关闭 Vite 冗余 gzip 体积统计缓冲，彻底消除 `macos-latest` 构建机尾声阶段的内存峰值溢出。
+
+---
+
 ## [v0.1.0] - 2026-11-26
 
 ### Added

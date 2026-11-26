@@ -16,6 +16,7 @@ import './spec-mcp.test';
 import './authoring-mcp.test';
 import './desktop-authoring.test';
 import './mcp-alignment-and-preview.test';
+import './mcp-token-and-skills.test';
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';

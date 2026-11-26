@@ -12,6 +12,14 @@ import {
 } from './authoringCore';
 import { isAuthoringWorkspace } from './authoringTypes';
 import {
+  getMcpSkill,
+  listMcpSkills,
+  MCP_SKILLS_EXTENSION_ID,
+  McpRpcError,
+  readMcpSkillDirectory,
+  readMcpSkillResource,
+} from './skillsExtension';
+import {
   executeSpecTool,
   getSpecPrompt,
   readSpecResource,
@@ -21,9 +29,11 @@ import {
 } from './tools';
 import type { WorkspaceLoader } from './workspace';
 
-export const SUPPORTED_MCP_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
+const MODERN_PROTOCOL = '2026-07-28';
+const LEGACY_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'] as const;
+export const SUPPORTED_MCP_PROTOCOLS = [MODERN_PROTOCOL, ...LEGACY_PROTOCOLS] as const;
 export const SPEC_MCP_SERVER_NAME = 'protoflow-spec';
-export const SPEC_MCP_SERVER_VERSION = '0.1.0';
+export const SPEC_MCP_SERVER_VERSION = '0.1.1';
 
 type RpcId = string | number | LosslessNumber | null;
 
@@ -42,7 +52,7 @@ export interface JsonRpcResponse {
 }
 
 export function negotiateProtocolVersion(requested: unknown): string {
-  if (typeof requested === 'string' && (SUPPORTED_MCP_PROTOCOLS as readonly string[]).includes(requested)) {
+  if (typeof requested === 'string' && (LEGACY_PROTOCOLS as readonly string[]).includes(requested)) {
     return requested;
   }
   return '2025-03-26';
@@ -95,10 +105,76 @@ const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
 
 const AUTHORING_PROMPT_NAMES = new Set(AUTHORING_MCP_PROMPTS.map((p) => p.name));
 const AUTHORING_RESOURCE_URIS = new Set(AUTHORING_MCP_RESOURCES.map((r) => r.uri));
+const SPEC_RESOURCE_URIS = new Set(SPEC_MCP_RESOURCES.map((r) => r.uri));
+const DEFAULT_CACHE_TTL_MS = 300_000;
+
+function serverCapabilities(advertiseSkills: boolean) {
+  return {
+    tools: {},
+    prompts: {},
+    resources: {},
+    ...(advertiseSkills
+      ? {
+          extensions: {
+            [MCP_SKILLS_EXTENSION_ID]: { directoryRead: true },
+          },
+        }
+      : {}),
+  };
+}
+
+function withModernCaching<T extends Record<string, unknown>>(
+  body: T,
+  isModern: boolean,
+  cacheScope: 'public' | 'private' = 'private',
+  ttlMs = DEFAULT_CACHE_TTL_MS,
+): T {
+  if (!isModern) return body;
+  return {
+    resultType: 'complete',
+    ...body,
+    ttlMs,
+    cacheScope,
+  };
+}
+
+const VERSION_KEY = 'io.modelcontextprotocol/protocolVersion';
+const CAPABILITIES_KEY = 'io.modelcontextprotocol/clientCapabilities';
+const MODERN_METHODS = new Set(['server/discover', 'skills/list', 'skills/get', 'resources/directory/read']);
+type StdioConnection = { modern: boolean };
+type RequestTarget = WorkspaceLoader | ((request: JsonRpcRequest) => Promise<JsonRpcResponse | null>);
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function usesModernProtocol(method: string, meta: unknown, connection?: StdioConnection): boolean {
+  const fields = isObject(meta) ? meta : {};
+  const version = fields[VERSION_KEY];
+  if (version !== undefined && typeof version !== 'string') {
+    throw new McpRpcError(-32602, `Invalid ${VERSION_KEY}`);
+  }
+  if (typeof version === 'string' && !(SUPPORTED_MCP_PROTOCOLS as readonly string[]).includes(version)) {
+    throw new McpRpcError(-32022, 'Unsupported protocol version', { supported: [...SUPPORTED_MCP_PROTOCOLS], requested: version });
+  }
+
+  // A dual-era client may probe with discover and then open a legacy handshake.
+  const expectsModern = MODERN_METHODS.has(method) || version === MODERN_PROTOCOL ||
+    Object.hasOwn(fields, CAPABILITIES_KEY) || Object.hasOwn(fields, 'io.modelcontextprotocol/clientInfo') ||
+    (connection?.modern === true && method !== 'initialize');
+  if (expectsModern) {
+    if (version !== MODERN_PROTOCOL) throw new McpRpcError(-32602, `Expected ${VERSION_KEY} for a modern MCP request`);
+    if (!isObject(fields[CAPABILITIES_KEY])) throw new McpRpcError(-32602, `Expected an object in ${CAPABILITIES_KEY}`);
+    if (method === 'initialize') throw new McpRpcError(-32601, 'Use server/discover with this protocol version');
+  }
+  if (connection) connection.modern = expectsModern;
+  return expectsModern;
+}
 
 export async function handleSpecMcpRequest(
-  loader: WorkspaceLoader,
-  msg: unknown
+  loader: RequestTarget,
+  msg: unknown,
+  connection?: StdioConnection,
 ): Promise<JsonRpcResponse | null> {
   if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
     return {
@@ -127,11 +203,33 @@ export async function handleSpecMcpRequest(
 
   const id = req.id ?? null;
   const params = req.params && typeof req.params === 'object' ? req.params : {};
-  const isReadWrite = isAuthoringWorkspace(loader) && loader.mode === 'readwrite';
-
-  const live = isReadWrite && loader.transport === 'desktop_bridge' && typeof loader.capturePreview === 'function';
   try {
+    const isModernRequest = usesModernProtocol(req.method, params._meta, connection);
+    if (typeof loader === 'function') return await loader(req);
+    const isReadWrite = isAuthoringWorkspace(loader) && loader.mode === 'readwrite';
+    const live = isReadWrite && loader.transport === 'desktop_bridge' && typeof loader.capturePreview === 'function';
     switch (req.method) {
+      case 'server/discover': {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'complete',
+            supportedVersions: [...SUPPORTED_MCP_PROTOCOLS],
+            capabilities: serverCapabilities(isReadWrite),
+            _meta: {
+              'io.modelcontextprotocol/serverInfo': {
+                name: SPEC_MCP_SERVER_NAME,
+                version: SPEC_MCP_SERVER_VERSION,
+              },
+            },
+            instructions: isReadWrite ? authoringInstructions(loader.transport === 'desktop_bridge', live) : SERVER_INSTRUCTIONS,
+            ttlMs: DEFAULT_CACHE_TTL_MS,
+            cacheScope: 'private',
+          },
+        };
+      }
+
       case 'initialize': {
         const protocolVersion = negotiateProtocolVersion(params.protocolVersion);
         return {
@@ -139,11 +237,7 @@ export async function handleSpecMcpRequest(
           id,
           result: {
             protocolVersion,
-            capabilities: {
-              tools: {},
-              prompts: {},
-              resources: {},
-            },
+            capabilities: serverCapabilities(false),
             serverInfo: {
               name: SPEC_MCP_SERVER_NAME,
               version: SPEC_MCP_SERVER_VERSION,
@@ -154,15 +248,57 @@ export async function handleSpecMcpRequest(
       }
 
       case 'ping':
-        return { jsonrpc: '2.0', id, result: {} };
+        return { jsonrpc: '2.0', id, result: isModernRequest ? { resultType: 'complete' } : {} };
+
+      case 'skills/list': {
+        if (!isReadWrite) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: 'Skills extension requires --mode readwrite' },
+          };
+        }
+        return { jsonrpc: '2.0', id, result: listMcpSkills(params.cursor) };
+      }
+
+      case 'skills/get': {
+        if (!isReadWrite) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: 'Skills extension requires --mode readwrite' },
+          };
+        }
+        return { jsonrpc: '2.0', id, result: getMcpSkill(params.uri) };
+      }
+
+      case 'resources/directory/read': {
+        if (!isReadWrite) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: 'Directory reading requires --mode readwrite' },
+          };
+        }
+        return { jsonrpc: '2.0', id, result: readMcpSkillDirectory(params.uri, params.cursor) };
+      }
 
       case 'tools/list':
         return {
           jsonrpc: '2.0',
           id,
-          result: {
-            tools: isReadWrite ? [...SPEC_MCP_TOOLS, ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS), ...(live ? [capturePreviewTool] : [])] : SPEC_MCP_TOOLS,
-          },
+          result: withModernCaching(
+            {
+              tools: isReadWrite
+                ? [
+                    ...SPEC_MCP_TOOLS,
+                    ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS),
+                    ...(live ? [capturePreviewTool] : []),
+                  ]
+                : SPEC_MCP_TOOLS,
+            },
+            isModernRequest,
+          ),
         };
 
       case 'tools/call': {
@@ -182,9 +318,18 @@ export async function handleSpecMcpRequest(
           if (toolName === capturePreviewTool.name) {
             if (!live) throw new Error('Preview capture requires a live Alex desktop connection');
             const { data, ...metadata } = await loader.capturePreview!(parseCaptureOptions(params.arguments === undefined ? {} : params.arguments));
-            return { jsonrpc: '2.0', id, result: { isError: false, content: [
-              { type: 'image', mimeType: 'image/png', data }, { type: 'text', text: JSON.stringify(metadata) },
-            ] } };
+            return {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                ...(isModernRequest ? { resultType: 'complete' as const } : {}),
+                isError: false,
+                content: [
+                  { type: 'image', mimeType: 'image/png', data },
+                  { type: 'text', text: JSON.stringify(metadata) },
+                ],
+              },
+            };
           }
           let output: unknown;
           if (isAuthoringToolName(toolName)) {
@@ -205,6 +350,7 @@ export async function handleSpecMcpRequest(
             jsonrpc: '2.0',
             id,
             result: {
+              ...(isModernRequest ? { resultType: 'complete' as const } : {}),
               content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
               isError: false,
             },
@@ -215,6 +361,7 @@ export async function handleSpecMcpRequest(
             jsonrpc: '2.0',
             id,
             result: {
+              ...(isModernRequest ? { resultType: 'complete' as const } : {}),
               content: [{ type: 'text', text: message }],
               isError: true,
             },
@@ -226,9 +373,12 @@ export async function handleSpecMcpRequest(
         return {
           jsonrpc: '2.0',
           id,
-          result: {
-            prompts: isReadWrite ? [...SPEC_MCP_PROMPTS, ...AUTHORING_MCP_PROMPTS] : SPEC_MCP_PROMPTS,
-          },
+          result: withModernCaching(
+            {
+              prompts: isReadWrite ? [...SPEC_MCP_PROMPTS, ...AUTHORING_MCP_PROMPTS] : SPEC_MCP_PROMPTS,
+            },
+            isModernRequest,
+          ),
         };
 
       case 'prompts/get': {
@@ -250,24 +400,27 @@ export async function handleSpecMcpRequest(
           if (live && ['design-full-project', 'design-page', 'refine-page', 'reshape-imported-pages'].includes(promptName)) {
             prompt.messages[0].content.text += '\n' + tr('完成页面修改后，可调用 protoflow_capture_preview 复核实际布局和移动端裁切。', 'After editing, use protoflow_capture_preview to verify the rendered layout and mobile viewport.');
           }
-          return { jsonrpc: '2.0', id, result: prompt };
+          return { jsonrpc: '2.0', id, result: isModernRequest ? { resultType: 'complete', ...prompt } : prompt };
         }
         const workspace = await loader.load();
         const prompt = getSpecPrompt(workspace, promptName, promptArgs);
-        return { jsonrpc: '2.0', id, result: prompt };
+        return { jsonrpc: '2.0', id, result: isModernRequest ? { resultType: 'complete', ...prompt } : prompt };
       }
 
       case 'resources/list':
         return {
           jsonrpc: '2.0',
           id,
-          result: {
-            resources: isReadWrite ? [...SPEC_MCP_RESOURCES, ...AUTHORING_MCP_RESOURCES] : SPEC_MCP_RESOURCES,
-          },
+          result: withModernCaching(
+            {
+              resources: isReadWrite ? [...SPEC_MCP_RESOURCES, ...AUTHORING_MCP_RESOURCES] : SPEC_MCP_RESOURCES,
+            },
+            isModernRequest,
+          ),
         };
 
       case 'resources/templates/list':
-        return { jsonrpc: '2.0', id, result: { resourceTemplates: [] } };
+        return { jsonrpc: '2.0', id, result: withModernCaching({ resourceTemplates: [] }, isModernRequest) };
 
       case 'resources/read': {
         const uri = typeof params.uri === 'string' ? params.uri : '';
@@ -278,16 +431,28 @@ export async function handleSpecMcpRequest(
             error: { code: -32602, message: 'Missing resource uri in resources/read' },
           };
         }
+        if (uri.startsWith('skill://')) {
+          if (!isReadWrite) {
+            throw new McpRpcError(-32602, 'Skill resources require --mode readwrite');
+          }
+          return { jsonrpc: '2.0', id, result: readMcpSkillResource(uri) };
+        }
         if (isReadWrite && AUTHORING_RESOURCE_URIS.has(uri)) {
           return {
             jsonrpc: '2.0',
             id,
-            result: readAuthoringResource(uri),
+            result: withModernCaching(readAuthoringResource(uri), isModernRequest, 'public'),
           };
         }
-        const workspace = await loader.load();
-        const resource = readSpecResource(workspace, uri);
-        return { jsonrpc: '2.0', id, result: resource };
+        if (!SPEC_RESOURCE_URIS.has(uri)) {
+          throw new McpRpcError(isModernRequest ? -32602 : -32002, 'Unknown resource URI', { uri });
+        }
+        const resource = readSpecResource(await loader.load(), uri);
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: withModernCaching(resource, isModernRequest, 'private', 0),
+        };
       }
 
       default:
@@ -298,6 +463,17 @@ export async function handleSpecMcpRequest(
         };
     }
   } catch (err) {
+    if (err instanceof McpRpcError) {
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.data !== undefined ? { data: err.data } : {}),
+        },
+      };
+    }
     return {
       jsonrpc: '2.0',
       id,
@@ -310,8 +486,9 @@ export async function handleSpecMcpRequest(
 }
 
 export async function handleSpecMcpPayload(
-  loader: WorkspaceLoader,
-  payload: unknown
+  loader: RequestTarget,
+  payload: unknown,
+  connection?: StdioConnection,
 ): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
   if (Array.isArray(payload)) {
     if (payload.length === 0) {
@@ -319,10 +496,10 @@ export async function handleSpecMcpPayload(
     }
     const responses: JsonRpcResponse[] = [];
     for (const item of payload) {
-      const res = await handleSpecMcpRequest(loader, item);
+      const res = await handleSpecMcpRequest(loader, item, connection);
       if (res) responses.push(res);
     }
     return responses.length > 0 ? responses : null;
   }
-  return handleSpecMcpRequest(loader, payload);
+  return handleSpecMcpRequest(loader, payload, connection);
 }
