@@ -5,17 +5,15 @@ import { ACTIONS } from '../runtime/actions';
 import {
   DESKTOP_OVERLAY_TYPES,
   FIELD_TYPES,
-  MOBILE_COMPONENT_NAMES,
   MOBILE_OVERLAY_TYPES,
   OVERLAY_TYPES,
   PAGE_ROOT_TYPES,
-  UNIVERSAL_COMPONENT_NAMES,
 } from './meta';
 import { tableConfigErrors } from '../table/model';
 import { materialOptions } from './antdOptions';
 import { freeformSourceErrors, isJsonValue } from '../freeform/contract';
 import { isChartType, chartConfigErrors } from '../charts/model';
-import { FIELD_COMPONENT_NAMES, getMaterialContracts, MATERIAL_VALUE_DEFINITIONS, type ValueSchema } from './materialSchemas';
+import { FIELD_COMPONENT_NAMES, getMaterialContracts, getMaterialPlatform, MATERIAL_VALUE_DEFINITIONS, type ValueSchema } from './materialSchemas';
 
 export { getMaterialContracts, MATERIAL_VALUE_DEFINITIONS } from './materialSchemas';
 export interface MaterialIssue { pfId: string; path: string; message: string }
@@ -205,10 +203,11 @@ export function validateMaterialDoc(doc: ProtoDoc): MaterialIssue[] {
     if (!meta) { report(node, 'type', '未知组件；只能使用物料契约中的名称'); return; }
     if (PAGE_ROOT_TYPES.has(node.type) && parent) report(node, 'parent', `${node.type} 只能作为页面根节点`);
     if (parent) {
-      if (isMobileRoot && !MOBILE_COMPONENT_NAMES.has(node.type) && !UNIVERSAL_COMPONENT_NAMES.has(node.type)) {
+      const platform = getMaterialPlatform(node.type);
+      if (isMobileRoot && platform === 'desktop') {
         report(node, 'type', '移动端页面 (MobilePage) 不能混用 PC 管理端组件，请改用 M* 移动专属物料');
       }
-      if (!isMobileRoot && MOBILE_COMPONENT_NAMES.has(node.type)) {
+      if (!isMobileRoot && platform === 'mobile') {
         report(node, 'type', 'PC 管理端页面 (Page) 不能混用 M* 移动端物料，请使用 MobilePage 根容器');
       }
     }

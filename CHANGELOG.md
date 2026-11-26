@@ -2,6 +2,16 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.1.2] - 2026-11-26
+
+### Added & Hardened
+
+- **技能与服务端结构化契约摘要（`contractDigest`）确定性防漂移闭环**：
+  - **跨模式同源规范化哈希（`src/mcp/contractSurface.ts`）**：基于 `tools/list` 四种真实对外工具目录（`readonly`、`local_file`、`desktop_bridge`、`desktop_bridge_with_preview`，含桌面端 `expectedRevision` 必填项）、134+ 注册物料（含平台归属 `desktop`/`mobile`/`universal`、属性默认值、嵌套约束与事件契约）、运行时动作及共享值定义计算跨 Locale 确定性摘要（`sha256:635b55e283f0eac0`），自动忽略 Schema 纯文案（`title`/`description`）修订并完整保留 `const`/`enum`/`default` 字面量业务字段。
+  - **构建期自动盖章与双向跨版本平滑兼容**：构建时自动将 `metadata.serverVersion` 与 `metadata.contractDigest` 同步写入 `SKILL.md` Frontmatter、第 1 条规则、内嵌 `Skills over MCP` 清单及 `.mcpb`/`.zip` 客户端集成包；`protoflow_workspace(action="status")` 与 `protoflow_get_contracts` 暴露 `serverVersion` 与 `contractDigest`，并通过三态 `contractCheckStatus`（`unchecked` / `matched` / `mismatched`）及前置 Schema 参数探测同时兼容“旧技能连新服务”与“新技能连旧服务”。
+
+---
+
 ## [v0.1.1] - 2026-11-26
 
 ### Added

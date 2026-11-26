@@ -11,6 +11,7 @@ import {
   readAuthoringResource,
 } from './authoringCore';
 import { isAuthoringWorkspace } from './authoringTypes';
+import { PROTOFLOW_SERVER_VERSION } from './generatedSkillBundle';
 import {
   getMcpSkill,
   listMcpSkills,
@@ -33,7 +34,7 @@ const MODERN_PROTOCOL = '2026-07-28';
 const LEGACY_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'] as const;
 export const SUPPORTED_MCP_PROTOCOLS = [MODERN_PROTOCOL, ...LEGACY_PROTOCOLS] as const;
 export const SPEC_MCP_SERVER_NAME = 'protoflow-spec';
-export const SPEC_MCP_SERVER_VERSION = '0.1.1';
+export const SPEC_MCP_SERVER_VERSION = PROTOFLOW_SERVER_VERSION;
 
 type RpcId = string | number | LosslessNumber | null;
 
@@ -85,7 +86,7 @@ const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
   const writeActions = workspace ? 'update_project_meta' :
     tool.name === 'protoflow_manage_table_rows' ? 'seed and clear' :
     tool.name === 'protoflow_reshape_imported_page' ? 'reshape_axure_page, bind_axure_table, optimize_axure_block, and reshape_figma_page' : null;
-  const { projectName, projectMode, activePageId } = properties;
+  const { projectName, projectMode, activePageId, expectedContractDigest } = properties;
   const expectedRevision = {
     type: 'string', minLength: 1,
     description: (writeActions ? `Required for ${writeActions}.` : 'Required for every write.') +
@@ -96,12 +97,28 @@ const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
     description: workspace ? 'Inspect the active desktop project or update its metadata.' : tool.description,
     inputSchema: {
       ...tool.inputSchema,
-      properties: workspace ? { action: { type: 'string', enum: ['status', 'update_project_meta'] }, projectName, projectMode, activePageId, expectedRevision }
+      properties: workspace
+        ? {
+            action: { type: 'string', enum: ['status', 'update_project_meta'] },
+            projectName,
+            projectMode,
+            activePageId,
+            expectedContractDigest,
+            expectedRevision,
+          }
         : { ...properties, expectedRevision },
       ...(writeActions ? {} : { required: [...required, 'expectedRevision'] }),
     },
   };
 });
+
+const desktopCatalog = [...SPEC_MCP_TOOLS, ...desktopTools];
+export const MCP_TOOL_CATALOGS = {
+  readonly: SPEC_MCP_TOOLS,
+  local_file: [...SPEC_MCP_TOOLS, ...AUTHORING_MCP_TOOLS],
+  desktop_bridge: desktopCatalog,
+  desktop_bridge_with_preview: [...desktopCatalog, capturePreviewTool],
+};
 
 const AUTHORING_PROMPT_NAMES = new Set(AUTHORING_MCP_PROMPTS.map((p) => p.name));
 const AUTHORING_RESOURCE_URIS = new Set(AUTHORING_MCP_RESOURCES.map((r) => r.uri));
@@ -283,23 +300,16 @@ export async function handleSpecMcpRequest(
         return { jsonrpc: '2.0', id, result: readMcpSkillDirectory(params.uri, params.cursor) };
       }
 
-      case 'tools/list':
+      case 'tools/list': {
+        const catalog = !isReadWrite ? 'readonly'
+          : live ? 'desktop_bridge_with_preview'
+          : loader.transport === 'desktop_bridge' ? 'desktop_bridge' : 'local_file';
         return {
           jsonrpc: '2.0',
           id,
-          result: withModernCaching(
-            {
-              tools: isReadWrite
-                ? [
-                    ...SPEC_MCP_TOOLS,
-                    ...(loader.transport === 'desktop_bridge' ? desktopTools : AUTHORING_MCP_TOOLS),
-                    ...(live ? [capturePreviewTool] : []),
-                  ]
-                : SPEC_MCP_TOOLS,
-            },
-            isModernRequest,
-          ),
+          result: withModernCaching({ tools: MCP_TOOL_CATALOGS[catalog] }, isModernRequest),
         };
+      }
 
       case 'tools/call': {
         const toolName = typeof params.name === 'string' ? params.name : '';

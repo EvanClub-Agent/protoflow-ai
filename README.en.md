@@ -85,8 +85,8 @@ Choose from built-in starter templates right from the Welcome Launcher:
 
 Want to share interactive `/p/{id}` prototype links with your team in the browser? Every release publishes multi-arch (`linux/amd64` + `linux/arm64`) images to GitHub Container Registry:
 
-- **API Server**: `ghcr.io/evanclub-agent/protoflow-ai-api:latest` (or pin `:v0.1.1`)
-- **Web Viewer & Release Center**: `ghcr.io/evanclub-agent/protoflow-ai-web:latest` (or pin `:v0.1.1`)
+- **API Server**: `ghcr.io/evanclub-agent/protoflow-ai-api:latest` (or pin `:v0.1.2`)
+- **Web Viewer & Release Center**: `ghcr.io/evanclub-agent/protoflow-ai-web:latest` (or pin `:v0.1.2`)
 - **Database**: `postgres:18-alpine` (migrations run automatically on startup)
 
 ```bash
@@ -107,7 +107,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yml pull &&
   docker compose --env-file deploy/.env -f deploy/compose.yml up -d
 ```
 
-> To pin a specific release in production, set `PROTOFLOW_API_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-api:v0.1.1` and `PROTOFLOW_WEB_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-web:v0.1.1` in `deploy/.env`.
+> To pin a specific release in production, set `PROTOFLOW_API_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-api:v0.1.2` and `PROTOFLOW_WEB_IMAGE=ghcr.io/evanclub-agent/protoflow-ai-web:v0.1.2` in `deploy/.env`.
 
 Then click **"Local Mode · Connect Server"** in the Alex toolbar, enter your `PUBLIC_ORIGIN` (e.g. `http://localhost:8088` or `https://protoflow.example.com`), register an account, and publish!
 

@@ -7,7 +7,13 @@ import path from 'node:path';
 import { test } from 'node:test';
 import Ajv from 'ajv';
 import { createLocalAuthoringWorkspace } from '../src/mcp/authoringWorkspace';
-import { handleSpecMcpPayload, handleSpecMcpRequest, SUPPORTED_MCP_PROTOCOLS } from '../src/mcp/protocol';
+import { buildCanonicalContractSurface, canonicalizeJsonSchema } from '../src/mcp/contractSurface';
+import { PROTOFLOW_CONTRACT_DIGEST, PROTOFLOW_SERVER_VERSION } from '../src/mcp/generatedSkillBundle';
+import { handleSpecMcpPayload, handleSpecMcpRequest, MCP_TOOL_CATALOGS, SUPPORTED_MCP_PROTOCOLS } from '../src/mcp/protocol';
+import type { McpToolDefinition } from '../src/mcp/tools';
+import { getMaterialContracts, validateMaterialSource } from '../src/proto/registry/materialContract';
+import { UNIVERSAL_COMPONENT_NAMES } from '../src/proto/registry/meta';
+import { FREEFORM_DEFAULT_SOURCE } from '../src/proto/freeform/contract';
 import {
   DESIGNER_SKILL_ENTRY_URI,
   DESIGNER_SKILL_ROOT_URI,
@@ -398,4 +404,310 @@ test('External MCP: Skills over MCP (io.modelcontextprotocol/skills), MCP 2026-0
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('Contract digest stamps SKILL.md, ignores prose-only edits, and detects stale skill drift on status', async () => {
+  const {
+    computeContractDigestFromPayload,
+    parseSkillFrontmatter,
+    stampDesignerSkillMarkdown,
+  } = require(path.join(process.cwd(), 'scripts/build-material-contract.cjs'));
+
+  // 1. Deterministic structural digest matches generated bundle & on-disk SKILL.md
+  assert.match(PROTOFLOW_CONTRACT_DIGEST, /^sha256:[0-9a-f]{16}$/);
+  const baseSurface = buildCanonicalContractSurface();
+  assert.equal(computeContractDigestFromPayload(baseSurface), PROTOFLOW_CONTRACT_DIGEST);
+
+  const diskSkillMd = fs.readFileSync(path.resolve('skills/alex-protoflow-designer/SKILL.md'), 'utf8');
+  const diskFrontmatter = parseSkillFrontmatter(diskSkillMd);
+  assert.deepEqual(diskFrontmatter.metadata, {
+    serverVersion: PROTOFLOW_SERVER_VERSION,
+    contractDigest: PROTOFLOW_CONTRACT_DIGEST,
+  });
+  assert.ok(
+    diskSkillMd.includes(`protoflow_workspace(action="status", expectedContractDigest="${PROTOFLOW_CONTRACT_DIGEST}")`),
+    'Expected Rule 1 in SKILL.md to carry stamped expectedContractDigest',
+  );
+  // Stamping is idempotent
+  assert.equal(
+    stampDesignerSkillMarkdown(diskSkillMd, PROTOFLOW_SERVER_VERSION, PROTOFLOW_CONTRACT_DIGEST),
+    diskSkillMd,
+  );
+
+  // 2. Prose-only description edits do not cause false drift; structural schema edits change the digest
+  const proseEditedTools = [
+    {
+      name: 'protoflow_demo',
+      inputSchema: {
+        type: 'object',
+        title: 'Title A',
+        description: 'Original prose wording',
+        required: ['b', 'a'],
+        properties: {
+          b: { type: 'string', description: 'Field B prose' },
+          a: { type: 'number', minimum: 1 },
+        },
+      },
+    },
+  ];
+  const rewordedTools = [
+    {
+      name: 'protoflow_demo',
+      inputSchema: {
+        type: 'object',
+        title: 'Updated Title B',
+        description: 'Completely rewritten human prose without schema change',
+        required: ['a', 'b'],
+        properties: {
+          a: { type: 'number', minimum: 1, description: 'Added prose' },
+          b: { type: 'string', description: 'Updated prose' },
+        },
+      },
+    },
+  ];
+  const digestWithLocalTools = (tools: Pick<McpToolDefinition, 'name' | 'inputSchema'>[]) =>
+    computeContractDigestFromPayload(buildCanonicalContractSurface({ toolCatalogs: { ...MCP_TOOL_CATALOGS, local_file: tools } }));
+  assert.equal(digestWithLocalTools(proseEditedTools), digestWithLocalTools(rewordedTools));
+  const structurallyChangedTools = [
+    {
+      name: 'protoflow_demo',
+      inputSchema: {
+        type: 'object',
+        required: ['a', 'b'],
+        properties: {
+          a: { type: 'number', minimum: 2 },
+          b: { type: 'string' },
+        },
+      },
+    },
+  ];
+  assert.notEqual(digestWithLocalTools(proseEditedTools), digestWithLocalTools(structurallyChangedTools));
+
+  // 3. protoflow_workspace(status) & protoflow_get_contracts expose digest and flag drift across local_file & desktop_bridge
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-contract-drift-'));
+  try {
+    const rwLoader = createLocalAuthoringWorkspace({ workspaceDir: tmpDir });
+    const callTool = async (loader: Parameters<typeof handleSpecMcpPayload>[0], name: string, args: Record<string, unknown>) => {
+      const res = await handleSpecMcpPayload(loader, {
+        jsonrpc: '2.0',
+        id: 'call',
+        method: 'tools/call',
+        params: { _meta: modernMeta, name, arguments: args },
+      });
+      assert.ok(res && !Array.isArray(res) && !res.error);
+      return res.result as { isError?: boolean; content: { text: string }[] };
+    };
+
+    const plainStatusRes = await callTool(rwLoader, 'protoflow_workspace', { action: 'status' });
+    assert.notEqual(plainStatusRes.isError, true);
+    const plainStatus = JSON.parse(plainStatusRes.content[0].text);
+    assert.equal(plainStatus.serverVersion, PROTOFLOW_SERVER_VERSION);
+    assert.equal(plainStatus.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
+    assert.equal(plainStatus.contractCheckStatus, 'unchecked');
+    assert.match(plainStatus.contractCheckNotice, /SKILL\.md.*metadata\.contractDigest/);
+    assert.match(plainStatus.contractCheckNotice, /refresh|刷新/);
+    assert.equal(plainStatus.contractMatch, undefined);
+    assert.equal(plainStatus.contractDriftWarning, undefined);
+
+    const matchedStatus = JSON.parse(
+      (
+        await callTool(rwLoader, 'protoflow_workspace', {
+          action: 'status',
+          expectedContractDigest: PROTOFLOW_CONTRACT_DIGEST,
+        })
+      ).content[0].text,
+    );
+    assert.equal(matchedStatus.contractMatch, true);
+    assert.equal(matchedStatus.contractCheckStatus, 'matched');
+    assert.equal(matchedStatus.contractDriftWarning, undefined);
+
+    const staleDigest = 'sha256:0123456789abcdef';
+    const driftedStatus = JSON.parse(
+      (
+        await callTool(rwLoader, 'protoflow_workspace', {
+          action: 'status',
+          expectedContractDigest: staleDigest,
+        })
+      ).content[0].text,
+    );
+    assert.equal(driftedStatus.contractMatch, false);
+    assert.equal(driftedStatus.contractCheckStatus, 'mismatched');
+    assert.equal(driftedStatus.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
+    assert.match(driftedStatus.contractDriftWarning, new RegExp(staleDigest));
+    assert.match(driftedStatus.contractDriftWarning, new RegExp(PROTOFLOW_CONTRACT_DIGEST));
+
+    const emptyDigestRes = await callTool(rwLoader, 'protoflow_workspace', {
+      action: 'status',
+      expectedContractDigest: '   ',
+    });
+    assert.equal(emptyDigestRes.isError, true);
+
+    const contractsSummary = JSON.parse((await callTool(rwLoader, 'protoflow_get_contracts', {})).content[0].text);
+    assert.equal(contractsSummary.serverVersion, PROTOFLOW_SERVER_VERSION);
+    assert.equal(contractsSummary.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
+
+    const contractsDetail = JSON.parse(
+      (await callTool(rwLoader, 'protoflow_get_contracts', { componentNames: ['Page', 'Table'] })).content[0].text,
+    );
+    assert.equal(contractsDetail.serverVersion, PROTOFLOW_SERVER_VERSION);
+    assert.equal(contractsDetail.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
+
+    // Verify desktop_bridge schema preserves expectedContractDigest without requiring expectedRevision
+    const desktopMock = {
+      mode: 'readwrite' as const,
+      canWrite: true,
+      transport: 'desktop_bridge' as const,
+      hasActiveProject: () => true,
+      load: async () => { throw new Error('unused'); },
+      getContext: async () => ({
+        transport: 'desktop_bridge' as const,
+        projectPath: '/tmp/live.pflow',
+        workspaceDir: '/tmp',
+        projectId: 'p-live',
+        projectName: 'Live',
+        projectMode: 'desktop' as const,
+        revision: 'rev-1',
+        activePageId: 'home',
+        selectedPfId: null,
+        viewMode: 'canvas',
+      }),
+      listProjects: async () => ({ directory: '/tmp', projects: [] }),
+      createProject: async () => { throw new Error('unsupported'); },
+      switchProject: async () => { throw new Error('unsupported'); },
+      mutate: async () => { throw new Error('unsupported'); },
+    };
+    const desktopToolsRes = await handleSpecMcpPayload(desktopMock, {
+      jsonrpc: '2.0',
+      id: 'dt',
+      method: 'tools/list',
+      params: { _meta: modernMeta },
+    });
+    assert.ok(desktopToolsRes && !Array.isArray(desktopToolsRes) && !desktopToolsRes.error);
+    const desktopWorkspaceTool = (desktopToolsRes.result as { tools: { name: string; inputSchema: any }[] }).tools.find(
+      (t) => t.name === 'protoflow_workspace',
+    )!;
+    assert.ok(desktopWorkspaceTool.inputSchema.properties.expectedContractDigest);
+    assert.ok(!desktopWorkspaceTool.inputSchema.required?.includes('expectedRevision'));
+
+    const desktopDrift = JSON.parse(
+      (
+        await callTool(desktopMock, 'protoflow_workspace', {
+          action: 'status',
+          expectedContractDigest: staleDigest,
+        })
+      ).content[0].text,
+    );
+    assert.equal(desktopDrift.transport, 'desktop_bridge');
+    assert.equal(desktopDrift.contractMatch, false);
+    assert.equal(desktopDrift.contractCheckStatus, 'mismatched');
+    assert.match(desktopDrift.contractDriftWarning, /drift|不一致/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('contract digest includes the schemas actually advertised in every workspace mode', async () => {
+  const surface = buildCanonicalContractSurface();
+  const local = createLocalAuthoringWorkspace({ workspaceDir: os.tmpdir() });
+  const desktop = { ...local, transport: 'desktop_bridge' as const };
+  const loaders = {
+    readonly: { load: local.load },
+    local_file: local,
+    desktop_bridge: desktop,
+    desktop_bridge_with_preview: { ...desktop, capturePreview: async () => { throw new Error('unused'); } },
+  };
+  for (const [profile, loader] of Object.entries(loaders)) {
+    const response = await handleSpecMcpRequest(loader, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const published = (response?.result as { tools: McpToolDefinition[] }).tools;
+    const expected = Object.fromEntries(published.map(t => [t.name, canonicalizeJsonSchema(t.inputSchema)]));
+    assert.deepEqual(Object.fromEntries(surface.tools[profile].map(t => [t.name, t.inputSchema])), expected, profile);
+  }
+
+  const desktopTools = MCP_TOOL_CATALOGS.desktop_bridge.map(tool => {
+    if (tool.name !== 'protoflow_write_page') return tool;
+    const required = tool.inputSchema.required as string[];
+    assert.ok(required.includes('expectedRevision'));
+    return { ...tool, inputSchema: { ...tool.inputSchema, required: required.filter(key => key !== 'expectedRevision') } };
+  });
+  const changed = buildCanonicalContractSurface({ toolCatalogs: { ...MCP_TOOL_CATALOGS, desktop_bridge: desktopTools } });
+  const { computeContractDigestFromPayload } = require(path.resolve('scripts/build-material-contract.cjs'));
+  assert.notEqual(computeContractDigestFromPayload(changed), PROTOFLOW_CONTRACT_DIGEST);
+});
+
+test('contract digest preserves JSON literals and schema map names while ignoring schema annotations', () => {
+  const { computeContractDigestFromPayload: hash } = require(path.resolve('scripts/build-material-contract.cjs'));
+  const digest = (schema: Record<string, unknown>) => hash(canonicalizeJsonSchema(schema));
+  const original = { title: 'one', description: 'A', required: ['b', 'a'] };
+  for (const keyword of ['const', 'default', 'enum']) {
+    const schema = (value: object) => ({ properties: { payload: { [keyword]: keyword === 'enum' ? [value] : value } } });
+    const before = digest(schema(original));
+    assert.equal(before, digest(schema({ required: ['b', 'a'], description: 'A', title: 'one' })));
+    assert.notEqual(before, digest(schema({ ...original, title: 'two' })));
+    assert.notEqual(before, digest(schema({ ...original, description: 'B' })));
+    assert.notEqual(before, digest(schema({ ...original, required: ['a', 'b'] })));
+  }
+  for (const keyword of ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']) {
+    const schema = (type: string, prose: string) => ({ [keyword]: { title: { anyOf: [{ type, description: prose }] } } });
+    assert.equal(digest(schema('string', 'A')), digest(schema('string', 'B')));
+    assert.notEqual(digest(schema('string', 'A')), digest(schema('number', 'A')));
+  }
+  const definitions = (type: string) => buildCanonicalContractSurface({ valueDefinitions: { description: { type } } });
+  assert.notEqual(hash(definitions('string')), hash(definitions('number')));
+});
+
+test('contract digest follows the validator platform registry and explicit property defaults', () => {
+  const { computeContractDigestFromPayload: hash } = require(path.resolve('scripts/build-material-contract.cjs'));
+  const source = `export default function Page(){return (<MobilePage pfId="root"><Freeform pfId="free" source={${JSON.stringify(FREEFORM_DEFAULT_SOURCE)}}/></MobilePage>);}`;
+  assert.deepEqual(validateMaterialSource(source), []);
+  assert.ok(UNIVERSAL_COMPONENT_NAMES.delete('Freeform'));
+  try {
+    assert.ok(validateMaterialSource(source).some(error => error.includes('Freeform') && error.includes('MobilePage')));
+    assert.notEqual(hash(buildCanonicalContractSurface()), PROTOFLOW_CONTRACT_DIGEST);
+  } finally {
+    UNIVERSAL_COMPONENT_NAMES.add('Freeform');
+  }
+
+  const materials = getMaterialContracts();
+  const prop = materials.find(m => m.name === 'Pagination')!.props.find(p => p.name === 'pageSize')!;
+  const original = prop.default;
+  assert.equal(typeof original, 'number');
+  prop.default = Number(original) + 1;
+  assert.notEqual(hash(buildCanonicalContractSurface({ materials })), PROTOFLOW_CONTRACT_DIGEST);
+  delete prop.default;
+  const missing = hash(buildCanonicalContractSurface({ materials }));
+  prop.default = null;
+  assert.notEqual(hash(buildCanonicalContractSurface({ materials })), missing);
+});
+
+test('contract digest is identical in separate English and Czech build processes', () => {
+  const script = 'const {evaluateContractDigest} = require("./scripts/build-material-contract.cjs");' +
+    'process.stdout.write(evaluateContractDigest(process.cwd(), require("./package.json").version));';
+  for (const locale of ['en_US.UTF-8', 'cs_CZ.UTF-8']) {
+    const result = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8', env: { ...process.env, LANG: locale, LC_ALL: locale },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, PROTOFLOW_CONTRACT_DIGEST, locale);
+  }
+});
+
+test('stamped skill gives schema-valid status calls for both legacy and current servers', () => {
+  const { stampDesignerSkillMarkdown } = require(path.resolve('scripts/build-material-contract.cjs'));
+  const markdown = fs.readFileSync(path.resolve('skills/alex-protoflow-designer/SKILL.md'), 'utf8');
+  const nextDigest = 'sha256:0123456789abcdef';
+  const stamped = stampDesignerSkillMarkdown(markdown, PROTOFLOW_SERVER_VERSION, nextDigest);
+  const rule = stamped.split(/\r?\n/).find((line: string) => line.startsWith('1. **Workspace first**.'))!;
+  const calls = [...rule.matchAll(/`protoflow_workspace\(action="status"(?:, expectedContractDigest="([^"]+)")?\)`/g)]
+    .map(match => match[1] ? { action: 'status', expectedContractDigest: match[1] } : { action: 'status' });
+  assert.match(rule, /If it declares `expectedContractDigest`/);
+  assert.deepEqual(calls, [{ action: 'status', expectedContractDigest: nextDigest }, { action: 'status' }]);
+  assert.match(stamped, /missing `contractDigest` or `contractMatch` means the skill is unverified[^\n]+protoflow_get_contracts/);
+
+  const ajv = new Ajv();
+  const validateCurrent = ajv.compile(MCP_TOOL_CATALOGS.desktop_bridge.find(t => t.name === 'protoflow_workspace')!.inputSchema);
+  // The pre-digest release rejects extra keys. Only the status action is needed for this fixture.
+  const validateLegacy = ajv.compile({ type: 'object', properties: { action: { const: 'status' } }, additionalProperties: false });
+  assert.ok(validateCurrent(calls[0]));
+  assert.equal(validateLegacy(calls[0]), false);
+  assert.ok(validateLegacy(calls[1]));
 });

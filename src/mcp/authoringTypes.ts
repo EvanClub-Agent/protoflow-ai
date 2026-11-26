@@ -17,6 +17,12 @@ export interface ActiveEditorContext {
   viewMode: string | null;
 }
 
+export type WorkspaceStatus = ActiveEditorContext & { serverVersion: string; contractDigest: string } & (
+  | { contractCheckStatus: 'unchecked'; contractCheckNotice: string }
+  | { contractCheckStatus: 'matched'; contractMatch: true }
+  | { contractCheckStatus: 'mismatched'; contractMatch: false; contractDriftWarning: string }
+);
+
 export interface ProjectFileSummary {
   filePath: string;
   fileName: string;

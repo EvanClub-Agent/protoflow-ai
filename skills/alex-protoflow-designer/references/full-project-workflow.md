@@ -4,7 +4,7 @@ Use this workflow when asked to generate an entire prototype project (sitemap, E
 
 ## Step 1: Workspace Discovery
 
-1. Call `protoflow_workspace(action="status")`.
+1. Follow the workspace status and contract verification instructions in Rule 1 of `SKILL.md`.
 2. For a new project, open or create the target in Alex when using `desktop_bridge`. With `local_file`, if no `.pflow` file is active or the user wants a new project, call `protoflow_workspace(action="create_project", ...)` with:
    - `filePath` ending in `.pflow`
    - `projectName`

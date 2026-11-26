@@ -29,8 +29,12 @@ import {
   type NotePriority,
   type NoteRequirementStatus,
 } from '../proto/notes';
-import { getActionContracts, getMaterialContracts, MATERIAL_VALUE_DEFINITIONS } from '../proto/registry/materialContract';
-import { MOBILE_COMPONENT_NAMES, UNIVERSAL_COMPONENT_NAMES } from '../proto/registry/meta';
+import {
+  getActionContracts,
+  getMaterialContracts,
+  MATERIAL_CONTRACT_VERSION,
+  MATERIAL_VALUE_DEFINITIONS,
+} from '../proto/registry/materialContract';
 import type { Row } from '../proto/runtime/mock';
 import {
   buildSitemap,
@@ -60,6 +64,7 @@ import { checkAiPagePlatform } from '../services/projectPagePlatform';
 import type { DBColumnSchema, DBTableSchema, StickyNoteRule } from '../store/useProtoStore';
 import type { PflowBinaryPayload } from '../utils/pflowBinaryCodec';
 import type { AuthoringWorkspace } from './authoringWorkspace';
+import type { WorkspaceStatus } from './authoringTypes';
 import { DB_COLUMN_JSON_SCHEMA, DB_TABLE_JSON_SCHEMA, validateDbColumnInput, validateDbTableInput } from './dbContract';
 import {
   AXURE_COLUMN_MAPPING_SCHEMA,
@@ -77,6 +82,7 @@ import {
   type RpColumnMapping,
 } from './importReshape';
 import type { McpPromptDefinition, McpResourceDefinition, McpToolDefinition } from './tools';
+import { PROTOFLOW_CONTRACT_DIGEST, PROTOFLOW_SERVER_VERSION } from './generatedSkillBundle';
 import type { LoadedWorkspace } from './workspace';
 
 const hasOwn = (obj: object, key: string): boolean => Object.prototype.hasOwnProperty.call(obj, key);
@@ -184,6 +190,10 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
         },
         overwrite: {
           type: 'boolean',
+        },
+        expectedContractDigest: {
+          type: 'string',
+          description: 'Optional contractDigest from SKILL.md to detect stale skill drift.',
         },
         expectedRevision: {
           type: 'string',
@@ -819,9 +829,9 @@ function summarizeContractCatalog(includeAxure: boolean, includeFigma = false) {
       if (includeAxure) axure.push(entry);
     } else if (isFigmaMaterial(item.name)) {
       if (includeFigma) figma.push(entry);
-    } else if (UNIVERSAL_COMPONENT_NAMES.has(item.name)) {
+    } else if (item.platform === 'universal') {
       universal.push(entry);
-    } else if (MOBILE_COMPONENT_NAMES.has(item.name)) {
+    } else if (item.platform === 'mobile') {
       mobile.push(entry);
     } else {
       desktop.push(entry);
@@ -829,7 +839,9 @@ function summarizeContractCatalog(includeAxure: boolean, includeFigma = false) {
   }
 
   return {
-    materialContractVersion: 1,
+    materialContractVersion: MATERIAL_CONTRACT_VERSION,
+    serverVersion: PROTOFLOW_SERVER_VERSION,
+    contractDigest: PROTOFLOW_CONTRACT_DIGEST,
     componentCounts: {
       desktop: desktop.length,
       mobile: mobile.length,
@@ -1797,7 +1809,38 @@ export async function executeAuthoringTool(
     case 'protoflow_workspace': {
       const action = typeof args.action === 'string' && args.action.trim() ? args.action.trim() : 'status';
       if (action === 'status') {
-        return await workspace.getContext();
+        const expectedDigest =
+          args.expectedContractDigest === undefined
+            ? undefined
+            : requireNonEmptyString(args.expectedContractDigest, 'expectedContractDigest');
+        const ctx = await workspace.getContext();
+        const enriched = {
+          ...ctx,
+          serverVersion: PROTOFLOW_SERVER_VERSION,
+          contractDigest: PROTOFLOW_CONTRACT_DIGEST,
+        };
+        if (expectedDigest === undefined) {
+          return {
+            ...enriched,
+            contractCheckStatus: 'unchecked',
+            contractCheckNotice: tr(
+              '此次未传入 expectedContractDigest，技能契约尚未校验。若使用本地技能，请以其 SKILL.md 的 metadata.contractDigest 重试 status。若缺少摘要，请使用实时工具和物料契约，并在 Alex 桌面端（MCP → 双向设计）刷新技能。',
+              'Skill contract unchecked. If using a local skill, retry status with expectedContractDigest from its SKILL.md metadata.contractDigest. If the skill has no digest, use the live tool and material contracts and refresh it in Alex Desktop (MCP → Bidirectional design).',
+            ),
+          } satisfies WorkspaceStatus;
+        }
+        if (expectedDigest === PROTOFLOW_CONTRACT_DIGEST) {
+          return { ...enriched, contractCheckStatus: 'matched', contractMatch: true } satisfies WorkspaceStatus;
+        }
+        return {
+          ...enriched,
+          contractCheckStatus: 'mismatched',
+          contractMatch: false,
+          contractDriftWarning: tr(
+            `技能契约摘要不一致：当前 SKILL.md 期望 ${expectedDigest}，运行中的 MCP 服务端（v${PROTOFLOW_SERVER_VERSION}）实际为 ${PROTOFLOW_CONTRACT_DIGEST}。请按实时 tools/list、protoflow_get_contracts 和 protoflow_get_implementation_guide 工作，并提醒用户在 Alex 桌面端（MCP → 双向设计）刷新技能。`,
+            `Skill contract drift detected: SKILL.md expects ${expectedDigest}, while the running MCP server (v${PROTOFLOW_SERVER_VERSION}) exposes ${PROTOFLOW_CONTRACT_DIGEST}. Use live tools/list, protoflow_get_contracts and protoflow_get_implementation_guide, and advise refreshing the skill in Alex Desktop (MCP → Bidirectional design).`,
+          ),
+        } satisfies WorkspaceStatus;
       }
       if (action === 'list_projects') {
         return await workspace.listProjects(typeof args.directory === 'string' ? args.directory : undefined);
@@ -1927,7 +1970,9 @@ export async function executeAuthoringTool(
       }
       const matched = requestedNames.map((n) => byName.get(n)!);
       return {
-        materialContractVersion: 1,
+        materialContractVersion: MATERIAL_CONTRACT_VERSION,
+        serverVersion: PROTOFLOW_SERVER_VERSION,
+        contractDigest: PROTOFLOW_CONTRACT_DIGEST,
         components: matched,
         valueDefinitions: MATERIAL_VALUE_DEFINITIONS,
         actions: getActionContracts(),

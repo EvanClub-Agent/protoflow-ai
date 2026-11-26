@@ -8,6 +8,7 @@ import {
   MOBILE_OVERLAY_TYPES,
   OVERLAY_TYPES,
   PAGE_ROOT_TYPES,
+  UNIVERSAL_COMPONENT_NAMES,
   type ComponentMeta,
   type PropSpec,
 } from './meta';
@@ -171,9 +172,15 @@ export function materialPropSchema(component: ComponentMeta, prop: PropSpec): Va
   return { ...string, ...(['table', 'column', 'overlay', 'page', 'nodeRef'].includes(prop.kind) || prop.required ? { minLength: 1 } : {}) };
 }
 
+export function getMaterialPlatform(name: string): 'desktop' | 'mobile' | 'universal' {
+  if (MOBILE_COMPONENT_NAMES.has(name)) return 'mobile';
+  return UNIVERSAL_COMPONENT_NAMES.has(name) ? 'universal' : 'desktop';
+}
+
 export function getMaterialContracts() {
   return COMPONENTS.map((component) => ({
     ...component,
+    platform: getMaterialPlatform(component.name),
     ...(DESKTOP_OVERLAY_TYPES.has(component.name) ? { parents: ['Page'] } : {}),
     ...(MOBILE_OVERLAY_TYPES.has(component.name) ? { parents: ['MobilePage'] } : {}),
     childTypes: ({ OutlineTree: ['TreeItem'], TreeItem: ['TreeItem'], DynamicPanel: ['PanelState'], StaticTable: ['StaticTableCell'], Tabs: ['Tab'], MPillTabs: ['MTab'], Collapse: ['CollapsePanel'], Row: ['Col'] } as Record<string, string[]>)[component.name],

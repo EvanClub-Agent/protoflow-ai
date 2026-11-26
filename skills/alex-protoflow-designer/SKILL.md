@@ -1,6 +1,9 @@
 ---
 name: alex-protoflow-designer
 description: Create, inspect, refine, model ER databases, seed preview data, write PRD notes/Mermaid flows, and audit interactive Alex (ProtoFlow AI) `.pflow` business prototypes using the `protoflow` read-write MCP tools. Trigger whenever the user asks to generate a prototype project, create or adjust desktop/mobile pages, design or modify database tables/foreign keys, add sticky-note specs, or audit a `.pflow` prototype.
+metadata:
+  serverVersion: 0.1.2
+  contractDigest: sha256:635b55e283f0eac0
 ---
 
 # Alex (ProtoFlow AI) Prototype Designer
@@ -9,7 +12,9 @@ Build and iterate interactive, data-driven business prototypes stored as `.pflow
 
 ## Seven Iron Rules
 
-1. **Workspace first**. Start with `protoflow_workspace(action="status")`.
+1. **Workspace first**. Check the advertised `protoflow_workspace` input schema. If it declares `expectedContractDigest`, call `protoflow_workspace(action="status", expectedContractDigest="sha256:635b55e283f0eac0")`. Otherwise call `protoflow_workspace(action="status")`.
+   - A missing `contractDigest` or `contractMatch` means the skill is unverified. Use the live tool schemas, `protoflow_get_contracts` and `protoflow_get_implementation_guide`. If the server lacks digest support, tell the user that updating the MCP server enables verification.
+   - If status returns `contractMatch: false`, use those same live contracts and tell the user how to refresh the installed skill in Alex Desktop (`MCP → Bidirectional design`).
    - For `desktop_bridge`, verify the intended `projectId`. For a canvas edit, inspect the page identified by `activePageId` and the selection identified by `selectedPfId`.
    - Send exactly one desktop write at a time across all tools, including edits to different folders or pages. Use the status `revision` as the first write's `expectedRevision`. Wait for each successful result and pass its exact `revision` as the next write's `expectedRevision`. On conflict, stop, re-read status and inspect the changed target before resuming on the intended project.
    - For `local_file`, if no project is active, call `create_project` or `switch_project` before any project-scoped tool.
