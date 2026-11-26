@@ -61,6 +61,21 @@ import type { DBColumnSchema, DBTableSchema, StickyNoteRule } from '../store/use
 import type { PflowBinaryPayload } from '../utils/pflowBinaryCodec';
 import type { AuthoringWorkspace } from './authoringWorkspace';
 import { DB_COLUMN_JSON_SCHEMA, DB_TABLE_JSON_SCHEMA, validateDbColumnInput, validateDbTableInput } from './dbContract';
+import {
+  AXURE_COLUMN_MAPPING_SCHEMA,
+  AXURE_RESHAPE_COVERAGE_SCHEMA,
+  bindAxureTable,
+  commitOptimizedCopyPatch,
+  FIGMA_RESHAPE_COVERAGE_SCHEMA,
+  inspectImportedProjectInventory,
+  inspectImportedSourcePage,
+  optimizeAxureBlock,
+  reshapeAxurePage,
+  reshapeFigmaPage,
+  resolveImportInspectionScope,
+  retargetEditedOptimizedCopy,
+  type RpColumnMapping,
+} from './importReshape';
 import type { McpPromptDefinition, McpResourceDefinition, McpToolDefinition } from './tools';
 import type { LoadedWorkspace } from './workspace';
 
@@ -644,6 +659,97 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'protoflow_reshape_imported_page',
+    description:
+      'Inspect and reshape imported Axure RP (`rp-page-*`) or Figma (`fig-page-*`) pages into clean, flow-layout Alex native `<Page>` / `<MobilePage>` optimized copies (`rp-optimized-*` / `fig-optimized-*`) while preserving the original imported canvas intact, verifying widget/layer coverage accounting, enforcing non-inverted table column mappings, and auto-retargeting cross-page navigation links.',
+    annotations: { ...WRITE_ANNOTATIONS, title: 'Inspect & Reshape Imported Axure RP / Figma Pages' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'inspect_project',
+            'inspect_page',
+            'reshape_axure_page',
+            'bind_axure_table',
+            'optimize_axure_block',
+            'reshape_figma_page',
+          ],
+          description:
+            'Import migration action: inspect_project / inspect_page (read-only) or reshape_axure_page / bind_axure_table / optimize_axure_block / reshape_figma_page (writes sibling optimized copy).',
+        },
+        sourceType: {
+          type: 'string',
+          enum: ['axure', 'figma', 'auto'],
+          description: 'Import source family for inspect_project or inspect_page (default: "auto").',
+        },
+        pageId: {
+          type: 'string',
+          description:
+            'Source imported page ID (`rp-page-<guid>` or `fig-page-<hash>`). Optional scope filter for inspect_project; required for inspect_page and all write actions.',
+        },
+        folderId: {
+          type: 'string',
+          description: 'Optional folderId scope filter for inspect_project (mutually exclusive with pageId).',
+        },
+        selectedPfId: {
+          type: 'string',
+          description: 'Optional subtree pfId filter for inspect_page.',
+        },
+        offset: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Pagination offset for inspect_project or inspect_page (default: 0).',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 80,
+          description: 'Pagination limit (1..8 for inspect_project; 1..80 for inspect_page).',
+        },
+        source: {
+          type: 'string',
+          description:
+            'Complete flow-layout `<Page>` or `<MobilePage>` TSX using standard Alex materials (without AxureCanvas/FigmaCanvas) for reshape_axure_page or reshape_figma_page.',
+        },
+        coverage: {
+          anyOf: [AXURE_RESHAPE_COVERAGE_SCHEMA, FIGMA_RESHAPE_COVERAGE_SCHEMA],
+          description:
+            'Required source-widget accounting manifest (`converted`, plus `retained`/`pending` for Axure or `pending` for Figma) for reshape_axure_page or reshape_figma_page.',
+        },
+        targetPfId: {
+          type: 'string',
+          description: 'Exact source StaticTable or positioned widget pfId on pageId for bind_axure_table or optimize_axure_block.',
+        },
+        tableId: {
+          type: 'string',
+          description: 'Exact existing dbTables.id for bind_axure_table.',
+        },
+        mappings: {
+          type: 'array',
+          minItems: 1,
+          items: AXURE_COLUMN_MAPPING_SCHEMA,
+          description: 'Per-header column mappings for bind_axure_table covering every first-row StaticTableCell.',
+        },
+        tsx: {
+          type: 'string',
+          description: 'Single complete Alex component TSX preserving targetPfId for optimize_axure_block.',
+        },
+        setActive: {
+          type: 'boolean',
+          description: 'Switch activePageId to the generated optimized copy after writing (default: false).',
+        },
+        expectedRevision: {
+          type: 'string',
+          description: 'Optional revision token for optimistic concurrency control on write actions.',
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const AUTHORING_TOOL_NAMES = new Set(AUTHORING_MCP_TOOLS.map((t) => t.name));
@@ -686,6 +792,13 @@ export const AUTHORING_MCP_PROMPTS: McpPromptDefinition[] = [
     description: 'Design or evolve normalized shared ER database tables, foreign keys, unique constraints, and coherent preview rows.',
     arguments: [
       { name: 'domainRequirements', description: 'Entities, business rules, uniqueness constraints, and workflows to model.', required: true },
+    ],
+  },
+  {
+    name: 'reshape-imported-pages',
+    description: 'Inspect and reshape imported Axure RP (`rp-page-*`) or Figma (`fig-page-*`) canvases into clean, data-bound flow-layout Alex pages.',
+    arguments: [
+      { name: 'scopeTarget', description: 'Optional source pageId, folderId, or module name (omit to convert all imported pages).', required: false },
     ],
   },
 ];
@@ -1314,6 +1427,9 @@ function handleEditPageBlock(draft: PflowBinaryPayload, args: Record<string, unk
     );
   }
 
+  const retargetedCopy = retargetEditedOptimizedCopy(s, pageId, nextSource);
+  nextSource = retargetedCopy.source;
+
   const contractErrors = pageContractErrors(nextSource, s.dbTables, { tableRows: s.tableRows });
   if (contractErrors.length > 0) {
     throw new Error(
@@ -1882,6 +1998,146 @@ export async function executeAuthoringTool(
       return { revision: mutated.revision, ...mutated.result };
     }
 
+    case 'protoflow_reshape_imported_page': {
+      const action = requireNonEmptyString(args.action, 'action');
+      const sourceType = optionalEnum(args.sourceType, ['axure', 'figma', 'auto'] as const, 'sourceType') ?? 'auto';
+
+      if (action === 'inspect_project') {
+        const scope = resolveImportInspectionScope(args);
+        const offset = args.offset === undefined ? 0 : Number(args.offset);
+        const limit = args.limit === undefined ? 4 : Number(args.limit);
+        const loaded = await workspace.load();
+        return {
+          revision: loaded.revision,
+          action,
+          ...inspectImportedProjectInventory(loaded.payload.stateSnapshot, sourceType, scope, offset, limit),
+        };
+      }
+
+      if (action === 'inspect_page') {
+        const pageId = requireNonEmptyString(args.pageId, 'pageId');
+        const selectedPfId =
+          typeof args.selectedPfId === 'string' && args.selectedPfId.trim() ? args.selectedPfId.trim() : undefined;
+        const offset = args.offset === undefined ? undefined : Number(args.offset);
+        const limit = args.limit === undefined ? undefined : Number(args.limit);
+        const loaded = await workspace.load();
+        return {
+          revision: loaded.revision,
+          action,
+          ...inspectImportedSourcePage(loaded.payload.stateSnapshot, pageId, sourceType, selectedPfId, offset, limit),
+        };
+      }
+
+      if (action === 'reshape_axure_page') {
+        const pageId = requireNonEmptyString(args.pageId, 'pageId');
+        const source = requireNonEmptyString(args.source, 'source');
+        const mutated = await workspace.mutate(
+          (draft) => {
+            const s = draft.stateSnapshot;
+            const reshaped = reshapeAxurePage(s, pageId, source, args.coverage);
+            const applied = commitOptimizedCopyPatch(s, draft.meta.projectMode, reshaped, args.setActive === true);
+            return {
+              action,
+              sourcePageId: pageId,
+              ...applied,
+              rpCoverage: reshaped.rpCoverage,
+              inspection: inspectPage(reshaped.source, s.dbTables, s.tableRows),
+            };
+          },
+          { expectedRevision: optionalExpectedRevision(args), summary: `reshape Axure page ${pageId}` },
+        );
+        return { revision: mutated.revision, ...mutated.result };
+      }
+
+      if (action === 'bind_axure_table') {
+        const pageId = requireNonEmptyString(args.pageId, 'pageId');
+        const targetPfId = requireNonEmptyString(args.targetPfId, 'targetPfId');
+        const tableId = requireNonEmptyString(args.tableId, 'tableId');
+        if (!Array.isArray(args.mappings) || args.mappings.length === 0) {
+          throw new Error(tr('bind_axure_table 需要提供非空的 mappings 数组', 'bind_axure_table requires a non-empty mappings array'));
+        }
+        const mutated = await workspace.mutate(
+          (draft) => {
+            const s = draft.stateSnapshot;
+            const bound = bindAxureTable(s, pageId, targetPfId, tableId, args.mappings as RpColumnMapping[]);
+            if ('unchanged' in bound) {
+              return {
+                action,
+                sourcePageId: pageId,
+                optimizedPageId: bound.pageId,
+                unchanged: true,
+              };
+            }
+            const applied = commitOptimizedCopyPatch(
+              s,
+              draft.meta.projectMode,
+              {
+                pageId: bound.pageId,
+                title: bound.title,
+                folderId: bound.folderId,
+                source: bound.source,
+              },
+              args.setActive === true,
+            );
+            return {
+              action,
+              sourcePageId: pageId,
+              unchanged: false,
+              ...applied,
+              inspection: inspectPage(bound.source, s.dbTables, s.tableRows),
+            };
+          },
+          { expectedRevision: optionalExpectedRevision(args), summary: `bind Axure table on ${pageId}` },
+        );
+        return { revision: mutated.revision, ...mutated.result };
+      }
+
+      if (action === 'optimize_axure_block') {
+        const pageId = requireNonEmptyString(args.pageId, 'pageId');
+        const targetPfId = requireNonEmptyString(args.targetPfId, 'targetPfId');
+        const tsx = requireNonEmptyString(args.tsx, 'tsx');
+        const mutated = await workspace.mutate(
+          (draft) => {
+            const s = draft.stateSnapshot;
+            const optimized = optimizeAxureBlock(s, pageId, targetPfId, tsx, true);
+            const applied = commitOptimizedCopyPatch(s, draft.meta.projectMode, optimized, args.setActive === true);
+            return {
+              action,
+              sourcePageId: pageId,
+              targetPfId,
+              ...applied,
+              inspection: inspectPage(optimized.source, s.dbTables, s.tableRows),
+            };
+          },
+          { expectedRevision: optionalExpectedRevision(args), summary: `optimize Axure block on ${pageId}` },
+        );
+        return { revision: mutated.revision, ...mutated.result };
+      }
+
+      if (action === 'reshape_figma_page') {
+        const pageId = requireNonEmptyString(args.pageId, 'pageId');
+        const source = requireNonEmptyString(args.source, 'source');
+        const mutated = await workspace.mutate(
+          (draft) => {
+            const s = draft.stateSnapshot;
+            const reshaped = reshapeFigmaPage(s, pageId, source, args.coverage);
+            const applied = commitOptimizedCopyPatch(s, draft.meta.projectMode, reshaped, args.setActive === true);
+            return {
+              action,
+              sourcePageId: pageId,
+              ...applied,
+              figmaCoverage: reshaped.figmaCoverage,
+              inspection: inspectPage(reshaped.source, s.dbTables, s.tableRows),
+            };
+          },
+          { expectedRevision: optionalExpectedRevision(args), summary: `reshape Figma frame ${pageId}` },
+        );
+        return { revision: mutated.revision, ...mutated.result };
+      }
+
+      throw new Error(tr(`不支持的导入重构操作：${action}`, `Unsupported imported-page reshape action: ${action}`));
+    }
+
     case 'protoflow_audit_project': {
       const pageId = typeof args.pageId === 'string' && args.pageId.trim() ? args.pageId.trim() : null;
       const loaded = await workspace.load();
@@ -2131,6 +2387,39 @@ export function getAuthoringPrompt(
                 '2. Reuse shared physical tables for the same entity/grain across menus; populate `modeling.entity/grain/reason`, `uniqueConstraints`, matching-type `references: "tableName(colName)"`, and `modeling.pendingRules` for rules DDL cannot enforce.',
                 '3. Submit related tables together via `protoflow_upsert_db_tables`, seed coherent rows via `protoflow_manage_table_rows(action="seed")`, and verify via `protoflow_audit_project`.',
               ].join('\n')
+            ),
+          },
+        },
+      ],
+    };
+  }
+
+  if (name === 'reshape-imported-pages') {
+    const scopeTarget = args?.scopeTarget?.trim() || tr('当前工程中的全部导入原稿页面', 'all imported source pages in the active project');
+    return {
+      description: tr('盘点并将导入的 Axure RP 或 Figma 原稿页面重塑为绑定共享表的标准流式 Alex 页面', 'Inspect and reshape imported Axure RP or Figma canvases into standard flow-layout Alex pages'),
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: tr(
+              [
+                `请在 ${projectLabel} 中盘点并流式重塑导入原稿页面（范围：${scopeTarget}）。`,
+                '',
+                '执行要求：',
+                '1. 先调用 `protoflow_reshape_imported_page({ action: "inspect_project" })` 分页盘点 `rp-page-*` / `fig-page-*` 原稿与迁移进度，再对目标页调用 `protoflow_reshape_imported_page({ action: "inspect_page", pageId })` 核对表头 `firstRow[].pfId`、列动作一致性 `columnActions`、`nearbyLabel` 或 Figma Auto Layout 重复组。',
+                '2. 调用 `protoflow_get_database_schema`、`protoflow_get_implementation_guide({ scenarioIds: ["axure", "figma"] })` 与 `protoflow_get_contracts`，按需通过 `protoflow_upsert_db_tables` 建立或复用共享物理表。',
+                '3. 调用 `protoflow_reshape_imported_page`（`action="reshape_axure_page"` 或 `"reshape_figma_page"`）写入同目录 `rp-optimized-*` / `fig-optimized-*` 流式副本（保留原始导入页不覆盖），完整提交 `coverage` 去向清单，最后调用 `protoflow_audit_project` 核验零契约错误。',
+              ].join('\n'),
+              [
+                `Inspect and reshape imported Axure RP / Figma pages in ${projectLabel} (scope: ${scopeTarget}).`,
+                '',
+                'Requirements:',
+                '1. Call `protoflow_reshape_imported_page({ action: "inspect_project" })` to inventory `rp-page-*` / `fig-page-*` pages, then `protoflow_reshape_imported_page({ action: "inspect_page", pageId })` to inspect `StaticTable` headers, `columnActions`, `nearbyLabel`, or Figma Auto Layout groups.',
+                '2. Check `protoflow_get_database_schema`, `protoflow_get_implementation_guide({ scenarioIds: ["axure", "figma"] })`, and `protoflow_get_contracts`, creating or reusing shared tables via `protoflow_upsert_db_tables`.',
+                '3. Write sibling `rp-optimized-*` / `fig-optimized-*` flow-layout copies via `protoflow_reshape_imported_page` (`reshape_axure_page` or `reshape_figma_page`) with a complete `coverage` manifest while keeping source canvases intact, then run `protoflow_audit_project`.',
+              ].join('\n'),
             ),
           },
         },

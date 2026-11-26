@@ -23,7 +23,7 @@ import type { WorkspaceLoader } from './workspace';
 
 export const SUPPORTED_MCP_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 export const SPEC_MCP_SERVER_NAME = 'protoflow-spec';
-export const SPEC_MCP_SERVER_VERSION = '0.0.11';
+export const SPEC_MCP_SERVER_VERSION = '0.1.0';
 
 type RpcId = string | number | LosslessNumber | null;
 
@@ -73,7 +73,8 @@ const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
   if (!Object.hasOwn(properties, 'expectedRevision')) return tool;
   const workspace = tool.name === 'protoflow_workspace';
   const writeActions = workspace ? 'update_project_meta' :
-    tool.name === 'protoflow_manage_table_rows' ? 'seed and clear' : null;
+    tool.name === 'protoflow_manage_table_rows' ? 'seed and clear' :
+    tool.name === 'protoflow_reshape_imported_page' ? 'reshape_axure_page, bind_axure_table, optimize_axure_block, and reshape_figma_page' : null;
   const { projectName, projectMode, activePageId } = properties;
   const expectedRevision = {
     type: 'string', minLength: 1,
@@ -246,7 +247,7 @@ export async function handleSpecMcpRequest(
         if (isReadWrite && AUTHORING_PROMPT_NAMES.has(promptName)) {
           const workspace = loader.hasActiveProject() ? await loader.load() : null;
           const prompt = getAuthoringPrompt(workspace, promptName, promptArgs);
-          if (live && ['design-full-project', 'design-page', 'refine-page'].includes(promptName)) {
+          if (live && ['design-full-project', 'design-page', 'refine-page', 'reshape-imported-pages'].includes(promptName)) {
             prompt.messages[0].content.text += '\n' + tr('完成页面修改后，可调用 protoflow_capture_preview 复核实际布局和移动端裁切。', 'After editing, use protoflow_capture_preview to verify the rendered layout and mobile viewport.');
           }
           return { jsonrpc: '2.0', id, result: prompt };

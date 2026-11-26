@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import { stringify } from 'lossless-json';
 import { getLocale, tr } from '../i18n/runtime';
-import { parsePageSource } from '../proto/dsl/parser';
-import { MOBILE_DEVICE_SPECS } from '../proto/mobile/types';
+import { buildStagedPreviewSnapshot } from '../mcp/capturePreview';
 import type { PreviewSnapshot } from '../capture/snapshot';
 import { newId } from '../utils/identity';
 import type { AuthoringWorkspace } from '../mcp/authoringTypes';
@@ -147,27 +146,37 @@ function desktopWorkspace(target: Session, filePath: string, request: LiveReques
         projectId: meta.projectId, projectName: meta.projectName, projectMode: meta.projectMode ?? 'desktop',
         revision: revision(), activePageId: activePageId || null, selectedPfId: selected, viewMode };
     },
-    async capturePreview({ pageId: requested, scope, fullPage, waitMs, uiState }) {
+    async capturePreview(options) {
       const captured = revision();
       const state = useProtoStore.getState(), pages = usePageStore.getState();
-      const pageId = requested === undefined ? state.activePageId : requested;
-      if (!Object.hasOwn(pages.pageSources, pageId)) throw new Error('No canvas source for pageId: ' + pageId);
-      const parsed = parsePageSource(pages.pageSources[pageId]);
-      if (!parsed.doc || parsed.issues.length) throw new Error('Cannot render page: ' + pageId);
-      const { doc } = parsed;
-      if (doc.root.type !== 'Page' && doc.root.type !== 'MobilePage') throw new Error('Unknown page root: ' + doc.root.type);
-      const platform = doc.root.type === 'MobilePage' ? 'mobile' : 'desktop';
       const bounds = document.querySelector('.pf-canvas-viewport-shell')?.getBoundingClientRect();
-      const device = MOBILE_DEVICE_SPECS[pages.mobileDevice];
-      const width = Math.min(2560, Math.max(platform === 'mobile' ? device.width + 64 : 1280 + 24, Math.round(bounds?.width || 1280)));
-      const height = Math.min(2160, Math.max(platform === 'mobile' ? device.height + 64 : 1, Math.round(bounds?.height || 800)));
-      const { dbTables, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets, designTokens } = state;
-      const snapshot: PreviewSnapshot = { pageId, revision: captured, scope, fullPage, waitMs, ...(uiState ? { uiState } : {}), platform, doc, width, height,
-        theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', locale: getLocale(), device: pages.mobileDevice,
-        meta: state.currentProjectMeta, state: { dbTables, tableRows: pages.tableRows, suppliers, purchaseOrderItems, acceptanceOrders, draftAcceptanceHeader, draftAcceptanceLines, widgets, ...(designTokens ? { designTokens } : {}) } };
+      const snapshot = buildStagedPreviewSnapshot(
+        {
+          activePageId: state.activePageId,
+          pageSources: pages.pageSources,
+          dbTables: state.dbTables,
+          tableRows: pages.tableRows,
+          designTokens: state.designTokens,
+          widgets: state.widgets,
+          suppliers: state.suppliers,
+          purchaseOrderItems: state.purchaseOrderItems,
+          acceptanceOrders: state.acceptanceOrders,
+          draftAcceptanceHeader: state.draftAcceptanceHeader,
+          draftAcceptanceLines: state.draftAcceptanceLines,
+        },
+        options,
+        {
+          revision: captured,
+          locale: getLocale(),
+          theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+          device: pages.mobileDevice,
+          viewportBounds: bounds ? { width: bounds.width, height: bounds.height } : null,
+          meta: state.currentProjectMeta,
+        },
+      );
       const image = await desktopAuthoringApi()!.capture({ sessionId: target.sessionId, requestId: request.id, snapshot });
       if (revision() !== captured) throw new Error('Project changed during preview capture. Read the current revision and retry.');
-      return { ...image, pageId, platform, scope, fullPage, revision: captured };
+      return { ...image, pageId: snapshot.pageId, platform: snapshot.platform, scope: snapshot.scope, fullPage: snapshot.fullPage, revision: captured };
     },
     async load() {
       return { sourceKind: 'local', sourceLabel: filePath, revision: revision(), payload: captureProjectPayload(), uniqueConstraintsComplete: true };

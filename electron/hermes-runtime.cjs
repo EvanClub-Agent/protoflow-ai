@@ -15,7 +15,7 @@ const { tr, isMainEn, getMainLocale } = require("./i18n.cjs");
 const { conversationScope, conversationKey } = require('./hermes-conversation.cjs');
 const { ChatImages } = require('./chat-images.cjs');
 const { atomicWrite, replayCandidateOperations } = require("./protoflow-mcp.cjs");
-const { watchStagedPages } = require('./hermes-preview.cjs');
+const { watchStagedPages, createHermesPreviewBridge } = require('./hermes-preview.cjs');
 const draftRecovery = require('./hermes-draft-recovery.cjs');
 const { withContextLockAsync } = require('./context-transaction.cjs');
 const { QuestionProgress } = require('./hermes-question-progress.cjs');
@@ -332,11 +332,12 @@ function buildFailureEnvelope({
   };
 }
 class HermesRuntime {
-  constructor({ dataDir, managedHome = path.join(dataDir, 'hermes-home'), emit, nodeBinary = process.execPath, validateDecodedImage, deleteHistorySession, diagnostic, accountProvider = () => ({ status: 'unknown' }) }) {
+  constructor({ dataDir, managedHome = path.join(dataDir, 'hermes-home'), emit, nodeBinary = process.execPath, validateDecodedImage, deleteHistorySession, diagnostic, accountProvider = () => ({ status: 'unknown' }), capturePreviewSnapshot }) {
     this.dataDir = dataDir;
     this.managedHome = path.resolve(managedHome);
     this.deleteHistorySession = deleteHistorySession;
     this.chatImages = new ChatImages(dataDir, validateDecodedImage);
+    this.previewCaptureBridge = typeof capturePreviewSnapshot === 'function' ? createHermesPreviewBridge(capturePreviewSnapshot) : null;
     this.emit = emit;
     this.diagnostic = diagnostic;
     this.accountProvider = accountProvider;
@@ -2508,6 +2509,18 @@ class HermesRuntime {
       );
       snapshotBytes = Buffer.byteLength(JSON.stringify(workingSnapshot), 'utf8');
       safeRemoveFile(metricsFile);
+      let previewBridge = null;
+      if (
+        this.previewCaptureBridge && input.previewContext?.meta?.projectId === projectId &&
+        scope.kind !== 'mindmap' &&
+        !(scope.kind === 'project' && scope.threadId === 'note-assistant')
+      ) {
+        try {
+          previewBridge = await this.previewCaptureBridge.registerTurn(runId);
+        } catch {
+          previewBridge = null;
+        }
+      }
       await withContextLockAsync(file, () => {
         if (s.cancelled) throw new Error(tr('已停止生成，未应用修改', 'Generation stopped; no changes were applied'));
         safeRemoveFile(draftRecovery.footprintErrorFile(file));
@@ -2533,6 +2546,7 @@ class HermesRuntime {
           contextFocus: input.contextFocus,
           confirmedProjectAgreements: workingSnapshot.projectAgreements ?? [],
           ...(scope.kind === 'project' ? { requireProjectBrief: true, requirePageEvidence: true } : {}),
+          ...(previewBridge ? { previewBridge, previewContext: input.previewContext } : {}),
           metricsFile,
           operations: initialOperations,
           ...(recoveryMetadata ? { recovery: recoveryMetadata } : {}),
@@ -2924,6 +2938,7 @@ class HermesRuntime {
         }, 50);
       }
       safeRemoveFile(metricsFile);
+      try { this.previewCaptureBridge?.unregisterTurn(runId); } catch {}
       try { preview.close(); } catch {}
       try { s.stopContext?.(); } catch {}
       s.stopContext = undefined;
@@ -2982,6 +2997,7 @@ class HermesRuntime {
     const s = this.activeProjectRuns.get(key) || this.sessions.get(key);
     if (!s?.running) return;
     s.cancelled = true;
+    this.previewCaptureBridge?.unregisterTurn(s.runId);
     s.stopPreview?.();
     s.stopContext?.();
     const channelFile = path.join(this.recoveryChannelDir, draftRecovery.hash(s.sessionId) + '.json');
@@ -3770,6 +3786,7 @@ class HermesRuntime {
     this.questions.clear();
     this.lastSessionSetup.clear();
     this.unconsumedSessionSetup.clear();
+    this.previewCaptureBridge?.close();
     this.contextPool.close();
   }
 }

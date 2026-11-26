@@ -191,7 +191,7 @@ function findNearbySiblingLabel(target: ProtoNode, parent: ProtoNode | undefined
 // Inspect the actual saved document, including imports made before the AI workflow existed.
 // Table bodies can contain thousands of identical blank cells. Expand them only on request.
 export function inspectAxurePage(pageId: string, source: string, selectedPfId?: string, offset = 0, limit = 30) {
-  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 60) throw new Error(tr('offset 从 0 开始，limit 为 1 到 60 的整数', 'offset must be >= 0 and limit must be an integer between 1 and 60'));
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 80) throw new Error(tr('offset 从 0 开始，limit 为 1 到 80 的整数', 'offset must be >= 0 and limit must be an integer between 1 and 80'));
   const copy = /^rp-optimized-([0-9a-f]{32})$/.exec(pageId);
   const sourcePageId = copy ? 'rp-page-' + copy[1] : pageId;
   const doc = copy ? optimizedDoc(pageId,source) : importedDoc(sourcePageId, source);
@@ -287,6 +287,10 @@ export function retargetOptimizedNavigations(doc: ProtoDoc, sources: Record<stri
   if (!sourceId) return false;
   const targets = validOptimizedTargets(sources);
   targets.set(sourceId,currentCopyId);
+  return redirectAxureNavigations(doc, targets, explicitEvents);
+}
+
+export function redirectAxureNavigations(doc: ProtoDoc, targets: ReadonlyMap<string, string>, explicitEvents?: Set<string>) {
   let changed = false;
   const rewriteChain = (value: unknown) => {
     if (!isActionChain(value)) return;

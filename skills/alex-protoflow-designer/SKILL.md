@@ -32,6 +32,7 @@ Build and iterate interactive, data-driven business prototypes stored as `.pflow
 | Learn material & action schemas | `protoflow_get_implementation_guide` → `protoflow_get_contracts` |
 | Create or rebuild a full page | `protoflow_write_page` |
 | Losslessly refine part of a page | `protoflow_get_page_spec` (`includeInspection: true`, `selectedPfId`) → `protoflow_edit_page_block` (`append_children`, `replace_node`, `delete_node`) |
+| Inspect & reshape imported Axure RP / Figma pages | `protoflow_reshape_imported_page` (`inspect_project` → `inspect_page` → `reshape_axure_page` / `reshape_figma_page` / `bind_axure_table` / `optimize_axure_block`) |
 | Attach requirement sticky notes | `protoflow_manage_sticky_notes` (`upsert`, `delete`) |
 | Write PRD notes, Mermaid flows, agreements | `protoflow_manage_docs_and_flows` (`upsert_note`, `upsert_mindmap`, `upsert_agreement`, etc.) |
 | Final closed-loop verification | `protoflow_audit_project` |
@@ -63,4 +64,4 @@ Load the matching reference guide before starting complex workflows:
 - **End-to-end 0-to-1 prototype generation**: [references/full-project-workflow.md](references/full-project-workflow.md)
 - **Database ER modeling, keys & seed data**: [references/er-modeling-rules.md](references/er-modeling-rules.md)
 - **Desktop (`<Page>`) & Mobile (`<MobilePage>`) DSL patterns**: [references/desktop-and-mobile.md](references/desktop-and-mobile.md)
-- **Inspecting & reshaping imported Axure RP pages**: [references/axure-reshape.md](references/axure-reshape.md)
+- **Inspecting & reshaping imported Axure RP and Figma pages**: [references/axure-reshape.md](references/axure-reshape.md)

@@ -2,6 +2,7 @@ import { isEnLocale, tr } from '../i18n/runtime';
 import { inspectPage } from '../proto/ai/pageInspection';
 import { verifiedAxureSourceId } from '../proto/axure/task';
 import { verifiedFigmaSourceId } from '../proto/figma/task';
+import { inspectImportedSourcePage } from './importReshape';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 import { diagramRelations } from '../proto/database/relations';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
@@ -129,6 +130,23 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
         includeInspection: {
           type: 'boolean',
           description: 'Include static contract validation, warnings, and saved preview-row binding status from inspectPage (default: false).',
+        },
+        importView: {
+          type: 'string',
+          enum: ['axure', 'figma'],
+          description:
+            'Optional structured inspection view for imported Axure RP pages ("axure", returning StaticTable firstRow[].pfId, columnActions row consistency, nearbyLabel, dynamic panel states, and importNotes) or Figma frames ("figma", returning Auto Layout repeating groups, semantic blocks, and paginated layers).',
+        },
+        offset: {
+          type: 'integer',
+          minimum: 0,
+          description: '0-based widget/layer pagination offset when importView is "axure" or "figma" (default: 0).',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 80,
+          description: 'Max widgets/layers returned when importView is "axure" or "figma" (default: 30 for axure, 40 for figma, max: 80).',
         },
       },
       required: ['pageId'],
@@ -934,6 +952,26 @@ export function executeSpecTool(
           ? args.selectedPfId.trim()
           : undefined;
       const shouldInspect = args.includeInspection === true || requestedSelectedPfId !== undefined;
+      const requestedImportView =
+        args.importView === 'axure' || args.importView === 'figma' ? args.importView : undefined;
+      if (args.importView !== undefined && !requestedImportView) {
+        throw new Error(tr('importView 仅支持 "axure" 或 "figma"', 'importView must be "axure" or "figma"'));
+      }
+      if (!requestedImportView && (args.offset !== undefined || args.limit !== undefined)) {
+        throw new Error(
+          tr('分页参数 offset/limit 需配合 importView="axure" 或 "figma" 使用', 'Pagination parameters offset/limit require importView="axure" or "figma"'),
+        );
+      }
+      const importInspection = requestedImportView
+        ? inspectImportedSourcePage(
+            s,
+            pageId,
+            requestedImportView,
+            requestedSelectedPfId,
+            args.offset as number | undefined,
+            args.limit as number | undefined,
+          )
+        : undefined;
       let inspection: ReturnType<typeof inspectPage> | null | undefined;
       if (shouldInspect) {
         if (!source) {
@@ -987,6 +1025,7 @@ export function executeSpecTool(
         componentOutline: parsed?.doc ? buildComponentOutline(parsed.doc.root) : null,
         ...(includeSource ? { pageSourceTsx: source ?? null } : {}),
         ...(shouldInspect ? { inspection } : {}),
+        ...(importInspection ? { importInspection } : {}),
       };
     }
 

@@ -1,3 +1,4 @@
+import { projectPreviewContext } from '../mcp/capturePreview';
 import { compactRpReview, expandRpReview } from '../proto/axure/reviewSource';
 import { isEnLocale, tr } from '../i18n/runtime';
 import { checkRpTableExtension } from '../proto/axure/schema';
@@ -833,8 +834,9 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
       }
       runModelInvocations += 1;
       diagnosticContext = {...diagnosticContext,attempt:runModelInvocations-1,runId:undefined,checks:undefined,boundTableIds:undefined};
+      const payload = options?.snapshotPayload ?? captureProjectPayload();
       const execSnapshot = {
-        ...projectContext(requestedPage, options?.snapshotPayload),
+        ...projectContext(requestedPage, payload),
         ...(rpMigration && { axureMigrationScope: rpMigration.scope }),
         ...(figmaMigration && { figmaMigrationScope: figmaMigration.scope }),
         requirementSources,
@@ -937,6 +939,7 @@ async function turn(scope: HermesProjectConversation, prompt: string, phase: 'co
           targetPageId,
           contextFocus: focus,
           snapshot: execSnapshot,
+          previewContext: projectPreviewContext(payload),
           ...(phase === 'generating'
             ? {
                 recoveryRevisionVersion: 3 as const,

@@ -7,7 +7,7 @@ Connect AI Coding & Design Agents (**Codex**, **Google Antigravity**, **Claude D
 ## Modes
 
 * **Read-Only Spec Mode (`--mode readonly`, default)**: Exposes 6 read-only specification tools, 2 dev prompts, and 3 direct spec/DDL resources against a local `.pflow` file or a remote published share URL (`/p/<shareId>`).
-* **Read-Write Authoring Mode (`--mode readwrite`)**: Exposes all 6 spec tools + 11 contract-enforced authoring tools, 4 authoring prompts (`design-full-project`, `design-page`, `refine-page`, `design-database`), and `protoflow://authoring/playbook` against a local `.pflow` project or `--workspace <dir>`.
+* **Read-Write Authoring Mode (`--mode readwrite`)**: Exposes all 6 spec tools + 12 contract-enforced authoring tools, 5 authoring prompts (`design-full-project`, `design-page`, `refine-page`, `reshape-imported-pages`, `design-database`), and `protoflow://authoring/playbook` against a local `.pflow` project or `--workspace <dir>`.
 
 > Companion Agent Skill: install [skills/alex-protoflow-designer](../../skills/alex-protoflow-designer/SKILL.md) into your client's skills directory (or rely on the built-in MCP Prompts in Claude Desktop).
 
@@ -133,6 +133,7 @@ Or connect to an online share over `stdio`:
 | `protoflow_manage_table_rows` | Read, seed, replace, or clear coherent preview rows in `tableRows` |
 | `protoflow_write_page` | Create or overwrite a full desktop (`<Page>`) or mobile (`<MobilePage>`) page after strict contract & platform validation |
 | `protoflow_edit_page_block` | Losslessly append children, replace a node preserving `pfId`, or delete a node on an existing page |
+| `protoflow_reshape_imported_page` | Inspect Axure `.rp` / Figma imported pages and reshape them into responsive standard-material `rp-optimized-*` / `fig-optimized-*` copies while preserving source pages |
 | `protoflow_manage_sticky_notes` | Attach, update, or delete component-pinned requirement sticky notes |
 | `protoflow_manage_docs_and_flows` | Create/update/delete PRD notes (Markdown), Mermaid mindmaps/flowcharts, and durable project agreements |
 | `protoflow_capture_preview` (desktop bridge only) | Return a PNG of the page viewport or canvas and its revision. Pass `fullPage: true` to include content below the fold. |

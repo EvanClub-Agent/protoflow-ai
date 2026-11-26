@@ -15,7 +15,7 @@ Alex 桌面端负责本地原型设计、数据表建模与 AI 协同（工程�
 `deploy/compose.yml` 已内置 `postgres:18-alpine`、`api`（`ghcr.io/evanclub-agent/protoflow-ai-api:latest`）与 `web`（`ghcr.io/evanclub-agent/protoflow-ai-web:latest`），均支持 `linux/amd64` 与 `linux/arm64`：
 
 ```sh
-# 1. 准备环境变量（修改数据库密码与对外访问的 PUBLIC_ORIGIN；可选通过 PROTOFLOW_API_IMAGE / PROTOFLOW_WEB_IMAGE 锁定 :v0.0.11 版本）
+# 1. 准备环境变量（修改数据库密码与对外访问的 PUBLIC_ORIGIN；可选通过 PROTOFLOW_API_IMAGE / PROTOFLOW_WEB_IMAGE 锁定 :v0.1.0 版本）
 cp deploy/.env.example deploy/.env
 
 # 2. 直接拉取 GHCR 预编译镜像并后台启动全部容器（若本地修改了源码可追加 --build）

@@ -119,7 +119,7 @@ test('Authoring MCP: full 0-to-1 hybrid prototype lifecycle (ER, seed rows, PC+M
     assert.match(noProjErr, /protoflow_workspace/);
 
     const promptList = (await rpcCall(loader, 'prompts/list')) as { prompts: { name: string }[] };
-    assert.equal(promptList.prompts.length, 6);
+    assert.equal(promptList.prompts.length, 7);
     const promptRes = (await rpcCall(loader, 'prompts/get', {
       name: 'design-full-project',
       arguments: { requirements: 'CRM 客户与订单台账', projectMode: 'hybrid' },

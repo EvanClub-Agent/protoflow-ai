@@ -1,3 +1,4 @@
+import type { projectPreviewContext } from '../mcp/capturePreview';
 import type { HermesChatConversation, HermesProjectConversation, HermesTaskScope } from './hermesConversation';
 import { tr } from '../i18n/runtime';
 import type { DBTableSchema } from '../store/useProtoStore';
@@ -295,6 +296,7 @@ export interface HermesDesktopApi {
     clientRequestId?: string;
     rotateSession?: boolean;
     snapshot: unknown;
+    previewContext?: ReturnType<typeof projectPreviewContext>;
     continuation?: HermesExecutionContinuation;
     recoveryRevision?: string;
     recoveryRevisionVersion?: 2 | 3;

@@ -2,6 +2,23 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.1.0] - 2026-11-26
+
+### Added
+
+- **双端 MCP 架构同源收敛与能力对齐（v0.1.0 里程碑）**：
+  - **共享领域原语层**：建立双轨 MCP 架构规范（`docs/mcp-architecture-alignment.md`），抽离 `src/mcp/importReshape.ts` 与 `src/mcp/capturePreview.ts` 同源纯函数并编入 `material-contract.cjs`，使内置 Hermes（候选暂存 + 宿主确认）与外部双向 MCP（`expectedRevision` 乐观锁 + 桌面实时渲染与 `Undo/Redo`）共享同一套契约校验、血缘守卫与快照构造。
+  - **Axure RP 与 Figma 导入原稿检视与流式重塑开放至双向 MCP**：`protoflow_get_page_spec` 新增正交可选参数 `importView: "axure" | "figma"`（支持分页读取 `StaticTable` 表头 `pfId`、列动作一致性、邻近标签与 Figma Auto Layout 重复组，同时保持只读规格模式固定 6 个工具不变）；读写模式新增 `protoflow_reshape_imported_page` 工具与 `reshape-imported-pages` 提示词，完整支持范围盘点、表头逐列映射核验、无损生成 `rp-optimized-*` / `fig-optimized-*` 标准物料副本，并同步升级 `alex-protoflow-designer` 技能插件。
+  - **内置 Hermes 候选态离屏渲染截图自检（`protoflow_capture_preview`）**：Electron 主进程新增仅绑定 `127.0.0.1` 的受控预览桥接（`electron/hermes-preview.cjs`），在单轮未落盘阶段基于真实工程上下文（`projectPreviewContext`）与当前轮暂存的表结构、演示数据及 TSX 直接渲染离屏 PNG 截图（支持 `fullPage` 与 UI Stack 五态投影），并在任务取消或轮次结束时立即中断在途捕获。
+
+### Fixed & Hardened
+
+- **血缘覆写守卫、跨轮次兄弟副本跳转联动与严格 Schema 兼容**：
+  - **双向血缘校验与跨轮次互链**：`reshapeFigmaPage` 补齐 `@alex-figma-source` 血缘头核验，严禁覆盖无血缘手写同 ID 页面；双端通过 `siblingNavigationPatches` 在分步或跨轮次新建优化副本时自动将所选迁移范围内的既有兄弟副本跳转更新至新副本，并在内置 Hermes 中纳入待确认变更集与 `DependencyFootprint` 并发冲突检测。
+  - **严格客户端 JSON Schema 与 Retina 捕获基线加固**：外部 MCP `optimize_axure_block` 强制启用表头绑定门禁；`coverage` 联合契约改用 `anyOf` 并纳入 Ajv 编译预检回归；桌面双向冒烟测试按 CSS 逻辑像素比例换算长页面高度，完整兼容 macOS Retina 2x 物理像素截图。
+
+---
+
 ## [v0.0.11] - 2026-11-26
 
 ### Added

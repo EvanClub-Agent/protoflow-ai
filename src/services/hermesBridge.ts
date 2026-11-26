@@ -1,3 +1,4 @@
+import { projectPreviewContext } from '../mcp/capturePreview';
 import { pageNoteBriefing } from '../proto/notes';
 import { captureRuntimeError, type DiagnosticContext } from './runtimeDiagnostics';
 import { databaseRequirementSources } from './databaseRequirementSources';
@@ -111,7 +112,7 @@ export function buildStructuredPagePrompt(params: {
     : audit?.kind === "scan"
       ? "先调用 protoflow_get_project、protoflow_inspect_page、protoflow_get_page_tsx、protoflow_get_sticky_notes 核查真实证据，再调用一次 protoflow_run_closed_loop_audit 提交完整问题列表（无关联表时 targetTableId 填 \"\"；open 状态必须含修复选项）。本轮仅巡检，严禁修改页面源码、表或便签。"
       : [
-          "先调用 protoflow_get_project 读取本轮目录，已有页面用 protoflow_inspect_page 与 protoflow_get_page_tsx 获取当前结构，按任务调用 protoflow_get_implementation_guide 与 protoflow_get_contracts 读取组件契约，修改后再次 protoflow_inspect_page 核对暂存结果。",
+          "先调用 protoflow_get_project 读取本轮目录，已有页面用 protoflow_inspect_page 与 protoflow_get_page_tsx 获取当前结构，按任务调用 protoflow_get_implementation_guide 与 protoflow_get_contracts 读取组件契约，修改后再次 protoflow_inspect_page 核对暂存结果（涉及复杂视觉排版、移动端视口或 UI 五态效果时，可按需调用 protoflow_capture_preview 截取暂存候选页面真实渲染图自检）。",
           selectedPfId
             ? "范围约束：仅修改选中组件及其子树，保留其他已有组件的属性和顺序；若选中组件的动作需要新弹层，桌面页在 Page 根部加入 Modal/Drawer，移动页在 MobilePage 根部加入 MDialog/MBottomSheet，其他范围不得新增组件。"
             : "",
@@ -210,7 +211,7 @@ export async function runProjectAi(
   });
   const base = captureProjectPayload(),
     revision = projectRevision(),
-    snapshot = projectContext(options.requestedPage);
+    snapshot = projectContext(options.requestedPage, base);
   const requirementSources = databaseRequirementSources(base.stateSnapshot, useAiChatStore.getState().byConversation[key] ?? [], pageId);
   useHermesStore.setState((s) => ({
     error: null,
@@ -326,6 +327,7 @@ export async function runProjectAi(
       pageId,
       prompt: request,
       snapshot: {...snapshot, requirementSources},
+      previewContext: projectPreviewContext(base),
       readOnly: options.readOnly,
       ...(options.images?.length ? { images: options.images } : {}),
     });

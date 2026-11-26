@@ -168,7 +168,9 @@ if (!process.versions.electron) {
     const stage = await capture(config, { pageId: 'mobile', scope: 'canvas' });
     const longPhone = await capture(config, { pageId: 'mobile', scope: 'viewport', fullPage: true });
     assert.equal(longPhone.width, phone.width);
-    assert.ok(longPhone.height > phone.height && longPhone.height <= 2160);
+    // viewport PNGs use backing pixels; the iPhone fixture is 393 CSS pixels wide.
+    const pixelsPerCssPixel = phone.width / 393;
+    assert.ok(longPhone.height > phone.height && longPhone.height / pixelsPerCssPixel <= 2160);
     assert.equal(longPhone.truncated, true);
     assert.equal(phone.pageId, 'mobile');
     assert.equal(phone.platform, 'mobile');

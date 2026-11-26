@@ -678,6 +678,16 @@ function getHermesRuntime() {
       const { width, height } = image.getSize();
       if (width * height > 40_000_000) throw new Error(tr('图片分辨率过大，请缩小到 4000 万像素以内', 'Image resolution is too large. Please resize below 40 megapixels.'));
     },
+    capturePreviewSnapshot: async (snapshot, signal) => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+        throw new Error(tr('桌面主窗口未就绪，无法截取页面预览', 'Desktop editor window is unavailable for preview capture'));
+      }
+      const frameUrl = mainWindow.webContents.mainFrame?.url;
+      if (!frameUrl) {
+        throw new Error(tr('桌面编辑器尚未加载完成', 'Desktop editor is not loaded yet'));
+      }
+      return require('./capture-preview.cjs').capturePreview(new URL('capture.html', frameUrl).href, snapshot, signal);
+    },
   });
   return hermesRuntime;
 }

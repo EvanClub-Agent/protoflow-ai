@@ -1,4 +1,5 @@
 import { parsePageSource } from '../dsl/parser';
+import { readPageHeader } from '../dsl/header';
 import { printPageSource } from '../dsl/printer';
 import { findNode, walk } from '../dsl/tree';
 import { validateMaterialSource } from '../registry/materialContract';
@@ -159,11 +160,12 @@ export function inspectFigmaProject(
     const doc = parseFigmaSourceDoc(page.pageId, snapshot.pageSources[page.pageId]);
     const canvas = doc.root.children.find((c) => isNode(c) && c.type === 'FigmaCanvas') as ProtoNode | undefined;
     const copyId = figmaCopyId(page.pageId);
-    const hasCopy = Object.hasOwn(snapshot.pageSources, copyId);
+    const hasCopy = Object.hasOwn(snapshot.pageSources, copyId) &&
+      verifiedFigmaSourceId(copyId, readPageHeader(snapshot.pageSources[copyId])) === page.pageId;
     let bindings: { pfId: string; material: string; tableId: string }[] | undefined;
     if (hasCopy) {
       const copyDoc = parsePageSource(snapshot.pageSources[copyId]).doc;
-      if (copyDoc && verifiedFigmaSourceId(copyId, copyDoc.header) === page.pageId) {
+      if (copyDoc) {
         const list: { pfId: string; material: string; tableId: string }[] = [];
         walk(copyDoc.root, (node) => {
           if (typeof node.props.table === 'string' && list.length < 16) {
@@ -250,16 +252,31 @@ export function retargetFigmaOptimizedPageSource(
   pageSources: Record<string, string>,
   selfCopyId?: string,
 ): string | undefined {
-  const parsed = parsePageSource(source);
-  if (!parsed.doc) return undefined;
+  const parsed = parsePageSource(source, { strict: true });
+  if (!parsed.doc || parsed.issues.length || parsed.normalized) return undefined;
+  const targets = new Map<string, string>();
+  if (selfCopyId) {
+    const sourceId = verifiedFigmaSourceId(selfCopyId, parsed.doc.header);
+    if (!sourceId) return undefined;
+    targets.set(sourceId, selfCopyId);
+  }
+  for (const [copyId, copySource] of Object.entries(pageSources)) {
+    if (!figmaOptimizedPagePattern.test(copyId)) continue;
+    const sourceId = verifiedFigmaSourceId(copyId, readPageHeader(copySource));
+    if (sourceId) targets.set(sourceId, copyId);
+  }
+  return redirectFigmaNavigations(parsed.doc, targets) ? printPageSource(parsed.doc) : undefined;
+}
+
+export function redirectFigmaNavigations(doc: ProtoDoc, targets: ReadonlyMap<string, string>) {
   let changed = false;
-  walk(parsed.doc.root, (node) => {
+  walk(doc.root, (node) => {
     const rewriteChain = (val: unknown) => {
       if (!isActionChain(val)) return;
       for (const call of val.calls) {
-        if (call.name === 'navigate' && typeof call.args[0] === 'string' && figmaSourcePagePattern.test(call.args[0])) {
-          const candidateCopy = figmaCopyId(call.args[0]);
-          if (candidateCopy === selfCopyId || Object.hasOwn(pageSources, candidateCopy)) {
+        if (call.name === 'navigate' && typeof call.args[0] === 'string') {
+          const candidateCopy = targets.get(call.args[0]);
+          if (candidateCopy) {
             call.args[0] = candidateCopy;
             changed = true;
           }
@@ -275,19 +292,17 @@ export function retargetFigmaOptimizedPageSource(
           }
           if (item && typeof item === 'object' && 'page' in item && typeof (item as Record<string, unknown>).page === 'string') {
             const pId = (item as Record<string, unknown>).page as string;
-            if (figmaSourcePagePattern.test(pId)) {
-              const candidateCopy = figmaCopyId(pId);
-              if (candidateCopy === selfCopyId || Object.hasOwn(pageSources, candidateCopy)) {
-                (item as Record<string, unknown>).page = candidateCopy;
-                changed = true;
-              }
+            const candidateCopy = targets.get(pId);
+            if (candidateCopy) {
+              (item as Record<string, unknown>).page = candidateCopy;
+              changed = true;
             }
           }
         }
       }
     }
   });
-  return changed ? printPageSource(parsed.doc) : undefined;
+  return changed;
 }
 
 export function reshapeFigmaPage(
@@ -400,6 +415,11 @@ export function reshapeFigmaPage(
 
   const copyId = figmaCopyId(pageId);
   const existingCopy = snapshot.designerPages.find((p) => p.pageId === copyId);
+  const hasCopySource = Object.hasOwn(snapshot.pageSources, copyId);
+  if ((existingCopy || hasCopySource) && (!existingCopy || !hasCopySource ||
+      verifiedFigmaSourceId(copyId, readPageHeader(snapshot.pageSources[copyId])) !== pageId)) {
+    throw new Error(`优化版页面标识已占用或来源不一致：${copyId}`);
+  }
   const cleanHeader = parsedTarget.doc.header.filter((line) => !line.startsWith('// @alex-figma-source '));
   const stampedDoc: ProtoDoc = {
     header: [`// @alex-figma-source ${pageId}`, ...cleanHeader],
