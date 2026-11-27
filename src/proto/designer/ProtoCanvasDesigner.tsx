@@ -38,6 +38,10 @@ import {
   resolveDesktopAppearance,
   type DesktopAppearance,
 } from '../theme/designTokens';
+import {
+  isPageAppearancePinned,
+  unlockProjectAppearanceToFollowTheme,
+} from '../theme/unlockCanvasAppearance';
 import { useHermesStore } from '../../store/useHermesStore';
 import { runCanvasAiWithHermes, runScanStickiesAndAstToDbWithHermes, runProjectAi, reportAiError } from '../../services/hermesBridge';
 import {
@@ -179,19 +183,31 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
     setMobilePreviewAppearance(null);
     setDesktopPreviewAppearance(null);
   }, [workspaceTheme, designTokens?.colorMode]);
+  const baseDesktopCanvasMode = effectiveCanvasColorMode(designTokens, workspaceTheme);
   const effectiveMobileAppearance = resolveMobileAppearance(
     doc.root.props.appearance,
-    workspaceTheme,
+    baseDesktopCanvasMode,
     mobilePreviewAppearance,
     doc.root.props.surfaceBg,
   );
-  const baseDesktopCanvasMode = effectiveCanvasColorMode(designTokens, workspaceTheme);
   const effectiveDesktopAppearance = resolveDesktopAppearance(
     doc.root.props.appearance,
     baseDesktopCanvasMode,
     desktopPreviewAppearance,
     doc.root.props.surfaceBg,
   );
+  const hasTokenThemeLock = Boolean(designTokens?.colorMode && designTokens.colorMode !== 'auto');
+  const hasPageThemeLock = isPageAppearancePinned(doc.root.props.appearance, doc.root.props.surfaceBg);
+  const isCanvasAppearancePinned =
+    hasTokenThemeLock ||
+    hasPageThemeLock ||
+    desktopPreviewAppearance !== null ||
+    mobilePreviewAppearance !== null;
+  const handleUnlockFollowTheme = () => {
+    setMobilePreviewAppearance(null);
+    setDesktopPreviewAppearance(null);
+    unlockProjectAppearanceToFollowTheme();
+  };
   const [mobileFramed, setMobileFramed] = useState(true);
   const [mobileExpandHeight, setMobileExpandHeight] = useState(false);
 
@@ -1184,6 +1200,21 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             </>
                           )}
                         </button>
+                        {!isWebPlayerMode && isCanvasAppearancePinned && (
+                          <button
+                            type="button"
+                            data-testid="unlock-follow-theme"
+                            onClick={handleUnlockFollowTheme}
+                            title={tr(
+                              '当前画布已锁定固定明暗，点击恢复跟随外框主题切换（同步清理工程内锁定的 appearance / colorMode）',
+                              'Canvas light/dark is pinned — click to follow outer workbench theme across pages',
+                            )}
+                            className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10.5px] font-medium text-amber-800 inline-flex items-center gap-1 cursor-pointer transition"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>{tr('跟随外框主题', 'Follow Theme')}</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1242,6 +1273,21 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                             </>
                           )}
                         </button>
+                        {!isWebPlayerMode && isCanvasAppearancePinned && (
+                          <button
+                            type="button"
+                            data-testid="unlock-follow-theme"
+                            onClick={handleUnlockFollowTheme}
+                            title={tr(
+                              '当前画布已锁定固定明暗，点击恢复跟随外框主题切换（同步清理工程内锁定的 appearance / colorMode）',
+                              'Canvas light/dark is pinned — click to follow outer workbench theme across pages',
+                            )}
+                            className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10.5px] font-medium text-amber-800 inline-flex items-center gap-1 cursor-pointer transition"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>{tr('跟随外框主题', 'Follow Theme')}</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1545,7 +1591,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     tokens={designTokens}
                     hostTheme={workspaceTheme}
                     pageAppearance={doc.root.props.appearance}
-                    previewAppearance={desktopPreviewAppearance}
+                    previewAppearance={isMobilePage ? mobilePreviewAppearance : desktopPreviewAppearance}
                     surfaceBg={doc.root.props.surfaceBg}
                     accent={doc.root.props.accent}
                     motion={doc.root.props.motion}
@@ -1590,7 +1636,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     tokens={designTokens}
                     hostTheme={workspaceTheme}
                     pageAppearance={doc.root.props.appearance}
-                    previewAppearance={desktopPreviewAppearance}
+                    previewAppearance={isMobilePage ? mobilePreviewAppearance : desktopPreviewAppearance}
                     surfaceBg={doc.root.props.surfaceBg}
                     accent={doc.root.props.accent}
                     motion={doc.root.props.motion}
@@ -1782,7 +1828,7 @@ export const ProtoCanvasDesigner: React.FC<ProtoCanvasDesignerProps> = ({
                     tokens={designTokens}
                     hostTheme={workspaceTheme}
                     pageAppearance={doc.root.props.appearance}
-                    previewAppearance={desktopPreviewAppearance}
+                    previewAppearance={isMobilePage ? mobilePreviewAppearance : desktopPreviewAppearance}
                     surfaceBg={doc.root.props.surfaceBg}
                     accent={doc.root.props.accent}
                     motion={doc.root.props.motion}

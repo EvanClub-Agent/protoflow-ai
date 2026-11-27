@@ -11,6 +11,7 @@ import { NodeView } from '../src/proto/renderer/NodeView';
 import { DesktopOverlayStack } from '../src/proto/registry/DesktopOverlayStack';
 import { ProtoCanvasThemeScope } from '../src/proto/theme/ProtoCanvasThemeScope';
 import { resolveDesktopAppearance } from '../src/proto/theme/designTokens';
+import { countPinnedAppearancePages, unlockProjectAppearanceToFollowTheme } from '../src/proto/theme/unlockCanvasAppearance';
 import { COMPONENT_MAP } from '../src/proto/registry/meta';
 import { localizeComponentMeta } from '../src/proto/registry/localizeMeta';
 import { useProtoStore, type DBTableSchema } from '../src/store/useProtoStore';
@@ -1051,4 +1052,61 @@ test('Desktop review regressions: [P1 #3, P2 #2, P2 #3] PublishedViewer viewport
     globalThis.window = originalWindow;
     globalThis.fetch = originalFetch;
   }
+  }));
+
+test('unlockProjectAppearanceToFollowTheme strips hardcoded light/dark locks on standard pages while preserving oled_carbon wallboards', () =>
+  withDom(async () => {
+    useProtoStore.getState().setDesignTokens({
+      preset: 'enterprise_compact',
+      density: 'spacious',
+      colorMode: 'light',
+    });
+    usePageStore.setState({
+      pageSources: {
+        p_regular: wrapDesktop('<Page pfId="p1" title="常规采购申请" appearance="light" surfaceBg="mist" accent="obsidian"><Card pfId="c1" title="主表" /></Page>'),
+        p_mobile: 'export default function Page() {\n  return (<MobilePage pfId="mp1" title="移动审批" appearance="light" surfaceBg="mist" accent="obsidian"><MTopBar pfId="mt1" title="审批" /></MobilePage>);\n}\n',
+        p_wallboard: wrapDesktop('<Page pfId="p2" title="指挥大屏" appearance="dark" surfaceBg="oled_carbon" accent="emerald"><Card pfId="c2" title="态势" /></Page>'),
+      },
+    });
+
+    assert.equal(countPinnedAppearancePages(usePageStore.getState().pageSources), 2);
+
+    const res = unlockProjectAppearanceToFollowTheme();
+    assert.equal(res.clearedTokenColorMode, true);
+    assert.deepEqual(res.updatedPageIds.sort(), ['p_mobile', 'p_regular']);
+    assert.equal(useProtoStore.getState().designTokens?.colorMode, undefined);
+    assert.equal(useProtoStore.getState().designTokens?.preset, 'enterprise_compact');
+    assert.equal(countPinnedAppearancePages(usePageStore.getState().pageSources), 0);
+
+    const regularDoc = parsePageSource(usePageStore.getState().pageSources.p_regular).doc!;
+    assert.equal(regularDoc.root.props.appearance, undefined);
+    assert.equal(regularDoc.root.props.surfaceBg, 'mist');
+    assert.equal(regularDoc.root.props.accent, 'obsidian');
+
+    // Dedicated OLED wallboards keep their explicit dark surface intact
+    const wallboardDoc = parsePageSource(usePageStore.getState().pageSources.p_wallboard).doc!;
+    assert.equal(wallboardDoc.root.props.appearance, 'dark');
+    assert.equal(wallboardDoc.root.props.surfaceBg, 'oled_carbon');
+
+    // Now toggling document.documentElement.dataset.theme switches standard pages cleanly between light and dark
+    document.documentElement.dataset.theme = 'dark';
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          ProtoCanvasThemeScope,
+          {
+            tokens: useProtoStore.getState().designTokens,
+            pageAppearance: regularDoc.root.props.appearance,
+            surfaceBg: regularDoc.root.props.surfaceBg,
+            accent: regularDoc.root.props.accent,
+          },
+          React.createElement('span', { 'data-probe': 'ok' }),
+        ),
+      );
+    });
+    const scopeEl = renderer.root.find((el) => el.type === 'div' && el.props['data-pf-theme-scope'] === '1');
+    assert.equal(scopeEl.props['data-pf-mode'], 'dark');
+    act(() => renderer.unmount());
+    document.documentElement.dataset.theme = 'light';
   }));

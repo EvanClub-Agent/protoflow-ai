@@ -15,7 +15,7 @@ import { useProjectSaveStore } from './projectAutosave';
 import { applyLiveProjectEdit, captureProjectPayload, desktopFileSession, desktopProjectRevision, flushProjectChanges } from './projectStorage';
 import { canUndoProjectChange, recordProjectUndo } from './projectUndo';
 
-export type SkillClient = 'codex' | 'antigravity' | 'claude';
+export type SkillClient = 'codex' | 'antigravity' | 'claude' | 'workbuddy';
 type ProjectTarget = { projectId: string; storageDir: string; fileName: string };
 type Session = ProjectTarget & { sessionId: string; opened: string };
 type LiveRequest = { sessionId: string; id: string; body: string; deadline: number };
@@ -26,6 +26,7 @@ interface LiveApi {
   onRequest(listener: (request: LiveRequest) => void): () => void;
   reply(result: { sessionId: string; id: string; body?: string | null; failed?: boolean }): void;
   installPlugin(sessionId: string, options?: { forceRepair?: boolean }): Promise<string>;
+  installWorkBuddy?(sessionId: string, options?: { forceRepair?: boolean }): Promise<string>;
   exportExtension(sessionId: string): Promise<string | null>;
   installSkill(client: SkillClient, options?: { forceRepair?: boolean }): Promise<string>;
 }
@@ -98,9 +99,18 @@ function projectOpen(target: Session) {
     current.storageDir === target.storageDir && current.opened === target.opened);
 }
 
-export function runClientIntegration(action: 'installPlugin' | 'exportExtension', options?: { forceRepair?: boolean }) {
+export function runClientIntegration(
+  action: 'installPlugin' | 'installWorkBuddy' | 'exportExtension',
+  options?: { forceRepair?: boolean },
+) {
   const api = desktopAuthoringApi();
   if (!api || !session || !projectOpen(session)) throw new Error(tr('请先开启双向设计', 'Enable bidirectional design first'));
+  if (action === 'installWorkBuddy') {
+    if (typeof api.installWorkBuddy !== 'function') {
+      throw new Error(tr('请重启一次 Alex 桌面端以启用最新 WorkBuddy 一键接入组件', 'Restart Alex Desktop once to activate the WorkBuddy integration handler'));
+    }
+    return api.installWorkBuddy(session.sessionId, options);
+  }
   return action === 'installPlugin' ? api.installPlugin(session.sessionId, options) : api.exportExtension(session.sessionId);
 }
 

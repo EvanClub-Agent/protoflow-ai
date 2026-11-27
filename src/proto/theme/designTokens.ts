@@ -71,7 +71,7 @@ export function resolveDesktopAppearance(
   if (previewOverride === 'light' || previewOverride === 'dark') return previewOverride;
   if (rawAppearance === 'dark') return 'dark';
   if (rawAppearance === 'light') return 'light';
-  if (rawSurfaceBg === 'oled_carbon') return 'dark';
+  if (rawSurfaceBg === 'oled_carbon' || rawSurfaceBg === 'ocean_glow') return 'dark';
   return baseCanvasMode === 'dark' ? 'dark' : 'light';
 }
 

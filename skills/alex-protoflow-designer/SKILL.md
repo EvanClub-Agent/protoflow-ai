@@ -2,7 +2,7 @@
 name: alex-protoflow-designer
 description: Create, inspect, refine, model ER databases, seed preview data, write PRD notes/Mermaid flows, and audit interactive Alex (ProtoFlow AI) `.pflow` business prototypes using the `alex` read-write MCP domain tools. Trigger whenever the user asks to generate a prototype project, create or adjust desktop/mobile pages, design or modify database tables/foreign keys, add sticky-note specs, or audit a `.pflow` prototype.
 metadata:
-  serverVersion: 0.1.3
+  serverVersion: 0.1.4
   contractDigest: sha256:d450c6a360e944f6
 ---
 
@@ -44,8 +44,8 @@ Never memorize component props from memory — contracts evolve across Alex vers
 1. Call `protoflow_workspace(action="guide")` (omit `scenarioIds` first to list catalog, then pass e.g. `["workspace", "list", "form", "workflow"]` or `["mobile"]`).
 2. Call `protoflow_workspace(action="contracts")` (omit `componentNames` first to list catalog grouped into `desktop`, `mobile`, `universal`, plus `actions`).
 3. Call `protoflow_workspace(action="contracts", componentNames=[...])` for the exact components you plan to emit; read `valueSchema`, `events`, `parents`, `childTypes`, and `examples`.
-4. **Lock One Cohesive Visual System Across the Entire Project (Never Build a Multi-Style Patchwork)**:
-   - Choose ONE unified `(appearance, surfaceBg, accent, motion)` identity for the whole `.pflow` product (e.g. `appearance="light" + surfaceBg="mist" + accent="obsidian"` for executive/fintech/enterprise ops, `sage_field + lime_forest` for green/ESG suites, or `oled_carbon` only when the whole suite or an explicitly requested wallboard is dark) and apply it consistently across **every** desktop `<Page>` and mobile `<MobilePage>`. When adding or refining pages in an existing project, read `protoflow_workspace(action="overview").visualBaseline.dominant` first and inherit it strictly.
+4. **Lock One Cohesive Visual System Across the Entire Project & Keep Theme Following Enabled (`appearance="auto"`)**:
+   - Choose ONE unified `(surfaceBg, accent, motion)` identity for the whole `.pflow` product with **`appearance="auto"`** (or omit `appearance`, and keep `designTokens.colorMode` as `"auto"` / omitted!) so every prototype page seamlessly follows the outer Alex workbench & viewer Light/Dark theme toggle: e.g. `appearance="auto" + surfaceBg="mist" + accent="obsidian"` for executive/fintech/enterprise ops, `appearance="auto" + surfaceBg="sage_field" + accent="lime_forest"` for green/ESG suites, or `oled_carbon` / `appearance="dark"` **only** when the user explicitly requests an always-dark wallboard/night terminal. Never hardcode `appearance="light"` or `colorMode="light"` unless the user explicitly asked to lock the prototype to light mode! When adding or refining pages in an existing project, read `protoflow_workspace(action="overview").visualBaseline.dominant` first and inherit its palette strictly.
    - Follow the **85 / 10 / 5 hierarchy**: **85%** unified canvas & clean Bento containers (`Card variant="bento"`), **10%** single dark inverted hero focal anchor per screen (`Statistic tone="inverted"` on desktop; `MHeroHeader mode="wallet" | "metric_hero"` on mobile), and **5%** strict semantic status colors (`emerald` = healthy/on-target, `amber` = warning/replenish, `rose` = danger/undo). Reserve `tone="dark_brief"` exclusively for `lime_forest`/`emerald`/`sage_field` systems; on `obsidian`/`mist`/`indigo`/`blue` systems use `AiCopilotCard tone="indigo"` and `MAiInsightCard tone="glow"`.
    - Optionally pair with `protoflow_workspace(action="update_project_meta", designTokens={ preset })` (`modern_minimal`, `collab_soft`, `enterprise_compact`, `classic_antd`).
 5. **Elevate UX Beyond Generic Table+Modal CRUD**:

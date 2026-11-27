@@ -23,8 +23,8 @@ export function useThemePreference() {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = resolved;
-    document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', resolved);
-  }, [resolved]);
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', mode === 'system' ? 'light dark' : resolved);
+  }, [mode, resolved]);
 
   useEffect(() => {
     const media = window.matchMedia(systemQuery);

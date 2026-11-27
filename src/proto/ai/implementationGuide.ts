@@ -87,7 +87,7 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     actions: [],
     implementation: [
       '先用标准布局组合；调整间距、分组、密度不需要自由组件。保留已有业务组件、绑定和 pfId。',
-      '【全工程同源视觉铁律（One Product, One Visual System）】：同一产品工程的所有 PC 与移动端页面必须共享同一套视觉母题（相同的 appearance、同系 surfaceBg、唯一品牌 accent 与一致的 motion）。若工程已有页面，先读取工程概览/简报中的 visualBaseline.dominant 并严格继承，严禁单页各自换底色、换主按钮色或无故切纯黑屏（除非用户明确要求独立夜间/大屏端）。',
+      '【全工程同源视觉铁律（One Product, One Visual System）】：同一产品工程的所有 PC 与移动端页面必须共享同一套视觉母题（同系 surfaceBg、唯一品牌 accent 与一致的 motion）；常规业务页（mist / pure / warm_paper / sage_field / aurora）默认保持 appearance="auto"（或省略 appearance）以及 designTokens.colorMode="auto"，以保证原型画布能够实时跟随编辑器外框与预览器的浅色/深色主题切换！仅在用户明确要求纯黑指挥大屏/独立夜间端时才显式指定 appearance="dark" / oled_carbon。若工程已有页面，先读取工程概览/简报中的 visualBaseline.dominant 并严格继承同系色板，严禁单页各自换底色或换主按钮色。',
       '遵循 85 / 10 / 5 视觉层级法则：85% 统一底布与纯净白底/深底 Bento 容器（Card variant="bento"）+ 10% 单页唯一反色压舱焦点（首列 Statistic tone="inverted" 或 MHeroHeader）+ 5% 严格状态语义色（emerald=健康达标、amber=关注预警、rose=高危撤销）。',
     ],
     acceptance: ['信息层级清楚；内容宽度适配；跨页切换时底布明度、主操作按钮色与卡片圆角质感完全统一，无样板间拼盘感。'],
@@ -112,7 +112,7 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     components: ['MobilePage', 'MTopBar', 'MTabBar', 'MFloatingBar', 'MPillTabs', 'MTab', 'MSearchPill', 'MSurface', 'MBentoGrid', 'MScrollRow', 'MBannerCarousel', 'MHeroHeader', 'MProgressList', 'MActivityList', 'MFeedList', 'MCardGrid', 'MRepeater', 'MKanban', 'MCalendar', 'MAiInsightCard', 'MTaskList', 'MListGroup', 'MListItem', 'MStatCard', 'MChatStream', 'MComposerBar', 'MForm', 'MField', 'MSheetPicker', 'MChipSelect', 'MMediaInput', 'MButton', 'MBottomDock', 'MBottomSheet', 'MDialog', 'Freeform'],
     actions: ['selectRow', 'openDrawer', 'openModal', 'closeOverlay', 'submitForm', 'resetForm', 'updateRow', 'deleteRow', 'navigate', 'switchTab', 'toast'],
     implementation: [
-      '移动端页面根组件必须使用 MobilePage，严禁混用 PC 管理端组件（如 Table、QueryForm、Card、Modal、Drawer）。全工程所有移动页（及同项目的 PC 页）必须锁定同一套 appearance、surfaceBg 与 accent（优先读取并继承 visualBaseline.dominant，如统一 appearance="light" surfaceBg="mist" accent="obsidian"），严禁在不同 Tab 页面间切换底色或品牌主色。',
+      '移动端页面根组件必须使用 MobilePage，严禁混用 PC 管理端组件（如 Table、QueryForm、Card、Modal、Drawer）。全工程所有移动页（及同项目的 PC 页）必须锁定同一套 surfaceBg 与 accent，并默认保持 appearance="auto" 以便自动跟随外框明暗主题切换（优先读取并继承 visualBaseline.dominant，如统一 appearance="auto" surfaceBg="mist" accent="obsidian"），严禁在不同 Tab 页面间切换底色或品牌主色。',
       '首屏压舱与核心组件组合：每页顶部用统一的 <MHeroHeader mode="wallet" | "metric_hero"> 建立家族化深色压舱焦点，搭配 <MAiInsightCard>（obsidian/mist/gemini 冷调工程用 tone="glow"，仅 lime_forest/sage_field 绿系工程用 tone="dark_brief"）、<MProgressList variant="gauge" | "capsule">、<MActivityList>（支持正负金额小数降噪与左滑 rowActions）或 <MKanban>；底部可叠加 <MFloatingBar> 与带 avatarText 双岛布局的 <MTabBar>。',
       '移动端弹层优先使用 MBottomSheet（通过 openDrawer 打开）和 MDialog（通过 openModal 打开），所有筛选、规格选择、新增编辑表单（MForm + MField/MSheetPicker/MChipSelect/MMediaInput）统一放入 MBottomSheet 或独立移动表单页。',
       'MSearchPill.target 和 MPillTabs.target 可关联同一页面的 MFeedList、MTaskList、MActivityList 或 MProgressList 的 pfId 实现实时搜索与分类胶囊过滤。',

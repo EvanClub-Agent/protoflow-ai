@@ -2,6 +2,19 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.1.4] - 2026-11-27
+
+### Added & Improved
+
+- **腾讯云 WorkBuddy 一键免配接入（零 Node 环境门槛 · 面向国内产品经理）**：
+  - 在「MCP → 双向设计」首位新增 **WorkBuddy 一键接入**卡片与强制修复能力：直接复用 Alex 内置运行底座（`ELECTRON_RUN_AS_NODE=1`）挂载托管服务端，用户电脑无需安装 Node.js / npm 或手改 JSON。
+  - 原子无损合并 `~/.workbuddy/mcp.json`（同时自动兼容 `~/.workbuddy-ai` 与同源 `~/.codebuddy` 目录），完整保留用户已有的腾讯文档、企业微信、飞书、TAPD 等连接器配置，并同步安装 `alex-protoflow-designer` 技能包；后续切换 `.pflow` 工程或升级客户端自动后台同步。
+- **原型画布自适应外框深浅主题与一键解锁（Adaptive Canvas Theme Sync）**：
+  - 修复 AI 技能与内置提示词默认写死 `appearance="light"` / `colorMode="light"` 导致画布无法跟随外框明暗切换的问题，统一规范常规色板默认采用 `appearance="auto"`。
+  - 在设计器顶部工具栏与「画布主题令牌」弹窗新增显式锁定感知与**「跟随外框主题」**一键解锁能力（自动清理常规页面硬编码明暗锁并保留 `oled_carbon` / `ocean_glow` 纯黑大屏页），同时对齐 PC 与移动端视口对 `designTokens.colorMode` 及 `<meta name="color-scheme">` 的同步。
+
+---
+
 ## [v0.1.3] - 2026-11-27
 
 ### Added & Improved

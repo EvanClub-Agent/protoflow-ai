@@ -10,7 +10,7 @@ Use this workflow when asked to generate an entire prototype project (sitemap, E
    - `projectName`
    - `projectMode`: `'desktop'`, `'mobile'`, or `'hybrid'` (pick `'hybrid'` if the system has both admin/backoffice and mobile/mini-program screens)
    - `templateId`: `'blank_project'` unless the user requested a starter template
-   - `designTokens`: Optional `{ preset: 'modern_minimal' | 'collab_soft' | 'enterprise_compact' | 'classic_antd', primaryColor?, radius?, density?, surfaceVariant?, colorMode? }` matching the customer's industry aesthetic (can also be updated anytime via `action="update_project_meta"`).
+   - `designTokens`: Optional `{ preset: 'modern_minimal' | 'collab_soft' | 'enterprise_compact' | 'classic_antd', primaryColor?, radius?, density?, surfaceVariant?, colorMode? }` matching the customer's industry aesthetic (can also be updated anytime via `action="update_project_meta"`). **Always leave `colorMode` omitted / `'auto'` by default** so the prototype follows the user's workbench/viewer theme toggle; only set `'light'` or `'dark'` when the user explicitly requests locking the canvas theme.
 3. If modifying an existing project, call `protoflow_workspace(action="overview")`, `protoflow_database(action="get_schema")`, and `protoflow_docs(action="get_docs")` first so existing pages, domains, and tables are preserved and reused.
 
 ## Step 2: Clarify Decisive Business Ambiguities
@@ -34,7 +34,7 @@ Always build the data backbone **before** writing pages:
 
 ## Step 4: Contract-Verified Pages, Sticky Notes & Flows
 
-1. **Establish or inherit one project-wide visual identity**: Before writing the first page, lock a single `(appearance, surfaceBg, accent, motion)` tuple for the entire project (if modifying an existing project, inherit `visualBaseline.dominant` from `protoflow_workspace(action="overview")`). Never switch brand `accent`, base `surfaceBg`, or light/dark `appearance` from page to page unless the user explicitly asked for a separate night/wallboard terminal.
+1. **Establish or inherit one project-wide visual identity**: Before writing the first page, lock a single `(appearance, surfaceBg, accent, motion)` tuple for the entire project with **`appearance="auto"`** (default, so pages follow the outer workbench Light/Dark theme toggle; if modifying an existing project, inherit `visualBaseline.dominant` palette from `protoflow_workspace(action="overview")`). Never hardcode `appearance="light"` on standard surfaces, and never switch brand `accent` or base `surfaceBg` from page to page unless the user explicitly asked for a separate night/wallboard terminal.
 2. Call `protoflow_workspace(action="guide", scenarioIds=[...])` and `protoflow_workspace(action="contracts", componentNames=[...])` for the components needed.
 3. **Generate pages in dependency order**:
    - First: master data & upstream source pages (e.g. Customers, Suppliers, Catalog).

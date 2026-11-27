@@ -55,10 +55,10 @@ function getClientTargets(t: (zh: string, en: string) => string): readonly Clien
   return [
     {
       id: 'json_ide',
-      label: 'Cursor / Antigravity / Windsurf',
+      label: 'WorkBuddy / Cursor / Antigravity',
       shortHint: 'mcpServers JSON',
-      remoteHttpFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
-      stdioFileHint: '.cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
+      remoteHttpFileHint: '~/.workbuddy/mcp.json · .cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
+      stdioFileHint: '~/.workbuddy/mcp.json · .cursor/mcp.json · ~/.gemini/antigravity/mcp_config.json',
       languageLabel: 'JSON',
     },
     {

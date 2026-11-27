@@ -13,12 +13,18 @@ import {
   type DesignRadiusToken,
   type ProjectDesignTokens,
 } from '../theme/designTokens';
+import {
+  countPinnedAppearancePages,
+  unlockProjectAppearanceToFollowTheme,
+} from '../theme/unlockCanvasAppearance';
+import { usePageStore } from '../store/usePageStore';
 import { useI18n } from '../../i18n';
 
 export const DesignTokensPopover: React.FC = () => {
   const { tr, isEn } = useI18n();
   const designTokens = useProtoStore((s) => s.designTokens);
   const setDesignTokens = useProtoStore((s) => s.setDesignTokens);
+  const pageSources = usePageStore((s) => s.pageSources);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +41,7 @@ export const DesignTokensPopover: React.FC = () => {
 
   const resolved = resolveDesignTokens(designTokens);
   const customized = !isDefaultDesignTokens(designTokens);
+  const pinnedPageCount = open ? countPinnedAppearancePages(pageSources) : 0;
 
   const patchTokens = (patch: Partial<ProjectDesignTokens>) => {
     const next: ProjectDesignTokens = {
@@ -45,6 +52,12 @@ export const DesignTokensPopover: React.FC = () => {
       surfaceVariant: patch.surfaceVariant ?? designTokens?.surfaceVariant,
       colorMode: patch.colorMode ?? designTokens?.colorMode,
     };
+    if (patch.colorMode === 'auto') {
+      delete next.colorMode;
+      setDesignTokens(isDefaultDesignTokens(next) ? null : next);
+      unlockProjectAppearanceToFollowTheme();
+      return;
+    }
     setDesignTokens(isDefaultDesignTokens(next) ? null : next);
   };
 
@@ -197,12 +210,30 @@ export const DesignTokensPopover: React.FC = () => {
                 onChange={(e) => patchTokens({ colorMode: e.target.value as DesignColorMode })}
                 className="w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-800"
               >
-                <option value="auto">{tr('跟随系统', 'Auto')}</option>
+                <option value="auto">{tr('跟随外框主题', 'Follow Theme')}</option>
                 <option value="light">{tr('固定浅色', 'Light')}</option>
                 <option value="dark">{tr('固定深色', 'Dark')}</option>
               </select>
             </div>
           </div>
+
+          {pinnedPageCount > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2 flex items-center justify-between gap-2 text-[11px] text-amber-900">
+              <span className="min-w-0">
+                {tr(
+                  `有 ${pinnedPageCount} 个页面写死了固定明暗`,
+                  `${pinnedPageCount} page(s) pin explicit light/dark`,
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => unlockProjectAppearanceToFollowTheme()}
+                className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[10.5px] font-medium text-amber-900 hover:bg-amber-100 cursor-pointer"
+              >
+                {tr('改为跟随主题', 'Follow Theme')}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

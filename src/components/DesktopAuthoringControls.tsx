@@ -125,6 +125,53 @@ export function DesktopAuthoringControls() {
           </legend>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="rounded-lg border border-blue-200/90 bg-blue-50/35 p-3 flex flex-col justify-between gap-2.5">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-semibold text-slate-900">WorkBuddy</span>
+                  <span className="px-1.5 py-0.5 rounded bg-blue-100/90 border border-blue-200 text-[10px] font-semibold text-blue-800">
+                    {tr('国内产品经理推荐 · 免配环境', 'Recommended · Zero Node setup')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  {tr(
+                    '一键为腾讯 WorkBuddy 装好原型连接器与设计技能（自带运行底座，无需安装 Node）。首次接入后在 WorkBuddy「连接器」中启用 alex 即可直接发需求画原型。',
+                    'Configures Tencent WorkBuddy MCP connector and design skill in one click (no Node.js required). Enable "alex" once in WorkBuddy Connectors to co-design.'
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void run(async () => {
+                    const cfgPath = await runClientIntegration('installWorkBuddy');
+                    return tr(
+                      `WorkBuddy 已一键接入（配置已合并至 ${cfgPath}）！请打开 WorkBuddy 客户端，在左侧「连接器」中找到 alex 点击信任/启用（若已打开请刷新或重启一次），之后直接发文档或提需求即可画原型；后续换项目或升级软件均会自动同步。`,
+                      `WorkBuddy configured (${cfgPath})! Open WorkBuddy → Connectors and enable "alex" once (refresh/restart if already open). Future project switches and app upgrades sync automatically.`
+                    );
+                  })}
+                  className="min-h-7 flex-1 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>{tr('一键接入 WorkBuddy', 'Connect WorkBuddy')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void run(async () => {
+                    const cfgPath = await runClientIntegration('installWorkBuddy', { forceRepair: true });
+                    return tr(
+                      `已强制修复并重置 WorkBuddy 原型连接器与技能目录（${cfgPath}）。`,
+                      `Force-repaired WorkBuddy MCP connector and designer skill (${cfgPath}).`
+                    );
+                  })}
+                  title={tr('当 WorkBuddy 连接器配置或技能目录异常时一键重置修复（自动保留其他已有连接器）', 'Force-repair WorkBuddy connector & skill files while preserving your other connectors')}
+                  className="min-h-7 shrink-0 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                >
+                  {tr('修复', 'Repair')}
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 flex flex-col justify-between gap-2.5">
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-2">
@@ -150,7 +197,7 @@ export function DesktopAuthoringControls() {
                       'Antigravity plugin is ready! Chat directly to design — future project switches and app upgrades sync automatically in the background.'
                     );
                   })}
-                  className="min-h-7 flex-1 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                  className="min-h-7 flex-1 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
                 >
                   <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>{tr('安装 Antigravity 插件', 'Install Antigravity plugin')}</span>
@@ -172,9 +219,9 @@ export function DesktopAuthoringControls() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 flex flex-col justify-between gap-2.5">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
+            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-slate-900">Claude Desktop</span>
                   <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
                     {tr('扩展包双击即用', 'One-file installer')}
@@ -195,7 +242,7 @@ export function DesktopAuthoringControls() {
                     ? tr(`扩展包已保存到 ${path}，双击打开并在 Claude Desktop 中点击确认即可连接。`, `Saved extension to ${path}. Open it in Claude Desktop and confirm to connect.`)
                     : null;
                 })}
-                className="min-h-7 w-full rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                className="min-h-7 shrink-0 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 whitespace-nowrap"
               >
                 <Download className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
                 <span>{tr('导出 Claude Desktop 扩展', 'Export Claude Desktop extension')}</span>
@@ -206,14 +253,14 @@ export function DesktopAuthoringControls() {
           <details className="group rounded-lg border border-slate-200/80 bg-slate-50/50 px-3 py-2">
             <summary className="list-none flex items-center gap-1.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded">
               <ChevronRight className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-90 shrink-0" aria-hidden="true" />
-              <span>{tr('使用命令行 AI 工具？（为 Codex / Claude Code 安装原型设计技能）', 'Using CLI AI tools? (Install design skill for Codex / Claude Code)')}</span>
+              <span>{tr('使用命令行或其他智能体？（单独安装原型设计技能包）', 'Using CLI or other agents? (Install standalone design skill)')}</span>
             </summary>
             <div className="mt-2.5 pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
               <span className="text-[11px] text-slate-500">
-                {tr('让命令行 Agent 自动掌握 Alex 页面组件规范与建模流程：', 'Teach CLI agents Alex component rules and ER modeling workflows:')}
+                {tr('让智能体自动掌握 Alex 页面组件规范与建模流程：', 'Teach agents Alex component rules and ER modeling workflows:')}
               </span>
               <div className="flex flex-wrap gap-2">
-                {([['codex', 'Codex'], ['claude', 'Claude Code']] as const).map(([client, label]) => (
+                {([['workbuddy', 'WorkBuddy'], ['codex', 'Codex'], ['claude', 'Claude Code']] as const).map(([client, label]) => (
                   <button
                     key={client}
                     type="button"

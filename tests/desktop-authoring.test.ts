@@ -356,7 +356,7 @@ test('Desktop CLI isolates live and file modes; bundled skill installs are repea
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-skill-install-'));
   const source = path.resolve('skills/alex-protoflow-designer');
   try {
-    for (const client of ['codex', 'antigravity', 'claude']) {
+    for (const client of ['codex', 'antigravity', 'claude', 'workbuddy']) {
       const target = installDesignerSkill(client, home, source);
       assert.equal(installDesignerSkill(client, home, source), target);
       assert.deepEqual(fs.readdirSync(path.join(target, 'references')), fs.readdirSync(path.join(source, 'references')));
@@ -471,4 +471,90 @@ test('managed designer installs upgrade verified trees, migrate legacy bindings 
     assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version, '3.0.0');
     assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.alex.args.at(-1), path.join(dir, 'E.json'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('installWorkBuddy configures zero-Node MCP + Skill, preserves existing user connectors, backs up malformed JSON on repair, and auto-syncs across upgrades', () => {
+  const { installWorkBuddy } = require('../scripts/client-integrations.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-workbuddy-install-'));
+  const assets = path.join(dir, 'assets'), home = path.join(dir, 'pm-home');
+  const skill = path.join(assets, 'skills/alex-protoflow-designer');
+  try {
+    fs.cpSync(path.resolve('skills/alex-protoflow-designer'), skill, { recursive: true });
+    fs.mkdirSync(path.join(assets, 'electron/generated'), { recursive: true });
+    fs.copyFileSync('LICENSE', path.join(assets, 'LICENSE'));
+    const writeRelease = (version: string) => {
+      fs.writeFileSync(path.join(assets, 'package.json'), JSON.stringify({ version, license: 'Apache-2.0', author: { name: 'Alex' } }));
+      fs.writeFileSync(path.join(assets, 'electron/generated/spec-mcp-server.cjs'), '// wb-' + version);
+    };
+    writeRelease('1.0.0');
+
+    // Pre-populate existing WorkBuddy connectors (Tencent Docs & Feishu) + CodeBuddy shared home
+    fs.mkdirSync(path.join(home, '.workbuddy'), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, '.workbuddy/mcp.json'),
+      JSON.stringify({
+        enableAllProjectMcpServers: true,
+        mcpServers: {
+          'tencent-docs': { url: 'https://docs.qq.com/mcp' },
+          feishu: { command: 'npx', args: ['feishu-mcp'] },
+        },
+      }, null, 2),
+    );
+    fs.mkdirSync(path.join(home, '.codebuddy'), { recursive: true });
+
+    const conn1 = path.join(dir, 'live-1.json');
+    const conn2 = path.join(dir, 'live-2.json');
+    const cfgPath = installWorkBuddy(assets, home, { executable: process.execPath, connectionFile: conn1 });
+    assert.equal(cfgPath, path.join(home, '.workbuddy/mcp.json'));
+
+    const parsed1 = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    assert.equal(parsed1.enableAllProjectMcpServers, true);
+    assert.deepEqual(parsed1.mcpServers['tencent-docs'], { url: 'https://docs.qq.com/mcp' });
+    assert.deepEqual(parsed1.mcpServers.feishu, { command: 'npx', args: ['feishu-mcp'] });
+    assert.equal(parsed1.mcpServers.alex.command, process.execPath);
+    assert.deepEqual(parsed1.mcpServers.alex.env, { ELECTRON_RUN_AS_NODE: '1' });
+    assert.equal(parsed1.mcpServers.alex.args.at(-1), conn1);
+    assert.equal(
+      parsed1.mcpServers.alex.args[0],
+      path.join(home, '.workbuddy/plugins/alex-protoflow-designer/server/cli.cjs'),
+    );
+    assert.ok(fs.existsSync(path.join(home, '.workbuddy/skills/alex-protoflow-designer/SKILL.md')));
+    // Shared .codebuddy directory is also synced automatically when present
+    assert.ok(fs.existsSync(path.join(home, '.codebuddy/skills/alex-protoflow-designer/SKILL.md')));
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(home, '.codebuddy/.mcp.json'), 'utf8')).mcpServers.alex.args.at(-1),
+      conn1,
+    );
+
+    // Corrupted mcp.json fails safely without overwriting until forceRepair is requested
+    fs.writeFileSync(cfgPath, '{ invalid json');
+    assert.throws(
+      () => installWorkBuddy(assets, home, { executable: process.execPath, connectionFile: conn2 }),
+      /格式无法解析/,
+    );
+    assert.equal(fs.readFileSync(cfgPath, 'utf8'), '{ invalid json');
+
+    installWorkBuddy(assets, home, { executable: process.execPath, connectionFile: conn2 }, { forceRepair: true });
+    assert.equal(fs.readFileSync(cfgPath + '.bak', 'utf8'), '{ invalid json');
+    assert.equal(JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.alex.args.at(-1), conn2);
+
+    // Background sync upgrades WorkBuddy runtime, skill, and connection path seamlessly
+    writeRelease('2.5.0');
+    const conn3 = path.join(dir, 'live-3.json');
+    const synced = syncManagedIntegrations({
+      root: assets,
+      home,
+      executable: process.execPath,
+      connectionFile: conn3,
+      installWorkBuddy,
+    });
+    assert.deepEqual(synced, [cfgPath]);
+    assert.equal(JSON.parse(fs.readFileSync(cfgPath, 'utf8')).mcpServers.alex.args.at(-1), conn3);
+    assert.equal(
+      fs.readFileSync(path.join(home, '.workbuddy/plugins/alex-protoflow-designer/server/cli.cjs'), 'utf8'),
+      '// wb-2.5.0',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

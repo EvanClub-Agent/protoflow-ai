@@ -2,7 +2,7 @@
 
 Zero-dependency **Model Context Protocol (MCP)** server for **[Alex (ProtoFlow AI)](https://alex.xclubai.com/en/)** ([Official MCP Guide](https://alex.xclubai.com/mcp/) · [GitHub](https://github.com/EvanClub-Agent/protoflow-ai)).
 
-Connect AI Coding & Design Agents (**Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**) to an Alex business prototype — either in **read-only specification mode** (default, for generating production code) or **read-write authoring mode** (to create/edit `.pflow` prototypes, pages, ER schemas, seed rows, notes, and Mermaid flows).
+Connect AI Coding & Design Agents (**Tencent WorkBuddy**, **Codex**, **Google Antigravity**, **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**) to an Alex business prototype — either in **read-only specification mode** (default, for generating production code) or **read-write authoring mode** (to create/edit `.pflow` prototypes, pages, ER schemas, seed rows, notes, and Mermaid flows).
 
 ## Modes
 

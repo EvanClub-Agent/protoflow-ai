@@ -126,6 +126,7 @@ const skillRoots = new Map([
   ['codex', ['.agents', 'skills']],
   ['claude', ['.claude', 'skills']],
   ['antigravity', ['.gemini', 'config', 'skills']],
+  ['workbuddy', ['.workbuddy', 'skills']],
 ]);
 
 function installDesignerSkill(client, home, source, codexHome, options = {}) {
@@ -137,7 +138,7 @@ function installDesignerSkill(client, home, source, codexHome, options = {}) {
   return installDesignerFiles(path.join(root, 'alex-protoflow-designer'), 'skill', skillFiles(source), undefined, options);
 }
 
-function syncManagedIntegrations({ root, home, executable, connectionFile, codexHome, installPlugin }) {
+function syncManagedIntegrations({ root, home, executable, connectionFile, codexHome, installPlugin, installWorkBuddy }) {
   const synced = [];
   if (typeof installPlugin === 'function' && connectionFile && executable) {
     const pluginDir = path.join(home, '.gemini', 'config', 'plugins', 'alex-protoflow-designer');
@@ -150,9 +151,28 @@ function syncManagedIntegrations({ root, home, executable, connectionFile, codex
       }
     }
   }
+  if (typeof installWorkBuddy === 'function' && connectionFile && executable) {
+    const wbPluginDir = path.join(home, '.workbuddy', 'plugins', 'alex-protoflow-designer');
+    const wbAltPluginDir = path.join(home, '.workbuddy-ai', 'plugins', 'alex-protoflow-designer');
+    if (fs.existsSync(wbPluginDir) || fs.existsSync(wbAltPluginDir)) {
+      try {
+        const cfg = installWorkBuddy(root, home, { executable, connectionFile });
+        synced.push(cfg);
+      } catch {
+        // Leave customized or broken WorkBuddy mcp.json untouched during silent sync.
+      }
+    }
+  }
   const skillSource = path.join(root, 'skills', 'alex-protoflow-designer');
   if (fs.existsSync(skillSource)) {
     for (const [client, parts] of skillRoots.entries()) {
+      if (client === 'workbuddy' && (
+        fs.existsSync(path.join(home, '.workbuddy', 'plugins', 'alex-protoflow-designer')) ||
+        fs.existsSync(path.join(home, '.workbuddy-ai', 'plugins', 'alex-protoflow-designer'))
+      )) {
+        // Already synced alongside WorkBuddy runtime & mcp.json above.
+        continue;
+      }
       try {
         const base = client === 'codex' && codexHome && path.isAbsolute(codexHome)
           ? path.join(codexHome, 'skills')

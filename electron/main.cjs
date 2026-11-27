@@ -461,7 +461,7 @@ handleIpc('pflow:mcp-live-open', async (event, input) => {
   );
   const opened = await authoringBridge.open(input);
   try {
-    const { installPlugin } = require('./generated/client-integrations.cjs');
+    const { installPlugin, installWorkBuddy } = require('./generated/client-integrations.cjs');
     desktopAuthoring.syncManagedIntegrations({
       root: path.resolve(__dirname, '..'),
       home: app.getPath('home'),
@@ -469,6 +469,7 @@ handleIpc('pflow:mcp-live-open', async (event, input) => {
       connectionFile: opened.connectionPath,
       codexHome: process.env.CODEX_HOME,
       installPlugin,
+      installWorkBuddy,
     });
   } catch {
     // Background sync is best-effort and never blocks live connection startup.
@@ -504,6 +505,13 @@ handleIpc('pflow:mcp-install-plugin', (event, sessionId, options) => {
   const connectionFile = currentConnectionFile(sessionId);
   const { installPlugin } = require('./generated/client-integrations.cjs');
   return installPlugin(path.resolve(__dirname, '..'), app.getPath('home'),
+    { executable: process.execPath, connectionFile }, { forceRepair: Boolean(options?.forceRepair) });
+});
+handleIpc('pflow:mcp-install-workbuddy', (event, sessionId, options) => {
+  assertAuthoringRenderer(event);
+  const connectionFile = currentConnectionFile(sessionId);
+  const { installWorkBuddy } = require('./generated/client-integrations.cjs');
+  return installWorkBuddy(path.resolve(__dirname, '..'), app.getPath('home'),
     { executable: process.execPath, connectionFile }, { forceRepair: Boolean(options?.forceRepair) });
 });
 handleIpc('pflow:mcp-export-extension', async (event, sessionId) => {
