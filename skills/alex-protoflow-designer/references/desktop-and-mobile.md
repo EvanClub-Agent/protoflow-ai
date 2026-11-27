@@ -1,6 +1,6 @@
 # Desktop (`<Page>`) & Mobile (`<MobilePage>`) Authoring Guide
 
-Before emitting TSX, always fetch exact schemas via `protoflow_get_implementation_guide` and `protoflow_get_contracts`.
+Before emitting TSX, always fetch exact schemas via `protoflow_workspace(action="guide")` and `protoflow_workspace(action="contracts")`.
 
 ## 1. Universal DSL Constraints
 
@@ -14,10 +14,10 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
     );
   }
   ```
-- **Unique `pfId` everywhere**: Every JSX element MUST specify an explicit, unique `pfId`. When editing via `protoflow_edit_page_block(mode="replace_node")`, preserve the target node's `pfId`.
+- **Unique `pfId` everywhere**: Every JSX element MUST specify an explicit, unique `pfId`. When editing via `protoflow_page(action="edit_block", mode="replace_node")`, preserve the target node's `pfId`.
 - **Forbidden syntax**: No `import`/`export` beyond `export default function Page()`, no local variables/hooks in outer TSX, no JS callbacks (`onClick={() => ...}`), no spread props, no raw HTML tags (`div`, `span`), no `style` or `className`.
 - **Text children vs props**: `Button`, `MButton`, `Text`, `Title`, `Tag`, `Avatar` take their text label as JSX child text (`<Button pfId="btn_add" type="primary">新增</Button>`), NOT via a `text`/`label` prop.
-- **Zero-argument runtime action chains**: Events only accept registered actions from `protoflow_get_contracts().actions` written as a plain call or semicolon-separated block statement inside a zero-argument arrow function (never an array `[...]`). Note that `closeOverlay()` takes 0 arguments and `updateRow({ field: value })` takes a plain JSON object (e.g. `onClick={() => openModal('dlg_create')}` or `onClick={() => { submitForm('form_edit'); closeOverlay(); toast('已保存', 'success'); refresh('tbl_main'); }}`).
+- **Zero-argument runtime action chains**: Events only accept registered actions from `protoflow_workspace(action="contracts").actions` written as a plain call or semicolon-separated block statement inside a zero-argument arrow function (never an array `[...]`). Note that `closeOverlay()` takes 0 arguments and `updateRow({ field: value })` takes a plain JSON object (e.g. `onClick={() => openModal('dlg_create')}` or `onClick={() => { submitForm('form_edit'); closeOverlay(); toast('已保存', 'success'); refresh('tbl_main'); }}`).
 - **Overlays at page root**:
   - Desktop: `<Modal>` and `<Drawer>` MUST be direct children of `<Page>` (with `width` as numeric pixels, e.g. `width={640}`).
   - Mobile: `<MBottomSheet>` and `<MDialog>` MUST be direct children of `<MobilePage>`.
@@ -40,6 +40,7 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
   - **Stage Workflows (`<Kanban>`) & Schedules (`<Calendar>`)**: Bind `table` + `statusField` on `<Kanban>` or `dateField` on `<Calendar>`, and pair with `<AiCopilotCard>` for AI review/risk insights.
   - Cross-page drill-down uses `navigate('detail_page_id', 'row')`, and detail `Table` sets `sourceForeignKey="<fk_column_name>"`.
   - FK lookup pickers use `<PickerInput overlay="modal_picker" />` with a `selectable` `<Table>` and `returnSelection(tablePfId, displayField, sourceKeyField)`.
+  - **Multi-row line-item import & detail creation (Master-Detail completeness)**: Whenever a document header table (`t_order`, `t_plan_apply`, `t_inquiry`, etc.) has a `1:N` line-item table (`t_..._item`) with `CRUD 读写`, every document entry page (including all sibling variants sharing that header table!) MUST bind the detail `<Table table="t_..._item" sourceForeignKey="<fk>" />` AND provide real detail line creation via `<Form table="t_..._item">` (`submitForm`) and/or a selectable catalog/pool picker modal calling `importSelectedRows('tbl_catalog', 'tbl_items', { fieldMap: { unit_price: 'recent_price' }, defaults: { qty: 1 } })`.
 
 ## 3. Mobile (`<MobilePage>`) Patterns
 
@@ -56,5 +57,5 @@ Before emitting TSX, always fetch exact schemas via `protoflow_get_implementatio
 
 ## 4. Charts & Freeform
 
-- **12 ECharts components** (`BarChart`, `LineChart`, `AreaChart`, `PieChart`, `DonutChart`, `ScatterChart`, `RadarChart`, `GaugeChart`, `FunnelChart`, `HeatmapChart`, `TreemapChart`, `SankeyChart`): When `source="table"`, ensure `tableRows` has non-empty compatible records via `protoflow_manage_table_rows(action="read")` / `seed` BEFORE writing the page, or `protoflow_write_page` validation will reject empty/incompatible chart data.
-- **Freeform**: Use only when standard compositions cannot express the region (seat maps, kanban drag-drop, calendar matrix, specialized SVG). Check `protoflow_get_contracts({ componentNames: ["Freeform"] })` for allowed sandbox subset and `eventFields` / `onAction` wiring.
+- **12 ECharts components** (`BarChart`, `LineChart`, `AreaChart`, `PieChart`, `DonutChart`, `ScatterChart`, `RadarChart`, `GaugeChart`, `FunnelChart`, `HeatmapChart`, `TreemapChart`, `SankeyChart`): When `source="table"`, ensure `tableRows` has non-empty compatible records via `protoflow_database(action="read_rows")` / `seed_rows` BEFORE writing the page, or `protoflow_page(action="write_page")` validation will reject empty/incompatible chart data.
+- **Freeform**: Use only when standard compositions cannot express the region (seat maps, kanban drag-drop, calendar matrix, specialized SVG). Check `protoflow_workspace(action="contracts", componentNames=["Freeform"])` for allowed sandbox subset and `eventFields` / `onAction` wiring.

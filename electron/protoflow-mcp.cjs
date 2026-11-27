@@ -44,6 +44,9 @@ const {
   CAPTURE_PREVIEW_PROPERTIES,
   parseCaptureOptions,
   buildStagedPreviewSnapshot,
+  applyMindmapMutation,
+  plannedSitemapLayout,
+  validateMindmaps,
 } = require('./generated/material-contract.cjs');
 const { tableSchema, columnSchema, validateTable } = require("./protoflow-db-contract.cjs");
 const { parsePageSource, checkAiPagePlatform, preparePreviewScenario, collectRequirementRecords, reviewRequirementRecords, requirementEvidence, reviewDatabaseDesign, reviewDatabaseChanges, validateProjectQuestions, buildSitemap, folderOptions, menuPageIds, applyStructureOperation, finalProjectDraftOperations, pageContractErrors, inspectPage, inspectAxurePage, inspectAxureProject, axureCatalog, axureScopePages, bindAxureTable, optimizeAxureBlock, reshapeAxurePage, evaluateAxureMigrationProgress, checkRpTableExtension, figmaCatalog, figmaScopePages, inspectFigmaProject, inspectFigmaPage, reshapeFigmaPage, getImplementationGuide, getMaterialContracts, getActionContracts, MATERIAL_VALUE_DEFINITIONS, MATERIAL_CONTRACT_VERSION, editPageBlock } = require('./generated/material-contract.cjs');
@@ -251,9 +254,18 @@ const properties = {
         "Full ClosedLoopAuditIssue list based on actual project evidence. An empty list is valid.",
     },
   },
+  protoflow_manage_mindmap: {
+    action: { type: 'string', enum: ['upsert_mindmap', 'upsert_folder', 'delete'] },
+    id: { type: 'string' },
+    title: { type: 'string' },
+    parentId: { type: ['string', 'null'] },
+    source: { type: 'string', description: 'Mermaid source for upsert_mindmap.' },
+    linkedPageIds: { type: 'array', items: { type: 'string' } },
+    linkedFolderIds: { type: 'array', items: { type: 'string' } },
+  },
 };
 const descriptions = {
-  protoflow_add_preview_scenario: 'Initialize absent preview datasets with coherent synthetic rows (mandatory fields, distinct row ids, valid FKs; never overwrite existing datasets or claim mock figures are real).',
+  protoflow_add_preview_scenario: 'Seed absent preview datasets with coherent synthetic rows (mandatory fields, unique ids, valid FKs; never overwrite saved datasets).',
   protoflow_remove_project_agreement: 'Propose removing a saved project agreement by exact id on explicit user intent.',
   protoflow_get_project_brief: 'Read confirmed agreements, approved requirements, generation progress, and schema summary before working or after compaction (optional pageId or folderId narrows scope).',
   protoflow_search_history: 'Case-insensitive text search across this bound Hermes conversation and compacted ancestry (10 excerpts/page via offset; historical context only).',
@@ -286,6 +298,7 @@ const descriptions = {
   protoflow_upsert_db_column: 'Stage a column on an existing tableId after reading get_project (schema-only, does not populate saved rows).',
   protoflow_upsert_sticky_contract: 'Stage a requirement sticky note anchored to an existing component pfId.',
   protoflow_run_closed_loop_audit: 'Stage evidence-backed ClosedLoopAuditIssue list or update issue resolution.',
+  protoflow_manage_mindmap: 'Stage project mindmap folders or Mermaid diagrams linked to folders/pages.',
 };
 const required = {
   protoflow_add_preview_scenario: ['datasets'],
@@ -321,6 +334,7 @@ const required = {
   protoflow_upsert_db_column: ["tableId", "column"],
   protoflow_upsert_sticky_contract: ["sticky"],
   protoflow_run_closed_loop_audit: ["issues"],
+  protoflow_manage_mindmap: ['action', 'id'],
 };
 const tools = Object.keys(properties).map((name) => ({
   name,
@@ -1094,6 +1108,9 @@ function callToolCore(contextFile, name, args, options = {}) {
     const operations = [...context.operations, { tool: name, args }];
     context.operations = finalProjectDraftOperations(operations);
     applyStructureOperation(snapshot, name, args, context.initialProjectPlan, snapshot.projectMode, snapshot.requestedPage);
+    if (name === 'protoflow_set_project_plan' && context.operations.some(op => op.tool === 'protoflow_manage_mindmap')) {
+      validateMindmaps(snapshot.mindmaps, plannedSitemapLayout(snapshot, snapshot.projectPlan));
+    }
     const feedback = name === 'protoflow_set_project_plan' ? projectMenuFeedback(context) : {};
     saveContext();
     if (name === 'protoflow_set_project_plan') return {
@@ -1316,6 +1333,14 @@ function callToolCore(contextFile, name, args, options = {}) {
     else snapshot.stickyNotes[i] = args.sticky;
     if (typeof args.sticky.pageId === 'string' && !context.explicitStickyPages.includes(args.sticky.pageId))
       context.explicitStickyPages.push(args.sticky.pageId);
+  } else if (name === 'protoflow_manage_mindmap') {
+    if (context.kind !== 'project' || context.workflowPhase !== 'conversation' || snapshot.requestedPage) {
+      throw new Error(tr('请在项目对话中维护项目脑图目录与脑图', 'Maintain project mindmap folders and diagrams in project conversation mode'));
+    }
+    recordOtherMutationFootprint(footprint, baseSnapshot, name, args);
+    const stagedPlan = context.operations.some(op => op.tool === 'protoflow_set_project_plan');
+    const layout = stagedPlan ? plannedSitemapLayout(snapshot, snapshot.projectPlan) : snapshot;
+    applyMindmapMutation(snapshot, args, layout);
   } else {
     recordOtherMutationFootprint(footprint, baseSnapshot, name, args);
     if (!Array.isArray(args.issues)) throw new Error("issues must be an array");

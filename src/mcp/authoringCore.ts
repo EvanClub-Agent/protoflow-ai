@@ -2,6 +2,7 @@ import { isEnLocale, tr } from '../i18n/runtime';
 import { getImplementationGuide } from '../proto/ai/implementationGuide';
 import { pageContractErrors } from '../proto/ai/pageContract';
 import { inspectPage } from '../proto/ai/pageInspection';
+import { auditTableMenuCoverage } from '../proto/ai/tableMenuCoverage';
 import { isAxureMaterial } from '../proto/axure/metadata';
 import { isFigmaMaterial } from '../proto/figma/metadata';
 import { reviewDatabaseChanges, reviewDatabaseDesign } from '../proto/database/designReview';
@@ -12,15 +13,21 @@ import { parsePageSource } from '../proto/dsl/parser';
 import { printPageSource } from '../proto/dsl/printer';
 import { findNode, removeNode } from '../proto/dsl/tree';
 import {
+  applyMindmapMutation,
+  auditProjectMindmaps,
+  buildLinksForTarget,
   mindmapDescendants,
+  resolveDocumentParentId,
   validateMindmaps,
-  type MindmapLink,
   type MindmapNode,
 } from '../proto/mindmaps';
 import {
   emptyProjectNotes,
+  extractInlineNoteImages,
+  findMarkdownSectionRange,
   markdownToNoteHtml,
   noteDescendants,
+  noteHtmlToMarkdownBody,
   pruneUnusedNoteAssets,
   validateProjectNotes,
   type NoteCoverId,
@@ -81,7 +88,12 @@ import {
   retargetEditedOptimizedCopy,
   type RpColumnMapping,
 } from './importReshape';
-import type { McpPromptDefinition, McpResourceDefinition, McpToolDefinition } from './tools';
+import {
+  executeSpecTool,
+  type McpPromptDefinition,
+  type McpResourceDefinition,
+  type McpToolDefinition,
+} from './tools';
 import { PROTOFLOW_CONTRACT_DIGEST, PROTOFLOW_SERVER_VERSION } from './generatedSkillBundle';
 import type { LoadedWorkspace } from './workspace';
 
@@ -565,6 +577,7 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
           type: 'string',
           enum: [
             'upsert_note',
+            'patch_note',
             'upsert_note_folder',
             'delete_note',
             'upsert_mindmap',
@@ -597,6 +610,31 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
             linkedFolderIds: { type: 'array', items: { type: 'string', minLength: 1 } },
           },
         },
+        notePatch: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'operations'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            operations: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['mode'],
+                properties: {
+                  mode: { type: 'string', enum: ['replace', 'append', 'prepend', 'replace_section'] },
+                  target: { type: 'string' },
+                  replacement: { type: 'string' },
+                  replaceAll: { type: 'boolean' },
+                  heading: { type: 'string' },
+                  markdown: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
         mindmap: {
           type: 'object',
           additionalProperties: false,
@@ -619,6 +657,8 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
             title: { type: 'string', minLength: 1 },
             parentId: { type: ['string', 'null'] },
             icon: { type: 'string' },
+            linkedPageIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+            linkedFolderIds: { type: 'array', items: { type: 'string', minLength: 1 } },
           },
         },
         agreement: {
@@ -750,7 +790,457 @@ export const AUTHORING_MCP_TOOLS: McpToolDefinition[] = [
   },
 ];
 
-const AUTHORING_TOOL_NAMES = new Set(AUTHORING_MCP_TOOLS.map((t) => t.name));
+const STICKY_ITEM_SCHEMA = {
+  type: 'object',
+  required: ['id', 'pageId', 'targetWidgetId', 'targetWidgetName', 'text'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', minLength: 1 },
+    pageId: { type: 'string', minLength: 1 },
+    targetWidgetId: { type: 'string', minLength: 1, description: 'Exact existing pfId on pageId.' },
+    targetWidgetName: { type: 'string', minLength: 1 },
+    index: { type: 'integer', minimum: 1, description: 'Optional 1-based display number (auto-assigned if omitted).' },
+    text: { type: 'string', minLength: 1 },
+    compiledRule: { type: 'string' },
+    active: { type: 'boolean' },
+  },
+};
+
+const DATASET_ITEM_SCHEMA = {
+  type: 'object',
+  required: ['tableId', 'rows'],
+  additionalProperties: false,
+  properties: {
+    tableId: { type: 'string', minLength: 1 },
+    rows: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 100,
+      items: {
+        type: 'object',
+        additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
+      },
+    },
+  },
+};
+
+export const DOMAIN_MCP_TOOLS: McpToolDefinition[] = [
+  {
+    name: 'protoflow_workspace',
+    description:
+      'Workspace & contract hub: check status/contract, inspect project overview (Design Tokens, visualBaseline, sitemap, DB summary), load scenario guides, inspect TSX component/action contracts, or manage .pflow project metadata/files.',
+    annotations: { ...WRITE_ANNOTATIONS, title: 'Workspace, Overview & Material Contracts' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'status',
+            'overview',
+            'guide',
+            'contracts',
+            'list_projects',
+            'create_project',
+            'switch_project',
+            'update_project_meta',
+          ],
+          description: 'Workspace action (default: "status").',
+        },
+        directory: { type: 'string', description: 'Directory to scan for list_projects.' },
+        filePath: { type: 'string', description: 'Target .pflow path for create_project or switch_project.' },
+        projectName: { type: 'string' },
+        templateId: {
+          type: 'string',
+          enum: templateIds,
+          description: 'Starter template for create_project (default: "blank_project").',
+        },
+        projectMode: { type: 'string', enum: projectModes },
+        activePageId: { type: 'string' },
+        designTokens: {
+          oneOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['preset'],
+              properties: {
+                preset: { type: 'string', enum: DESIGN_PRESET_IDS },
+                primaryColor: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
+                radius: { type: 'string', enum: DESIGN_RADIUS_TOKENS },
+                density: { type: 'string', enum: DESIGN_DENSITY_TOKENS },
+                surfaceVariant: { type: 'string', enum: DESIGN_SURFACE_TOKENS },
+                colorMode: { type: 'string', enum: DESIGN_COLOR_MODES },
+              },
+            },
+          ],
+          description: 'Canvas Design Tokens (pass null to reset to classic_antd).',
+        },
+        overwrite: { type: 'boolean' },
+        includeDiagnostics: { type: 'boolean', description: 'Include diagnostics for action="overview" (default: true).' },
+        scenarioIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Scenario IDs for action="guide" (omit to list catalog).',
+        },
+        componentNames: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Component names to inspect in full for action="contracts" (omit to list catalog).',
+        },
+        includeAxure: { type: 'boolean' },
+        includeFigma: { type: 'boolean' },
+        expectedContractDigest: {
+          type: 'string',
+          description: 'Optional contractDigest from SKILL.md for action="status".',
+        },
+        expectedRevision: { type: 'string', description: 'Optimistic concurrency revision token.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'protoflow_sitemap',
+    description: 'Create, update, move, rename, or cascade-delete sitemap folders and menu pages.',
+    annotations: { ...DESTRUCTIVE_WRITE_ANNOTATIONS, title: 'Manage Sitemap Folders & Menus' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['upsert_folder', 'move_item', 'rename_page', 'delete_item'],
+          description: 'Sitemap mutation action.',
+        },
+        folder: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'title', 'parentFolderId'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            title: { type: 'string', minLength: 1 },
+            parentFolderId: { type: ['string', 'null'] },
+          },
+          description: 'Folder definition for upsert_folder (parentFolderId: null for top-level folder).',
+        },
+        target: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['kind', 'id'],
+          properties: {
+            kind: { type: 'string', enum: ['folder', 'page'] },
+            id: { type: 'string', minLength: 1 },
+          },
+          description: 'Target item for move_item.',
+        },
+        parentFolderId: {
+          type: ['string', 'null'],
+          description: 'Destination parent folder ID for move_item (null allowed only for folders).',
+        },
+        pageId: { type: 'string', description: 'Target pageId for rename_page or delete_item.' },
+        title: { type: 'string', description: 'New page title for rename_page.' },
+        nodeId: { type: 'string', description: 'Target sitemap node ID for delete_item.' },
+        expectedRevision: { type: 'string', description: 'Optimistic concurrency revision token.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'protoflow_database',
+    description:
+      'Unified ER database & preview data tool: inspect schemas/DDL ("get_schema"), batch-create/update/delete physical ER tables & columns ("upsert_tables", "upsert_columns", "delete_tables"), and read/seed/clear FK-validated preview rows ("read_rows", "seed_rows", "clear_rows").',
+    annotations: { ...DESTRUCTIVE_WRITE_ANNOTATIONS, title: 'Manage ER Database Schema & Preview Rows' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'get_schema',
+            'upsert_tables',
+            'upsert_columns',
+            'delete_tables',
+            'read_rows',
+            'seed_rows',
+            'clear_rows',
+          ],
+          description: 'Database schema or preview row operation.',
+        },
+        tableNames: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional physical tableNames or tableIds filter for get_schema.',
+        },
+        dialect: { type: 'string', enum: ['postgres', 'mysql'], description: 'SQL dialect for get_schema (default: "postgres").' },
+        includeSampleRows: { type: 'boolean', description: 'Include sample rows in get_schema (default: true).' },
+        sampleRowLimit: { type: 'integer', minimum: 1, maximum: 50 },
+        tables: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 30,
+          items: DB_TABLE_JSON_SCHEMA,
+          description: '1..30 complete DBTableSchema definitions for upsert_tables.',
+        },
+        tableId: { type: 'string', description: 'Exact dbTables.id for upsert_columns or read_rows.' },
+        columns: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: DB_COLUMN_JSON_SCHEMA,
+          description: '1..50 DBColumnSchema definitions for upsert_columns.',
+        },
+        tableIds: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 30,
+          items: { type: 'string', minLength: 1 },
+          description: 'Exact dbTables.id list for delete_tables or clear_rows.',
+        },
+        force: { type: 'boolean', description: 'Allow delete_tables even if page TSX binds the table.' },
+        offset: { type: 'integer', minimum: 0, description: 'Pagination offset for read_rows (default: 0).' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Pagination limit for read_rows (default: 20).' },
+        datasets: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 30,
+          items: DATASET_ITEM_SCHEMA,
+          description: 'Coherent scenario datasets for seed_rows (each row needs a unique string id).',
+        },
+        replaceExisting: { type: 'boolean', description: 'Replace existing preview rows in target tables for seed_rows.' },
+        expectedRevision: { type: 'string', description: 'Optimistic concurrency revision token for write actions.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'protoflow_page',
+    description:
+      'Unified page specification & authoring tool: read single-page spec ("get_spec"), create/overwrite complete <Page>/<MobilePage> TSX ("write_page"), losslessly edit a localized subtree ("edit_block"), or inspect/reshape imported Axure RP & Figma pages.',
+    annotations: { ...WRITE_ANNOTATIONS, title: 'Inspect, Write, Edit & Reshape Pages' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'get_spec',
+            'write_page',
+            'edit_block',
+            'inspect_project',
+            'inspect_page',
+            'reshape_axure_page',
+            'bind_axure_table',
+            'optimize_axure_block',
+            'reshape_figma_page',
+          ],
+          description: 'Page inspection or authoring action.',
+        },
+        pageId: { type: 'string', description: 'Target pageId (required except for inspect_project across folders).' },
+        includeSource: { type: 'boolean', description: 'Include canonical TSX source for get_spec (default: true).' },
+        selectedPfId: { type: 'string', description: 'Optional pfId filter for get_spec or inspect_page.' },
+        includeInspection: { type: 'boolean', description: 'Include contract validation in get_spec (default: false).' },
+        importView: { type: 'string', enum: ['axure', 'figma'], description: 'Optional imported canvas view for get_spec.' },
+        offset: { type: 'integer', minimum: 0 },
+        limit: { type: 'integer', minimum: 1, maximum: 80 },
+        source: {
+          type: 'string',
+          description: 'Complete TSX (`export default function Page() { return (...); }`) with unique pfId on every element.',
+        },
+        title: { type: 'string', description: 'Page title (required when creating a new page in write_page).' },
+        folderId: { type: 'string', description: 'Parent folderId (for new page in write_page or scope in inspect_project).' },
+        platform: { type: 'string', enum: pagePlatforms, description: 'Explicit page platform for write_page.' },
+        setActive: { type: 'boolean', description: 'Set page as activePageId after saving.' },
+        targetPfId: { type: 'string', description: 'Target component pfId for edit_block / bind_axure_table / optimize_axure_block.' },
+        mode: {
+          type: 'string',
+          enum: ['append_children', 'replace_node', 'delete_node'],
+          description: 'Subtree edit mode for edit_block.',
+        },
+        tsx: { type: 'string', description: 'TSX fragment for edit_block or optimize_axure_block.' },
+        sourceType: { type: 'string', enum: ['axure', 'figma', 'auto'], description: 'Import family filter (default: "auto").' },
+        coverage: {
+          anyOf: [AXURE_RESHAPE_COVERAGE_SCHEMA, FIGMA_RESHAPE_COVERAGE_SCHEMA],
+          description: 'Coverage manifest for reshape_axure_page / reshape_figma_page.',
+        },
+        tableId: { type: 'string', description: 'Bound dbTables.id for bind_axure_table.' },
+        mappings: {
+          type: 'array',
+          minItems: 1,
+          items: AXURE_COLUMN_MAPPING_SCHEMA,
+          description: 'Header column mappings for bind_axure_table.',
+        },
+        expectedRevision: { type: 'string', description: 'Optimistic concurrency revision token for write actions.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'protoflow_docs',
+    description:
+      'Unified product documentation, mindmap & sticky-note tool: read notes/Mermaid flows ("get_docs"), create/patch PRD notes, manage Mermaid business mindmaps/flowcharts, pin component sticky-note rules ("upsert_sticky"/"delete_sticky"), and manage project agreements.',
+    annotations: { ...DESTRUCTIVE_WRITE_ANNOTATIONS, title: 'Manage PRD Notes, Mindmaps, Stickies & Agreements' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'get_docs',
+            'upsert_note',
+            'patch_note',
+            'upsert_note_folder',
+            'delete_note',
+            'upsert_mindmap',
+            'upsert_mindmap_folder',
+            'delete_mindmap',
+            'upsert_sticky',
+            'delete_sticky',
+            'upsert_agreement',
+            'remove_agreement',
+          ],
+          description: 'Documentation, mindmap, sticky-note, or agreement action.',
+        },
+        noteId: { type: 'string', description: 'Optional note ID for get_docs.' },
+        mindmapId: { type: 'string', description: 'Optional mindmap ID for get_docs.' },
+        pageId: { type: 'string', description: 'Optional pageId filter for get_docs.' },
+        sectionHeading: { type: 'string', description: 'Optional heading text to extract one section in get_docs.' },
+        charOffset: { type: 'integer', minimum: 0 },
+        maxChars: { type: 'integer', minimum: 500, maximum: 200000 },
+        note: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'markdown'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            title: { type: 'string' },
+            markdown: { type: 'string' },
+            parentId: { type: ['string', 'null'] },
+            icon: { type: 'string' },
+            tags: { type: 'array', items: { type: 'string', minLength: 1 } },
+            cover: { type: 'string', enum: ['none', 'ocean', 'emerald', 'amber', 'violet', 'rose', 'slate'] },
+            pinned: { type: 'boolean' },
+            status: { type: 'string', enum: ['draft', 'pending_confirm', 'confirmed', 'implemented'] },
+            priority: { type: 'string', enum: ['P0', 'P1', 'P2'] },
+            stakeholder: { type: 'string' },
+            meetingDate: { type: 'string' },
+            shareable: { type: 'boolean' },
+            linkedPageIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+            linkedFolderIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          },
+        },
+        notePatch: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'operations'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            operations: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['mode'],
+                properties: {
+                  mode: { type: 'string', enum: ['replace', 'append', 'prepend', 'replace_section'] },
+                  target: { type: 'string' },
+                  replacement: { type: 'string' },
+                  replaceAll: { type: 'boolean' },
+                  heading: { type: 'string' },
+                  markdown: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        mindmap: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'title', 'source'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            title: { type: 'string', minLength: 1 },
+            source: { type: 'string' },
+            parentId: { type: ['string', 'null'] },
+            linkedPageIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+            linkedFolderIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          },
+        },
+        folder: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'title'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            title: { type: 'string', minLength: 1 },
+            parentId: { type: ['string', 'null'] },
+            icon: { type: 'string' },
+            linkedPageIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+            linkedFolderIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          },
+        },
+        agreement: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'kind', 'title', 'text', 'pageIds'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            kind: { type: 'string', enum: ['requirement', 'field_constraint', 'design'] },
+            title: { type: 'string', minLength: 1 },
+            text: { type: 'string', minLength: 1 },
+            pageIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+          },
+        },
+        stickies: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: STICKY_ITEM_SCHEMA,
+          description: 'Component-pinned sticky note rules for upsert_sticky.',
+        },
+        stickyIds: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: { type: 'string', minLength: 1 },
+          description: 'Sticky IDs to remove for delete_sticky.',
+        },
+        id: { type: 'string', description: 'Target note, mindmap, or agreement ID for delete/remove actions.' },
+        expectedRevision: { type: 'string', description: 'Optimistic concurrency revision token for write actions.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'protoflow_audit',
+    description:
+      'Quality audit, global specification search & engineering handoff tool: run full closed-loop static audit ("audit_project"), search across all tables/pages/notes/mindmaps ("search_spec"), or generate an implementation checklist ("checklist").',
+    annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Audit Project, Search Spec & Checklist' },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['audit_project', 'search_spec', 'checklist'],
+          description: 'Verification or search action (default: "audit_project").',
+        },
+        pageId: { type: 'string', description: 'Optional pageId filter for audit_project.' },
+        query: { type: 'string', minLength: 1, description: 'Keyword to search for search_spec.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max search results for search_spec (default: 25).' },
+        moduleKeyword: { type: 'string', description: 'Optional module keyword filter for checklist.' },
+      },
+      additionalProperties: false,
+    },
+  },
+];
+
+const AUTHORING_TOOL_NAMES = new Set([
+  ...DOMAIN_MCP_TOOLS.map((t) => t.name),
+  ...AUTHORING_MCP_TOOLS.map((t) => t.name),
+]);
 
 export function isAuthoringToolName(name: string): boolean {
   return AUTHORING_TOOL_NAMES.has(name);
@@ -1370,13 +1860,24 @@ function handleWritePage(draft: PflowBinaryPayload, args: Record<string, unknown
     s.activePageId = pageId;
   }
 
+  const inspection = inspectPage(canonicalSource, s.dbTables, s.tableRows);
+  const tableMenuCoverageIssues = auditTableMenuCoverage(s, pageId);
+  for (const cov of tableMenuCoverageIssues) {
+    inspection.warnings.push({
+      pfId: parsed.doc.root.pfId,
+      code: cov.kind,
+      message: cov.message,
+    });
+  }
+
   return {
     pageId,
     title: effectiveTitle,
     created: isNew,
     platform: resolvedPlatform,
     activePageId: s.activePageId,
-    inspection: inspectPage(canonicalSource, s.dbTables, s.tableRows),
+    inspection,
+    ...(tableMenuCoverageIssues.length > 0 ? { tableMenuCoverageIssues } : {}),
   };
 }
 
@@ -1446,11 +1947,23 @@ function handleEditPageBlock(draft: PflowBinaryPayload, args: Record<string, unk
   }
 
   s.pageSources[pageId] = nextSource;
+  const inspection = inspectPage(nextSource, s.dbTables, s.tableRows);
+  const tableMenuCoverageIssues = auditTableMenuCoverage(s, pageId);
+  if (nextDoc) {
+    for (const cov of tableMenuCoverageIssues) {
+      inspection.warnings.push({
+        pfId: nextDoc.root.pfId,
+        code: cov.kind,
+        message: cov.message,
+      });
+    }
+  }
   return {
     pageId,
     targetPfId,
     mode,
-    inspection: inspectPage(nextSource, s.dbTables, s.tableRows),
+    inspection,
+    ...(tableMenuCoverageIssues.length > 0 ? { tableMenuCoverageIssues } : {}),
   };
 }
 
@@ -1541,33 +2054,6 @@ function handleManageStickyNotes(draft: PflowBinaryPayload, args: Record<string,
   throw new Error(tr(`不支持的便签操作：${action}`, `Unsupported sticky note action: ${action}`));
 }
 
-function buildLinksForTarget(
-  targetNodeId: string,
-  linkedPageIds: unknown,
-  linkedFolderIds: unknown
-): (NoteLink | MindmapLink)[] {
-  const links: (NoteLink | MindmapLink)[] = [];
-  if (Array.isArray(linkedPageIds)) {
-    const seen = new Set<string>();
-    for (const rawId of linkedPageIds) {
-      const pageId = requireNonEmptyString(rawId, 'linkedPageIds[]');
-      if (seen.has(pageId)) continue;
-      seen.add(pageId);
-      links.push({ page: { kind: 'page', pageId }, targetNodeId });
-    }
-  }
-  if (Array.isArray(linkedFolderIds)) {
-    const seen = new Set<string>();
-    for (const rawId of linkedFolderIds) {
-      const folderId = requireNonEmptyString(rawId, 'linkedFolderIds[]');
-      if (seen.has(folderId)) continue;
-      seen.add(folderId);
-      links.push({ page: { kind: 'folder', folderId }, targetNodeId });
-    }
-  }
-  return links;
-}
-
 function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string, unknown>) {
   const action = requireNonEmptyString(args.action, 'action');
   const s = draft.stateSnapshot;
@@ -1587,6 +2073,8 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     if (existing && existing.kind !== 'note') {
       throw new Error(tr(`ID "${id}" 已被笔记目录占用`, `ID "${id}" already belongs to a note folder`));
     }
+    const extracted = extractInlineNoteImages(converted.html, workspace.assets);
+    if (extracted.assets) workspace.assets = extracted.assets;
 
     const title =
       typeof n.title === 'string' && n.title.trim()
@@ -1596,12 +2084,7 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
       throw new Error(tr('笔记标题不能为空（可传入 note.title 或在 Markdown 首行写 # 标题）', 'Note title cannot be empty (pass note.title or start Markdown with # Title)'));
     }
 
-    const parentId =
-      n.parentId !== undefined
-        ? n.parentId === null
-          ? null
-          : requireNonEmptyString(n.parentId, 'note.parentId')
-        : existing?.parentId ?? null;
+    const parentId = resolveDocumentParentId(n.parentId, existing, 'note.parentId');
 
     const tags = Array.isArray(n.tags)
       ? n.tags.map((t, i) => requireNonEmptyString(t, `note.tags[${i}]`))
@@ -1616,7 +2099,7 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
       icon: typeof n.icon === 'string' && n.icon.trim() ? n.icon.trim() : existing?.icon ?? '📝',
       updatedAt: now,
       kind: 'note',
-      content: converted.html,
+      content: extracted.html,
       tags,
       cover: (n.cover as NoteCoverId | undefined) ?? (existing?.kind === 'note' ? existing.cover : 'none'),
       pinned: typeof n.pinned === 'boolean' ? n.pinned : existing?.kind === 'note' ? existing.pinned : false,
@@ -1654,7 +2137,7 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     if (n.linkedPageIds !== undefined || n.linkedFolderIds !== undefined) {
       workspace.links = [
         ...workspace.links.filter((l) => l.targetNodeId !== id),
-        ...(buildLinksForTarget(id, n.linkedPageIds, n.linkedFolderIds) as NoteLink[]),
+        ...buildLinksForTarget(id, n.linkedPageIds, n.linkedFolderIds),
       ];
     }
 
@@ -1663,27 +2146,152 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     return { action, id, title, linkCount: workspace.links.filter((l) => l.targetNodeId === id).length };
   }
 
+  if (action === 'patch_note') {
+    if (!isPlainObject(args.notePatch)) {
+      throw new Error(tr('缺少必填参数 notePatch', 'Missing required parameter notePatch'));
+    }
+    const p = args.notePatch;
+    const id = requireNonEmptyString(p.id, 'notePatch.id');
+    if (!Array.isArray(p.operations) || p.operations.length === 0) {
+      throw new Error(tr('notePatch.operations 必须是非空数组', 'notePatch.operations must be a non-empty array'));
+    }
+    const workspace = s.projectNotes ? structuredClone(s.projectNotes) : emptyProjectNotes();
+    const existingIdx = workspace.nodes.findIndex((item) => item.id === id);
+    const existing = existingIdx >= 0 ? workspace.nodes[existingIdx] : undefined;
+    if (!existing || existing.kind !== 'note') {
+      throw new Error(tr(`找不到可局部编辑的笔记 "${id}"`, `Note "${id}" not found for patch_note`));
+    }
+
+    let bodyMd = noteHtmlToMarkdownBody(existing.content, {
+      images: 'asset_ref',
+      assets: workspace.assets,
+    });
+
+    p.operations.forEach((rawOp, idx) => {
+      if (!isPlainObject(rawOp)) {
+        throw new Error(tr(`notePatch.operations[${idx}] 必须是对象`, `notePatch.operations[${idx}] must be an object`));
+      }
+      const mode = requireNonEmptyString(rawOp.mode, `notePatch.operations[${idx}].mode`);
+      if (mode === 'replace') {
+        const target = requireNonEmptyString(rawOp.target, `notePatch.operations[${idx}].target`);
+        if (typeof rawOp.replacement !== 'string') {
+          throw new Error(tr(`notePatch.operations[${idx}].replacement 必须是字符串`, `notePatch.operations[${idx}].replacement must be a string`));
+        }
+        if (!bodyMd.includes(target)) {
+          throw new Error(
+            tr(
+              `notePatch.operations[${idx}] 未在笔记 "${existing.title}" 中找到匹配的 target 文本`,
+              `notePatch.operations[${idx}] target substring not found in note "${existing.title}"`
+            )
+          );
+        }
+        bodyMd = rawOp.replaceAll
+          ? bodyMd.split(target).join(rawOp.replacement)
+          : bodyMd.replace(target, () => rawOp.replacement as string);
+      } else if (mode === 'append') {
+        const chunk = requireNonEmptyString(rawOp.markdown, `notePatch.operations[${idx}].markdown`).trim();
+        bodyMd = bodyMd.trim() ? `${bodyMd.trimEnd()}\n\n${chunk}` : chunk;
+      } else if (mode === 'prepend') {
+        const chunk = requireNonEmptyString(rawOp.markdown, `notePatch.operations[${idx}].markdown`).trim();
+        bodyMd = bodyMd.trim() ? `${chunk}\n\n${bodyMd.trimStart()}` : chunk;
+      } else if (mode === 'replace_section') {
+        const heading = requireNonEmptyString(rawOp.heading, `notePatch.operations[${idx}].heading`);
+        if (typeof rawOp.markdown !== 'string') {
+          throw new Error(tr(`notePatch.operations[${idx}].markdown 必须是字符串`, `notePatch.operations[${idx}].markdown must be a string`));
+        }
+        const range = findMarkdownSectionRange(bodyMd, heading);
+        if (!range) {
+          throw new Error(
+            tr(
+              `notePatch.operations[${idx}] 未在笔记 "${existing.title}" 中找到章节标题 "${heading}"`,
+              `notePatch.operations[${idx}] section heading "${heading}" not found in note "${existing.title}"`
+            )
+          );
+        }
+        const replacementChunk = rawOp.markdown.trim();
+        const before = bodyMd.slice(0, range.start).trimEnd();
+        const after = bodyMd.slice(range.end).trimStart();
+        bodyMd = [before, replacementChunk, after].filter(Boolean).join('\n\n');
+      } else {
+        throw new Error(tr(`不支持的 notePatch 操作模式：${mode}`, `Unsupported notePatch mode: ${mode}`));
+      }
+    });
+
+    const converted = markdownToNoteHtml(bodyMd, { extractTitle: false });
+    const extracted = extractInlineNoteImages(converted.html, workspace.assets);
+    if (extracted.assets) workspace.assets = extracted.assets;
+
+    const nextTitle =
+      typeof p.title === 'string' && p.title.trim() ? p.title.trim() : existing.title;
+    const parentId = resolveDocumentParentId(p.parentId, existing, 'notePatch.parentId');
+    const tags = Array.isArray(p.tags)
+      ? p.tags.map((t, i) => requireNonEmptyString(t, `notePatch.tags[${i}]`))
+      : existing.tags;
+
+    const updated: NoteNode = {
+      ...existing,
+      title: nextTitle,
+      parentId,
+      icon: typeof p.icon === 'string' && p.icon.trim() ? p.icon.trim() : existing.icon,
+      updatedAt: now,
+      content: extracted.html,
+      tags,
+      cover: (p.cover as NoteCoverId | undefined) ?? existing.cover,
+      pinned: typeof p.pinned === 'boolean' ? p.pinned : existing.pinned,
+      ...(p.status !== undefined ? { status: p.status as NoteRequirementStatus } : {}),
+      ...(p.priority !== undefined ? { priority: p.priority as NotePriority } : {}),
+      ...(p.stakeholder !== undefined ? { stakeholder: String(p.stakeholder) } : {}),
+      ...(p.meetingDate !== undefined ? { meetingDate: String(p.meetingDate) } : {}),
+      ...(p.shareable !== undefined ? { shareable: Boolean(p.shareable) } : {}),
+    };
+
+    workspace.nodes[existingIdx] = updated;
+    if (p.linkedPageIds !== undefined || p.linkedFolderIds !== undefined) {
+      workspace.links = [
+        ...workspace.links.filter((l) => l.targetNodeId !== id),
+        ...buildLinksForTarget(id, p.linkedPageIds, p.linkedFolderIds),
+      ];
+    }
+
+    const cleaned = pruneUnusedNoteAssets(workspace);
+    validateProjectNotes(cleaned, s);
+    s.projectNotes = cleaned;
+    return {
+      action,
+      id,
+      title: nextTitle,
+      appliedOperations: p.operations.length,
+      markdownLength: bodyMd.length,
+      linkCount: cleaned.links.filter((l) => l.targetNodeId === id).length,
+    };
+  }
+
   if (action === 'upsert_note_folder') {
     if (!isPlainObject(args.folder)) {
       throw new Error(tr('缺少必填参数 folder', 'Missing required parameter folder'));
     }
     const id = requireNonEmptyString(args.folder.id, 'folder.id');
     const title = requireNonEmptyString(args.folder.title, 'folder.title');
-    const parentId =
-      args.folder.parentId === undefined || args.folder.parentId === null
-        ? null
-        : requireNonEmptyString(args.folder.parentId, 'folder.parentId');
-    const icon = typeof args.folder.icon === 'string' && args.folder.icon.trim() ? args.folder.icon.trim() : '📁';
-
     const workspace = s.projectNotes ? structuredClone(s.projectNotes) : emptyProjectNotes();
+    const idx = workspace.nodes.findIndex(item => item.id === id);
+    const existing = workspace.nodes[idx];
+    if (existing && existing.kind !== 'folder') throw new Error(tr(`ID "${id}" 已由文档使用`, `ID "${id}" already belongs to a document`));
+    const parentId = resolveDocumentParentId(args.folder.parentId, existing, 'folder.parentId');
+    const icon = typeof args.folder.icon === 'string' && args.folder.icon.trim() ? args.folder.icon.trim() : existing?.icon ?? '📁';
     const record: NoteNode = { id, title, parentId, icon, updatedAt: now, kind: 'folder' };
-    const idx = workspace.nodes.findIndex((item) => item.id === id);
     if (idx < 0) workspace.nodes.push(record);
     else workspace.nodes[idx] = record;
 
+    if (args.folder.linkedPageIds !== undefined || args.folder.linkedFolderIds !== undefined) {
+      workspace.links = [
+        ...workspace.links.filter((l) => l.targetNodeId !== id),
+        ...buildLinksForTarget(id, args.folder.linkedPageIds, args.folder.linkedFolderIds),
+      ];
+    }
+
     validateProjectNotes(workspace, s);
     s.projectNotes = workspace;
-    return { action, id, title };
+    return { action, id, title, linkCount: workspace.links.filter((l) => l.targetNodeId === id).length };
   }
 
   if (action === 'delete_note') {
@@ -1718,12 +2326,7 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     if (existing && existing.kind !== 'mindmap') {
       throw new Error(tr(`ID "${id}" 已被脑图目录占用`, `ID "${id}" already belongs to a mindmap folder`));
     }
-    const parentId =
-      m.parentId !== undefined
-        ? m.parentId === null
-          ? null
-          : requireNonEmptyString(m.parentId, 'mindmap.parentId')
-        : existing?.parentId ?? null;
+    const parentId = resolveDocumentParentId(m.parentId, existing, 'mindmap.parentId');
 
     const record: MindmapNode = { id, title, parentId, kind: 'mindmap', source };
     const idx = mindmaps.nodes.findIndex((item) => item.id === id);
@@ -1733,7 +2336,7 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     if (m.linkedPageIds !== undefined || m.linkedFolderIds !== undefined) {
       mindmaps.links = [
         ...mindmaps.links.filter((l) => l.targetNodeId !== id),
-        ...(buildLinksForTarget(id, m.linkedPageIds, m.linkedFolderIds) as MindmapLink[]),
+        ...buildLinksForTarget(id, m.linkedPageIds, m.linkedFolderIds),
       ];
     }
 
@@ -1746,21 +2349,8 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
     if (!isPlainObject(args.folder)) {
       throw new Error(tr('缺少必填参数 folder', 'Missing required parameter folder'));
     }
-    const id = requireNonEmptyString(args.folder.id, 'folder.id');
-    const title = requireNonEmptyString(args.folder.title, 'folder.title');
-    const parentId =
-      args.folder.parentId === undefined || args.folder.parentId === null
-        ? null
-        : requireNonEmptyString(args.folder.parentId, 'folder.parentId');
-    const mindmaps = structuredClone(s.mindmaps);
-    const record: MindmapNode = { id, title, parentId, kind: 'folder' };
-    const idx = mindmaps.nodes.findIndex((item) => item.id === id);
-    if (idx < 0) mindmaps.nodes.push(record);
-    else mindmaps.nodes[idx] = record;
-
-    validateMindmaps(mindmaps, s);
-    s.mindmaps = mindmaps;
-    return { action, id, title };
+    const result = applyMindmapMutation(s, { ...args.folder, action: 'upsert_folder' });
+    return { ...result, action };
   }
 
   if (action === 'delete_mindmap') {
@@ -1798,6 +2388,25 @@ function handleManageDocsAndFlows(draft: PflowBinaryPayload, args: Record<string
   throw new Error(tr(`不支持的文档/导图操作：${action}`, `Unsupported docs/flows action: ${action}`));
 }
 
+export const CONTRACT_DRIFT_ERROR_PREFIX = '[CONTRACT_DRIFT]';
+
+export class SkillContractDriftError extends Error {
+  readonly expectedDigest: string;
+  readonly serverDigest: string;
+
+  constructor(expectedDigest: string, serverDigest: string, serverVersion: string) {
+    super(
+      tr(
+        `${CONTRACT_DRIFT_ERROR_PREFIX} 技能契约摘要不一致，已拒绝执行：当前 SKILL.md 期望 ${expectedDigest}，运行中的 MCP 服务端（v${serverVersion}）实际为 ${serverDigest}。当前会话已锁定以阻止过期工具调用，请在 Alex 桌面端（MCP → 双向设计）刷新技能后重新发起对话。`,
+        `${CONTRACT_DRIFT_ERROR_PREFIX} Skill contract drift refused: SKILL.md expects ${expectedDigest}, while the running MCP server (v${serverVersion}) exposes ${serverDigest}. Session tool calls are locked to prevent stale execution—refresh the installed skill in Alex Desktop (MCP → Bidirectional design) before continuing.`,
+      ),
+    );
+    this.name = 'SkillContractDriftError';
+    this.expectedDigest = expectedDigest;
+    this.serverDigest = serverDigest;
+  }
+}
+
 export async function executeAuthoringTool(
   workspace: AuthoringWorkspace,
   name: string,
@@ -1824,23 +2433,34 @@ export async function executeAuthoringTool(
             ...enriched,
             contractCheckStatus: 'unchecked',
             contractCheckNotice: tr(
-              '此次未传入 expectedContractDigest，技能契约尚未校验。若使用本地技能，请以其 SKILL.md 的 metadata.contractDigest 重试 status。若缺少摘要，请使用实时工具和物料契约，并在 Alex 桌面端（MCP → 双向设计）刷新技能。',
-              'Skill contract unchecked. If using a local skill, retry status with expectedContractDigest from its SKILL.md metadata.contractDigest. If the skill has no digest, use the live tool and material contracts and refresh it in Alex Desktop (MCP → Bidirectional design).',
+              '此次未传入 expectedContractDigest，技能契约尚未校验。若使用本地技能，请以其 SKILL.md 的 metadata.contractDigest 重试 status；也可直接调用 protoflow_workspace(action="contracts") 获取实时契约。',
+              'Skill contract unchecked. Pass expectedContractDigest from SKILL.md metadata.contractDigest, or query protoflow_workspace(action="contracts") for live contracts.',
             ),
           } satisfies WorkspaceStatus;
         }
-        if (expectedDigest === PROTOFLOW_CONTRACT_DIGEST) {
-          return { ...enriched, contractCheckStatus: 'matched', contractMatch: true } satisfies WorkspaceStatus;
+        if (expectedDigest !== PROTOFLOW_CONTRACT_DIGEST) {
+          return {
+            ...enriched,
+            contractCheckStatus: 'mismatched',
+            contractMatch: false,
+            expectedContractDigest: expectedDigest,
+            contractDriftNotice: tr(
+              `本地技能摘要（${expectedDigest}）与当前运行服务端（v${PROTOFLOW_SERVER_VERSION}，${PROTOFLOW_CONTRACT_DIGEST}）存在差异，已自动启用实时契约自愈兼容模式，无需中断对话或要求用户刷新插件。请直接调用 protoflow_workspace(action="contracts") 与 protoflow_workspace(action="guide") 按实时契约继续执行。`,
+              `Local skill digest (${expectedDigest}) differs from the running server (v${PROTOFLOW_SERVER_VERSION}, ${PROTOFLOW_CONTRACT_DIGEST}). Live contract self-healing is active — do NOT interrupt the user or ask to reinstall. Call protoflow_workspace(action="contracts") and protoflow_workspace(action="guide") to inspect live contracts and continue.`,
+            ),
+          } satisfies WorkspaceStatus;
         }
-        return {
-          ...enriched,
-          contractCheckStatus: 'mismatched',
-          contractMatch: false,
-          contractDriftWarning: tr(
-            `技能契约摘要不一致：当前 SKILL.md 期望 ${expectedDigest}，运行中的 MCP 服务端（v${PROTOFLOW_SERVER_VERSION}）实际为 ${PROTOFLOW_CONTRACT_DIGEST}。请按实时 tools/list、protoflow_get_contracts 和 protoflow_get_implementation_guide 工作，并提醒用户在 Alex 桌面端（MCP → 双向设计）刷新技能。`,
-            `Skill contract drift detected: SKILL.md expects ${expectedDigest}, while the running MCP server (v${PROTOFLOW_SERVER_VERSION}) exposes ${PROTOFLOW_CONTRACT_DIGEST}. Use live tools/list, protoflow_get_contracts and protoflow_get_implementation_guide, and advise refreshing the skill in Alex Desktop (MCP → Bidirectional design).`,
-          ),
-        } satisfies WorkspaceStatus;
+        return { ...enriched, contractCheckStatus: 'matched', contractMatch: true } satisfies WorkspaceStatus;
+      }
+      if (action === 'overview') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_get_project_overview', args);
+      }
+      if (action === 'guide') {
+        return await executeAuthoringTool(workspace, 'protoflow_get_implementation_guide', args);
+      }
+      if (action === 'contracts') {
+        return await executeAuthoringTool(workspace, 'protoflow_get_contracts', args);
       }
       if (action === 'list_projects') {
         return await workspace.listProjects(typeof args.directory === 'string' ? args.directory : undefined);
@@ -1882,7 +2502,7 @@ export async function executeAuthoringTool(
         const filePath = requireNonEmptyString(args.filePath, 'filePath');
         return await workspace.switchProject(filePath);
       }
-      if (action === 'update_project_meta') {
+      if (action === 'update_project_meta' || action === 'update_meta') {
         const mutated = await workspace.mutate(
           (draft) => {
             const s = draft.stateSnapshot;
@@ -1979,12 +2599,101 @@ export async function executeAuthoringTool(
       };
     }
 
+    case 'protoflow_sitemap':
     case 'protoflow_manage_sitemap': {
       const mutated = await workspace.mutate((draft) => handleManageSitemap(draft, args), {
         expectedRevision: optionalExpectedRevision(args),
         summary: 'manage sitemap',
       });
       return { revision: mutated.revision, ...mutated.result };
+    }
+
+    case 'protoflow_database': {
+      const action = requireNonEmptyString(args.action, 'action');
+      if (action === 'get_schema') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_get_database_schema', args);
+      }
+      if (action === 'upsert_tables' || action === 'upsert_columns' || action === 'delete_tables') {
+        return await executeAuthoringTool(workspace, 'protoflow_upsert_db_tables', args);
+      }
+      if (action === 'read_rows' || action === 'read') {
+        return await handleManageTableRows(workspace, { ...args, action: 'read' });
+      }
+      if (action === 'seed_rows' || action === 'seed') {
+        return await handleManageTableRows(workspace, { ...args, action: 'seed' });
+      }
+      if (action === 'clear_rows' || action === 'clear') {
+        return await handleManageTableRows(workspace, { ...args, action: 'clear' });
+      }
+      throw new Error(tr(`不支持的数据库操作：${action}`, `Unsupported database action: ${action}`));
+    }
+
+    case 'protoflow_page': {
+      const action = requireNonEmptyString(args.action, 'action');
+      if (action === 'get_spec') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_get_page_spec', args);
+      }
+      if (action === 'write_page') {
+        return await executeAuthoringTool(workspace, 'protoflow_write_page', args);
+      }
+      if (action === 'edit_block') {
+        return await executeAuthoringTool(workspace, 'protoflow_edit_page_block', args);
+      }
+      if (
+        action === 'inspect_project' ||
+        action === 'inspect_imported_project' ||
+        action === 'inspect_page' ||
+        action === 'inspect_imported_page' ||
+        action === 'reshape_axure_page' ||
+        action === 'bind_axure_table' ||
+        action === 'optimize_axure_block' ||
+        action === 'reshape_figma_page'
+      ) {
+        const normalizedAction =
+          action === 'inspect_imported_project'
+            ? 'inspect_project'
+            : action === 'inspect_imported_page'
+              ? 'inspect_page'
+              : action;
+        return await executeAuthoringTool(workspace, 'protoflow_reshape_imported_page', {
+          ...args,
+          action: normalizedAction,
+        });
+      }
+      throw new Error(tr(`不支持的页面操作：${action}`, `Unsupported page action: ${action}`));
+    }
+
+    case 'protoflow_docs': {
+      const action = requireNonEmptyString(args.action, 'action');
+      if (action === 'get_docs') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_get_docs_and_flows', args);
+      }
+      if (action === 'upsert_sticky' || action === 'upsert_stickies') {
+        return await executeAuthoringTool(workspace, 'protoflow_manage_sticky_notes', { ...args, action: 'upsert' });
+      }
+      if (action === 'delete_sticky' || action === 'delete_stickies') {
+        return await executeAuthoringTool(workspace, 'protoflow_manage_sticky_notes', { ...args, action: 'delete' });
+      }
+      return await executeAuthoringTool(workspace, 'protoflow_manage_docs_and_flows', args);
+    }
+
+    case 'protoflow_audit': {
+      const action = typeof args.action === 'string' && args.action.trim() ? args.action.trim() : 'audit_project';
+      if (action === 'audit_project') {
+        return await executeAuthoringTool(workspace, 'protoflow_audit_project', args);
+      }
+      if (action === 'search_spec') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_search_spec', args);
+      }
+      if (action === 'checklist') {
+        const loaded = await workspace.load();
+        return executeSpecTool(loaded, 'protoflow_get_implementation_checklist', args);
+      }
+      throw new Error(tr(`不支持的审计/检索操作：${action}`, `Unsupported audit action: ${action}`));
     }
 
     case 'protoflow_upsert_db_tables': {
@@ -2229,12 +2938,16 @@ export async function executeAuthoringTool(
       const visualConsistencyWarnings = pageId
         ? visualCheck.warnings.filter((w) => w.pageIds.includes(pageId))
         : visualCheck.warnings;
+      const mindmapWarnings = auditProjectMindmaps(s, pageId);
+      const tableMenuCoverageIssues = auditTableMenuCoverage(s, pageId);
+      const blockingCoverageIssues = tableMenuCoverageIssues.filter((i) => i.blocking);
       const healthy =
         analysis.issues.length === 0 &&
         dbReview.tableErrors.length === 0 &&
         dbReview.relationErrors.length === 0 &&
         previewIssues.length === 0 &&
         danglingTableMenuBindings.length === 0 &&
+        blockingCoverageIssues.length === 0 &&
         pagesWithErrors === 0;
 
       return {
@@ -2250,14 +2963,19 @@ export async function executeAuthoringTool(
           databaseDesignRisks: dbReview.risks.length,
           previewRelationIssues: previewIssues.length,
           danglingTableMenuBindings: danglingTableMenuBindings.length,
+          unfulfilledTableMenuBindings: blockingCoverageIssues.length,
+          tableMenuCoverageWarnings: tableMenuCoverageIssues.length,
           visualConsistencyWarnings: visualConsistencyWarnings.length,
+          mindmapWarnings: mindmapWarnings.length,
         },
         referenceIssues: analysis.issues,
         databaseReview: dbReview,
         previewRelationIssues: previewIssues,
         danglingTableMenuBindings,
+        unfulfilledTableMenuBindings: tableMenuCoverageIssues,
         visualBaseline: visualCheck.dominant,
         visualConsistencyWarnings,
+        mindmapWarnings,
         pageAudits,
       };
     }
@@ -2472,8 +3190,8 @@ export function readAuthoringResource(uri: string): { contents: { uri: string; m
       '1. Call `protoflow_workspace(action="status")` (and `create_project` / `switch_project` if needed), then `protoflow_get_project_overview` and `protoflow_get_database_schema`.',
       '2. Clarify critical business ambiguities before building; handle routine UI layout autonomously.',
       '3. Create sitemap folders (`protoflow_manage_sitemap`), batch-create normalized ER tables (`protoflow_upsert_db_tables`), and seed coherent preview data (`protoflow_manage_table_rows`).',
-      '4. Load scenario guides (`protoflow_get_implementation_guide`) and exact component/action schemas (`protoflow_get_contracts`), then write pages (`protoflow_write_page` / `protoflow_edit_page_block`), sticky notes (`protoflow_manage_sticky_notes`), and docs/Mermaid flows (`protoflow_manage_docs_and_flows`).',
-      '5. Run `protoflow_audit_project` and resolve all contract, FK, and reference errors before concluding.',
+      '4. Load scenario guides (`protoflow_get_implementation_guide`) and exact component/action schemas (`protoflow_get_contracts`), then write pages (`protoflow_write_page` / `protoflow_edit_page_block`), sticky notes (`protoflow_manage_sticky_notes`), and structured project mindmaps + PRD notes (`protoflow_manage_docs_and_flows`: organize mindmap folders with `upsert_mindmap_folder`, write a product panorama `mindmap` plus core business `flowchart`/`stateDiagram-v2`/`sequenceDiagram` diagrams with `upsert_mindmap`, and bind `linkedFolderIds`/`linkedPageIds`).',
+      '5. Run `protoflow_audit_project` and resolve all contract, FK, reference errors, `visualConsistencyWarnings`, and `mindmapWarnings` before concluding.',
       '',
       '## 2. UX Architecture & Material Selection Heuristics',
       '- **Project-Wide Cohesive Visual System (One Product, One Visual Language)**: Lock ONE unified `(appearance, surfaceBg, accent, motion)` identity across EVERY `<Page>` and `<MobilePage>` in the project (read `protoflow_get_project_overview.visualBaseline.dominant` when adding pages to an existing project). Never mix different brand accents or canvas atmospheres across sibling screens (e.g., avoid green on Page 1, indigo on Page 2, and pitch-black OLED on Page 3 unless a dedicated dark wallboard/night terminal was explicitly requested). Follow the **85 / 10 / 5 hierarchy**: 85% unified canvas + clean Bento containers (`Card variant="bento"`), 10% single inverted hero anchor per screen (`Statistic tone="inverted"` or `MHeroHeader mode="wallet" | "metric_hero"`), and 5% strict semantic status accents (`emerald` = healthy, `amber` = warning, `rose` = danger/undo). Reserve `tone="dark_brief"` exclusively for `lime_forest`/`emerald`/`sage_field` palettes; on `obsidian`/`mist`/`indigo`/`blue` palettes use `AiCopilotCard tone="indigo"` and `MAiInsightCard tone="glow"`.',

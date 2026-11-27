@@ -51,12 +51,15 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     limits: ['静态 Timeline / Steps 展示不等于审批引擎或业务流程已执行。'],
   },
   {
-    id: 'picker', title: '关联记录选择与回填', when: '选择供应商、客户等关联记录，或在弹层中搜索后回填。',
+    id: 'picker', title: '关联记录选择、回填与批量转入明细', when: '选择供应商、客户等单条关联记录回填表单，或从物料目录、待转需求池、采购明细中勾选多行批量写入单据明细子表。',
     components: ['PickerInput', 'Modal', 'QueryForm', 'Table', 'Toolbar', 'Button'],
-    actions: ['returnSelection', 'closeOverlay'],
-    implementation: ['PickerInput.overlay 绑定弹层 id；弹层内 Table 开启 selectable，按需求选择单选/多选。', '单选外键使用 returnSelection(表格pfId, 显示字段名, 来源键字段名)，按声明的关系保存键原值，第二个字段只负责展示。两参数形式可回填普通文本；外键仅在显示字段就是引用列时可省略值字段。'],
-    acceptance: ['选单属于正确表；查询指向选单；选中后回填并关窗；取消保留原值。'],
-    limits: ['通用回填不等于任意多表明细导入。importPurchaseOrderLines 是专用采购验收动作，不可套用于其他业务。'],
+    actions: ['returnSelection', 'importSelectedRows', 'closeOverlay', 'refresh', 'toast'],
+    implementation: [
+      '表单字段单选回填：PickerInput.overlay 绑定弹层 id；弹层内 Table 开启 selectable，使用 returnSelection(表格pfId, 显示字段名, 来源键字段名)，按声明的外键关系保存键原值，第二个字段只负责展示。',
+      '主子单据批量选物料/转入明细（通用跨表转入）：在选单弹层内放置 <Table pfId="tbl_src" table="来源表ID" selectable={true} />，确认按钮调用 importSelectedRows("tbl_src", "目标明细表pfId", { fieldMap: { 目标列: "来源列" }, defaults: { 数量列: 1 } })。引擎自动读取当前选中主单行（或同弹层刚提交的主表 Form）绑定 target.sourceForeignKey 主单外键、自动关联来源外键并拷贝同名字段，严禁用仅调用 toast + closeOverlay 的假按钮冒充批量带入明细。',
+    ],
+    acceptance: ['选单属于正确表；查询指向选单；单选回填或批量转入明细后目标表格实时新增真实记录并关窗；取消保留原值。'],
+    limits: ['importPurchaseOrderLines 为内置模板专用动作；自定义业务表统一使用通用的 importSelectedRows 或绑定明细表的 Form submitForm。'],
   },
   {
     id: 'dashboard', title: '指标、进度与可视化', when: '概览数字、进度、图表、分布和趋势。',
@@ -95,7 +98,7 @@ export const IMPLEMENTATION_SCENARIOS: Scenario[] = [
     components: ['Repeater', 'Kanban', 'Calendar', 'ProgressBoard', 'ActivityFeed', 'AiCopilotCard', 'Row', 'Col', 'Card', 'Table', 'Descriptions', 'Form', 'QueryForm', 'SearchInput'],
     actions: ['selectRow', 'updateRow', 'submitForm', 'openDrawer', 'openModal', 'toast', 'refresh'],
     implementation: [
-      '一屏无弹窗主从工作台（Master-Detail）：左侧列表（Table / Repeater / CardGrid / Kanban）设置 table="主表ID" autoSelectFirst={true} onRowClick={() => { selectRow(); }}；右侧容器使用 <Card activeTable="主表ID" title="详情 {{row.单号字段}}">，其内部的 Descriptions、编辑 Form、审批 Button（直接调用 updateRow）以及明细子表 <Table table="子表ID" sourceForeignKey="外键字段"> 会随左侧点击实时无弹窗联动刷新。',
+      '一屏无弹窗主从工作台（Master-Detail）：左侧列表（Table / Repeater / CardGrid / Kanban）设置 table="主表ID" autoSelectFirst={true} onRowClick={() => { selectRow(); }}；右侧容器使用 <Card activeTable="主表ID" title="详情 {{row.单号字段}}">，其内部的 Descriptions、编辑 Form、审批 Button（直接调用 updateRow）以及明细子表 <Table table="子表ID" sourceForeignKey="外键字段"> 会随左侧点击实时无弹窗联动刷新。凡主表存在 1:N 明细子表（如计划明细、采购申请物料行、询价明细、验收明细）且单据页支持新建主单，必须同时提供新增或批量转入子表明细行的真实写库入口（<Form table="子表ID"> 的 submitForm 或选单弹层 importSelectedRows），同族兄弟单据页（如常规采购 vs 科研采购）严禁漏绑子表！',
       '自定义丰富卡片网格（Repeater）：当 CardGrid 固定槽位不够表达复杂卡片（如头像+多标签+进度条+多按钮）时，使用 <Repeater table="表ID" cols={3}> 并在内部组合 Card、Flex、Avatar、Tag、Progress、Button；字符串属性中写 title="{{row.字段名}}"，JSX 文本子节点中写 <Text>{\'{{row.字段名}}\'}</Text>，切勿为此退回手写 Freeform。',
       '状态流转优先用 Kanban：涉及商机阶段、工单流转、招聘漏斗、任务看板时，使用 <Kanban table="表ID" statusField="状态列" allowMove={true} />，泳道自动读取 ENUM 状态并支持拖拽或点击箭头直接修改物理表状态。',
       '时间排期优先用 Calendar：涉及预约、排班、生产计划、会议里程碑时，使用 <Calendar table="表ID" dateField="日期列" titleField="标题列" />。',

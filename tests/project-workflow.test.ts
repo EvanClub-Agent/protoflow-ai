@@ -126,6 +126,76 @@ test('a mindmap proposal with cross-menu table bindings survives review/reload; 
   assert.deepEqual(saved.dbTables[0].sharedByMenus, memberTable.sharedByMenus);
 });
 
+test('Hermes binds mindmaps to proposed pages and folders before confirmation and generates the accepted plan without tables', async t => {
+  const scope = fixture('plan-with-maps');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-with-maps-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'context.json');
+  atomicWrite(file, { ...scope, active: true, runId: 'r', workflowPhase: 'conversation', snapshot: projectContext(), operations: [] });
+  const setPlan = (proposal: typeof memberPlan) => callTool(file, memberDraft.tool, { plan: proposal });
+  const writeMap = (args: Record<string, unknown>) => callTool(file, 'protoflow_manage_mindmap', args);
+  setPlan(memberPlan);
+  const folder = { action: 'upsert_folder', id: 'maps', title: 'Plans', linkedFolderIds: ['folder-members'] };
+  const diagram = { action: 'upsert_mindmap', id: 'flow', parentId: 'maps', title: 'Flow', source: 'flowchart LR\n A-->B', linkedPageIds: ['page-issue'] };
+  writeMap(folder);
+  writeMap(diagram);
+  const beforeInvalid = fs.readFileSync(file, 'utf8');
+  assert.throws(() => writeMap({ ...folder, linkedFolderIds: 'folder-members' }), /linkedFolderIds/);
+  assert.throws(() => writeMap({ ...diagram, linkedPageIds: ['node-page-issue'] }), /页面 ID/);
+  assert.throws(() => setPlan({ ...memberPlan, pages: memberPlan.pages.slice(0, 1) }), /页面 ID/);
+  assert.equal(fs.readFileSync(file, 'utf8'), beforeInvalid);
+  writeMap({ ...diagram, linkedPageIds: ['page-member'] });
+  // The compacted journal now starts with map edits, including one superseded binding.
+  setPlan({ ...memberPlan, pages: memberPlan.pages.slice(0, 1) });
+  const operations = JSON.parse(fs.readFileSync(file, 'utf8')).operations;
+  const invalidBinding = { tool: 'protoflow_manage_mindmap', args: { ...diagram, linkedPageIds: ['page-issue'] } };
+  assert.throws(() => prepareProjectChanges(captureProjectPayload(), [...operations, invalidBinding], undefined, undefined, true), /页面 ID/);
+  const generated: string[] = [];
+  transport(async input => {
+    if (input.workflowPhase === 'conversation') return response(operations);
+    generated.push(input.targetPageId);
+    assert.deepEqual(input.snapshot.mindmaps.links.map((link: { targetNodeId: string }) => link.targetNodeId), ['maps', 'flow']);
+    return response([{ tool: 'protoflow_apply_tsx_patch', args: { pageId: input.targetPageId, source: source('会员档案') } }]);
+  });
+  await discussProject(scope.projectId, '新建会员档案并关联流程图');
+  const review = useAiChatStore.getState().messages.at(-1)!;
+  assert.ok(review.projectChangeReview?.items.some(line => line.includes('Flow')));
+  assert.deepEqual(useProtoStore.getState().mindmaps.nodes, []);
+  assert.deepEqual(usePageStore.getState().designerPages, []);
+  await resolveProjectReview(scope.projectId, review.id, true);
+  assert.deepEqual(generated, ['page-member']);
+  const saved = decodePflowBinary(encodePflowBinary(captureProjectPayload())).stateSnapshot;
+  assert.deepEqual(saved.projectPlan?.generatedPageIds, ['page-member']);
+  assert.deepEqual(saved.mindmaps.links, [
+    { targetNodeId: 'maps', page: { kind: 'folder', folderId: 'folder-members' } },
+    { targetNodeId: 'flow', page: { kind: 'page', pageId: 'page-member' } },
+  ]);
+});
+
+test('Hermes keeps a manually selected folder and restores a valid selection on undo', () => {
+  fixture('undo-map-selection');
+  const write = (action: string, id: string, fields: Record<string, unknown>, changeId?: string) =>
+    applyProjectChanges(captureProjectPayload(), projectRevision(), [{ tool: 'protoflow_manage_mindmap', args: { action, id, ...fields } }], undefined, changeId);
+  const selection = () => useProtoStore.getState().selectedMindmapNodeId;
+  write('upsert_folder', 'folder', { title: 'Folder' });
+  write('upsert_mindmap', 'original', { title: 'Original', source: 'mindmap\n root((A))' }, 'create-original');
+  assert.equal(selection(), 'original');
+  undoProjectChange('create-original');
+  assert.equal(selection(), 'folder');
+
+  write('upsert_mindmap', 'original', { title: 'Original', source: 'mindmap\n root((A))' });
+  useProtoStore.setState({ selectedMindmapNodeId: 'folder' });
+  write('upsert_folder', 'other', { title: 'Other' }, 'create-other');
+  assert.equal(selection(), 'folder');
+  useProtoStore.setState({ selectedMindmapNodeId: 'original' });
+  undoProjectChange('create-other');
+  assert.equal(selection(), 'original');
+  write('delete', 'original', {}, 'delete-original');
+  assert.equal(selection(), 'folder');
+  undoProjectChange('delete-original');
+  assert.equal(selection(), 'original');
+});
+
 test('native staging reports unresolved references on either call order and cannot use folders, overlays or superseded pages as menu owners', async () => {
   const scope = fixture('invalid-member-binding');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'member-bindings-')), file = path.join(dir,'context.json');

@@ -2,7 +2,7 @@ import { ProjectAcceptanceReview } from './ProjectAcceptanceReview';
 import { MindmapPicker, MindmapAttachmentCard } from './ProjectChatMindmaps';
 import { mindmapPath } from '../proto/mindmaps';
 import { ProjectPlanConfirmation } from './ProjectPlanConfirmation';
-import { includesPlanAndSchema } from '../services/projectPlanMenus';
+import { includesPlanWithMenuBindings } from '../services/projectPlanMenus';
 import { reviewPageRequirements } from '../services/projectChangeReview';
 import { ChatImageThumbnail, ChatImageDraftList } from '../proto/designer/ChatImageThumbnail';
 import { CHAT_IMAGE_ACCEPT, MAX_CHAT_IMAGES, readChatImageFiles } from '../services/chatImages';
@@ -229,7 +229,7 @@ function ProjectChatPane({scope,index}: {
   const lastMessage = messages[messages.length - 1];
   const replyError = lastMessage?.status === 'error' ? lastMessage.text : undefined;
   const composerError = (error !== replyError && error) || storageError;
-  const combinedProposal = lastMessage?.projectChangeReview && includesPlanAndSchema(lastMessage.projectChangeReview.operations);
+  const combinedProposal = lastMessage?.projectChangeReview && includesPlanWithMenuBindings(lastMessage.projectChangeReview.operations);
   const previousMessage = messages.at(-2);
   const failedQuestions = useMemo(() => {
     if (lastMessage?.status !== 'error' || previousMessage?.role !== 'user') return;
@@ -942,14 +942,14 @@ function ProjectChatPane({scope,index}: {
               >
                 <div className="flex items-center justify-between gap-2 border-b border-blue-100/80 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-blue-50/90 px-3.5 py-2">
                   <strong className="font-bold text-slate-900 min-w-0 truncate">
-                    {combinedProposal ? tr('确认目录、页面和数据表', 'Confirm Menus, Pages & Tables') : tr('本次修改 · 待应用', 'Pending Changes · Ready to Apply')}
+                    {combinedProposal ? tr('确认项目方案和修改', 'Confirm Project Plan & Changes') : tr('本次修改 · 待应用', 'Pending Changes · Ready to Apply')}
                   </strong>
                   <span className="shrink-0 rounded-full bg-blue-100/90 px-2 py-0.5 text-[10px] font-semibold text-blue-800 tabular-nums whitespace-nowrap">
                     {tr(`${lastMessage.projectChangeReview.items.length} 项变更`, `${lastMessage.projectChangeReview.items.length} changes`)}
                   </span>
                 </div>
                 <div className="p-3.5 space-y-2.5">
-                  {combinedProposal && <p>{tr('确认后会保存菜单和数据表，并逐页生成原型。要调整方案，可以继续在下方对话。', 'Confirming will save menus and tables and generate prototypes page by page. Keep chatting below to adjust the plan.')}</p>}
+                  {combinedProposal && <p>{tr('确认后会保存所列修改，并逐页生成原型。要调整方案，可以继续在下方对话。', 'Confirming will save the listed changes and generate prototypes page by page. Keep chatting below to adjust the plan.')}</p>}
                   <ul className="max-h-36 overflow-y-auto list-disc pl-5 space-y-1 text-slate-700 leading-relaxed break-words">
                     {lastMessage.projectChangeReview.items.map(item => (
                       <li key={item}>{td(item)}</li>
@@ -970,7 +970,7 @@ function ProjectChatPane({scope,index}: {
                     </pre>}
                   </details>
                   {combinedProposal && <details className="rounded-xl border border-slate-200/80 px-3 py-2">
-                    <summary className="cursor-pointer text-[11px] text-slate-600">{tr('查看完整改动（含表字段和菜单关联）', 'View full operations (including table columns & menu bindings)')}</summary>
+                    <summary className="cursor-pointer text-[11px] text-slate-600">{tr('查看完整改动', 'View full operations')}</summary>
                     <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px]">
                       {JSON.stringify(lastMessage.projectChangeReview.operations, null, 2)}
                     </pre>

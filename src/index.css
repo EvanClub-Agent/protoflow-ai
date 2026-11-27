@@ -1029,6 +1029,24 @@ body {
   color: light-dark(#1e293b, #e2e8f0);
 }
 
+.pf-notion-editor .ProseMirror h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 0.85em;
+  margin-bottom: 0.2em;
+  color: light-dark(#334155, #cbd5e1);
+}
+
+.pf-notion-editor .ProseMirror h5 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 0.7em;
+  margin-bottom: 0.15em;
+  color: light-dark(#475569, #94a3b8);
+}
+
 .pf-notion-editor .ProseMirror ul:not([data-type="taskList"]) {
   list-style-type: disc;
   padding-left: 1.4rem;
@@ -1079,7 +1097,7 @@ body {
   color: light-dark(#94a3b8, #64748b);
 }
 
-/* Callout / Blockquote */
+/* Callout / Blockquote & GFM Alerts */
 .pf-notion-editor .ProseMirror blockquote {
   margin: 0.85em 0;
   padding: 0.75rem 1rem;
@@ -1087,6 +1105,59 @@ body {
   border-radius: 0 0.75rem 0.75rem 0;
   background-color: light-dark(#f8fafc, #1a2230);
   color: light-dark(#334155, #cbd5e1);
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout]::before {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.35rem;
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout="note"] {
+  border-left-color: #2563eb;
+  background-color: light-dark(#eff6ff, rgba(37, 99, 235, 0.14));
+}
+.pf-notion-editor .ProseMirror blockquote[data-callout="note"]::before {
+  content: "ℹ️ 补充说明 (NOTE)";
+  color: light-dark(#1d4ed8, #93c5fd);
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout="tip"] {
+  border-left-color: #059669;
+  background-color: light-dark(#ecfdf5, rgba(16, 185, 129, 0.14));
+}
+.pf-notion-editor .ProseMirror blockquote[data-callout="tip"]::before {
+  content: "💡 最佳实践 (TIP)";
+  color: light-dark(#047857, #6ee7b7);
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout="important"] {
+  border-left-color: #7c3aed;
+  background-color: light-dark(#f5f3ff, rgba(124, 58, 237, 0.15));
+}
+.pf-notion-editor .ProseMirror blockquote[data-callout="important"]::before {
+  content: "📌 重要业务约束 (IMPORTANT)";
+  color: light-dark(#6d28d9, #c4b5fd);
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout="warning"] {
+  border-left-color: #d97706;
+  background-color: light-dark(#fffbeb, rgba(245, 158, 11, 0.15));
+}
+.pf-notion-editor .ProseMirror blockquote[data-callout="warning"]::before {
+  content: "⚠️ 边界与风险注意 (WARNING)";
+  color: light-dark(#b45309, #fcd34d);
+}
+
+.pf-notion-editor .ProseMirror blockquote[data-callout="caution"] {
+  border-left-color: #e11d48;
+  background-color: light-dark(#fff1f2, rgba(244, 63, 94, 0.15));
+}
+.pf-notion-editor .ProseMirror blockquote[data-callout="caution"]::before {
+  content: "🚨 强阻断红线 (CAUTION)";
+  color: light-dark(#be123c, #fda4af);
 }
 
 /* Inline Code & CodeBlock */
@@ -1132,29 +1203,146 @@ body {
   margin: 1.4em 0;
 }
 
-/* Notion-style Table */
-.pf-notion-editor .ProseMirror table {
-  border-collapse: collapse;
-  width: 100%;
+/* Notion-style Responsive & Resizable PRD Table */
+.pf-notion-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-inline-size: 100%;
+  max-block-size: min(640px, 78vh);
   margin: 1em 0;
+  border-radius: 0.6rem;
+  border: 1px solid light-dark(#e2e8f0, #2a3241);
+  container-type: inline-size;
+}
+
+.pf-notion-editor .ProseMirror table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
   font-size: 13px;
-  border-radius: 0.5rem;
-  overflow: hidden;
+}
+
+.pf-notion-editor .ProseMirror > table {
+  display: block;
+  overflow-x: auto;
+  max-inline-size: 100%;
+  margin: 1em 0;
+  border-radius: 0.6rem;
+  border: 1px solid light-dark(#e2e8f0, #2a3241);
 }
 
 .pf-notion-editor .ProseMirror th,
 .pf-notion-editor .ProseMirror td {
-  border: 1px solid light-dark(#e2e8f0, #2a3241);
+  border-right: 1px solid light-dark(#e2e8f0, #2a3241);
+  border-bottom: 1px solid light-dark(#e2e8f0, #2a3241);
   padding: 0.5rem 0.75rem;
   vertical-align: top;
   text-align: left;
-  min-width: 90px;
+  min-width: 88px;
+  max-width: 460px;
+  overflow-wrap: break-word;
+}
+
+.pf-notion-editor .ProseMirror tr > th:last-child,
+.pf-notion-editor .ProseMirror tr > td:last-child {
+  border-right: none;
+}
+
+.pf-notion-editor .ProseMirror tr:last-child > td,
+.pf-notion-editor .ProseMirror tr:last-child > th {
+  border-bottom: none;
 }
 
 .pf-notion-editor .ProseMirror th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
   background-color: light-dark(#f8fafc, #1a202b);
   font-weight: 600;
   color: light-dark(#334155, #e2e8f0);
+}
+
+.pf-notion-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #3b82f6;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.pf-notion-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Interactive Mermaid Diagram Block in Project Notes */
+.pf-note-mermaid-block {
+  margin: 1em 0;
+  border-radius: 0.85rem;
+  border: 1px solid light-dark(#e2e8f0, #2a3241);
+  background-color: light-dark(#ffffff, #141923);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.pf-note-mermaid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid light-dark(#f1f5f9, #232b3a);
+  background-color: light-dark(#f8fafc, #1a202c);
+  font-size: 11px;
+  user-select: none;
+}
+
+.pf-note-mermaid-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pf-note-mermaid-block[data-mode="split"] .pf-note-mermaid-body {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
+@media (max-width: 900px) {
+  .pf-note-mermaid-block[data-mode="split"] .pf-note-mermaid-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pf-note-mermaid-block[data-mode="preview"] .pf-note-mermaid-source {
+  display: none;
+}
+
+.pf-note-mermaid-block[data-mode="code"] .pf-note-mermaid-preview {
+  display: none;
+}
+
+.pf-note-mermaid-source pre {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  min-height: 120px;
+}
+
+.pf-note-mermaid-preview {
+  padding: 1rem;
+  overflow-x: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+  background-color: light-dark(#fcfdff, #111620);
+}
+
+.pf-note-mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* @Mention Inline Pills (Page & DB Table links) */
@@ -1715,3 +1903,69 @@ body {
   transition: none !important;
   animation: none !important;
 }
+
+/* ============================================================================
+   LEFT SITEMAP DIRECTORY — SINGLE-LINE OVERFLOW & RESIZE SASH
+   Follows modern single-line-overflow guidance:
+   - Full accessible string stays intact in the DOM
+   - Scroll-driven inline timeline + ResizeObserver fallback detect truncation
+   - Hover / keyboard focus-visible smoothly reveals hidden end text inside box
+   ============================================================================ */
+@property --truncated {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes pf-sitemap-truncated {
+  from,
+  to {
+    --truncated: 1;
+  }
+}
+
+.pf-sitemap-label {
+  display: block;
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: pf-sitemap-truncated linear both;
+  animation-timeline: scroll(self inline);
+}
+
+.pf-sitemap-label.truncated {
+  --truncated: 1;
+}
+
+.pf-sitemap-row-btn {
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pf-sitemap-row-btn:is(:hover, :focus-visible) .pf-sitemap-label {
+    text-overflow: clip;
+  }
+
+  @container style(--truncated: 1) {
+    .pf-sitemap-row-btn:is(:hover, :focus-visible) .pf-sitemap-label > span {
+      display: inline-block;
+      margin-inline-start: 100%;
+      translate: calc(1px - 100%);
+      transition:
+        margin-inline-start clamp(0.45s, calc(var(--scroll-width, 120) * 12ms), 2.4s) ease-in,
+        translate clamp(0.45s, calc(var(--scroll-width, 120) * 12ms), 2.4s) ease-in;
+    }
+  }
+
+  .pf-sitemap-row-btn:is(:hover, :focus-visible) .pf-sitemap-label.truncated > span {
+    display: inline-block;
+    margin-inline-start: 100%;
+    translate: calc(1px - 100%);
+    transition:
+      margin-inline-start clamp(0.45s, calc(var(--scroll-width, 120) * 12ms), 2.4s) ease-in,
+      translate clamp(0.45s, calc(var(--scroll-width, 120) * 12ms), 2.4s) ease-in;
+  }
+}
+

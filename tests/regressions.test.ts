@@ -74,6 +74,7 @@ import './i18n-field-contracts.test';
 import './high-ceiling-materials.test';
 import './experience-upgrade-phases2to5.test';
 import './architecture-review-fixes.test';
+import './master-detail-and-coverage-audit.test';
 import { createWebExport, type WebExportOptions } from '../src/services/webExport';
 import { parsePageSource } from '../src/proto/dsl/parser';
 import { walk } from '../src/proto/dsl/tree';

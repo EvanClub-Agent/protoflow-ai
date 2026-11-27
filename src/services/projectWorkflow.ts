@@ -46,7 +46,7 @@ import {
   validateProjectPlan,
   type ProjectPlan,
 } from './projectPlan';
-import { includesPlanAndSchema, pagePrototypeIssue, planMenuOperations } from './projectPlanMenus';
+import { includesPlanWithMenuBindings, pagePrototypeIssue, planMenuOperations } from './projectPlanMenus';
 import { analyzeProject } from './projectAnalysis';
 import { pendingProjectAiTasks } from './hermesTaskLock';
 import { withAiBackgroundTask } from './aiBackground';
@@ -465,7 +465,7 @@ export const buildProjectSharedInstructions = () => `${buildProtoFlowHermesSkill
 你是服务整个项目的 Agent。根据用户本轮目标自主决定是否读取目录、源码与数据、直接回答、追问，或组合项目工具。方案中每个页面须声明 dependencies 和 acceptanceCases。按业务来源拆解上下游，已知的关系填写准确来源表及引用列 ID，独立页填空数组，待澄清的来源填 pending。验收场景引用原始脑图 ID 与原文；交互场景除规划稳定的 actionPfId（多事件组件如 MBottomDock、Table 行操作等须同时指定 actionEvent 如 onPrimary / rowActions[0].onClick，或写为 dock.onPrimary）外，还应按动作语义填写 actionKind（submitForm / openOverlay / closeOverlay / navigate / updateRow / deleteRow / returnSelection）及对应的 targetId（目标表单 pfId / 弹层 id / 目标 pageId / 选单表格 pfId）、tableId（绑定的表 ID）与 field（状态字段或来源键字段），后续生成严格复用该 ID 与目标绑定，严禁仅用 toast 或 closeOverlay 代替实际保存或状态变更。取消、返回、退出场景也要绑定准确事件：返回菜单用 navigate 与目标 pageId，关闭弹层用 closeOverlay 与所在弹层 id；不得把业务写入绑在取消事件上，也不得用 toast 假装返回。绑定业务数据的统计图在验收场景填写 chart 的 pfId 和 tableId。需要覆盖业务流程或演示统计图时，用 protoflow_add_preview_scenario 在尚无记录的表中写入明示为演示的场景数据，再绑定页面。使用同一主记录的两条明细与另一条主记录验证筛选，不得把演示数当成用户业务数。不要把提问、建方案或逐页生成当作每次请求的必经之路。
 RP 迁移先用 protoflow_inspect_axure_project 在指定页面、目录或全项目按 nextOffset 盘点。结合项目约定区分列表、录入、查询、主单和明细；逐个核对实体及行粒度再选择共享表，同名表头不能证明字段归属。只读分析只给出来源、候选结构、疑问和分批建议。转换任务先用 protoflow_inspect_page（view 为 axure）按页和 pfId 读取证据，按 nextOffset 翻页并核对表头、grid.columnActions 行动作一致性、nearbyLabel 邻近标签、当前及隐藏状态和 importNotes 转换限制。先用 protoflow_get_project 核对表目录，字段依据明确时用 protoflow_upsert_db_table 或 protoflow_upsert_db_column 暂存结构；不能从标题、示例值或字段同名推断主外键、唯一性和必填性，且暂存表结构不等于已完成页面转换（参考工具返回的 rpMigrationProgress）。RP 优化副本默认以标准流式布局为目标：优先调用 protoflow_reshape_axure_page（传入源页 rp-page-... ID，由宿主生成副本 ID 与来源标记；后续可对副本增量调用 protoflow_edit_page_block），将平铺的查询标签/输入框/按钮合成为 QueryForm（target 指向 Table 的 pfId），将业务表格转为绑定真实表的 Table；仅在列动作逐行一致（grid.columnActions 中 consistentAcrossDataRows 为 true 且 requiresConfirmation 为 false，如每行一致的“查看”跳转）时迁入 Table.rowActions（跨页查看使用 navigate(目标页ID, "row") 或行内 openDrawer/openModal 以携带当前行），单行样例动作（如某一行才有的“删除”）严禁直接推广到全表 rowActions。严禁单凭外观静默删掉侧栏 OutlineTree、自定义分页、隐藏 DynamicPanel、未支持占位元件或条件点击警告；所有源页面核心区块必须在 coverage 中逐项交代为 converted（已转换）、retained（保留原控件）或 pending（待确认及原因）。若仅需在原自由画布内做单点替换，仍可使用 protoflow_bind_axure_table 或 protoflow_optimize_axure_block。用户核对候选修改后由宿主应用。
 需要用户决定时可用 protoflow_ask_questions 提供真实选项并等待回答。需要持续生成一整套页面时，可用 protoflow_set_project_plan 提交可执行方案；对已有方案的局部调整可用 protoflow_revise_project_page。合并并移除旧菜单须用明确的 merge 描述来源、目标弹层和展示方式，不能靠全量方案省略页面来暗示删除。先查明原有功能和关联。
-对具体工作可以直接组合工具：例如调整多个页面、移动已有菜单、创建目录、修改表或便签；不需要先建整套方案。工程修改暂存在同一份候选快照，宿主展示变更供用户确认。只读回答不产生修改。不要声称未确认的操作已经执行。使用当前会话注册的工具名（可能带 MCP 前缀），不要依赖历史消息中的可用工具列表。
+对具体工作可以直接组合工具：例如调整多个页面、移动已有菜单、创建目录、修改表或便签；不需要先建整套方案。从 0 搭建项目或调整模块架构且相关目录/页面已就绪时，使用 protoflow_manage_mindmap 同步创建或更新脑图目录（upsert_folder）、项目全景思维导图（mindmap）与核心业务流程/状态/时序图（upsert_mindmap），并通过 linkedFolderIds / linkedPageIds 关联对应目录或页面。工程修改暂存在同一份候选快照，宿主展示变更供用户确认。只读回答不产生修改。不要声称未确认的操作已经执行。使用当前会话注册的工具名（可能带 MCP 前缀），不要依赖历史消息中的可用工具列表。
 只有宿主明确发起已确认方案的单页生成时，才以本轮指定 pageId 为修改范围。读取 dependencyReview、上下游页面和真实来源键。单选引用字段用 returnSelection(表格pfId,显示字段,值字段)，来源行弹层的 Table.sourceForeignKey 指向当前明细表已声明的外键。新建关系后核查 databaseDesignReview 的 affectedRules，按当前来源更新已过时的结构说明，保留待接服务或待业务验证部分。完成可用的组件、交互与弹层并检查结果。${isEnLocale() ? '\nCurrent UI locale is English (en-US). Unless the user explicitly requests Chinese, write all chat replies, clarifying questions/options in protoflow_ask_questions, plan summaries/folder & page titles/requirements/acceptanceCases in protoflow_set_project_plan or protoflow_revise_project_page, project agreements, database cnName/comments, sticky notes, and generated page UI copy in idiomatic English.' : ''}`;
 const instructions = buildProjectSharedInstructions;
 
@@ -1371,7 +1371,7 @@ export async function resolveProjectReview(projectId: string, messageId: string,
     const latest = () => useAiChatStore.getState().byConversation[key]?.at(-1);
     const m = latest(), review = m?.projectChangeReview;
     if (!m || m.id !== messageId || !review) throw new Error(tr('该修改建议已被新的对话取代', 'This change proposal has been superseded by a newer message'));
-    const generate = accept && includesPlanAndSchema(review.operations);
+    const generate = accept && includesPlanWithMenuBindings(review.operations);
     const inheritedEvents: ProjectSessionSetupEvent[] = [];
     if (accept) {
       if (generate) {
@@ -1388,7 +1388,7 @@ export async function resolveProjectReview(projectId: string, messageId: string,
       applyProjectChanges(base, revision, operations, undefined, messageId, undefined, true, review.requirementRecords, review.requestedPage);
     }
     const acceptedPlan = generate ? useProtoStore.getState().projectPlan : null;
-    const message = generate ? tr('已确认方案，目录、菜单和数据表已就绪。', 'Plan confirmed; folders, menus, and tables are ready.') : accept ? tr('已应用本次修改。', 'Changes applied.') : tr('已放弃本次修改。', 'Changes discarded.');
+    const message = generate ? tr('已确认方案并保存所列修改。', 'Plan confirmed and proposed changes saved.') : accept ? tr('已应用本次修改。', 'Changes applied.') : tr('已放弃本次修改。', 'Changes discarded.');
     chat.updateMessage(m.id, {projectChangeReview:undefined, projectReviewDecision:accept ? 'applied' : 'discarded', text:m.text + '\n\n' + message, ...(accept ? {changeId:messageId, changedDoc:true} : {})});
     await flushProjectChanges(); check();
     useProjectWorkflow.setState(s => ({status:{...s.status,[conversationKey(scope)]:message}}));

@@ -3,6 +3,7 @@ import { seedRelatedTables } from '../database/previewRelations';
 import { applyGuardedRowDelete, applyRowDeleteUndo, type RowDeleteUndoPatch } from '../runtime/pokaYoke';
 import { create } from 'zustand';
 import { mapPurchaseOrderLines, purchaseTransferContractError } from '../runtime/purchaseTransfer';
+import { buildImportedSelectedRows } from '../runtime/rowTransfer';
 import { newId } from '../../utils/identity';
 import { folderOptions, validateDesignerFolders, emptySitemapOverrides, prepareSitemapMove, type DesignerFolder, type SitemapOverrides, type SitemapMoveTarget } from '../sitemap';
 import { SITEMAP_TREE, useProtoStore, type SitemapItem, type DBTableSchema } from '../../store/useProtoStore';
@@ -252,6 +253,15 @@ interface PageStore {
   undoDeleteRow: (patch: RowDeleteUndoPatch) => void;
   resetRows: () => void;
   importPurchaseOrderLines: (sourceTableId: string, targetTableId: string, ids: string[], orderId: string) => number;
+  importSelectedRows: (params: {
+    sourceTableId: string;
+    targetTableId: string;
+    ids: string[];
+    mapping?: unknown;
+    defaultParentForeignKey?: string;
+    resolveParentRow?: (parentTableId: string) => Row | undefined;
+    resolveDynamicValue?: (raw: unknown) => unknown;
+  }) => number;
 
   /** Team reusable business composite components (precipitated from canvas + built-in) */
   compositeBlocks: CustomCompositeBlock[];
@@ -588,6 +598,34 @@ export const usePageStore = create<PageStore>((set, get) => {
       const source = get().getRows(sourceTableId), existing = get().getRows(targetTableId);
       const added = mapPurchaseOrderLines(source, existing, ids, orderId);
       if (added.length) set(() => ({ tableRows: { ...currentData(), [sourceTableId]: source, [targetTableId]: [...existing, ...added] } }));
+      return added.length;
+    },
+
+    importSelectedRows: ({ sourceTableId, targetTableId, ids, mapping, defaultParentForeignKey, resolveParentRow, resolveDynamicValue }) => {
+      const tables = useProtoStore.getState().dbTables;
+      const source = get().getRows(sourceTableId);
+      const existing = get().getRows(targetTableId);
+      const added = buildImportedSelectedRows({
+        tables,
+        sourceTableId,
+        targetTableId,
+        sourceRows: source,
+        existingTargetRows: existing,
+        selectedIds: ids,
+        rawMapping: mapping,
+        defaultParentForeignKey,
+        resolveParentRow,
+        resolveDynamicValue,
+      });
+      if (added.length) {
+        set(() => ({
+          tableRows: {
+            ...currentData(),
+            [sourceTableId]: source,
+            [targetTableId]: [...existing, ...added],
+          },
+        }));
+      }
       return added.length;
     },
 

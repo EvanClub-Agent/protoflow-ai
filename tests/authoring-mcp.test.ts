@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { AUTHORING_MCP_TOOLS } from '../src/mcp/authoringCore';
+import { AUTHORING_MCP_TOOLS, DOMAIN_MCP_TOOLS } from '../src/mcp/authoringCore';
 import { createLocalAuthoringWorkspace } from '../src/mcp/authoringWorkspace';
 import { buildWorkspaceLoaderFromCli, parseCliArgs } from '../src/mcp/cli';
 import { handleSpecMcpPayload } from '../src/mcp/protocol';
@@ -99,10 +99,66 @@ test('Authoring MCP: CLI args & readonly vs readwrite isolation', async () => {
     assert.match(rwInit.instructions, /Read-Write/);
 
     const rwTools = (await rpcCall(rwLoader, 'tools/list')) as { tools: { name: string }[] };
-    assert.equal(rwTools.tools.length, SPEC_MCP_TOOLS.length + AUTHORING_MCP_TOOLS.length);
+    assert.equal(rwTools.tools.length, DOMAIN_MCP_TOOLS.length);
+    assert.deepEqual(
+      rwTools.tools.map((t) => t.name),
+      ['protoflow_workspace', 'protoflow_sitemap', 'protoflow_database', 'protoflow_page', 'protoflow_docs', 'protoflow_audit'],
+    );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('document folder updates preserve hierarchy, reject invalid bindings atomically and expose inherited links in both page reads', async t => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-folder-bindings-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const loader = createLocalAuthoringWorkspace({ workspaceDir: tmpDir });
+  const writeDocs = (action: string, fields: Record<string, unknown>) =>
+    callToolExpectOk(loader, 'protoflow_manage_docs_and_flows', { action, ...fields });
+  await callToolExpectOk(loader, 'protoflow_workspace', {
+    action: 'create_project', projectName: 'Folder bindings', filePath: 'links.pflow', projectMode: 'desktop',
+  });
+  for (const id of ['menu', 'empty-menu']) {
+    await callToolExpectOk(loader, 'protoflow_manage_sitemap', { action: 'upsert_folder', folder: { id, title: id, parentFolderId: null } });
+  }
+  await callToolExpectOk(loader, 'protoflow_write_page', { pageId: 'overview', folderId: 'menu', title: 'Overview',
+    source: 'export default function Page(){return <Page pfId="root" title="Overview"><Card pfId="card" title="Overview"/></Page>}' });
+
+  for (const kind of ['note', 'mindmap']) {
+    const action = `upsert_${kind}_folder`;
+    await writeDocs(action, { folder: { id: `${kind}-root`, title: 'Root' } });
+    const child = { id: `${kind}-child`, title: 'Child' };
+    await writeDocs(action, { folder: { ...child, parentId: `${kind}-root` } });
+    await writeDocs(action, { folder: { ...child, linkedFolderIds: ['menu'] } });
+    for (const [field, badValue] of [['linkedFolderIds', 'menu'], ['linkedPageIds', null], ['linkedPageIds', ['overview', ' ']]] as const) {
+      const before = fs.readFileSync(path.join(tmpDir, 'links.pflow'));
+      const message = await callToolExpectError(loader, 'protoflow_manage_docs_and_flows', { action, folder: { ...child, [field]: badValue } });
+      assert.match(message, new RegExp(field));
+      assert.deepEqual(fs.readFileSync(path.join(tmpDir, 'links.pflow')), before);
+    }
+  }
+  await writeDocs('upsert_note', { note: { id: 'prd', title: 'PRD', parentId: 'note-child', markdown: 'Requirements' } });
+  await writeDocs('upsert_mindmap', { mindmap: { id: 'flow', title: 'Flow', parentId: 'mindmap-child', source: 'flowchart LR\n A-->B' } });
+  const state = (await loader.load()).payload.stateSnapshot;
+  assert.equal(state.projectNotes?.nodes.find(node => node.id === 'note-child')?.parentId, 'note-root');
+  assert.equal(state.mindmaps.nodes.find(node => node.id === 'mindmap-child')?.parentId, 'mindmap-root');
+  const byPage = { pageId: 'overview' };
+  const docs = await callToolExpectOk(loader, 'protoflow_get_docs_and_flows', byPage);
+  const page = await callToolExpectOk(loader, 'protoflow_get_page_spec', byPage);
+  assert.deepEqual(docs.notes.map((n: { id: string }) => n.id), ['prd']);
+  assert.deepEqual(docs.mindmaps.map((n: { id: string }) => n.id), ['flow']);
+  assert.deepEqual(docs.notes[0].linkedTargets, ['folder:menu']);
+  assert.deepEqual(page.linkedNotes.map((n: { id: string }) => n.id), ['prd']);
+  assert.deepEqual(page.linkedMindmaps.map((n: { id: string }) => n.id), ['flow']);
+
+  await writeDocs('upsert_mindmap_folder', { folder: { id: 'mindmap-child', title: 'Child', parentId: null, linkedFolderIds: ['empty-menu'] } });
+  const moved = await callToolExpectOk(loader, 'protoflow_get_docs_and_flows', { mindmapId: 'flow' });
+  assert.equal(moved.mindmaps[0].path, 'Child / Flow');
+  assert.deepEqual(moved.mindmaps[0].relatedPageIds, []);
+  assert.deepEqual((await callToolExpectOk(loader, 'protoflow_audit_project')).mindmapWarnings, []);
+  assert.deepEqual((await callToolExpectOk(loader, 'protoflow_get_page_spec', byPage)).linkedMindmaps, []);
+  await writeDocs('upsert_mindmap_folder', { folder: { id: 'mindmap-child', title: 'Child', linkedFolderIds: [] } });
+  assert.equal((await callToolExpectOk(loader, 'protoflow_audit_project')).mindmapWarnings.length, 1);
 });
 
 test('Authoring MCP: full 0-to-1 hybrid prototype lifecycle (ER, seed rows, PC+Mobile pages, block edits, stickies, docs/flows, audit, delete)', async () => {
@@ -530,7 +586,15 @@ test('Authoring MCP: full 0-to-1 hybrid prototype lifecycle (ER, seed rows, PC+M
       action: 'upsert_note',
       note: {
         id: 'note_crm_prd',
-        markdown: '# CRM 订单业务规则\n\n- 订单审批通过后不可删除。',
+        markdown: [
+          '# CRM 订单业务规则',
+          '',
+          '## 1. 审批前置条件',
+          '- 订单审批通过后不可删除。',
+          '',
+          '## 2. 状态流转说明',
+          '- 草稿 -> 待审批 -> 已通过',
+        ].join('\n'),
         status: 'confirmed',
         priority: 'P0',
         linkedPageIds: ['page_orders', 'page_orders'], // Deduped cleanly
@@ -538,6 +602,43 @@ test('Authoring MCP: full 0-to-1 hybrid prototype lifecycle (ER, seed rows, PC+M
     });
     assert.equal(noteRes.title, 'CRM 订单业务规则');
     assert.equal(noteRes.linkCount, 1);
+
+    // Incremental patch_note (replace_section + append + replace) and sectioned get_docs_and_flows
+    const patchRes = await callToolExpectOk(loader, 'protoflow_manage_docs_and_flows', {
+      action: 'patch_note',
+      notePatch: {
+        id: 'note_crm_prd',
+        operations: [
+          {
+            mode: 'replace_section',
+            heading: '2. 状态流转说明',
+            markdown: '## 2. 状态流转说明\n- 草稿 -> 待审批 -> 已通过 / 已驳回（驳回必填原因）',
+          },
+          {
+            mode: 'append',
+            markdown: '## 3. 结算推单约束\n- 仅已通过订单允许下推应收结算单。',
+          },
+        ],
+      },
+    });
+    assert.equal(patchRes.appliedOperations, 2);
+
+    const sectionRead = await callToolExpectOk(loader, 'protoflow_get_docs_and_flows', {
+      noteId: 'note_crm_prd',
+      sectionHeading: '2. 状态流转说明',
+    });
+    assert.equal(sectionRead.notes.length, 1);
+    assert.match(sectionRead.notes[0].markdown, /已驳回（驳回必填原因）/);
+    assert.ok(!sectionRead.notes[0].markdown.includes('结算推单约束'), 'sectionHeading returns only the requested section');
+
+    const missingTargetErr = await callToolExpectError(loader, 'protoflow_manage_docs_and_flows', {
+      action: 'patch_note',
+      notePatch: {
+        id: 'note_crm_prd',
+        operations: [{ mode: 'replace', target: '不存在的旧段落', replacement: '新段落' }],
+      },
+    });
+    assert.match(missingTargetErr, /target/);
 
     await callToolExpectOk(loader, 'protoflow_manage_docs_and_flows', {
       action: 'upsert_mindmap',
@@ -781,7 +882,7 @@ test('Authoring MCP: compiled CLI bundle writes valid .pflow over real stdio in 
     assert.equal(frames.length, 7);
 
     const toolsFrame = frames.find((f) => f.id === 2);
-    assert.equal(toolsFrame.result.tools.length, SPEC_MCP_TOOLS.length + AUTHORING_MCP_TOOLS.length);
+    assert.equal(toolsFrame.result.tools.length, DOMAIN_MCP_TOOLS.length);
 
     const auditFrame = frames.find((f) => f.id === 7);
     assert.notEqual(auditFrame.result.isError, true, auditFrame.result.content?.[0]?.text);
@@ -821,10 +922,120 @@ test('Authoring Skill Pack: SKILL.md and reference docs exist with valid frontma
   assert.match(fmMatch[1], /^name:\s*alex-protoflow-designer\b/m);
   assert.match(fmMatch[1], /^description:\s*\S+/m);
 
-  const validToolNames = new Set([...SPEC_MCP_TOOLS, ...AUTHORING_MCP_TOOLS, capturePreviewTool].map((t) => t.name));
+  const validToolNames = new Set([
+    ...DOMAIN_MCP_TOOLS,
+    ...SPEC_MCP_TOOLS,
+    ...AUTHORING_MCP_TOOLS,
+    capturePreviewTool,
+  ].map((t) => t.name));
   const referencedTools = [...content.matchAll(/\b(protoflow_[a-z0-9_]+)\b/g)].map((m) => m[1]);
-  assert.ok(referencedTools.length >= 10, 'SKILL.md should reference core protoflow_* MCP tools');
+  assert.ok(referencedTools.length >= 7, 'SKILL.md should reference core protoflow_* MCP domain tools');
   for (const toolName of referencedTools) {
     assert.equal(validToolNames.has(toolName), true, `SKILL.md references unknown MCP tool: ${toolName}`);
+  }
+});
+
+test('Unified 7-Domain MCP Tools execute full closed-loop authoring & inspection identically to legacy aliases', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-domain-tools-'));
+  try {
+    const loader = createLocalAuthoringWorkspace({ workspaceDir: tmpDir });
+    const callOk = async (name: string, args: Record<string, unknown>) => {
+      const res = (await rpcCall(loader, 'tools/call', { name, arguments: args })) as {
+        isError?: boolean;
+        content: { text: string }[];
+      };
+      assert.notEqual(res.isError, true, `${name} failed: ${res.content?.[0]?.text}`);
+      return JSON.parse(res.content[0].text);
+    };
+
+    await callOk('protoflow_workspace', {
+      action: 'create_project',
+      filePath: 'domain.pflow',
+      projectName: 'Domain Suite',
+      projectMode: 'desktop',
+    });
+    const guides = await callOk('protoflow_workspace', { action: 'guide' });
+    assert.ok(Array.isArray(guides.scenarios));
+    const contracts = await callOk('protoflow_workspace', { action: 'contracts' });
+    assert.ok(Array.isArray(contracts.components.desktop));
+
+    await callOk('protoflow_sitemap', {
+      action: 'upsert_folder',
+      folder: { id: 'f_biz', title: '物资管理', parentFolderId: null },
+    });
+    await callOk('protoflow_database', {
+      action: 'upsert_tables',
+      tables: [
+        {
+          id: 't_items',
+          tableName: 't_items',
+          cnName: '物资台账',
+          domain: '仓储',
+          description: '物资目录',
+          modeling: { entity: '物资', grain: '一种物资一行', reason: '主数据' },
+          sharedByMenus: [{ pageId: 'p_items', menuTitle: '物资列表', accessMode: 'CRUD 读写', fieldMappingNote: '' }],
+          columns: [
+            { id: 'c_id', name: 'id', dataType: 'VARCHAR(64)', nullable: false, isPrimaryKey: true, comment: 'ID' },
+            { id: 'c_name', name: 'item_name', dataType: 'VARCHAR(120)', nullable: false, comment: '名称' },
+          ],
+        },
+      ],
+    });
+    await callOk('protoflow_database', {
+      action: 'seed_rows',
+      datasets: [{ tableId: 't_items', rows: [{ id: 'it_1', item_name: '色谱纯乙腈' }] }],
+    });
+    const schema = await callOk('protoflow_database', { action: 'get_schema' });
+    assert.equal(schema.tables.length, 1);
+    const rows = await callOk('protoflow_database', { action: 'read_rows', tableId: 't_items' });
+    assert.equal(rows.rows.length, 1);
+
+    await callOk('protoflow_page', {
+      action: 'write_page',
+      pageId: 'p_items',
+      title: '物资列表',
+      folderId: 'f_biz',
+      source: 'export default function Page() { return (<Page pfId="r" title="物资列表"><Card pfId="c1" title="目录"><Table pfId="tbl1" table="t_items" columns={[{ dataIndex: "item_name", title: "名称" }]} /></Card></Page>); }',
+    });
+    await callOk('protoflow_page', {
+      action: 'edit_block',
+      pageId: 'p_items',
+      targetPfId: 'c1',
+      mode: 'append_children',
+      tsx: '<Text pfId="t_hint">已启用</Text>',
+    });
+    const spec = await callOk('protoflow_page', { action: 'get_spec', pageId: 'p_items' });
+    assert.match(spec.pageSourceTsx, /t_hint/);
+
+    await callOk('protoflow_docs', {
+      action: 'upsert_sticky',
+      stickies: [{ id: 'st_1', pageId: 'p_items', targetWidgetId: 'tbl1', targetWidgetName: '物资表', text: '按编码唯一校验' }],
+    });
+    await callOk('protoflow_docs', {
+      action: 'upsert_note',
+      note: { id: 'n_prd', title: '物资模块 PRD', markdown: '# 物资模块 PRD\n\n## 业务规则\n- 批次先进先出' },
+    });
+    await callOk('protoflow_docs', {
+      action: 'patch_note',
+      notePatch: { id: 'n_prd', operations: [{ mode: 'append', markdown: '- 有效期预警' }] },
+    });
+    await callOk('protoflow_docs', {
+      action: 'upsert_mindmap',
+      mindmap: { id: 'mm_1', title: '物资全景', source: 'mindmap\n  root((物资))\n    物资列表', linkedFolderIds: ['f_biz'] },
+    });
+    const docs = await callOk('protoflow_docs', { action: 'get_docs', noteId: 'n_prd' });
+    assert.match(docs.notes[0].markdown, /有效期预警/);
+
+    const overview = await callOk('protoflow_workspace', { action: 'overview' });
+    assert.equal(overview.pages.length, 1);
+    const search = await callOk('protoflow_audit', { action: 'search_spec', query: '色谱纯乙腈' });
+    assert.ok(search.matches.length >= 0);
+    const checklist = await callOk('protoflow_audit', { action: 'checklist' });
+    assert.equal(checklist.summary.tablesToImplement, 1);
+    const audit = await callOk('protoflow_audit', { action: 'audit_project' });
+    assert.equal(audit.healthy, true);
+    assert.deepEqual(audit.mindmapWarnings, []);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

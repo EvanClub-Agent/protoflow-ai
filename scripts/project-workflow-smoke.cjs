@@ -163,7 +163,7 @@ if(process.versions.electron){
  await draftText('加入会员档案菜单和数据表');
  await js(`document.querySelector('form button[type=submit]').click()`);
  const mixedCard = '[aria-label="本次修改"]';
- await wait(`document.querySelector('${mixedCard}')?.innerText.includes('确认目录、页面和数据表') && !window.workflowSmoke.running()`);
+ await wait(`document.querySelector('${mixedCard}')?.innerText.includes('确认项目方案和修改') && !window.workflowSmoke.running()`);
  assert.equal(await js('Object.hasOwn(window.workflowSmoke.sources(),"page-member")'),false);
  assert.equal(await js('window.workflowSmoke.tables().length'),0);
  await js(`Array.from(document.querySelectorAll('${mixedCard} summary')).find(el=>el.textContent==='查看每个页面要做什么').click()`);

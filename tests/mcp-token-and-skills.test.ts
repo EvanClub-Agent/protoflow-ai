@@ -9,7 +9,7 @@ import Ajv from 'ajv';
 import { createLocalAuthoringWorkspace } from '../src/mcp/authoringWorkspace';
 import { buildCanonicalContractSurface, canonicalizeJsonSchema } from '../src/mcp/contractSurface';
 import { PROTOFLOW_CONTRACT_DIGEST, PROTOFLOW_SERVER_VERSION } from '../src/mcp/generatedSkillBundle';
-import { handleSpecMcpPayload, handleSpecMcpRequest, MCP_TOOL_CATALOGS, SUPPORTED_MCP_PROTOCOLS } from '../src/mcp/protocol';
+import { handleSpecMcpPayload, handleSpecMcpRequest, MCP_TOOL_CATALOGS, SUPPORTED_MCP_PROTOCOLS, type JsonRpcRequest } from '../src/mcp/protocol';
 import type { McpToolDefinition } from '../src/mcp/tools';
 import { getMaterialContracts, validateMaterialSource } from '../src/proto/registry/materialContract';
 import { UNIVERSAL_COMPONENT_NAMES } from '../src/proto/registry/meta';
@@ -51,7 +51,7 @@ test('Hermes MCP: session tool profiles prune out-of-scope schemas and enforce t
     const noteTools = resolveToolsForProfile('note-assistant');
     const projectTools = resolveToolsForProfile('project');
 
-    assert.equal(projectTools.length, 33);
+    assert.equal(projectTools.length, 34);
     assert.equal(pageTools.length, 19);
     assert.equal(pageExecTools.length, 18);
     assert.equal(noteTools.length, 6);
@@ -399,7 +399,7 @@ test('External MCP: Skills over MCP (io.modelcontextprotocol/skills), MCP 2026-0
       .split('\n')
       .map((line) => JSON.parse(line));
     assert.equal(responses[0].result.skills[0].uri, DESIGNER_SKILL_ENTRY_URI);
-    assert.match(responses[1].result.contents[0].text, /protoflow_reshape_imported_page/);
+    assert.match(responses[1].result.contents[0].text, /protoflow_page/);
     assert.equal(responses[2].error.code, -32602);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -505,9 +505,8 @@ test('Contract digest stamps SKILL.md, ignores prose-only edits, and detects sta
     assert.equal(plainStatus.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
     assert.equal(plainStatus.contractCheckStatus, 'unchecked');
     assert.match(plainStatus.contractCheckNotice, /SKILL\.md.*metadata\.contractDigest/);
-    assert.match(plainStatus.contractCheckNotice, /refresh|刷新/);
+    assert.match(plainStatus.contractCheckNotice, /contracts/);
     assert.equal(plainStatus.contractMatch, undefined);
-    assert.equal(plainStatus.contractDriftWarning, undefined);
 
     const matchedStatus = JSON.parse(
       (
@@ -519,22 +518,29 @@ test('Contract digest stamps SKILL.md, ignores prose-only edits, and detects sta
     );
     assert.equal(matchedStatus.contractMatch, true);
     assert.equal(matchedStatus.contractCheckStatus, 'matched');
-    assert.equal(matchedStatus.contractDriftWarning, undefined);
+    assert.equal(matchedStatus.contractDriftNotice, undefined);
 
+    // Soft contract self-healing: mismatched digest returns live status + contractDriftNotice without locking the session!
     const staleDigest = 'sha256:0123456789abcdef';
-    const driftedStatus = JSON.parse(
-      (
-        await callTool(rwLoader, 'protoflow_workspace', {
-          action: 'status',
-          expectedContractDigest: staleDigest,
-        })
-      ).content[0].text,
-    );
-    assert.equal(driftedStatus.contractMatch, false);
-    assert.equal(driftedStatus.contractCheckStatus, 'mismatched');
-    assert.equal(driftedStatus.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
-    assert.match(driftedStatus.contractDriftWarning, new RegExp(staleDigest));
-    assert.match(driftedStatus.contractDriftWarning, new RegExp(PROTOFLOW_CONTRACT_DIGEST));
+    const driftedRes = await callTool(rwLoader, 'protoflow_workspace', {
+      action: 'status',
+      expectedContractDigest: staleDigest,
+    });
+    assert.notEqual(driftedRes.isError, true);
+    const driftedBody = JSON.parse(driftedRes.content[0].text);
+    assert.equal(driftedBody.contractCheckStatus, 'mismatched');
+    assert.equal(driftedBody.contractMatch, false);
+    assert.equal(driftedBody.expectedContractDigest, staleDigest);
+    assert.equal(driftedBody.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
+    assert.match(driftedBody.contractDriftNotice, new RegExp(staleDigest));
+    assert.match(driftedBody.contractDriftNotice, new RegExp(PROTOFLOW_CONTRACT_DIGEST));
+    assert.match(driftedBody.contractDriftNotice, new RegExp(PROTOFLOW_SERVER_VERSION));
+
+    // Subsequent calls proceed seamlessly without interrupting the user's conversation
+    const contractsViaDomain = await callTool(rwLoader, 'protoflow_workspace', { action: 'contracts' });
+    assert.notEqual(contractsViaDomain.isError, true);
+    const guideViaDomain = await callTool(rwLoader, 'protoflow_workspace', { action: 'guide' });
+    assert.notEqual(guideViaDomain.isError, true);
 
     const emptyDigestRes = await callTool(rwLoader, 'protoflow_workspace', {
       action: 'status',
@@ -542,35 +548,39 @@ test('Contract digest stamps SKILL.md, ignores prose-only edits, and detects sta
     });
     assert.equal(emptyDigestRes.isError, true);
 
-    const contractsSummary = JSON.parse((await callTool(rwLoader, 'protoflow_get_contracts', {})).content[0].text);
+    const contractsSummary = JSON.parse(contractsViaDomain.content[0].text);
     assert.equal(contractsSummary.serverVersion, PROTOFLOW_SERVER_VERSION);
     assert.equal(contractsSummary.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
 
     const contractsDetail = JSON.parse(
-      (await callTool(rwLoader, 'protoflow_get_contracts', { componentNames: ['Page', 'Table'] })).content[0].text,
+      (await callTool(rwLoader, 'protoflow_workspace', { action: 'contracts', componentNames: ['Page', 'Table'] })).content[0].text,
     );
     assert.equal(contractsDetail.serverVersion, PROTOFLOW_SERVER_VERSION);
     assert.equal(contractsDetail.contractDigest, PROTOFLOW_CONTRACT_DIGEST);
 
-    // Verify desktop_bridge schema preserves expectedContractDigest without requiring expectedRevision
+    // Verify desktop_bridge schema preserves expectedContractDigest and forwards soft-healed drift transparently
+    let contextReads = 0;
     const desktopMock = {
       mode: 'readwrite' as const,
       canWrite: true,
       transport: 'desktop_bridge' as const,
       hasActiveProject: () => true,
       load: async () => { throw new Error('unused'); },
-      getContext: async () => ({
-        transport: 'desktop_bridge' as const,
-        projectPath: '/tmp/live.pflow',
-        workspaceDir: '/tmp',
-        projectId: 'p-live',
-        projectName: 'Live',
-        projectMode: 'desktop' as const,
-        revision: 'rev-1',
-        activePageId: 'home',
-        selectedPfId: null,
-        viewMode: 'canvas',
-      }),
+      getContext: async () => {
+        contextReads++;
+        return {
+          transport: 'desktop_bridge' as const,
+          projectPath: '/tmp/live.pflow',
+          workspaceDir: '/tmp',
+          projectId: 'p-live',
+          projectName: 'Live',
+          projectMode: 'desktop' as const,
+          revision: 'rev-live-99',
+          activePageId: 'home',
+          selectedPfId: null,
+          viewMode: 'canvas',
+        };
+      },
       listProjects: async () => ({ directory: '/tmp', projects: [] }),
       createProject: async () => { throw new Error('unsupported'); },
       switchProject: async () => { throw new Error('unsupported'); },
@@ -583,27 +593,87 @@ test('Contract digest stamps SKILL.md, ignores prose-only edits, and detects sta
       params: { _meta: modernMeta },
     });
     assert.ok(desktopToolsRes && !Array.isArray(desktopToolsRes) && !desktopToolsRes.error);
-    const desktopWorkspaceTool = (desktopToolsRes.result as { tools: { name: string; inputSchema: any }[] }).tools.find(
-      (t) => t.name === 'protoflow_workspace',
-    )!;
+    const desktopToolsList = (desktopToolsRes.result as { tools: { name: string; inputSchema: any }[] }).tools;
+    assert.equal(desktopToolsList.length, 6);
+    const desktopWorkspaceTool = desktopToolsList.find((t) => t.name === 'protoflow_workspace')!;
     assert.ok(desktopWorkspaceTool.inputSchema.properties.expectedContractDigest);
+    assert.ok(desktopWorkspaceTool.inputSchema.properties.designTokens);
     assert.ok(!desktopWorkspaceTool.inputSchema.required?.includes('expectedRevision'));
 
-    const desktopDrift = JSON.parse(
-      (
-        await callTool(desktopMock, 'protoflow_workspace', {
-          action: 'status',
-          expectedContractDigest: staleDigest,
-        })
-      ).content[0].text,
-    );
-    assert.equal(desktopDrift.transport, 'desktop_bridge');
-    assert.equal(desktopDrift.contractMatch, false);
-    assert.equal(desktopDrift.contractCheckStatus, 'mismatched');
-    assert.match(desktopDrift.contractDriftWarning, /drift|不一致/);
+    let forwarded = 0;
+    const forwardToDesktop = (req: JsonRpcRequest) => {
+      forwarded++;
+      return handleSpecMcpRequest(desktopMock, req);
+    };
+    const relayConn = { modern: true };
+    const callRelay = async (name: string, args: Record<string, unknown>) => {
+      const res = await handleSpecMcpRequest(
+        forwardToDesktop,
+        { jsonrpc: '2.0', id: 'rc', method: 'tools/call', params: { _meta: modernMeta, name, arguments: args } },
+        relayConn,
+      );
+      assert.ok(res && !res.error);
+      return res.result as { isError?: boolean; content: { text: string }[] };
+    };
+
+    const desktopDrift = await callRelay('protoflow_workspace', {
+      action: 'status',
+      expectedContractDigest: staleDigest,
+    });
+    assert.notEqual(desktopDrift.isError, true);
+    const desktopDriftJson = JSON.parse(desktopDrift.content[0].text);
+    assert.equal(desktopDriftJson.contractCheckStatus, 'mismatched');
+    assert.equal(desktopDriftJson.contractMatch, false);
+    assert.equal(desktopDriftJson.revision, 'rev-live-99');
+    assert.equal(contextReads, 1);
+    assert.equal(forwarded, 1);
+
+    // Subsequent calls continue without locking out the user
+    const contractsAfterDrift = await callRelay('protoflow_workspace', { action: 'contracts' });
+    assert.notEqual(contractsAfterDrift.isError, true);
+    assert.equal(forwarded, 2);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('relay returns [CONTRACT_UNVERIFIED] when desktop is unreachable or returns malformed status, then recovers immediately without lock', async () => {
+  const expected = 'sha256:1234567890abcdef';
+  const connection = { modern: false };
+  let status: Record<string, unknown> | null = null;
+  let forwarded = 0;
+  const forward = async () => {
+    forwarded++;
+    if (!status) throw new Error('offline');
+    return { jsonrpc: '2.0' as const, id: 7,
+      result: { isError: false, content: [{ type: 'text', text: JSON.stringify(status) }] } };
+  };
+  const call = async (args: Record<string, unknown>) => {
+    const reply = await handleSpecMcpRequest(forward, {
+      id: 7, method: 'tools/call', params: { name: 'protoflow_workspace', arguments: args },
+    }, connection);
+    assert.ok(reply && !reply.error);
+    return reply.result as { isError: boolean; content: { text: string }[] };
+  };
+
+  // Offline desktop -> [CONTRACT_UNVERIFIED]
+  const offlineRes = await call({ expectedContractDigest: expected });
+  assert.equal(offlineRes.isError, true);
+  assert.ok(offlineRes.content[0].text.startsWith('[CONTRACT_UNVERIFIED]'));
+
+  // Malformed status missing contractCheckStatus -> [CONTRACT_UNVERIFIED]
+  status = { projectId: 'private-project', revision: 'private-revision' };
+  const malformedRes = await call({ expectedContractDigest: expected });
+  assert.equal(malformedRes.isError, true);
+  assert.ok(malformedRes.content[0].text.startsWith('[CONTRACT_UNVERIFIED]'));
+  assert.doesNotMatch(JSON.stringify(malformedRes), /private-/);
+
+  // As soon as desktop replies with matched or mismatched status, the next call succeeds with zero lock
+  status = { contractDigest: PROTOFLOW_CONTRACT_DIGEST, serverVersion: '0.1.2', contractMatch: false, contractCheckStatus: 'mismatched' };
+  assert.equal((await call({ expectedContractDigest: expected })).isError, false);
+  status = { contractDigest: expected, serverVersion: '0.1.2', contractMatch: true, contractCheckStatus: 'matched' };
+  assert.equal((await call({ expectedContractDigest: expected })).isError, false);
+  assert.equal(forwarded, 4);
 });
 
 test('contract digest includes the schemas actually advertised in every workspace mode', async () => {
@@ -624,7 +694,7 @@ test('contract digest includes the schemas actually advertised in every workspac
   }
 
   const desktopTools = MCP_TOOL_CATALOGS.desktop_bridge.map(tool => {
-    if (tool.name !== 'protoflow_write_page') return tool;
+    if (tool.name !== 'protoflow_sitemap') return tool;
     const required = tool.inputSchema.required as string[];
     assert.ok(required.includes('expectedRevision'));
     return { ...tool, inputSchema: { ...tool.inputSchema, required: required.filter(key => key !== 'expectedRevision') } };
@@ -700,8 +770,9 @@ test('stamped skill gives schema-valid status calls for both legacy and current 
   const calls = [...rule.matchAll(/`protoflow_workspace\(action="status"(?:, expectedContractDigest="([^"]+)")?\)`/g)]
     .map(match => match[1] ? { action: 'status', expectedContractDigest: match[1] } : { action: 'status' });
   assert.match(rule, /If it declares `expectedContractDigest`/);
+  assert.match(stamped, /contractMatch: false.*do NOT interrupt/);
   assert.deepEqual(calls, [{ action: 'status', expectedContractDigest: nextDigest }, { action: 'status' }]);
-  assert.match(stamped, /missing `contractDigest` or `contractMatch` means the skill is unverified[^\n]+protoflow_get_contracts/);
+  assert.match(stamped, /protoflow_workspace\(action="contracts"\)/);
 
   const ajv = new Ajv();
   const validateCurrent = ajv.compile(MCP_TOOL_CATALOGS.desktop_bridge.find(t => t.name === 'protoflow_workspace')!.inputSchema);
@@ -710,4 +781,215 @@ test('stamped skill gives schema-valid status calls for both legacy and current 
   assert.ok(validateCurrent(calls[0]));
   assert.equal(validateLegacy(calls[0]), false);
   assert.ok(validateLegacy(calls[1]));
+});
+
+test('0-to-1 project mindmap maintenance: live auto-selection, folder link inheritance, audit warnings, Hermes staging, and note <= preservation', async () => {
+  const { markdownToNoteHtml, noteHtmlToMarkdown } = await import('../src/proto/notes');
+  const { applyLiveProjectEdit, flushProjectChanges, loadProjectFromBinaryPayload, startProjectPersistence, captureProjectPayload } = await import('../src/services/projectStorage');
+  const { applyProjectChanges } = await import('../src/services/hermesProject');
+  const { describeChanges } = await import('../src/services/projectChangeReview');
+  const { useProtoStore } = await import('../src/store/useProtoStore');
+  const { usePageStore } = await import('../src/proto/store/usePageStore');
+  const { useAccountStore } = await import('../src/store/useAccountStore');
+  const { undoProjectChange } = await import('../src/services/projectUndo');
+  const { installTestDom } = await import('./dom');
+
+  // 1. noteHtmlToMarkdown never truncates text containing `<` / `<=` / `>` across lists & paragraphs
+  const trickyMd = [
+    '# 风控边界说明',
+    '',
+    '## 防呆校验规则',
+    '1. **容量越限硬拦截**：申报功率 `bid_mw <= dispatchable_mw`，派单 `target_mw <= available_cap_mw`。',
+    '2. **温度红线**：当实测温度 < 45°C 且压差 > 10 kPa 时允许闭环并网。',
+  ].join('\n');
+  const converted = markdownToNoteHtml(trickyMd);
+  const roundTripped = noteHtmlToMarkdown({
+    title: converted.title ?? '风控边界说明',
+    icon: '📝',
+    updatedAt: '2026-11-26T12:00:00.000Z',
+    content: converted.html,
+  });
+  assert.match(roundTripped, /bid_mw <= dispatchable_mw/);
+  assert.match(roundTripped, /target_mw <= available_cap_mw/);
+  assert.match(roundTripped, /< 45°C 且压差 > 10 kPa/);
+
+  // 2. External MCP mindmapWarnings, folder link inheritance, and docs/flows hierarchy
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'protoflow-mindmap-maint-'));
+  const restoreDom = installTestDom();
+  Object.assign(window, {
+    protoflowDesktop: {
+      isElectron: true,
+      saveCurrentProject: async () => ({ saved: true }),
+    },
+  });
+  const prevState = [useProtoStore.getState(), usePageStore.getState(), useAccountStore.getState()] as const;
+  useAccountStore.setState({ status: 'local' });
+  const stopPersistence = startProjectPersistence(60_000);
+  try {
+    const rw = createLocalAuthoringWorkspace({ workspaceDir: tmpDir });
+    const callRw = async (name: string, args: Record<string, unknown>) => {
+      const res = await handleSpecMcpPayload(rw, {
+        jsonrpc: '2.0',
+        id: 'mm',
+        method: 'tools/call',
+        params: { _meta: modernMeta, name, arguments: args },
+      });
+      assert.ok(res && !Array.isArray(res) && !res.error);
+      const body = res.result as { isError?: boolean; content: { text: string }[] };
+      assert.notEqual(body.isError, true, body.content?.[0]?.text);
+      return JSON.parse(body.content[0].text);
+    };
+
+    await callRw('protoflow_workspace', {
+      action: 'create_project',
+      filePath: 'vpp.pflow',
+      projectName: 'VPP Test',
+      projectMode: 'desktop',
+    });
+    await callRw('protoflow_manage_sitemap', {
+      action: 'upsert_folder',
+      folder: { id: 'f_ops', title: '调度中心', parentFolderId: null },
+    });
+    await callRw('protoflow_write_page', {
+      pageId: 'p_dash',
+      title: '态势总览',
+      folderId: 'f_ops',
+      platform: 'desktop',
+      source: 'export default function Page() { return (<Page pfId="root" title="态势总览"><Card pfId="c1" title="概览" /></Page>); }',
+    });
+
+    // Audit warns when pages exist without mindmaps
+    const auditBefore = await callRw('protoflow_audit_project', {});
+    assert.equal(auditBefore.healthy, true);
+    assert.equal(auditBefore.mindmapWarnings.length, 1);
+
+    // Folder-level linkedFolderIds are inherited by child mindmaps and clear mindmapWarnings
+    await callRw('protoflow_manage_docs_and_flows', {
+      action: 'upsert_mindmap_folder',
+      folder: {
+        id: 'mm_folder_1',
+        title: '01 全景规划',
+        parentId: null,
+        linkedFolderIds: ['f_ops'],
+      },
+    });
+    await callRw('protoflow_manage_docs_and_flows', {
+      action: 'upsert_mindmap',
+      mindmap: {
+        id: 'mm_doc_1',
+        title: 'VPP 全景功能脑图',
+        parentId: 'mm_folder_1',
+        source: 'mindmap\n  root((VPP))\n    调度中心\n      态势总览',
+      },
+    });
+
+    const docs = await callRw('protoflow_get_docs_and_flows', { pageId: 'p_dash' });
+    assert.equal(docs.mindmapFolderCount, 1);
+    assert.equal(docs.mindmaps.length, 1);
+    assert.equal(docs.mindmaps[0].path, '01 全景规划 / VPP 全景功能脑图');
+    assert.deepEqual(docs.mindmaps[0].relatedPageIds, ['p_dash']);
+
+    const auditAfter = await callRw('protoflow_audit_project', {});
+    assert.deepEqual(auditAfter.mindmapWarnings, []);
+
+    // 3. applyLiveProjectEdit auto-selects first mindmap & upgrades from folder-only to first mindmap
+    const blankPayload = createProjectPayload({
+      projectId: 'p-live-mm',
+      projectName: 'Live MM',
+      storageDir: tmpDir,
+      fileName: 'live-mm.pflow',
+      templateId: 'blank_project',
+      createdAt: '2026-11-26',
+      updatedAt: '2026-11-26',
+      pageCount: 0,
+      tableCount: 0,
+      stickyCount: 0,
+    });
+    loadProjectFromBinaryPayload(blankPayload);
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, null);
+
+    const beforeFolder = captureProjectPayload();
+    const withFolder = structuredClone(beforeFolder);
+    withFolder.stateSnapshot.mindmaps = {
+      nodes: [{ id: 'dir_1', title: '目录', parentId: null, kind: 'folder' }],
+      links: [],
+    };
+    applyLiveProjectEdit(beforeFolder, withFolder);
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, 'dir_1');
+
+    const beforeDoc = captureProjectPayload();
+    const withDoc = structuredClone(beforeDoc);
+    withDoc.stateSnapshot.mindmaps.nodes.push({
+      id: 'map_1',
+      title: '首张全景脑图',
+      parentId: 'dir_1',
+      kind: 'mindmap',
+      source: 'mindmap\n  root((全景))',
+    });
+    applyLiveProjectEdit(beforeDoc, withDoc);
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, 'map_1');
+    await flushProjectChanges();
+
+    // 4. Built-in Hermes protoflow_manage_mindmap stages, describes, commits, auto-selects, and undoes cleanly
+    const { callTool, atomicWrite } = require(path.join(process.cwd(), 'electron/protoflow-mcp.cjs'));
+    const baseForHermes = captureProjectPayload();
+    baseForHermes.stateSnapshot.designerFolders = [{ id: 'f_main', title: '主模块', parentFolderId: null }];
+    baseForHermes.stateSnapshot.designerPages = [{ pageId: 'p_main', title: '首页', folderId: 'f_main' }];
+    baseForHermes.stateSnapshot.pageSources = {
+      p_main: 'export default function Page() { return (<Page pfId="r" title="首页" />); }',
+    };
+    baseForHermes.stateSnapshot.activePageId = 'p_main';
+    baseForHermes.stateSnapshot.mindmaps = { nodes: [], links: [] };
+    loadProjectFromBinaryPayload(baseForHermes);
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, null);
+
+    const ctxFile = path.join(tmpDir, 'hermes-mm-ctx.json');
+    const liveBase = captureProjectPayload();
+    atomicWrite(ctxFile, {
+      active: true,
+      runId: 'run-mm-1',
+      projectId: liveBase.meta.projectId,
+      kind: 'project',
+      workflowPhase: 'conversation',
+      operations: [],
+      snapshot: structuredClone(liveBase.stateSnapshot),
+    });
+    callTool(ctxFile, 'protoflow_manage_mindmap', {
+      action: 'upsert_folder',
+      id: 'hm_dir',
+      title: '系统架构',
+      parentId: null,
+      linkedFolderIds: ['f_main'],
+    });
+    callTool(ctxFile, 'protoflow_manage_mindmap', {
+      action: 'upsert_mindmap',
+      id: 'hm_map',
+      title: '全局模块脑图',
+      parentId: 'hm_dir',
+      source: 'mindmap\n  root((系统架构))\n    主模块\n      首页',
+    });
+    const stagedOps = JSON.parse(fs.readFileSync(ctxFile, 'utf8')).operations;
+    assert.equal(stagedOps.length, 2);
+
+    const { projectRevision } = await import('../src/services/hermesProject');
+    const revBefore = projectRevision();
+    const applied = applyProjectChanges(liveBase, revBefore, stagedOps, undefined, 'undo-mm-1', undefined, true);
+    const desc = describeChanges(liveBase.stateSnapshot, applied.next.stateSnapshot, stagedOps);
+    assert.ok(desc.some((line) => line.includes('系统架构')));
+    assert.ok(desc.some((line) => line.includes('全局模块脑图')));
+    assert.equal(useProtoStore.getState().mindmaps.nodes.length, 2);
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, 'hm_map');
+
+    undoProjectChange('undo-mm-1');
+    assert.equal(useProtoStore.getState().selectedMindmapNodeId, null);
+    assert.equal(useProtoStore.getState().mindmaps.nodes.length, 0);
+    await flushProjectChanges();
+  } finally {
+    stopPersistence();
+    useProtoStore.setState(prevState[0]);
+    usePageStore.setState(prevState[1]);
+    useAccountStore.setState(prevState[2]);
+    restoreDom();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

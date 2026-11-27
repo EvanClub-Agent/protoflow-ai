@@ -80,14 +80,18 @@ export function buildNotesHtmlDocument(
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
 <title>${escapeHtml(projectName)} · ${tr('需求文档包', 'Requirement Notes Bundle')}</title>
 <style>
-body{font:14px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;max-width:860px;margin:0 auto;padding:32px 24px;}
+body{font:14px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;max-width:1080px;margin:0 auto;padding:32px 24px;}
 header{border-bottom:2px solid #2563eb;margin-bottom:24px;padding-bottom:12px}header h1{margin:0;font-size:24px}header p{color:#64748b;margin:4px 0 0}
 nav{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 20px;margin-bottom:28px}nav a{color:#2563eb;text-decoration:none}
 section{page-break-before:always;padding-top:8px}section:first-of-type{page-break-before:auto}
 section>h1{font-size:20px;margin:0 0 6px}.meta span{display:inline-block;font-size:12px;color:#475569;background:#f1f5f9;border-radius:6px;padding:1px 8px;margin:0 6px 12px 0}
-h2{font-size:17px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}h3{font-size:15px}
-table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}th,td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left;vertical-align:top}th{background:#f8fafc}
+h2{font-size:17px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}h3{font-size:15px}h4{font-size:14px;color:#334155}h5{font-size:13px;color:#475569}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:12px 0;display:block;overflow-x:auto}th,td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left;vertical-align:top;min-width:72px}th{background:#f8fafc}
 blockquote{margin:12px 0;padding:10px 14px;border-left:4px solid #2563eb;background:#f8fafc;border-radius:0 8px 8px 0}
+blockquote[data-callout="important"]{border-left-color:#7c3aed;background:#f5f3ff}
+blockquote[data-callout="warning"]{border-left-color:#d97706;background:#fffbeb}
+blockquote[data-callout="caution"]{border-left-color:#e11d48;background:#fff1f2}
+blockquote[data-callout="tip"]{border-left-color:#059669;background:#ecfdf5}
 pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:auto}code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
 mark{background:#fef08a}img{max-width:100%;border:1px solid #e2e8f0;border-radius:10px}
 ul[data-type=taskList]{list-style:none;padding-left:4px}ul[data-type=taskList] li{display:flex;gap:8px}ul[data-type=taskList] li>label{flex:none}

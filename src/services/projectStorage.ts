@@ -1,4 +1,4 @@
-import { emptyMindmaps } from '../proto/mindmaps';
+import { emptyMindmaps, firstSelectableMindmapId, resolveMindmapSelection } from '../proto/mindmaps';
 import { emptyProjectNotes, migrateInlineNoteImages, pruneStaleNoteLinks, pruneUnusedNoteAssets } from '../proto/notes';
 import { legacyBlankSitemap } from './legacyProjectSitemap';
 import { migrateLegacyZeroStickyIndexes } from '../proto/stickyNoteIndex';
@@ -753,12 +753,21 @@ export function applyLiveProjectEdit(before: PflowBinaryPayload, next: PflowBina
   if (changed('projectPlan')) protoPatch.projectPlan = s.projectPlan ?? null;
   if (changed('projectNotes')) protoPatch.projectNotes = s.projectNotes ?? emptyProjectNotes();
   if (protoPatch.projectNotes) {
-    const exists = (id: string | null) => protoPatch.projectNotes!.nodes.some(n => n.id === id);
-    if (!exists(current.selectedNoteNodeId)) protoPatch.selectedNoteNodeId = null;
+    const notes = protoPatch.projectNotes.nodes;
+    const exists = (id: string | null) => notes.some(n => n.id === id);
+    const curNote = notes.find(n => n.id === current.selectedNoteNodeId);
+    const hadNotesBefore = Boolean(before.stateSnapshot.projectNotes?.nodes.some(n => n.kind === 'note'));
+    if (!curNote || (curNote.kind === 'folder' && !hadNotesBefore && notes.some(n => n.kind === 'note'))) {
+      protoPatch.selectedNoteNodeId = notes.find(n => n.kind === 'note')?.id ?? notes[0]?.id ?? null;
+    }
     if (!exists(current.dockedNoteId)) protoPatch.dockedNoteId = null;
   }
-  if (protoPatch.mindmaps && !s.mindmaps.nodes.some(n => n.id === current.selectedMindmapNodeId)) protoPatch.selectedMindmapNodeId = null;
-  if (protoPatch.dbTables && !s.dbTables.some(t => t.id === current.selectedTableId)) protoPatch.selectedTableId = '';
+  if (protoPatch.mindmaps) {
+    protoPatch.selectedMindmapNodeId = resolveMindmapSelection(before.stateSnapshot.mindmaps, protoPatch.mindmaps, current.selectedMindmapNodeId);
+  }
+  if (protoPatch.dbTables && !s.dbTables.some(t => t.id === current.selectedTableId)) {
+    protoPatch.selectedTableId = s.dbTables[0]?.id ?? '';
+  }
   const metaChanged = before.meta.projectName !== next.meta.projectName || before.meta.projectMode !== next.meta.projectMode;
   if (!metaChanged && !Object.keys(pagePatch).length && !Object.keys(protoPatch).length) return false;
   protoPatch.currentProjectMeta = { ...next.meta, pageCount: Object.keys(s.pageSources).length, tableCount: s.dbTables.length, stickyCount: s.stickyNotes.length };
@@ -784,7 +793,7 @@ function applySnapshot(payload: PflowBinaryPayload) {
       designTokens: state.designTokens && !isDefaultDesignTokens(state.designTokens) ? state.designTokens : null,
       databaseRequirements: state.databaseRequirements ?? [],
       projectPlan: state.projectPlan === undefined ? null : state.projectPlan,
-      selectedMindmapNodeId: state.mindmaps.nodes.length ? state.mindmaps.nodes[0].id : null,
+      selectedMindmapNodeId: firstSelectableMindmapId(state.mindmaps),
       projectNotes: state.projectNotes ? migrateInlineNoteImages(state.projectNotes) : emptyProjectNotes(),
       selectedNoteNodeId: state.projectNotes?.nodes.length ? (state.projectNotes.nodes.find(n => n.kind === 'note')?.id ?? state.projectNotes.nodes[0].id) : null,
       dockedNoteId: null,

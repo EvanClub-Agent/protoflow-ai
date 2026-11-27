@@ -10,7 +10,7 @@ import { captureProjectPayload, createProjectPayload, loadProjectFromBinaryPaylo
 import { decodePflowBinary, encodePflowBinary, generateUnpackedGitFiles } from '../src/utils/pflowBinaryCodec';
 import { prepareProjectChanges, projectContext, projectRevision } from '../src/services/hermesProject';
 import { createPublishedSnapshot } from '../src/services/createPublishedSnapshot';
-import { LeftSitemapTree } from '../src/components/LeftSitemapTree';
+import { LeftSitemapTree, DEFAULT_SITEMAP_WIDTH, MIN_SITEMAP_WIDTH, MAX_SITEMAP_WIDTH, SITEMAP_WIDTH_STORAGE_KEY } from '../src/components/LeftSitemapTree';
 import { NewFolderModal } from '../src/components/NewFolderModal';
 
 // Menu editing regressions exercise a sample-backed project with one authored
@@ -301,4 +301,71 @@ test('dragging pages and folders uses the same validated move, with a top-level 
     assert.equal(usePageStore.getState().designerPages[0].folderId, child.id);
     assert.equal(renderer!.root.findAllByProps({ 'data-sitemap-root-drop': true }).length, 0);
   } finally { act(() => renderer!.unmount()); }
+});
+
+test('long menu titles stay intact in DOM inside pf-sitemap-label while row actions collapse at rest and sidebar width resizes and persists', () => {
+  menuFixture();
+  const longFolderTitle = '14 供应商门户·准入目录与年度框架协议管理';
+  const longPageTitle = '海关实验室危化试剂正负冲抵合并发票上传审核';
+  const folder = usePageStore.getState().createDesignerFolder(longFolderTitle, null);
+  usePageStore.getState().createDesignerPage({ pageId: 'long-menu-page', title: longPageTitle, folderId: folder.id }, source);
+  const store = new Map<string, string>();
+  const hasWindowStorage = typeof window !== 'undefined' && Boolean(window.localStorage);
+  const prevStorage = hasWindowStorage ? undefined : Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  if (!hasWindowStorage) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, String(v)); },
+        removeItem: (k: string) => { store.delete(k); },
+      },
+    });
+  }
+  const activeStorage = hasWindowStorage ? window.localStorage : globalThis.localStorage;
+  activeStorage.removeItem(SITEMAP_WIDTH_STORAGE_KEY);
+
+  let renderer: TestRenderer.ReactTestRenderer;
+  act(() => { renderer = TestRenderer.create(React.createElement(LeftSitemapTree)); });
+  try {
+    const aside = renderer!.root.findByType('aside');
+    assert.equal(aside.props.style.width, `${DEFAULT_SITEMAP_WIDTH}px`);
+
+    // Full accessible names stay intact in DOM (never JS-sliced) inside .pf-sitemap-label > span
+    const labels = renderer!.root.findAll(node => node.type === 'span' && typeof node.props.className === 'string' && node.props.className.includes('pf-sitemap-label'));
+    const labelTexts = labels.map(node => (node.children[0] as TestRenderer.ReactTestInstance).children.join(''));
+    assert.ok(labelTexts.includes(longFolderTitle));
+    assert.ok(labelTexts.includes(longPageTitle));
+
+    // Row action bar takes 0px idle layout width (w-0 anchor) and collapses visually until hover/focus-within
+    const pageRow = renderer!.root.findByProps({ 'data-sitemap-id': 'node-long-menu-page' });
+    const actionsBar = pageRow.find(node => node.type === 'div' && typeof node.props.className === 'string' && node.props.className.includes('pf-sitemap-actions'));
+    assert.match(actionsBar.props.className, /opacity-0/);
+    assert.match(actionsBar.props.className, /group-hover:opacity-100/);
+    assert.match(actionsBar.props.className, /group-focus-within:opacity-100/);
+
+    // Keyboard & double-click resize updates width within bounds and persists to localStorage
+    const sash = renderer!.root.findByProps({ role: 'separator', 'aria-label': '拖拽调整页面目录宽度' });
+    act(() => sash.props.onKeyDown({ key: 'ArrowRight', preventDefault() {} }));
+    assert.equal(renderer!.root.findByType('aside').props.style.width, `${DEFAULT_SITEMAP_WIDTH + 16}px`);
+    assert.equal(activeStorage.getItem(SITEMAP_WIDTH_STORAGE_KEY), String(DEFAULT_SITEMAP_WIDTH + 16));
+
+    act(() => sash.props.onKeyDown({ key: 'Home', preventDefault() {} }));
+    assert.equal(renderer!.root.findByType('aside').props.style.width, `${MIN_SITEMAP_WIDTH}px`);
+
+    act(() => sash.props.onKeyDown({ key: 'End', preventDefault() {} }));
+    const clampedMax = Number(renderer!.root.findByType('aside').props.style.width.replace('px', ''));
+    assert.ok(clampedMax >= MIN_SITEMAP_WIDTH && clampedMax <= MAX_SITEMAP_WIDTH);
+
+    act(() => sash.props.onDoubleClick());
+    assert.equal(renderer!.root.findByType('aside').props.style.width, `${DEFAULT_SITEMAP_WIDTH}px`);
+    assert.equal(activeStorage.getItem(SITEMAP_WIDTH_STORAGE_KEY), String(DEFAULT_SITEMAP_WIDTH));
+  } finally {
+    act(() => renderer!.unmount());
+    activeStorage.removeItem(SITEMAP_WIDTH_STORAGE_KEY);
+    if (!hasWindowStorage) {
+      if (prevStorage) Object.defineProperty(globalThis, 'localStorage', prevStorage);
+      else delete (globalThis as Record<string, unknown>).localStorage;
+    }
+  }
 });

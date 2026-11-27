@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Blockquote from '@tiptap/extension-blockquote';
+import CodeBlock from '@tiptap/extension-code-block';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -15,6 +17,7 @@ import Link from '@tiptap/extension-link';
 import type { EditorView } from '@tiptap/pm/view';
 import { DOMSerializer } from '@tiptap/pm/model';
 import {
+  AlertTriangle,
   AlignLeft,
   AtSign,
   Bold,
@@ -31,9 +34,12 @@ import {
   Database,
   Download,
   ExternalLink,
+  Eye,
+  GitBranch,
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
   Highlighter,
   Image as ImageIcon,
   Italic,
@@ -42,16 +48,21 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Lock,
   Maximize2,
+  Minimize2,
   Minus,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
   Pin,
   Plus,
   Quote,
   Rows,
+  Search,
   Sparkles,
   Star,
   Strikethrough,
@@ -68,7 +79,8 @@ import { useHermesStore } from '../store/useHermesStore';
 import { runProjectAi } from '../services/hermesBridge';
 import { discussProject } from '../services/projectWorkflow';
 import { buildSitemap } from '../proto/sitemap';
-import { flattenSitemap } from '../proto/mindmaps';
+import { flattenSitemap, mindmapPath } from '../proto/mindmaps';
+import { renderMermaidDiagram } from '../services/mindmapRenderer';
 import {
   NOTE_COVERS,
   NOTE_EMOJI_CATALOG,
@@ -76,7 +88,10 @@ import {
   NOTE_PRIORITY_OPTIONS,
   NOTE_STATUS_OPTIONS,
   NOTE_TEMPLATES,
+  VALID_NOTE_CALLOUTS,
+  extractInlineNoteImages,
   extractNoteHeadings,
+  markdownToNoteHtml,
   noteContext,
   noteHtmlToMarkdown,
   noteHtmlToPlainText,
@@ -88,6 +103,7 @@ import {
   noteAiImageAttachments,
   uniqueNoteTitle,
   NOTE_ASSET_SCHEME,
+  type NoteCalloutKind,
   type NoteNode,
   type NotePriority,
   type NoteRequirementStatus,
@@ -207,6 +223,204 @@ const NoteImageExtension = TiptapNode.create({
   },
 });
 
+/**
+ * Blockquote extended with GFM Alert / Callout variants (`data-callout="note|tip|important|warning|caution"`).
+ */
+const NoteBlockquoteExtension = Blockquote.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      callout: {
+        default: null,
+        parseHTML: (element) => {
+          const val = (element.getAttribute('data-callout') || '').toLowerCase();
+          return VALID_NOTE_CALLOUTS.has(val) ? val : null;
+        },
+        renderHTML: (attributes) => {
+          const val = String(attributes.callout || '').toLowerCase();
+          return VALID_NOTE_CALLOUTS.has(val) ? { 'data-callout': val } : {};
+        },
+      },
+    };
+  },
+});
+
+/**
+ * CodeBlock extended with an interactive Mermaid visual diagram NodeView (`language === 'mermaid'`).
+ * Stored HTML stays pure `<pre><code class="language-mermaid">...</code></pre>` for 100% GFM compatibility.
+ */
+const NoteCodeBlockExtension = CodeBlock.extend({
+  addNodeView() {
+    return ({ node: initialNode }) => {
+      let currentNode = initialNode;
+      const isMermaid = () => String(currentNode.attrs.language || '').toLowerCase() === 'mermaid';
+
+      if (!isMermaid()) {
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        if (currentNode.attrs.language) {
+          code.className = `language-${currentNode.attrs.language}`;
+        }
+        pre.appendChild(code);
+        return {
+          dom: pre,
+          contentDOM: code,
+          update: (next) => {
+            if (next.type.name !== 'codeBlock') return false;
+            if (String(next.attrs.language || '').toLowerCase() === 'mermaid') return false;
+            currentNode = next;
+            code.className = next.attrs.language ? `language-${next.attrs.language}` : '';
+            return true;
+          },
+        };
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'pf-note-mermaid-block';
+      let mode: 'preview' | 'split' | 'code' = currentNode.textContent.trim() ? 'preview' : 'split';
+      wrapper.dataset.mode = mode;
+
+      const header = document.createElement('div');
+      header.className = 'pf-note-mermaid-header';
+      header.contentEditable = 'false';
+
+      const badge = document.createElement('span');
+      badge.className = 'font-semibold text-slate-700 flex items-center gap-1.5';
+      badge.textContent = `📊 ${tr('Mermaid 状态机 / 流程图', 'Mermaid Flowchart / State Diagram')}`;
+
+      const controls = document.createElement('div');
+      controls.className = 'flex items-center gap-1';
+
+      const makeModeBtn = (targetMode: 'preview' | 'split' | 'code', label: string) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        const syncActive = () => {
+          btn.className =
+            mode === targetMode
+              ? 'px-2 py-0.5 rounded bg-blue-600 text-white font-medium cursor-pointer transition'
+              : 'px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer transition';
+        };
+        syncActive();
+        btn.addEventListener('mousedown', (e) => e.preventDefault());
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          mode = targetMode;
+          wrapper.dataset.mode = mode;
+          syncAllButtons();
+        });
+        return { btn, syncActive };
+      };
+
+      const btnPreview = makeModeBtn('preview', tr('预览图表', 'Diagram'));
+      const btnSplit = makeModeBtn('split', tr('分栏编辑', 'Split'));
+      const btnCode = makeModeBtn('code', tr('源码', 'Code'));
+      const syncAllButtons = () => {
+        btnPreview.syncActive();
+        btnSplit.syncActive();
+        btnCode.syncActive();
+      };
+      controls.append(btnPreview.btn, btnSplit.btn, btnCode.btn);
+      header.append(badge, controls);
+
+      const body = document.createElement('div');
+      body.className = 'pf-note-mermaid-body';
+
+      const sourceWrap = document.createElement('div');
+      sourceWrap.className = 'pf-note-mermaid-source';
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.className = 'language-mermaid';
+      pre.appendChild(code);
+      sourceWrap.appendChild(pre);
+
+      const preview = document.createElement('div');
+      preview.className = 'pf-note-mermaid-preview';
+      preview.contentEditable = 'false';
+
+      body.append(sourceWrap, preview);
+      wrapper.append(header, body);
+
+      let destroyed = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let lastSource = '';
+
+      const runRender = (sourceText: string) => {
+        const trimmed = sourceText.trim();
+        if (!trimmed) {
+          preview.innerHTML = `<span class="text-xs text-slate-400">${tr('输入 Mermaid 语法即可实时预览流程图或状态机...', 'Enter Mermaid syntax to preview flowchart or state diagram...')}</span>`;
+          return;
+        }
+        const dark = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark';
+        void renderMermaidDiagram(trimmed, dark).then(
+          ({ svg }) => {
+            if (destroyed || sourceText !== currentNode.textContent) return;
+            preview.innerHTML = svg;
+          },
+          (err) => {
+            if (destroyed || sourceText !== currentNode.textContent) return;
+            const msg = (err instanceof Error ? err.message : String(err)).replace(/[<>&]/g, '');
+            preview.innerHTML = `<div class="w-full rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800"><strong>${tr('Mermaid 语法待修正：', 'Mermaid syntax issue: ')}</strong>${msg.slice(0, 220)}</div>`;
+          }
+        );
+      };
+
+      lastSource = currentNode.textContent;
+      runRender(lastSource);
+
+      return {
+        dom: wrapper,
+        contentDOM: code,
+        stopEvent: (event) => {
+          const target = event.target as HTMLElement | null;
+          return Boolean(target && (header.contains(target) || preview.contains(target)));
+        },
+        ignoreMutation: (mutation) => {
+          return header.contains(mutation.target) || preview.contains(mutation.target) || mutation.target === wrapper;
+        },
+        update: (next) => {
+          if (next.type.name !== 'codeBlock') return false;
+          if (String(next.attrs.language || '').toLowerCase() !== 'mermaid') return false;
+          currentNode = next;
+          if (next.textContent !== lastSource) {
+            lastSource = next.textContent;
+            clearTimeout(timer);
+            timer = setTimeout(() => runRender(lastSource), 200);
+          }
+          return true;
+        },
+        destroy: () => {
+          destroyed = true;
+          clearTimeout(timer);
+        },
+      };
+    };
+  },
+});
+
+/** Detect whether pasted plain text contains structured multi-line Markdown that should be parsed into blocks. */
+function shouldParsePastedMarkdown(plainText: string, htmlText: string): boolean {
+  if (!plainText || plainText.length < 6) return false;
+  if (htmlText && /<(h[1-6]|table|ul|ol|blockquote|img)\b/i.test(htmlText)) return false;
+  const lines = plainText.replace(/\r\n/g, '\n').split('\n');
+  if (lines.length < 2) {
+    return /^#{1,5}\s+\S/.test(lines[0].trim());
+  }
+  let blockSignals = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (/^#{1,5}\s+\S/.test(t)) blockSignals += 2;
+    else if (/^(`{3,}|~{3,})/.test(t)) blockSignals += 2;
+    else if (/^>\s*\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i.test(t)) blockSignals += 2;
+    else if (/^[-*+]\s+\[[ xX]\]\s+/.test(t)) blockSignals += 2;
+    else if (t.includes('|') && i + 1 < lines.length && /^\s*\|?[\s:-]+\|[\s|:-]*$/.test(lines[i + 1])) blockSignals += 3;
+    else if (/^(?:[-*+]|\d+\.)\s+\S/.test(t)) blockSignals += 1;
+    if (blockSignals >= 2) return true;
+  }
+  return false;
+}
+
 function readFileAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -324,6 +538,14 @@ function getSlashCommands(t: <T extends string>(zh: T, en: string) => string): S
       run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
     },
     {
+      id: 'h4',
+      label: t('四级标题 (H4)', 'Heading 4 (H4)'),
+      desc: t('弹窗、抽屉或子规则小节标题', 'Modal, drawer, or sub-rule section heading'),
+      keywords: ['h4', 'heading4', '标题4', '四级标题'],
+      icon: <Heading4 size={14} />,
+      run: (editor) => editor.chain().focus().toggleHeading({ level: 4 }).run(),
+    },
+    {
       id: 'taskList',
       label: t('待办清单 (To-do)', 'To-Do List'),
       desc: t('跟踪客户待确认问题与跟进事项（自动汇总到全局待办）', 'Track open client questions and follow-ups (auto-synced to Global To-Dos)'),
@@ -349,9 +571,9 @@ function getSlashCommands(t: <T extends string>(zh: T, en: string) => string): S
     },
     {
       id: 'callout',
-      label: t('高亮结论框 (Callout)', 'Callout Block'),
-      desc: t('突出记录客户拍板结论或核心业务注意项', 'Highlight key client decisions or critical business notes'),
-      keywords: ['quote', 'callout', '引用', '提示', '结论', '重点'],
+      label: t('重要业务约束框 (Important)', 'Important Callout'),
+      desc: t('高亮标注核心业务约束、状态流转前提或客户拍板结论', 'Highlight critical business constraints or client sign-off decisions'),
+      keywords: ['quote', 'callout', 'important', '引用', '提示', '结论', '重点', '约束'],
       icon: <Quote size={14} />,
       run: (editor) =>
         editor
@@ -359,10 +581,53 @@ function getSlashCommands(t: <T extends string>(zh: T, en: string) => string): S
           .focus()
           .insertContent(
             t(
-              '<blockquote><p>💡 <strong>核心结论 / 重点说明</strong>：</p></blockquote>',
-              '<blockquote><p>💡 <strong>Key Decision / Note</strong>: </p></blockquote>'
+              '<blockquote data-callout="important"><p><strong>核心约束说明</strong>：在此补充关键前置条件或校验口径。</p></blockquote>',
+              '<blockquote data-callout="important"><p><strong>Key Constraint</strong>: Document critical preconditions or validation rules here.</p></blockquote>'
             )
           )
+          .run(),
+    },
+    {
+      id: 'calloutWarning',
+      label: t('边界与风险警示框 (Warning)', 'Warning Callout'),
+      desc: t('突出提示异常分支、防重拦截或权限控制注意项', 'Highlight edge cases, duplicate guards, or permission rules'),
+      keywords: ['warning', 'caution', 'alert', '风险', '警告', '红线', '注意'],
+      icon: <AlertTriangle size={14} />,
+      run: (editor) =>
+        editor
+          .chain()
+          .focus()
+          .insertContent(
+            t(
+              '<blockquote data-callout="warning"><p><strong>边界异常处理</strong>：当触发越限或状态不满足时阻断提交并提示原因。</p></blockquote>',
+              '<blockquote data-callout="warning"><p><strong>Edge Case Guard</strong>: Block submission and explain when state or limits fail.</p></blockquote>'
+            )
+          )
+          .run(),
+    },
+    {
+      id: 'mermaid',
+      label: t('Mermaid 状态机 / 流程图', 'Mermaid Flowchart / State Diagram'),
+      desc: t('内嵌可实时预览的单据状态流转图、泳道图或推单链路图', 'Embed a live-rendered state machine, swimlane, or business flowchart'),
+      keywords: ['mermaid', 'flow', 'diagram', 'state', '流程图', '状态机', '状态图', '泳道图'],
+      icon: <GitBranch size={14} />,
+      run: (editor) =>
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: 'codeBlock',
+            attrs: { language: 'mermaid' },
+            content: [
+              {
+                type: 'text',
+                text: t(
+                  'stateDiagram-v2\n  direction LR\n  [*] --> 草稿: 新建保存\n  草稿 --> 待审核: 提交单据\n  待审核 --> 已通过: 审核通过\n  待审核 --> 已驳回: 驳回修改\n  已驳回 --> 待审核: 重新提交',
+                  'stateDiagram-v2\n  direction LR\n  [*] --> Draft: Save\n  Draft --> Pending: Submit\n  Pending --> Approved: Approve\n  Pending --> Rejected: Reject'
+                ),
+              },
+            ],
+          })
           .run(),
     },
     {
@@ -429,15 +694,17 @@ function getSlashCommands(t: <T extends string>(zh: T, en: string) => string): S
 
 export interface MentionCandidate {
   id: string;
-  kind: 'page' | 'table';
+  kind: 'page' | 'table' | 'note' | 'mindmap';
   label: string;
   subLabel: string;
   href: string;
 }
 
-function useProjectMentionCandidates(): MentionCandidate[] {
+function useProjectMentionCandidates(excludeNoteId?: string): MentionCandidate[] {
   const { tr, td } = useI18n();
   const dbTables = useProtoStore((s) => s.dbTables);
+  const projectNotes = useProtoStore((s) => s.projectNotes);
+  const mindmaps = useProtoStore((s) => s.mindmaps);
   const layout = usePageStore();
   return useMemo(() => {
     const items: MentionCandidate[] = [];
@@ -469,8 +736,30 @@ function useProjectMentionCandidates(): MentionCandidate[] {
         href: `#pf-table:${tbl.id}`,
       });
     }
+    for (const note of projectNotes.nodes) {
+      if (note.kind === 'note' && note.id !== excludeNoteId) {
+        items.push({
+          id: `note:${note.id}`,
+          kind: 'note',
+          label: note.title,
+          subLabel: tr(`项目笔记 · ${notePath(projectNotes, note.id)}`, `Note · ${notePath(projectNotes, note.id)}`),
+          href: `#pf-note:${note.id}`,
+        });
+      }
+    }
+    for (const mm of mindmaps.nodes) {
+      if (mm.kind === 'mindmap') {
+        items.push({
+          id: `mindmap:${mm.id}`,
+          kind: 'mindmap',
+          label: mm.title,
+          subLabel: tr(`项目脑图 · ${mindmapPath(mindmaps, mm.id)}`, `Diagram · ${mindmapPath(mindmaps, mm.id)}`),
+          href: `#pf-mindmap:${mm.id}`,
+        });
+      }
+    }
     return items;
-  }, [dbTables, layout.designerFolders, layout.designerPages, layout.sitemapOverrides, layout.sitemapBase, tr, td]);
+  }, [dbTables, projectNotes, mindmaps, excludeNoteId, layout.designerFolders, layout.designerPages, layout.sitemapOverrides, layout.sitemapBase, tr, td]);
 }
 
 export function ProjectNotesView({ projectId }: { projectId: string }) {
@@ -869,6 +1158,33 @@ function NoteDocumentEditor({
   const [customTagInput, setCustomTagInput] = useState('');
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showOutline, setShowOutline] = useState(true);
+  const [tocQuery, setTocQuery] = useState('');
+  const [activeHeadingIdx, setActiveHeadingIdx] = useState<number>(0);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [isWideLayout, setIsWideLayout] = useState<boolean>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('pf_notes_wide_layout') : null;
+      if (saved === '1') return true;
+      if (saved === '0') return false;
+    } catch {
+      /* ignore storage errors */
+    }
+    // Auto-enable wide layout when the note contains wide PRD tables (>= 6 headers) or > 8,000 chars
+    const firstRow = /<tr\b[^>]*>([\s\S]*?)<\/tr>/i.exec(node.content);
+    const colCount = firstRow ? (firstRow[1].match(/<(?:th|td)\b/gi) || []).length : 0;
+    return colCount >= 6 || node.content.length > 8000;
+  });
+  const toggleWideLayout = () => {
+    setIsWideLayout((prev) => {
+      const next = !prev;
+      try {
+        localStorage?.setItem('pf_notes_wide_layout', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
   const [copiedMd, setCopiedMd] = useState(false);
   const [aiStatusMsg, setAiStatusMsg] = useState('');
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -887,7 +1203,7 @@ function NoteDocumentEditor({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
-  const mentionCandidates = useProjectMentionCandidates();
+  const mentionCandidates = useProjectMentionCandidates(node.id);
 
   // Slash / @ menus float at the caret (fixed positioning), flipping above when space is short.
   const [menuAnchor, setMenuAnchor] = useState<{ left: number; top: number; bottom: number } | null>(null);
@@ -1010,7 +1326,14 @@ function NoteDocumentEditor({
           .deleteRange({ from: selection.from - deleteLen, to: selection.from })
           .run();
       }
-      const prefix = item.kind === 'page' ? '📄' : '🗄️';
+      const prefix =
+        item.kind === 'page'
+          ? '📄'
+          : item.kind === 'table'
+            ? '🗄️'
+            : item.kind === 'note'
+              ? '📝'
+              : '🧠';
       // Insert as structured content so names containing <, & or quotes are kept verbatim.
       editor
         .chain()
@@ -1326,14 +1649,45 @@ function NoteDocumentEditor({
 
   const scrollToHeading = (headingIndex: number) => {
     if (!editorContainerRef.current) return;
-    const elements = editorContainerRef.current.querySelectorAll('h1, h2, h3');
+    const elements = editorContainerRef.current.querySelectorAll('h1, h2, h3, h4');
     const target = elements[headingIndex];
     if (target && typeof target.scrollIntoView === 'function') {
+      setActiveHeadingIdx(headingIndex);
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  // Handle clicking @Mention links inside the editor
+  // Track active heading in TOC while scrolling long PRD documents
+  useEffect(() => {
+    const scroller = editorContainerRef.current;
+    if (!scroller || !headings.length) return;
+    const onScroll = () => {
+      const elements = scroller.querySelectorAll('h1, h2, h3, h4');
+      if (!elements.length) return;
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      let current = 0;
+      elements.forEach((el, idx) => {
+        if (el.getBoundingClientRect().top - scrollerTop <= 96) {
+          current = idx;
+        }
+      });
+      setActiveHeadingIdx(current);
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [headings.length]);
+
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      editor.setEditable(!isReadOnly);
+    }
+    if (isReadOnly) {
+      setSlashOpen(false);
+      setMentionOpen(false);
+    }
+  }, [editor, isReadOnly]);
+
+  // Handle clicking @Mention links inside the editor (Pages, DB Tables, Notes, Mindmaps)
   const handleEditorSurfaceClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (e.target as HTMLElement).closest('a');
     if (!anchor) return;
@@ -1348,6 +1702,25 @@ function NoteDocumentEditor({
       const targetTableId = href.replace('#pf-table:', '');
       setSelectedTableId(targetTableId);
       setViewMode('db_designer');
+    } else if (href.startsWith('#pf-note:')) {
+      e.preventDefault();
+      const targetNoteId = href.replace('#pf-note:', '');
+      try {
+        openNoteNode(projectId, targetNoteId);
+      } catch {
+        showNotice(tr('引用的目标笔记不存在或已删除', 'Referenced note no longer exists'));
+      }
+    } else if (href.startsWith('#pf-mindmap:')) {
+      e.preventDefault();
+      const targetMindmapId = href.replace('#pf-mindmap:', '');
+      if (useProtoStore.getState().mindmaps.nodes.some((m) => m.id === targetMindmapId)) {
+        useProtoStore.setState({ selectedMindmapNodeId: targetMindmapId, viewMode: 'mindmap' });
+      } else {
+        showNotice(tr('引用的目标脑图不存在或已删除', 'Referenced diagram no longer exists'));
+      }
+    } else if (isReadOnly && /^https?:\/\//i.test(href)) {
+      e.preventDefault();
+      window.open(href, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -1410,6 +1783,46 @@ function NoteDocumentEditor({
               </>
             )}
           </span>
+
+          {/* Read-Only Lock / Edit Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsReadOnly((v) => !v)}
+            aria-pressed={isReadOnly}
+            title={
+              isReadOnly
+                ? tr('当前为只读阅读锁定态（防误触修改），点击切换回编辑模式', 'Currently in read-only mode to prevent accidental edits — click to edit')
+                : tr('切换到只读阅读模式，审阅长篇 PRD 时防止误触改动', 'Switch to read-only mode to review long PRDs safely')
+            }
+            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition ${
+              isReadOnly
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+            }`}
+          >
+            {isReadOnly ? <Lock size={12} className="shrink-0" /> : <Pencil size={12} className="text-slate-500 shrink-0" />}
+            <span>{isReadOnly ? tr('只读锁定', 'Read-only') : tr('阅读锁定', 'Lock Read')}</span>
+          </button>
+
+          {/* Wide PRD Page Layout Toggle */}
+          <button
+            type="button"
+            onClick={toggleWideLayout}
+            aria-pressed={isWideLayout}
+            title={
+              isWideLayout
+                ? tr('当前为宽版 PRD 视图（适合多列字段表与流程图），点击切换标准窄版心', 'Wide PRD layout active — click for standard width')
+                : tr('切换为宽版 PRD 全宽视图，完整展示多列字段表与状态图', 'Switch to wide PRD layout for wide tables and diagrams')
+            }
+            className={`hidden md:inline-flex px-2 py-1 rounded-lg border text-[11px] font-medium items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition ${
+              isWideLayout
+                ? 'border-blue-200 bg-blue-50/70 text-blue-700 hover:bg-blue-100/70'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600'
+            }`}
+          >
+            {isWideLayout ? <Minimize2 size={12} className="shrink-0" /> : <Maximize2 size={12} className="shrink-0" />}
+            <span>{isWideLayout ? tr('宽版 PRD', 'Wide PRD') : tr('标准页宽', 'Standard')}</span>
+          </button>
 
           {/* Split-screen Dock to Canvas Button */}
           <button
@@ -1562,8 +1975,8 @@ function NoteDocumentEditor({
         </div>
       )}
 
-      {/* Notion Block Formatting Bar */}
-      {editor && (
+      {/* Notion Block Formatting Bar (hidden in Read-Only mode to maximize reading space) */}
+      {editor && !isReadOnly && (
         <div className="px-4 py-1.5 border-b border-slate-200/90 bg-slate-50/80 flex items-center justify-between gap-2 flex-wrap z-10 select-none">
           <div className="flex items-center gap-1 flex-wrap">
             <button
@@ -1651,6 +2064,13 @@ function NoteDocumentEditor({
             >
               <Heading3 size={14} />
             </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive('heading', { level: 4 })}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
+              title={tr('四级标题 (H4)', 'Heading 4 (H4)')}
+            >
+              <Heading4 size={14} />
+            </ToolbarButton>
 
             <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
 
@@ -1735,15 +2155,37 @@ function NoteDocumentEditor({
               <Code2 size={14} />
             </ToolbarButton>
             <ToolbarButton
+              active={editor.isActive('codeBlock', { language: 'mermaid' })}
+              onClick={() =>
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'mermaid' },
+                    content: [
+                      {
+                        type: 'text',
+                        text: 'flowchart LR\n  A[提交申请] --> B{审核结果}\n  B -->|通过| C[生效下推]\n  B -->|驳回| D[退回修改]',
+                      },
+                    ],
+                  })
+                  .run()
+              }
+              title={tr('插入 Mermaid 状态机 / 流程图块', 'Insert Mermaid Flowchart / State Diagram')}
+            >
+              <GitBranch size={14} />
+            </ToolbarButton>
+            <ToolbarButton
               active={false}
               onClick={() =>
                 editor
                   .chain()
                   .focus()
-                  .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                  .insertTable({ rows: 3, cols: 4, withHeaderRow: true })
                   .run()
               }
-              title={tr('插入 3×3 表格', 'Insert 3×3 table')}
+              title={tr('插入字段表格 (可拖拽列宽)', 'Insert resizable table')}
             >
               <TableIcon size={14} />
             </ToolbarButton>
@@ -1755,6 +2197,44 @@ function NoteDocumentEditor({
               <Minus size={14} />
             </ToolbarButton>
 
+            {/* Contextual Callout Variant Switcher when inside a blockquote */}
+            {editor.isActive('blockquote') && (
+              <>
+                <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
+                <div className="flex items-center gap-0.5 bg-violet-50/80 border border-violet-200/80 rounded-lg px-1.5 py-0.5 text-[11px]">
+                  <span className="text-violet-700 font-medium px-1">{tr('警示类型:', 'Callout:')}</span>
+                  {(
+                    [
+                      { id: null, label: tr('普通引用', 'Quote') },
+                      { id: 'note', label: 'Note' },
+                      { id: 'tip', label: 'Tip' },
+                      { id: 'important', label: 'Important' },
+                      { id: 'warning', label: 'Warning' },
+                      { id: 'caution', label: 'Caution' },
+                    ] as { id: NoteCalloutKind | null; label: string }[]
+                  ).map((item) => {
+                    const active = (editor.getAttributes('blockquote').callout ?? null) === item.id;
+                    return (
+                      <button
+                        key={item.id ?? 'plain'}
+                        type="button"
+                        onClick={() =>
+                          editor.chain().focus().updateAttributes('blockquote', { callout: item.id }).run()
+                        }
+                        className={`px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer transition ${
+                          active
+                            ? 'bg-violet-600 text-white font-medium'
+                            : 'text-slate-600 hover:bg-violet-100'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {/* Contextual Table Controls when inside a table */}
             {editor.isActive('table') && (
               <>
@@ -1763,11 +2243,20 @@ function NoteDocumentEditor({
                   <span className="text-blue-700 font-medium px-1">{tr('表格:', 'Table:')}</span>
                   <button
                     type="button"
+                    onClick={() => editor.chain().focus().addRowBefore().run()}
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer"
+                    title={tr('在上方插入一行', 'Insert row above')}
+                  >
+                    {tr('+上行', '+Row ↑')}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => editor.chain().focus().addRowAfter().run()}
                     className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
+                    title={tr('在下方插入一行', 'Insert row below')}
                   >
                     <Rows size={11} />
-                    <span>{tr('+行', '+Row')}</span>
+                    <span>{tr('+下行', '+Row ↓')}</span>
                   </button>
                   <button
                     type="button"
@@ -1778,11 +2267,20 @@ function NoteDocumentEditor({
                   </button>
                   <button
                     type="button"
+                    onClick={() => editor.chain().focus().addColumnBefore().run()}
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer"
+                    title={tr('在左侧插入一列', 'Insert column left')}
+                  >
+                    {tr('+左列', '+Col ←')}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => editor.chain().focus().addColumnAfter().run()}
                     className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-blue-700 whitespace-nowrap cursor-pointer flex items-center gap-0.5"
+                    title={tr('在右侧插入一列', 'Insert column right')}
                   >
                     <Columns size={11} />
-                    <span>{tr('+列', '+Col')}</span>
+                    <span>{tr('+右列', '+Col →')}</span>
                   </button>
                   <button
                     type="button"
@@ -1790,6 +2288,14 @@ function NoteDocumentEditor({
                     className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-600 whitespace-nowrap cursor-pointer"
                   >
                     {tr('-删列', '-Col')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => editor.chain().focus().mergeOrSplit().run()}
+                    className="px-1.5 py-0.5 rounded hover:bg-blue-100 text-slate-700 whitespace-nowrap cursor-pointer"
+                    title={tr('合并选中单元格或拆分已合并单元格', 'Merge selected cells or split merged cell')}
+                  >
+                    {tr('合并/拆分', 'Merge/Split')}
                   </button>
                   <button
                     type="button"
@@ -1867,8 +2373,12 @@ function NoteDocumentEditor({
             </div>
           )}
 
-          {/* Centered Notion Page Container */}
-          <div className="max-w-3xl w-full mx-auto px-8 sm:px-12 pt-6 space-y-5 relative">
+          {/* Centered or Wide PRD Page Container */}
+          <div
+            className={`${
+              isWideLayout ? 'max-w-[1240px] px-6 sm:px-10' : 'max-w-3xl px-8 sm:px-12'
+            } w-full mx-auto pt-6 space-y-5 relative transition-[max-width] duration-200`}
+          >
             {/* Cover Picker Popover */}
             {showCoverPicker && (
               <div className="rounded-xl border border-slate-200 bg-white shadow-xl p-3 space-y-2">
@@ -2269,7 +2779,7 @@ function NoteDocumentEditor({
               >
                 <div className="px-2.5 py-1 flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase">
                   <span className="truncate">
-                    {tr('@ 引用工程页面或物理表', '@ Mention Page or Table')} {mentionQuery && `· "${mentionQuery}"`}
+                    {tr('@ 引用页面 / 物理表 / 笔记 / 脑图', '@ Mention Page, Table, Note or Diagram')} {mentionQuery && `· "${mentionQuery}"`}
                   </span>
                   <button
                     type="button"
@@ -2282,7 +2792,7 @@ function NoteDocumentEditor({
                 <div className="max-h-60 overflow-y-auto space-y-0.5">
                   {filteredMentions.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs text-slate-400">
-                      {tr('未找到匹配的页面或数据表', 'No matching pages or tables found')}
+                      {tr('未找到匹配的页面、数据表、笔记或脑图', 'No matching pages, tables, notes, or diagrams found')}
                     </p>
                   ) : (
                     filteredMentions.map((item, idx) => {
@@ -2308,8 +2818,12 @@ function NoteDocumentEditor({
                           >
                             {item.kind === 'page' ? (
                               <LayoutGrid size={13} />
-                            ) : (
+                            ) : item.kind === 'table' ? (
                               <Database size={13} />
+                            ) : item.kind === 'note' ? (
+                              <BookOpenText size={13} />
+                            ) : (
+                              <Network size={13} />
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -2369,7 +2883,7 @@ function NoteDocumentEditor({
         {showOutline && !assistant && (
           <aside
             aria-label={tr('笔记大纲目录', 'Note table of contents')}
-            className="w-56 shrink-0 border-l border-slate-200 bg-slate-50/40 p-3 overflow-y-auto hidden lg:flex flex-col justify-between select-none"
+            className="w-60 shrink-0 border-l border-slate-200 bg-slate-50/40 p-3 overflow-y-auto hidden lg:flex flex-col justify-between gap-3 select-none"
           >
             <div className="space-y-2.5 min-w-0">
               <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-1 min-w-0">
@@ -2379,27 +2893,52 @@ function NoteDocumentEditor({
                 </span>
               </div>
 
+              {headings.length >= 6 && (
+                <div className="relative">
+                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="search"
+                    value={tocQuery}
+                    onChange={(e) => setTocQuery(e.target.value)}
+                    placeholder={tr('筛选章节标题...', 'Filter sections...')}
+                    aria-label={tr('筛选文档大纲章节', 'Filter outline headings')}
+                    className="w-full rounded-lg border border-slate-200/90 bg-white pl-7 pr-2 py-1 text-[11px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
+
               {headings.length === 0 ? (
                 <p className="px-1 py-4 text-[11px] leading-5 text-slate-400 break-words">
                   {tr(
-                    '在文档中使用 H1 / H2 / H3 标题，此处将自动生成结构化章节导航。',
-                    'Use H1 / H2 / H3 headings in the note to auto-generate a section outline here.'
+                    '在文档中使用 H1–H4 标题，此处将自动生成结构化章节导航。',
+                    'Use H1–H4 headings in the note to auto-generate a section outline here.'
                   )}
                 </p>
               ) : (
                 <nav className="space-y-0.5 min-w-0">
-                  {headings.map((h) => (
-                    <button
-                      key={`${h.index}-${h.text}`}
-                      type="button"
-                      onClick={() => scrollToHeading(h.index)}
-                      style={{ paddingLeft: `${(h.level - 1) * 10 + 8}px` }}
-                      className="w-full min-w-0 text-left py-1 pr-2 rounded-md text-xs text-slate-600 hover:bg-slate-200/60 hover:text-blue-600 truncate cursor-pointer transition block"
-                      title={h.text}
-                    >
-                      {h.text}
-                    </button>
-                  ))}
+                  {headings
+                    .filter((h) => !tocQuery.trim() || h.text.toLowerCase().includes(tocQuery.trim().toLowerCase()))
+                    .map((h) => {
+                      const isActive = h.index === activeHeadingIdx;
+                      return (
+                        <button
+                          key={`${h.index}-${h.text}`}
+                          type="button"
+                          onClick={() => scrollToHeading(h.index)}
+                          style={{ paddingLeft: `${(h.level - 1) * 10 + 8}px` }}
+                          className={`w-full min-w-0 text-left py-1 pr-2 rounded-md text-xs truncate cursor-pointer transition block ${
+                            isActive
+                              ? 'bg-blue-50/90 text-blue-700 font-semibold border-l-2 border-blue-600'
+                              : h.level === 4
+                                ? 'text-[11px] text-slate-500 hover:bg-slate-200/60 hover:text-blue-600'
+                                : 'text-slate-600 hover:bg-slate-200/60 hover:text-blue-600'
+                          }`}
+                          title={h.text}
+                        >
+                          {h.text}
+                        </button>
+                      );
+                    })}
                 </nav>
               )}
             </div>
@@ -2636,8 +3175,15 @@ export function DockedNoteSidecar({
 }) {
   const { isEn, tr, td } = useI18n();
   const data = useProtoStore((s) => s.projectNotes);
-  const { activePageId, setDockedNoteId } = useProtoStore();
+  const { activePageId, setActivePage, setSelectedTableId, setViewMode, setDockedNoteId } = useProtoStore();
   const layout = usePageStore();
+  const [sidecarReadOnly, setSidecarReadOnly] = useState(false);
+  const [sidecarEditor, setSidecarEditor] = useState<Editor | null>(null);
+  useEffect(() => {
+    if (sidecarEditor && !sidecarEditor.isDestroyed) {
+      sidecarEditor.setEditable(!sidecarReadOnly);
+    }
+  }, [sidecarEditor, sidecarReadOnly]);
 
   const allNotes = useMemo(
     () => data.nodes.filter((n): n is Extract<NoteNode, { kind: 'note' }> => n.kind === 'note'),
@@ -2728,16 +3274,35 @@ export function DockedNoteSidecar({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {currentNote && (
-              <button
-                type="button"
-                title={tr('切换到全屏笔记工作台', 'Switch to full-screen Notes workspace')}
-                onClick={() => {
-                  openNoteNode(projectId, currentNote.id);
-                }}
-                className="p-1 rounded-md text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer transition"
-              >
-                <Maximize2 size={13} />
-              </button>
+              <>
+                <button
+                  type="button"
+                  aria-pressed={sidecarReadOnly}
+                  title={
+                    sidecarReadOnly
+                      ? tr('当前为只读对照态，点击切换为可编辑', 'Read-only companion mode — click to edit')
+                      : tr('锁定为只读对照态，防止改画布时误触笔记', 'Lock companion note as read-only')
+                  }
+                  onClick={() => setSidecarReadOnly((v) => !v)}
+                  className={`p-1 rounded-md cursor-pointer transition ${
+                    sidecarReadOnly
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'text-slate-500 hover:bg-white hover:text-blue-600'
+                  }`}
+                >
+                  {sidecarReadOnly ? <Lock size={13} /> : <Eye size={13} />}
+                </button>
+                <button
+                  type="button"
+                  title={tr('切换到全屏笔记工作台', 'Switch to full-screen Notes workspace')}
+                  onClick={() => {
+                    openNoteNode(projectId, currentNote.id);
+                  }}
+                  className="p-1 rounded-md text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer transition"
+                >
+                  <Maximize2 size={13} />
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -2857,14 +3422,39 @@ export function DockedNoteSidecar({
             </select>
           </div>
 
-          <div className="pf-notion-editor text-xs">
+          <div
+            className="pf-notion-editor text-xs"
+            onClick={(e) => {
+              const anchor = (e.target as HTMLElement).closest('a');
+              if (!anchor) return;
+              const href = anchor.getAttribute('href') || '';
+              if (href.startsWith('#pf-page:')) {
+                e.preventDefault();
+                setActivePage(href.slice('#pf-page:'.length));
+                setViewMode('single_page');
+              } else if (href.startsWith('#pf-table:')) {
+                e.preventDefault();
+                setSelectedTableId(href.slice('#pf-table:'.length));
+                setViewMode('db_designer');
+              } else if (href.startsWith('#pf-note:')) {
+                e.preventDefault();
+                setDockedNoteId(href.slice('#pf-note:'.length));
+              } else if (href.startsWith('#pf-mindmap:')) {
+                e.preventDefault();
+                const targetMm = href.slice('#pf-mindmap:'.length);
+                if (useProtoStore.getState().mindmaps.nodes.some((m) => m.id === targetMm)) {
+                  useProtoStore.setState({ selectedMindmapNodeId: targetMm, viewMode: 'mindmap' });
+                }
+              }
+            }}
+          >
             {canMountRichEditor ? (
               <RichTiptapMount
                 key={currentNote.id}
                 projectId={projectId}
                 noteId={currentNote.id}
                 initialContent={currentNote.content || '<p></p>'}
-                onEditorReady={() => {}}
+                onEditorReady={setSidecarEditor}
                 onSaveError={setSidecarError}
                 onSelectionTextChange={() => {}}
                 onSlashTrigger={() => {}}
@@ -2995,18 +3585,52 @@ function RichTiptapMount({
     const node = s.projectNotes.nodes.find((n) => n.id === noteId);
     return node && node.kind === 'note' ? node.content : undefined;
   });
+
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingEditorRef = useRef<Editor | null>(null);
+
+  const flushPendingSave = useCallback(
+    (ed: Editor | null) => {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = undefined;
+      if (!ed || ed.isDestroyed) return;
+      const html = ed.getHTML();
+      if (html === lastSyncedRef.current) return;
+      lastSyncedRef.current = html;
+      try {
+        updateNoteContent(projectId, noteId, html);
+      } catch (err) {
+        onSaveErrorRef.current?.(err instanceof Error ? err.message : tr('笔记保存失败', 'Failed to save note'));
+      }
+    },
+    [projectId, noteId]
+  );
+
+  useEffect(
+    () => () => {
+      if (debounceTimerRef.current !== undefined) {
+        flushPendingSave(pendingEditorRef.current);
+      }
+    },
+    [flushPendingSave]
+  );
+
   const editor = useEditor(
     {
       immediatelyRender: false,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [1, 2, 3] },
+          heading: { levels: [1, 2, 3, 4, 5] },
+          blockquote: false,
+          codeBlock: false,
         }),
+        NoteBlockquoteExtension,
+        NoteCodeBlockExtension,
         Placeholder.configure({
           placeholder: () =>
             tr(
-              '输入内容，输入 "/" 唤起块级命令，输入 "@" 引用页面或物理表，按 Cmd/Ctrl+V 直接粘贴截图...',
-              'Type "/" for block commands, "@" to mention pages or tables, or Cmd/Ctrl+V to paste screenshots...'
+              '输入内容，输入 "/" 唤起块级命令，输入 "@" 引用页面/表/笔记/脑图，支持直接粘贴 Markdown 或截图...',
+              'Type "/" for blocks, "@" to mention pages/tables/notes/diagrams, or paste Markdown & screenshots...'
             ),
         }),
         TaskList,
@@ -3014,7 +3638,8 @@ function RichTiptapMount({
           nested: true,
         }),
         Table.configure({
-          resizable: false,
+          resizable: true,
+          cellMinWidth: 80,
         }),
         TableRow,
         TableHeader,
@@ -3029,10 +3654,32 @@ function RichTiptapMount({
       editorProps: {
         handlePaste: (view, event) => {
           const files = Array.from(event.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'));
-          if (!files.length) return false;
-          event.preventDefault();
-          void insertImageFiles(view, files, tr('粘贴的需求截图', 'Pasted screenshot'));
-          return true;
+          if (files.length) {
+            event.preventDefault();
+            void insertImageFiles(view, files, tr('粘贴的需求截图', 'Pasted screenshot'));
+            return true;
+          }
+          // When pasting raw Markdown outside a code block, convert it into rich Tiptap blocks.
+          if (view.state.selection.$from.parent.type.name !== 'codeBlock') {
+            const plain = event.clipboardData?.getData('text/plain') ?? '';
+            const htmlClip = event.clipboardData?.getData('text/html') ?? '';
+            if (shouldParsePastedMarkdown(plain, htmlClip) && pendingEditorRef.current) {
+              const parsed = markdownToNoteHtml(plain, { extractTitle: false });
+              if (parsed.html && parsed.html !== '<p></p>') {
+                event.preventDefault();
+                const currentAssets = useProtoStore.getState().projectNotes.assets;
+                const extracted = extractInlineNoteImages(parsed.html, currentAssets);
+                if (extracted.assets && extracted.assets !== currentAssets) {
+                  useProtoStore.setState((s) => ({
+                    projectNotes: { ...s.projectNotes, assets: extracted.assets },
+                  }));
+                }
+                pendingEditorRef.current.chain().focus().insertContent(extracted.html).run();
+                return true;
+              }
+            }
+          }
+          return false;
         },
         handleDrop: (view, event) => {
           const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
@@ -3041,6 +3688,14 @@ function RichTiptapMount({
           const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
           void insertImageFiles(view, files, undefined, pos);
           return true;
+        },
+        handleDOMEvents: {
+          blur: () => {
+            if (debounceTimerRef.current !== undefined) {
+              flushPendingSave(pendingEditorRef.current);
+            }
+            return false;
+          },
         },
       },
       content: initialContent,
@@ -3054,12 +3709,14 @@ function RichTiptapMount({
         }
       },
       onUpdate: ({ editor: ed }) => {
-        const html = ed.getHTML();
-        lastSyncedRef.current = html;
-        try {
-          updateNoteContent(projectId, noteId, html);
-        } catch (err) {
-          onSaveError?.(err instanceof Error ? err.message : tr('笔记保存失败', 'Failed to save note'));
+        pendingEditorRef.current = ed;
+        // Debounce full HTML serialization on large PRD documents (>= 16k doc chars) to keep typing lag-free,
+        // while committing synchronously on smaller notes so reactive UI & tests see instant state.
+        if (ed.state.doc.content.size >= 16_000) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = setTimeout(() => flushPendingSave(ed), 180);
+        } else {
+          flushPendingSave(ed);
         }
 
         const { selection } = ed.state;
@@ -3081,6 +3738,10 @@ function RichTiptapMount({
     },
     [projectId, noteId]
   );
+
+  useEffect(() => {
+    pendingEditorRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (editor && !editor.isDestroyed) {

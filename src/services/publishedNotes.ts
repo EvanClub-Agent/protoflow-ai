@@ -31,6 +31,7 @@ export function publishableNotes(publishedPageIds: Set<string>): {
   if (!selected.length) return { notes: [], noteAssets: {} };
   const resolve = relatedPagesResolver(data, usePageStore.getState());
   const noteAssets: Record<string, NoteAsset> = {};
+  const sharedIds = new Set(selected.map((n) => n.id));
   const notes = selected.map((node) => {
     const html = sanitizeNoteHtml(node.content, {
       resolveImage: (src) => {
@@ -42,6 +43,7 @@ export function publishableNotes(publishedPageIds: Set<string>): {
         return src;
       },
       keepPageLink: (pageId) => publishedPageIds.has(pageId),
+      keepNoteLink: (noteId) => sharedIds.has(noteId),
     });
     const note: PublishedNote = {
       noteId: node.id,

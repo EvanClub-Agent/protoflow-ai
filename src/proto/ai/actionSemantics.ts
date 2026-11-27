@@ -1,5 +1,6 @@
 import type { DBTableSchema } from '../../store/useProtoStore';
 import { OVERLAY_TYPES } from '../registry/meta';
+import { importSelectedRowsContractErrors } from '../runtime/rowTransfer';
 import { isActionChain, isNode, isRawExpr, type ActionCall, type PropValue, type ProtoNode } from '../types';
 
 export type EventSlotRole = 'primary' | 'cancel' | 'other';
@@ -30,7 +31,8 @@ export interface SemanticActionError {
     | 'unknown-table'
     | 'missing-row-context'
     | 'invalid-row-patch'
-    | 'unbound-picker';
+    | 'unbound-picker'
+    | 'invalid-row-transfer';
   message: string;
 }
 
@@ -54,6 +56,7 @@ export interface PageActionSemantics {
   overlays: Set<string>;
   openedOverlays: Set<string>;
   pickerTables: Map<string, string | null>;
+  tableNodes: Map<string, ProtoNode>;
   nodeTypes: Map<string, string>;
   slots: EventSlot[];
   slotsByPfId: Map<string, EventSlot[]>;
@@ -68,6 +71,7 @@ const MUTATION_OR_PICK_CALLS = new Set([
   'deleteRow',
   'returnSelection',
   'importPurchaseOrderLines',
+  'importSelectedRows',
 ]);
 
 export const CANCEL_LABEL_PATTERN = /^(取消|关闭|返回|放弃|暂不保存|暂不提交)$/;
@@ -121,6 +125,7 @@ export function extractPageActionSemantics(
   const overlayAliases = new Map<string, string>();
   const openedOverlays = new Set<string>();
   const pickerTables = new Map<string, string | null>();
+  const tableNodes = new Map<string, ProtoNode>();
   const nodeTypes = new Map<string, string>();
   const slots: EventSlot[] = [];
   const slotsByPfId = new Map<string, EventSlot[]>();
@@ -193,6 +198,7 @@ export function extractPageActionSemantics(
     if (node.type === 'Table') {
       const rawTable = strProp(node.props.table);
       pickerTables.set(node.pfId, rawTable || null);
+      tableNodes.set(node.pfId, node);
     }
     const displayLabel = nodeDisplayLabel(node);
     labels.set(node.pfId, displayLabel);
@@ -504,6 +510,7 @@ export function extractPageActionSemantics(
     overlays,
     openedOverlays,
     pickerTables,
+    tableNodes,
     nodeTypes,
     slots,
     slotsByPfId,
@@ -735,6 +742,33 @@ export function semanticActionContractIssues(
                 `returnSelection("${tblPfId}") 指向的选单表格未绑定有效物理数据表`,
               );
             }
+          }
+        }
+      } else if (call.name === 'importSelectedRows') {
+        const srcPfId = typeof call.args[0] === 'string' ? call.args[0] : '';
+        const dstPfId = typeof call.args[1] === 'string' ? call.args[1] : '';
+        const srcNode = semantics.tableNodes.get(srcPfId);
+        const dstNode = semantics.tableNodes.get(dstPfId);
+        if (srcNode && srcNode.props.selectable !== true) {
+          push(
+            slot,
+            'invalid-row-transfer',
+            `importSelectedRows 来源表格 "${srcPfId}" 必须开启 selectable={true} 才能勾选要转入的记录`,
+          );
+        }
+        if (srcNode && dstNode && safeTables.length > 0) {
+          const srcTableId = strProp(srcNode.props.table) || undefined;
+          const dstTableId = strProp(dstNode.props.table) || undefined;
+          const defaultParentFk = strProp(dstNode.props.sourceForeignKey) || undefined;
+          const transferErrs = importSelectedRowsContractErrors(
+            safeTables,
+            srcTableId,
+            dstTableId,
+            call.args[2],
+            defaultParentFk,
+          );
+          for (const err of transferErrs) {
+            push(slot, 'invalid-row-transfer', err);
           }
         }
       }

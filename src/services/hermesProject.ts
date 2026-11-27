@@ -8,8 +8,9 @@ import { reviewDatabaseChanges } from '../proto/database/designReview';
 import { finishMenuMerge } from './projectMenuMerge';
 import { migrateNotePageLinks, noteAiContext } from '../proto/notes';
 import { applyProjectAgreement } from './projectKnowledge';
+import { applyMindmapMutation, firstSelectableMindmapId, resolveMindmapSelection } from '../proto/mindmaps';
 import { applyStructureOperation } from './projectPlan';
-import { includesPlanAndSchema, pagePrototypeIssue, planMenuOperations } from './projectPlanMenus';
+import { includesPlanWithMenuBindings, pagePrototypeIssue, planMenuOperations } from './projectPlanMenus';
 import {
   useProtoStore,
   type DBTableSchema,
@@ -212,7 +213,7 @@ export function prepareProjectChanges(
   // Expand the *explicit* full plan on this private candidate when reviewing
   // data together with it. Neither the live store nor generation progress is
   // changed by preflight. Confirmation replays this same transaction.
-  const withPlanMenus = reviewConversationEdits && includesPlanAndSchema(operations);
+  const withPlanMenus = reviewConversationEdits && includesPlanWithMenuBindings(operations);
   const applyOperation = (op: HermesOperation, internalScaffold = false) => {
     // Later operations (e.g. a column after a table upsert) may edit the
     // candidate. Keep the original journal intact for display and replay.
@@ -308,6 +309,13 @@ export function prepareProjectChanges(
       const i = s.stickyNotes.findIndex((x) => x.id === sticky.id);
       if (i < 0) s.stickyNotes.push(sticky);
       else s.stickyNotes[i] = sticky;
+    } else if (op.tool === 'protoflow_manage_mindmap') {
+      if (scope || requestedPage) {
+        throw new Error(tr('项目脑图目录只能在项目对话中维护', 'Project mindmap directory can only be maintained in project chat'));
+      }
+      // The journal keeps only the final plan, which can follow earlier map edits.
+      // validateProjectPayload checks all surviving links against the final menus before commit.
+      applyMindmapMutation(s, a, withPlanMenus ? 'validateMenuLinksAtCommit' : s);
     } else if (op.tool === "protoflow_run_closed_loop_audit") {
       if (!Array.isArray(a.issues)) throw new Error(tr("巡检结果必须是数组", "Audit issues must be an array"));
       const returned = a.issues as typeof s.closedLoopIssues;
@@ -668,7 +676,7 @@ export function applyProjectChanges(
   if (result.requirementAudit.conflicts.length) throw new Error(tr('需求正反例与表约束冲突，修改未应用。\n' + result.requirementAudit.conflicts.join('\n'), 'Requirement examples conflict with table constraints; changes not applied.\n' + result.requirementAudit.conflicts.join('\n')));
   const { mergeTargetId, mergedSourceId } = result;
   const s = result.next.stateSnapshot;
-  if (reviewConversationEdits && includesPlanAndSchema(operations) && s.projectPlan) {
+  if (reviewConversationEdits && includesPlanWithMenuBindings(operations) && s.projectPlan) {
     // applyProjectChanges is called for this review only after explicit consent.
     // Persist that consent with the menu and schema, even if generation stops.
     s.projectPlan.approved = true;
@@ -705,9 +713,19 @@ export function applyProjectChanges(
     history,
     ...(result.scenarioTableIds.size ? {tableRows:{...pageStore.tableRows, ...Object.fromEntries([...result.scenarioTableIds].map(id => [id,s.tableRows[id]]))}} : {}),
   });
+  const mindmapsChanged = JSON.stringify(effectiveBase.stateSnapshot.mindmaps) !== JSON.stringify(s.mindmaps);
+  const currentSelectedMapId = useProtoStore.getState().selectedMindmapNodeId;
+  const selectedAfterEdit = mindmapsChanged
+    ? resolveMindmapSelection(effectiveBase.stateSnapshot.mindmaps, s.mindmaps, currentSelectedMapId)
+    : currentSelectedMapId;
   useProtoStore.setState({
     ...(useProtoStore.getState().activePageId === '' ? { activePageId: s.activePageId } : {}),
-    ...(mergeTargetId === undefined ? {} : { mindmaps: s.mindmaps }),
+    ...(mergeTargetId !== undefined || mindmapsChanged
+      ? {
+          mindmaps: s.mindmaps,
+          selectedMindmapNodeId: selectedAfterEdit,
+        }
+      : {}),
     // Notes are edited live while AI runs (and are not part of the revision): migrate the
     // current notes instead of restoring the snapshot copy, so concurrent edits survive.
     ...(mergedSourceId !== undefined && mergeTargetId !== undefined
@@ -736,11 +754,19 @@ export function applyProjectChanges(
           history: pageStore.history,
           ...(result.scenarioTableIds.size ? {tableRows:Object.fromEntries(Object.entries(usePageStore.getState().tableRows).filter(([id]) => !result.scenarioTableIds.has(id)))} : {}),
         });
+        const liveSelection = useProtoStore.getState().selectedMindmapNodeId;
+        const preferredSelection = liveSelection !== selectedAfterEdit && s.mindmaps.nodes.some(node => node.id === liveSelection)
+          ? liveSelection
+          : currentSelectedMapId;
         useProtoStore.setState({
           databaseRequirements: s.databaseRequirements ?? [],
           projectPlan: s.projectPlan === undefined ? null : s.projectPlan,
           projectAgreements: s.projectAgreements ?? [],
           mindmaps: s.mindmaps,
+          ...(mindmapsChanged && {
+            selectedMindmapNodeId: s.mindmaps.nodes.some(node => node.id === preferredSelection)
+              ? preferredSelection : firstSelectableMindmapId(s.mindmaps),
+          }),
           dbTables: s.dbTables,
           stickyNotes: s.stickyNotes,
           closedLoopIssues: s.closedLoopIssues,

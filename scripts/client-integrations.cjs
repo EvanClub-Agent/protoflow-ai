@@ -35,17 +35,24 @@ function claudeBundle(root, connectionFile) {
   return Buffer.from(zipSync({ ...files, 'manifest.json': json(manifest) }));
 }
 
-function pluginConfig(binding) {
-  const server = binding ? { command: binding.executable, args: args('${PLUGIN_ROOT}/server/cli.cjs', binding.connectionFile), env: { ELECTRON_RUN_AS_NODE: '1' } } :
-    { command: 'node', args: args('${PLUGIN_ROOT}/server/cli.cjs', '${ALEX_CONNECTION_FILE}'),
-      variables: [{ name: 'ALEX_CONNECTION_FILE', title: fileTitle, description: fileDescription }] };
-  return { mcpServers: { protoflow: server } };
+function serverEntry(binding) {
+  return binding
+    ? { command: binding.executable, args: args('${PLUGIN_ROOT}/server/cli.cjs', binding.connectionFile), env: { ELECTRON_RUN_AS_NODE: '1' } }
+    : {
+        command: 'node',
+        args: args('${PLUGIN_ROOT}/server/cli.cjs', '${ALEX_CONNECTION_FILE}'),
+        variables: [{ name: 'ALEX_CONNECTION_FILE', title: fileTitle, description: fileDescription }],
+      };
+}
+
+function pluginConfig(binding, serverKey = 'alex') {
+  return { mcpServers: { [serverKey]: serverEntry(binding) } };
 }
 
 function pluginFiles(root, binding) {
   const { metadata, files } = contents(root);
   files['plugin.json'] = json({ ...metadata, displayName: 'Alex ProtoFlow Designer' });
-  files['mcp_config.json'] = json(pluginConfig(binding));
+  files['mcp_config.json'] = json(pluginConfig(binding, 'alex'));
   const skill = 'skills/' + name;
   for (const [file, bytes] of Object.entries(skillFiles(path.join(root, skill)))) files[skill + '/' + file] = bytes;
   return files;
@@ -59,19 +66,25 @@ function writeAtomic(file, bytes) {
   } finally { fs.rmSync(temporary, { force: true }); }
 }
 
-function installPlugin(root, home, binding) {
+function installPlugin(root, home, binding, options = {}) {
   if (!path.isAbsolute(binding.connectionFile) || !path.isAbsolute(binding.executable)) throw new Error('Missing desktop connection or executable path');
   const files = pluginFiles(root, binding);
   const target = path.join(home, '.gemini/config/plugins', name);
   return installDesignerFiles(target, 'plugin', files, current => {
-    let previous;
-    try { previous = JSON.parse(current).mcpServers.protoflow; } catch { return false; }
-    if (!Array.isArray(previous?.args)) return false;
-    const connectionFile = previous.args.at(-1);
-    return typeof connectionFile === 'string' && path.isAbsolute(connectionFile) &&
-      typeof previous.command === 'string' && path.isAbsolute(previous.command) &&
-      current.equals(json(pluginConfig({ executable: previous.command, connectionFile })));
-  });
+    let parsed;
+    try { parsed = JSON.parse(current); } catch { return false; }
+    for (const key of ['alex', 'protoflow']) {
+      const previous = parsed?.mcpServers?.[key];
+      if (!Array.isArray(previous?.args)) continue;
+      const connectionFile = previous.args.at(-1);
+      if (typeof connectionFile === 'string' && path.isAbsolute(connectionFile) &&
+          typeof previous.command === 'string' && path.isAbsolute(previous.command) &&
+          current.equals(json(pluginConfig({ executable: previous.command, connectionFile }, key)))) {
+        return true;
+      }
+    }
+    return false;
+  }, options);
 }
 
 module.exports = { name, claudeBundle, pluginFiles, installPlugin, writeAtomic };

@@ -1,7 +1,7 @@
 import { MindmapLinksModal } from './MindmapLinksModal';
 import { NoteLinksModal } from './NoteLinksModal';
 import { pageRefKey, type MindmapPageRef } from '../proto/mindmaps';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Network,
@@ -69,6 +69,53 @@ function sameLayout(a: SitemapLayout, b: SitemapLayout) {
   return a.sitemapBase === b.sitemapBase && a.designerFolders === b.designerFolders && a.designerPages === b.designerPages && a.sitemapOverrides === b.sitemapOverrides;
 }
 
+export const SITEMAP_WIDTH_STORAGE_KEY = 'protoflow.leftSitemapWidth.v1';
+export const DEFAULT_SITEMAP_WIDTH = 304;
+export const MIN_SITEMAP_WIDTH = 232;
+export const MAX_SITEMAP_WIDTH = 520;
+
+function clampSitemapWidth(raw: number): number {
+  if (!Number.isFinite(raw)) return DEFAULT_SITEMAP_WIDTH;
+  const viewportCap =
+    typeof window !== 'undefined' && Number.isFinite(window.innerWidth) && window.innerWidth > 560
+      ? Math.max(MIN_SITEMAP_WIDTH, Math.min(MAX_SITEMAP_WIDTH, Math.floor(window.innerWidth * 0.45)))
+      : MAX_SITEMAP_WIDTH;
+  return Math.round(Math.min(viewportCap, Math.max(MIN_SITEMAP_WIDTH, raw)));
+}
+
+function readStoredSitemapWidth(): number {
+  try {
+    const storage = typeof window !== 'undefined' ? window.localStorage : globalThis.localStorage;
+    if (!storage) return DEFAULT_SITEMAP_WIDTH;
+    const raw = storage.getItem(SITEMAP_WIDTH_STORAGE_KEY);
+    if (!raw) return DEFAULT_SITEMAP_WIDTH;
+    return clampSitemapWidth(Number(raw));
+  } catch {
+    return DEFAULT_SITEMAP_WIDTH;
+  }
+}
+
+function persistSitemapWidth(width: number): void {
+  try {
+    const storage = typeof window !== 'undefined' ? window.localStorage : globalThis.localStorage;
+    if (storage) {
+      storage.setItem(SITEMAP_WIDTH_STORAGE_KEY, String(Math.round(width)));
+    }
+  } catch {
+    /* Ignore restricted storage environments. */
+  }
+}
+
+function syncTruncatedLabelMetrics(el: HTMLElement): void {
+  const hiddenWidth = Math.max(0, Math.ceil(el.scrollWidth - el.clientWidth));
+  el.classList.toggle('truncated', hiddenWidth > 0);
+  if (hiddenWidth > 0) {
+    el.style.setProperty('--scroll-width', String(hiddenWidth));
+  } else {
+    el.style.removeProperty('--scroll-width');
+  }
+}
+
 export const LeftSitemapTree: React.FC = () => {
   const projectId = useProtoStore(state => state.currentProjectMeta.projectId);
   return <ProjectSitemap key={projectId} />;
@@ -133,6 +180,76 @@ const ProjectSitemap: React.FC = () => {
   const [dropHover, setDropHover] = useState<{ id: string | null } | null>(null);
   const [moveError, setMoveError] = useState('');
   const [lastMove, setLastMove] = useState<{ before: SitemapLayout; after: SitemapLayout; parentId: string | null; message: string } | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => readStoredSitemapWidth());
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const resizeDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const labelObserverRef = useRef<ResizeObserver | null>(null);
+  const observedLabelsRef = useRef<Set<HTMLElement>>(new Set());
+
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target instanceof HTMLElement) {
+          syncTruncatedLabelMetrics(entry.target);
+        }
+      }
+    });
+    labelObserverRef.current = observer;
+    for (const el of observedLabelsRef.current) {
+      observer.observe(el);
+      syncTruncatedLabelMetrics(el);
+    }
+    return () => {
+      observer.disconnect();
+      labelObserverRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    for (const el of Array.from(observedLabelsRef.current)) {
+      if (!el.isConnected) {
+        observedLabelsRef.current.delete(el);
+        labelObserverRef.current?.unobserve(el);
+        continue;
+      }
+      syncTruncatedLabelMetrics(el);
+    }
+  }, [sitemap, sidebarWidth, expandedFolders, searchQuery, showDeprecatedNodes]);
+
+  const bindSitemapLabelRef = useCallback((node: HTMLSpanElement | null) => {
+    if (!node || typeof HTMLElement === 'undefined' || !(node instanceof HTMLElement)) return;
+    observedLabelsRef.current.add(node);
+    labelObserverRef.current?.observe(node);
+    syncTruncatedLabelMetrics(node);
+  }, []);
+
+  const applySidebarWidth = useCallback((next: number) => {
+    const clamped = clampSitemapWidth(next);
+    setSidebarWidth(clamped);
+    persistSitemapWidth(clamped);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingSidebar) return undefined;
+    const handlePointerMove = (event: PointerEvent) => {
+      const state = resizeDragRef.current;
+      if (!state) return;
+      applySidebarWidth(state.startWidth + (event.clientX - state.startX));
+    };
+    const stopResize = () => {
+      resizeDragRef.current = null;
+      setIsResizingSidebar(false);
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+    };
+  }, [isResizingSidebar, applySidebarWidth]);
   const layout = useMemo(() => ({ sitemapBase, designerFolders, designerPages, sitemapOverrides }), [sitemapBase, designerFolders, designerPages, sitemapOverrides]);
   const dropTargets = useMemo(() => {
     const valid = new Set<string | null>();
@@ -288,6 +405,13 @@ const ProjectSitemap: React.FC = () => {
         pageSources[item.pageId],
       ) === 'mobile';
 
+    const hoverReserveClass = isFolder
+      ? !item.deprecated
+        ? 'group-hover:pr-[132px] group-focus-within:pr-[132px]'
+        : 'group-hover:pr-[92px] group-focus-within:pr-[92px]'
+      : 'group-hover:pr-[92px] group-focus-within:pr-[92px]';
+    const hasLinkedDocs = noteCount > 0 || mapCount > 0;
+
     return (
       <div key={item.id} className="select-none">
         <div
@@ -308,8 +432,8 @@ const ProjectSitemap: React.FC = () => {
           }}
           onDragLeave={() => setDropHover(current => current?.id === item.id ? null : current)}
           onDrop={event => dropInto(event, item.id)}
-          style={{ paddingLeft: `${depth * 13 + 10}px` }}
-          className={`group flex items-center justify-between pr-2.5 py-1.5 text-xs cursor-pointer transition border-l-2 ${
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          className={`group relative flex items-center pr-2 py-1.5 text-xs cursor-pointer transition border-l-2 ${
             dropHover?.id === item.id && canDrop
               ? 'bg-blue-100 text-blue-800 border-blue-500 ring-1 ring-inset ring-blue-300'
               : isActive
@@ -319,11 +443,20 @@ const ProjectSitemap: React.FC = () => {
               : 'text-slate-700 border-transparent hover:bg-slate-100/80 hover:text-slate-900'
           }`}
         >
-          <button type="button" draggable={target !== null} title={item.title} onDragStart={event => {
-            if (!target) return;
-            event.dataTransfer.setData('application/protoflow-sitemap', JSON.stringify({ target, projectId: currentProjectMeta.projectId }));
-            event.dataTransfer.effectAllowed = 'move'; setDrag({ target, projectId: currentProjectMeta.projectId }); setMoveError('');
-          }} onDragEnd={() => { setDrag(null); setDropHover(null); }} aria-expanded={isFolder ? isExpanded : undefined} aria-current={isActive ? 'page' : undefined} onClick={activateItem} className="flex flex-1 items-center gap-1.5 min-w-0 text-left">
+          <button
+            type="button"
+            draggable={target !== null}
+            onDragStart={event => {
+              if (!target) return;
+              event.dataTransfer.setData('application/protoflow-sitemap', JSON.stringify({ target, projectId: currentProjectMeta.projectId }));
+              event.dataTransfer.effectAllowed = 'move'; setDrag({ target, projectId: currentProjectMeta.projectId }); setMoveError('');
+            }}
+            onDragEnd={() => { setDrag(null); setDropHover(null); }}
+            aria-expanded={isFolder ? isExpanded : undefined}
+            aria-current={isActive ? 'page' : undefined}
+            onClick={activateItem}
+            className={`pf-sitemap-row-btn flex flex-1 items-center gap-1.5 min-w-0 text-left ${hoverReserveClass}`}
+          >
             {isFolder ? (
               <>
                 {isExpanded ? (
@@ -338,21 +471,23 @@ const ProjectSitemap: React.FC = () => {
                 )}
               </>
             ) : item.type === 'doc' ? (
-              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-2" />
+              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
             ) : isMobilePageItem ? (
               <Smartphone
-                className={`w-3.5 h-3.5 shrink-0 ml-2 ${
+                className={`w-3.5 h-3.5 shrink-0 ml-1 ${
                   isActive ? 'text-violet-600' : 'text-violet-500/80'
                 }`}
               />
             ) : (
               <LayoutGrid
-                className={`w-3.5 h-3.5 shrink-0 ml-2 ${
+                className={`w-3.5 h-3.5 shrink-0 ml-1 ${
                   isActive ? 'text-blue-600' : 'text-slate-400'
                 }`}
               />
             )}
-            <span className="truncate">{item.title}</span>
+            <span ref={bindSitemapLabelRef} className="pf-sitemap-label">
+              <span>{item.title}</span>
+            </span>
             {isMobilePageItem && (
               <span className="px-1 py-0.2 rounded text-[9px] font-semibold bg-violet-100 text-violet-700 shrink-0">
                 {tr('移动', 'Mobile')}
@@ -360,45 +495,118 @@ const ProjectSitemap: React.FC = () => {
             )}
           </button>
 
-          <div className="flex items-center gap-1 shrink-0 ml-1">
-            {linkRef && <button type="button" aria-label={tr(`关联笔记：${item.title}`, `Link notes: ${item.title}`)} title={noteCount ? tr(`已关联 ${noteCount} 篇笔记，点击管理或打开`, `${noteCount} linked note(s) — click to manage or open`) : tr('关联项目笔记或客户需求', 'Link project notes or requirements')} onClick={() => setNoteLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${noteCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><BookOpenText size={12} />{noteCount > 0 && <span className="text-[10px] tabular-nums">{noteCount}</span>}</button>}
-            {linkRef && <button type="button" aria-label={tr(`关联脑图：${item.title}`, `Link mindmaps: ${item.title}`)} title={mapCount ? tr(`已关联 ${mapCount} 个脑图节点，点击管理或打开`, `${mapCount} linked mindmap node(s) — click to manage or open`) : tr('关联脑图目录或菜单', 'Link mindmap folder or map')} onClick={() => setMindmapLinkPage(linkRef)} className={`flex items-center gap-0.5 rounded p-1 ${mapCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600'}`}><Network size={12} />{mapCount > 0 && <span className="text-[10px] tabular-nums">{mapCount}</span>}</button>}
-            <button type="button" aria-label={tr(`删除${item.title}`, `Delete ${item.title}`)} title={isFolder ? tr('删除目录及其内容', 'Delete folder and its contents') : tr('删除菜单', 'Delete menu item')} onClick={() => {
-              try { setDeleteTarget(prepareMenuDeletion(captureProjectPayload(), item.id)); setMoveError(''); }
-              catch (e) { setMoveError(e instanceof Error ? td(e.message) : tr('无法删除菜单', 'Unable to delete menu item')); }
-            }} className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={12} /></button>
-            {target && <button type="button" aria-label={tr(`移动${item.title}`, `Move ${item.title}`)} title={tr('移动到其他目录', 'Move to another folder')} onClick={() => { setMoveTarget(target); setMoveError(''); }} className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-slate-500 hover:bg-blue-100 hover:text-blue-600 whitespace-nowrap"><FolderInput size={12} />{tr('移动', 'Move')}</button>}
-            {isFolder && !item.deprecated && <>
-              <button type="button" aria-label={tr(`在${item.title}中新建页面`, `New page in ${item.title}`)} title={tr('在此目录新建页面', 'New page in this folder')} onClick={() => openNewPage(item.id)} className="p-0.5 rounded text-slate-400 hover:bg-blue-100 hover:text-blue-600"><Plus size={13} /></button>
-              <button type="button" aria-label={tr(`在${item.title}中新建子目录`, `New subfolder in ${item.title}`)} title={tr('新建子目录', 'New subfolder')} onClick={() => setFolderDraft({ parentId: item.id })} className="p-0.5 rounded text-slate-400 hover:bg-amber-100 hover:text-amber-600"><FolderPlus size={13} /></button>
-            </>}
-            {pulseBadge && pulseBadge > 0 && (
-              <span
-                className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-blue-600 text-white tabular-nums"
-                title={tr('共表数据发生了更新', 'Shared table data updated')}
+          {/* Zero-width anchor so row management actions take 0px when idle and reveal cleanly to the left of status pills on hover / focus-within */}
+          <div className="relative shrink-0 h-5 w-0">
+            <div className="pf-sitemap-actions absolute right-0.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity">
+              {linkRef && (
+                <button
+                  type="button"
+                  aria-label={tr(`关联笔记：${item.title}`, `Link notes: ${item.title}`)}
+                  title={noteCount ? tr(`已关联 ${noteCount} 篇笔记，点击管理或打开`, `${noteCount} linked note(s) — click to manage or open`) : tr('关联项目笔记或客户需求', 'Link project notes or requirements')}
+                  onClick={() => setNoteLinkPage(linkRef)}
+                  className={`flex items-center gap-0.5 rounded p-[3px] ${noteCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:bg-slate-200/70 hover:text-blue-600'}`}
+                >
+                  <BookOpenText size={12} />
+                  {noteCount > 0 && <span className="text-[10px] tabular-nums leading-none">{noteCount}</span>}
+                </button>
+              )}
+              {linkRef && (
+                <button
+                  type="button"
+                  aria-label={tr(`关联脑图：${item.title}`, `Link mindmaps: ${item.title}`)}
+                  title={mapCount ? tr(`已关联 ${mapCount} 个脑图节点，点击管理或打开`, `${mapCount} linked mindmap node(s) — click to manage or open`) : tr('关联脑图目录或菜单', 'Link mindmap folder or map')}
+                  onClick={() => setMindmapLinkPage(linkRef)}
+                  className={`flex items-center gap-0.5 rounded p-[3px] ${mapCount ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:bg-slate-200/70 hover:text-blue-600'}`}
+                >
+                  <Network size={12} />
+                  {mapCount > 0 && <span className="text-[10px] tabular-nums leading-none">{mapCount}</span>}
+                </button>
+              )}
+              {isFolder && !item.deprecated && (
+                <>
+                  <button
+                    type="button"
+                    aria-label={tr(`在${item.title}中新建页面`, `New page in ${item.title}`)}
+                    title={tr('在此目录新建页面', 'New page in this folder')}
+                    onClick={() => openNewPage(item.id)}
+                    className="rounded p-[3px] text-slate-400 hover:bg-blue-100 hover:text-blue-600"
+                  >
+                    <Plus size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={tr(`在${item.title}中新建子目录`, `New subfolder in ${item.title}`)}
+                    title={tr('新建子目录', 'New subfolder')}
+                    onClick={() => setFolderDraft({ parentId: item.id })}
+                    className="rounded p-[3px] text-slate-400 hover:bg-amber-100 hover:text-amber-600"
+                  >
+                    <FolderPlus size={12} />
+                  </button>
+                </>
+              )}
+              {target && (
+                <button
+                  type="button"
+                  aria-label={tr(`移动${item.title}`, `Move ${item.title}`)}
+                  title={tr('移动到其他目录', 'Move to another folder')}
+                  onClick={() => { setMoveTarget(target); setMoveError(''); }}
+                  className="rounded p-[3px] text-slate-400 hover:bg-blue-100 hover:text-blue-600"
+                >
+                  <FolderInput size={12} />
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label={tr(`删除${item.title}`, `Delete ${item.title}`)}
+                title={isFolder ? tr('删除目录及其内容', 'Delete folder and its contents') : tr('删除菜单', 'Delete menu item')}
+                onClick={() => {
+                  try { setDeleteTarget(prepareMenuDeletion(captureProjectPayload(), item.id)); setMoveError(''); }
+                  catch (e) { setMoveError(e instanceof Error ? td(e.message) : tr('无法删除菜单', 'Unable to delete menu item')); }
+                }}
+                className="rounded p-[3px] text-slate-400 hover:bg-rose-50 hover:text-rose-600"
               >
-                +{pulseBadge}
-              </span>
-            )}
-            {boundTablesCount > 0 && (
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-mono tabular-nums border ${
-                  isActive
-                    ? 'bg-blue-100/80 text-blue-700 border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                }`}
-                title={tr(`该菜单已关联 ${boundTablesCount} 张数据库表`, `Linked to ${boundTablesCount} database table(s)`)}
-              >
-                {tr(`${boundTablesCount}表`, `${boundTablesCount}T`)}
-              </span>
-            )}
+                <Trash2 size={12} />
+              </button>
+            </div>
           </div>
+
+          {(hasLinkedDocs || (pulseBadge && pulseBadge > 0) || boundTablesCount > 0) && (
+            <div className="flex items-center gap-1 shrink-0 ml-1">
+              {hasLinkedDocs && (
+                <span
+                  aria-hidden="true"
+                  title={tr(`已关联 ${noteCount} 篇笔记 · ${mapCount} 个脑图节点`, `${noteCount} note(s) · ${mapCount} mindmap(s)`)}
+                  className="w-1.5 h-1.5 rounded-full bg-blue-500/75 shrink-0 group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity"
+                />
+              )}
+              {pulseBadge && pulseBadge > 0 && (
+                <span
+                  className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-blue-600 text-white tabular-nums"
+                  title={tr('共表数据发生了更新', 'Shared table data updated')}
+                >
+                  +{pulseBadge}
+                </span>
+              )}
+              {boundTablesCount > 0 && (
+                <span
+                  className={`px-1 py-0.2 rounded text-[10px] font-mono tabular-nums border ${
+                    isActive
+                      ? 'bg-blue-100/80 text-blue-700 border-blue-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}
+                  title={tr(`该菜单已关联 ${boundTablesCount} 张数据库表`, `Linked to ${boundTablesCount} database table(s)`)}
+                >
+                  {tr(`${boundTablesCount}表`, `${boundTablesCount}T`)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {isFolder && isExpanded && item.children && (
           <div className="mt-0.5">
             {item.children.map((child) => renderPageNode(child, depth + 1))}
-            {item.children.length === 0 && <p style={{ paddingLeft: `${(depth + 1) * 13 + 10}px` }} className="py-1.5 text-[11px] text-slate-400">{tr('暂无页面，可点击 + 添加', 'No pages yet — click + to add')}</p>}
+            {item.children.length === 0 && <p style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }} className="py-1.5 text-[11px] text-slate-400">{tr('暂无页面，可点击 + 添加', 'No pages yet — click + to add')}</p>}
           </div>
         )}
       </div>
@@ -408,7 +616,10 @@ const ProjectSitemap: React.FC = () => {
   const domains = [...new Set(dbTables.map(t => t.domain))];
 
   return (
-    <aside className="w-[268px] shrink-0 border-r border-slate-200 bg-white flex flex-col h-full select-none">
+    <aside
+      style={{ width: `${sidebarWidth}px`, maxWidth: '45vw' }}
+      className="relative shrink-0 border-r border-slate-200 bg-white flex flex-col h-full select-none"
+    >
       {/* Compact VS Code-style Panel Header + Search */}
       <div className="px-2.5 py-2 border-b border-slate-200 bg-slate-50/60 space-y-1.5">
         <div className="flex items-center justify-between gap-2 min-h-[26px]">
@@ -495,7 +706,7 @@ const ProjectSitemap: React.FC = () => {
       {leftSidebarTab === 'pages' && <div className="flex shrink-0 items-center border-b border-slate-100 px-2 py-1.5 text-[10px] leading-4 text-slate-500">
         {drag?.target.kind === 'folder' && dropTargets.has(null)
           ? <div data-sitemap-root-drop onDragEnter={event => { event.preventDefault(); setDropHover({ id: null }); }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropHover({ id: null }); }} onDragLeave={() => setDropHover(null)} onDrop={event => dropInto(event, null)} className={`w-full rounded-md border border-dashed py-1.5 text-center text-xs ${dropHover?.id === null ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-blue-300 bg-blue-50 text-blue-600'}`}>{tr('拖到这里移至顶层', 'Drop here to move to top level')}</div>
-          : <span className="px-1">{tr('拖入目录调整层级，或点击行末“移动”', 'Drag into folders to reorder, or click "Move"')}</span>}
+          : <span className="px-1 truncate">{tr('拖入目录调整层级 · 悬停行显示操作 · 右侧边线可拉宽', 'Drag to reorder · Hover row for actions · Drag edge to resize')}</span>}
       </div>}
       {leftSidebarTab === 'pages' && lastMove && sameLayout(layout, lastMove.after) && <div role="status" className="flex items-start gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-800"><span className="min-w-0 flex-1 break-words">{lastMove.message}</span><button type="button" onClick={undoMove} className="flex shrink-0 items-center gap-0.5 text-blue-600 hover:underline"><Undo2 size={12} />{tr('撤销', 'Undo')}</button></div>}
       {moveError && <p role="alert" className="px-3 py-2 text-xs text-rose-600">{moveError}</p>}
@@ -593,7 +804,7 @@ const ProjectSitemap: React.FC = () => {
                                 setActivePage(m.pageId);
                                 setViewMode('single_page');
                               }}
-                              className="text-[10px] px-1.5 py-0.2 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 transition cursor-pointer truncate max-w-[96px]"
+                              className="text-[10px] px-1.5 py-0.2 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 transition cursor-pointer truncate max-w-[160px]"
                               title={tr(`点击跳转到关联页面：${m.menuTitle}`, `Jump to linked page: ${m.menuTitle}`)}
                             >
                               {m.menuTitle.split('→')[1]?.trim() || m.menuTitle}
@@ -927,6 +1138,53 @@ const ProjectSitemap: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Right-edge resize sash: drag to widen/narrow for long menu names, double-click or Enter to reset */}
+      <div
+        role="separator"
+        tabIndex={0}
+        aria-orientation="vertical"
+        aria-label={tr('拖拽调整页面目录宽度', 'Resize sitemap sidebar')}
+        aria-valuenow={sidebarWidth}
+        aria-valuemin={MIN_SITEMAP_WIDTH}
+        aria-valuemax={MAX_SITEMAP_WIDTH}
+        title={tr('拖拽调整目录宽度（双击恢复默认宽度）', 'Drag to resize (double-click to reset)')}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          resizeDragRef.current = { startX: event.clientX, startWidth: sidebarWidth };
+          setIsResizingSidebar(true);
+        }}
+        onDoubleClick={() => applySidebarWidth(DEFAULT_SITEMAP_WIDTH)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            applySidebarWidth(sidebarWidth + 16);
+          } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            applySidebarWidth(sidebarWidth - 16);
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            applySidebarWidth(MIN_SITEMAP_WIDTH);
+          } else if (event.key === 'End') {
+            event.preventDefault();
+            applySidebarWidth(MAX_SITEMAP_WIDTH);
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            applySidebarWidth(DEFAULT_SITEMAP_WIDTH);
+          }
+        }}
+        className={`absolute top-0 -right-1 bottom-0 w-2 z-20 cursor-col-resize focus:outline-none group/sash ${
+          isResizingSidebar ? 'bg-blue-500/35' : 'hover:bg-blue-500/20 focus-visible:bg-blue-500/30'
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] transition-opacity ${
+            isResizingSidebar
+              ? 'bg-blue-600 opacity-100'
+              : 'bg-blue-500 opacity-0 group-hover/sash:opacity-100 group-focus-visible/sash:opacity-100'
+          }`}
+        />
+      </div>
     </aside>
   );
 };

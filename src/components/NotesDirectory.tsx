@@ -40,7 +40,7 @@ import {
   deleteNoteNode,
   duplicateNoteNode,
   editNoteNode,
-  importMarkdownAsNote,
+  importMarkdownFilesAsNotes,
   openNoteNode,
   toggleNoteTask,
   updateNoteMeta,
@@ -181,12 +181,18 @@ export function NotesDirectory({
   }, [data.nodes, searchQuery, activeTagFilter]);
 
   const handleImportMarkdownFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const selected = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file) return;
-    const text = await file.text();
-    const id = importMarkdownAsNote(projectId, file.name, text, defaultParentId);
-    openNoteNode(projectId, id);
+    if (!selected.length) return;
+    selected.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const entries = await Promise.all(
+      selected.map(async (file) => ({
+        fileName: file.name,
+        markdownText: await file.text(),
+      }))
+    );
+    const ids = importMarkdownFilesAsNotes(projectId, entries, defaultParentId);
+    if (ids[0]) openNoteNode(projectId, ids[0]);
   };
 
   const renderNodes = (parent: string | null, depth = 0): React.ReactNode =>
@@ -766,6 +772,7 @@ export function NotesDirectory({
         <input
           ref={fileInputRef}
           type="file"
+          multiple
           accept=".md,.markdown,.txt"
           onChange={handleImportMarkdownFile}
           className="hidden"
@@ -790,11 +797,11 @@ export function NotesDirectory({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            title={tr('导入本地 Markdown (.md) 文件为笔记', 'Import local Markdown (.md) file as note')}
+            title={tr('支持单选或多选批量导入本地 Markdown (.md) 文档', 'Import one or multiple local Markdown (.md) files as notes')}
             className="py-1.5 px-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-medium flex items-center justify-center gap-1 cursor-pointer shadow-2xs transition whitespace-nowrap shrink-0"
           >
             <FileUp className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-            <span>{tr('导入 .md', 'Import .md')}</span>
+            <span>{tr('批量导入 .md', 'Import .md')}</span>
           </button>
         </div>
         {onCollapse && (

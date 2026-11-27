@@ -30,7 +30,9 @@ export { inspectPage } from '../ai/pageInspection';
 export { getImplementationGuide } from '../ai/implementationGuide';
 
 export { applyStructureOperation, finalProjectDraftOperations } from '../../services/projectPlan';
+export { plannedSitemapLayout } from '../../services/projectPlanMenus';
 export { buildSitemap, folderOptions, menuPageIds } from '../sitemap';
+export { applyMindmapMutation, auditProjectMindmaps, firstSelectableMindmapId, mindmapPath, validateMindmaps } from '../mindmaps';
 
 export { validateProjectQuestions } from '../../services/projectQuestions';
 export { validateStickyNoteIndex } from '../stickyNoteIndex';

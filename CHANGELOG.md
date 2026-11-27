@@ -2,6 +2,21 @@
 
 All notable changes to **Alex (ProtoFlow AI)** are documented in this file.
 
+## [v0.1.3] - 2026-11-27
+
+### Added & Improved
+
+- **领域聚合式双向 MCP 协同架构（Domain-Consolidated MCP Tools）与连接预检护栏**：
+  - 将外部读写模式与桌面实时桥接工具收敛为 6 个高内聚领域工具（`protoflow_workspace`、`protoflow_sitemap`、`protoflow_database`、`protoflow_page`、`protoflow_docs`、`protoflow_audit`）加桌面专属 `protoflow_capture_preview`，显著降低外部 Agent 上下文开销与工具误选率，并同步更新 `alex-protoflow-designer` 技能手册与 `contractDigest` 签名。
+  - 在 `desktopRelay` 与 `handleSpecMcpRequest` 中增加 `expectedContractDigest` 在线桥接核验（未连接打开工程时返回显式 `[CONTRACT_UNVERIFIED]` 引导），防止桌面端未就绪时误判契约状态。
+- **通用主子单据跨表批量选行转入（`importSelectedRows`）与表菜单闭环审计（`tableMenuCoverage`）**：
+  - 新增 `importSelectedRows(sourceTablePfId, targetTablePfId, mapping)` 运行时动作与静态契约校验（支持 `parentForeignKey`、`fieldMap`、`parentFieldMap`、`defaults` 与防重复转入校验），并在 Go 发布服务端快照白名单同步放行。
+  - 新增 `tableMenuCoverage` 共享审计引擎，在内置工作流与 `protoflow_audit` 中统一核查菜单绑表未落地（`unbound_menu_table`）、主从页缺失子表新增入口（`missing_detail_create`）、兄弟页明细断链（`sibling_missing_detail`）及声明写权限但无写动作（`missing_crud_write`）。
+- **项目文档（Notes）净化导出与目录导航体验优化**：
+  - 加固富文本笔记 HTML 净化、导出与在线浏览端（`PublishedProjectNotes`）展示一致性，优化左侧菜单树与文档目录交互细节，并将 `fflate` 升级至 `0.8.3`。
+
+---
+
 ## [v0.1.2] - 2026-11-26
 
 ### Added & Hardened

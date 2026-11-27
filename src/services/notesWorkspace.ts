@@ -347,25 +347,65 @@ export function openNoteNode(projectId: string, nodeId: string) {
   useProtoStore.setState({ selectedNoteNodeId: nodeId, viewMode: 'notes' });
 }
 
+export function importMarkdownFilesAsNotes(
+  projectId: string,
+  files: { fileName: string; markdownText: string }[],
+  parentId: string | null
+): string[] {
+  if (!files.length) return [];
+  const state = current(projectId);
+  const now = new Date().toISOString();
+  let nextAssets = state.projectNotes.assets;
+  const nextNodes = [...state.projectNotes.nodes];
+  const createdIds: string[] = [];
+
+  for (const { fileName, markdownText } of files) {
+    const parsed = markdownToNoteHtml(markdownText);
+    const tempWorkspace: NoteWorkspace = { ...state.projectNotes, nodes: nextNodes };
+    const finalTitle = uniqueNoteTitle(
+      tempWorkspace,
+      parentId,
+      parsed.title || fileName.replace(/\.(md|markdown|txt)$/i, '').trim() || tr('导入的需求笔记', 'Imported Requirement Note')
+    );
+    const extracted = extractInlineNoteImages(parsed.html, nextAssets);
+    if (extracted.assets) nextAssets = extracted.assets;
+    const id = newId('note');
+    createdIds.push(id);
+    nextNodes.push({
+      id,
+      kind: 'note',
+      title: finalTitle.trim(),
+      parentId,
+      icon: '📄',
+      updatedAt: now,
+      content: extracted.html,
+      tags: [tr('客户沟通', 'Stakeholder')],
+      cover: 'ocean',
+      pinned: false,
+      status: 'draft',
+      meetingDate: now.slice(0, 10),
+    });
+  }
+
+  commit(
+    projectId,
+    {
+      ...state.projectNotes,
+      ...(nextAssets ? { assets: nextAssets } : {}),
+      nodes: nextNodes,
+    },
+    createdIds[0]
+  );
+  return createdIds;
+}
+
 export function importMarkdownAsNote(
   projectId: string,
   fileName: string,
   markdownText: string,
   parentId: string | null
 ): string {
-  const state = current(projectId);
-  const parsed = markdownToNoteHtml(markdownText);
-  const finalTitle = uniqueNoteTitle(
-    state.projectNotes,
-    parentId,
-    parsed.title || fileName.replace(/\.(md|markdown|txt)$/i, '').trim() || tr('导入的需求笔记', 'Imported Requirement Note')
-  );
-  return createNoteNode(projectId, 'note', finalTitle, parentId, {
-    icon: '📄',
-    content: parsed.html,
-    tags: [tr('客户沟通', 'Stakeholder')],
-    cover: 'ocean',
-  });
+  return importMarkdownFilesAsNotes(projectId, [{ fileName, markdownText }], parentId)[0];
 }
 
 const localToday = () => {

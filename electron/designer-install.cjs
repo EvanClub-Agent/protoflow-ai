@@ -5,6 +5,7 @@ const { isDeepStrictEqual } = require('node:util');
 const { claimDirectory } = require('./claim-directory.cjs');
 
 const receipt = '.alex-install.json';
+const IGNORED_OS_JUNK = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const fingerprint = hashes => hash(JSON.stringify(Object.keys(hashes).sort().map(key => [key, hashes[key]])));
 const stat = file => fs.lstatSync(file, { throwIfNoEntry: false });
@@ -22,12 +23,13 @@ function skillFiles(source) {
 }
 
 function checkInstalled(target, kind, expected, legacyBinding) {
-  const conflict = new Error('Existing ' + kind + ' differs: ' + target + '（请先移走自定义版本）');
+  const conflict = new Error('Existing ' + kind + ' differs: ' + target + '（请先移走自定义版本，或在 Alex 中点击「修复连接」强制重置）');
   if (!stat(target)?.isDirectory()) throw conflict;
   const hashes = new Map();
   let installed;
   function inspect(relative) {
-    const entries = fs.readdirSync(path.join(target, relative), { withFileTypes: true });
+    const entries = fs.readdirSync(path.join(target, relative), { withFileTypes: true })
+      .filter(entry => !IGNORED_OS_JUNK.has(entry.name));
     if (!entries.length) throw conflict;
     for (const entry of entries) {
       const key = path.posix.join(relative, entry.name);
@@ -57,7 +59,8 @@ function checkInstalled(target, kind, expected, legacyBinding) {
   return false;
 }
 
-function installDesignerFiles(target, kind, files, legacyBinding) {
+function installDesignerFiles(target, kind, files, legacyBinding, options = {}) {
+  const forceRepair = options?.forceRepair === true;
   const parent = path.dirname(target);
   fs.mkdirSync(parent, { recursive: true });
   const transaction = path.join(parent, '.' + path.basename(target) + '.alex-update');
@@ -78,8 +81,12 @@ function installDesignerFiles(target, kind, files, legacyBinding) {
     }
     fs.rmSync(next, { recursive: true, force: true });
     const hashes = Object.fromEntries(Object.entries(files).map(([key, bytes]) => [key, hash(bytes)]));
-    const exists = Boolean(stat(target));
-    if (exists && checkInstalled(target, kind, hashes, legacyBinding)) return target;
+    const currentStat = stat(target);
+    const exists = Boolean(currentStat);
+    if (exists && forceRepair && !currentStat.isDirectory()) {
+      throw new Error('Existing ' + kind + ' is not a directory: ' + target);
+    }
+    if (exists && !forceRepair && checkInstalled(target, kind, hashes, legacyBinding)) return target;
     for (const [key, bytes] of Object.entries(files)) {
       const dest = path.join(next, key);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -88,7 +95,7 @@ function installDesignerFiles(target, kind, files, legacyBinding) {
     fs.writeFileSync(path.join(next, receipt), JSON.stringify({ format: 1, kind, files: hashes }, null, 2) + '\n');
     if (exists) {
       fs.renameSync(target, previous);
-      checkInstalled(previous, kind, hashes, legacyBinding);
+      if (!forceRepair) checkInstalled(previous, kind, hashes, legacyBinding);
     }
     fs.renameSync(next, target);
     return target;

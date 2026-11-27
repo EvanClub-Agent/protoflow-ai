@@ -336,7 +336,23 @@ function formIssueMessage(issue: FormIssue, locale: Locale): string {
   }
 }
 
-export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDesign: boolean, canNavigate?: (pageId: string) => boolean, publishedHeader?: (id:string) => readonly string[] | undefined): Runtime {
+export function useRuntimeController(
+  doc: ProtoDoc | null,
+  pageIdInput: string | { pageId?: string; isDesign?: boolean },
+  isDesignInput?: boolean,
+  canNavigate?: (pageId: string) => boolean,
+  publishedHeader?: (id: string) => readonly string[] | undefined,
+): Runtime {
+  const pageId =
+    typeof pageIdInput === 'string'
+      ? pageIdInput
+      : pageIdInput && typeof pageIdInput === 'object'
+        ? String(pageIdInput.pageId ?? '')
+        : String(pageIdInput ?? '');
+  const isDesign =
+    typeof isDesignInput === 'boolean'
+      ? isDesignInput
+      : Boolean(pageIdInput && typeof pageIdInput === 'object' && pageIdInput.isDesign);
   const preview = useContext(PreviewDataContext);
   const [overlays, setOverlays] = useState<OverlayEntry[]>([]);
   const overlaySequence = useRef(0);
@@ -374,6 +390,24 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
   previewRef.current = preview;
 
   const toastTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const prevPageIdRef = useRef(pageId);
+  useEffect(() => {
+    if (prevPageIdRef.current !== pageId) {
+      prevPageIdRef.current = pageId;
+      submittedRows.current = {};
+      setOverlays([]);
+      setVars({});
+      setHidden({});
+      setTabs({});
+      setFilters({});
+      setPageNoState({});
+      setSelections({});
+      setActiveRowsState({ activeRows: {}, activeParentRows: {} });
+      setFormValuesState({});
+      setFormIssues({});
+      setPickerValues({});
+    }
+  }, [pageId]);
   useEffect(() => {
     const timers = toastTimers.current;
     return () => {
@@ -962,6 +996,66 @@ export function useRuntimeController(doc: ProtoDoc | null, pageId: string, isDes
               setSelections(s => ({ ...s, [str(0)]: [] }));
               toast(tr(`已转入 ${count} 条采购明细`, `Imported ${count} PO line(s)`));
             } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); return; }
+            break;
+          }
+          case 'importSelectedRows': {
+            const sourcePfId = str(0);
+            const targetPfId = str(1);
+            const source = findById(docRef.current, sourcePfId);
+            const target = findById(docRef.current, targetPfId);
+            const currentOverlay = scope.overlayIndex === undefined ? undefined : stateRef.current.overlays[scope.overlayIndex];
+            try {
+              if (
+                source?.type !== 'Table' ||
+                target?.type !== 'Table' ||
+                typeof source.props.table !== 'string' ||
+                typeof target.props.table !== 'string'
+              ) {
+                throw new Error(tr('importSelectedRows 需要指向两个绑定了物理表的 Table 组件', 'importSelectedRows requires source and target Table components bound to database tables'));
+              }
+              const defaultParentForeignKey =
+                typeof target.props.sourceForeignKey === 'string' && target.props.sourceForeignKey.trim()
+                  ? target.props.sourceForeignKey.trim()
+                  : undefined;
+              const resolveParentRow = (parentTableId: string): Row | undefined => {
+                if (tableOf() === parentTableId && rowOf()) return rowOf();
+                if (currentOverlay?.submittedForms) {
+                  for (const [fId, savedRow] of Object.entries(currentOverlay.submittedForms)) {
+                    const fNode = findById(docRef.current, fId);
+                    if (fNode?.props.table === parentTableId && savedRow) return savedRow;
+                  }
+                }
+                const activeId = stateRef.current.activeRows[parentTableId] ?? stateRef.current.activeParentRows[parentTableId];
+                if (activeId) {
+                  const candidateRows = previewRef.current
+                    ? previewRef.current.rows[parentTableId] ?? []
+                    : pages.getRows(parentTableId);
+                  return candidateRows.find((r) => r.id === activeId);
+                }
+                return undefined;
+              };
+              const count = pages.importSelectedRows({
+                sourceTableId: source.props.table,
+                targetTableId: target.props.table,
+                ids: stateRef.current.selections[sourcePfId] ?? [],
+                mapping: a[2],
+                defaultParentForeignKey,
+                resolveParentRow,
+                resolveDynamicValue: (raw) => resolveActionValue(raw, scope, vars, stateRef.current.formValues, docRef.current),
+              });
+              if (!count) {
+                toast(tr('所选记录已存在于当前明细中，无需重复转入', 'Selected records already exist in the current detail list'), 'info');
+                return;
+              }
+              setSelections((s) => ({ ...s, [sourcePfId]: [] }));
+              const hasExplicitToastLater = chain.calls.some((c) => c.name === 'toast');
+              if (!hasExplicitToastLater) {
+                toast(tr(`已批量转入 ${count} 条明细记录`, `Imported ${count} detail row(s)`), 'success');
+              }
+            } catch (error) {
+              toast(error instanceof Error ? error.message : String(error), 'error');
+              return;
+            }
             break;
           }
           case 'returnSelection': {

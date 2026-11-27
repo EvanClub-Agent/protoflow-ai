@@ -62,7 +62,7 @@ export function validatePageEvidence(page: ProjectPlan['pages'][number]) {
 
 const SAVE_SCENARIO_PATTERN = /(保存|提交表单|落库|写入|新增记录|修改记录)/;
 const EXPLICIT_SAVE_CLAIM_PATTERN = /(保存成功|提交成功|保存记录|提交表单|写入数据|新增并保存|修改并保存)/;
-const WRITE_OR_PICK_ACTIONS = new Set(['submitForm', 'updateRow', 'deleteRow', 'returnSelection', 'importPurchaseOrderLines']);
+const WRITE_OR_PICK_ACTIONS = new Set(['submitForm', 'updateRow', 'deleteRow', 'returnSelection', 'importPurchaseOrderLines', 'importSelectedRows']);
 // Negative requirements (e.g. “不保存，返回”) must not become positive save claims.
 // This only removes explicit negated verbs; any remaining positive write claim still needs a write action.
 const NEGATED_WRITE_PATTERN = /(?:不(?:会|再)?|未|无需|不要|禁止|暂不|取消|放弃)(?:自动)?(?:保存|提交(?:表单)?|落库|写入|新增记录|修改记录)/g;
@@ -85,6 +85,7 @@ export function reviewPageDependencies(s: Inputs) {
     overlays: new Set(),
     openedOverlays: new Set(),
     pickerTables: new Map(),
+    tableNodes: new Map(),
     nodeTypes: new Map(),
     slots: [],
     slotsByPfId: new Map(),

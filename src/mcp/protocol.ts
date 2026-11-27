@@ -4,7 +4,7 @@ import { tr } from '../i18n/runtime';
 import {
   AUTHORING_MCP_PROMPTS,
   AUTHORING_MCP_RESOURCES,
-  AUTHORING_MCP_TOOLS,
+  DOMAIN_MCP_TOOLS,
   executeAuthoringTool,
   getAuthoringPrompt,
   isAuthoringToolName,
@@ -70,39 +70,68 @@ const SERVER_INSTRUCTIONS = [
 const authoringInstructions = (desktop: boolean, capture: boolean) => [
   'Alex (ProtoFlow AI) Read-Write Prototype Authoring MCP Server.',
   desktop
-    ? '1. Use protoflow_workspace(action="status") to verify the intended projectId, activePageId and selectedPfId. Pass the status revision as expectedRevision on the first write. Send only one desktop write at a time, even across different tools, folders or pages. Wait for each successful write and pass its returned revision unchanged as expectedRevision on the next write. On a conflict, stop the sequence, verify the intended project and inspect the changed state before retrying. Open or create other projects in Alex.'
-    : '1. Call protoflow_workspace(action="status") first (and create_project / switch_project if no .pflow project is active), then inspect existing structure via protoflow_get_project_overview and protoflow_get_database_schema.',
-  '2. Before writing any TSX page, call protoflow_get_implementation_guide and protoflow_get_contracts to verify registered components, props, and runtime actions — never guess AntD props or write inline JS callbacks.',
-  '3. Create sitemap folders (protoflow_manage_sitemap), normalized shared ER tables (protoflow_upsert_db_tables), and coherent seed rows (protoflow_manage_table_rows) before writing pages.',
-  '4. Create/overwrite pages with protoflow_write_page or edit subtrees losslessly with protoflow_edit_page_block; never mix desktop <Page> and mobile <MobilePage> (M*) components.',
-  '5. Attach requirement pins (protoflow_manage_sticky_notes), optional notes/Mermaid flows (protoflow_manage_docs_and_flows), and finish with protoflow_audit_project until healthy is true.',
+    ? '1. Call protoflow_workspace(action="status") first to verify projectId, activePageId and selectedPfId. Pass the status revision as expectedRevision on the first write. Send only one desktop write at a time across all tools. Wait for each successful write and pass its returned revision unchanged as expectedRevision on the next write. On a conflict, stop, re-read status and inspect the changed state before retrying.'
+    : '1. Call protoflow_workspace(action="status") first (and create_project / switch_project if no .pflow project is active), then inspect existing structure via protoflow_workspace(action="overview") and protoflow_database(action="get_schema").',
+  '2. Before writing any TSX page, call protoflow_workspace(action="guide") and protoflow_workspace(action="contracts") to verify registered components, props, and runtime actions — never guess AntD props or write inline JS callbacks.',
+  '3. Create sitemap folders (protoflow_sitemap), normalized shared ER tables (protoflow_database action="upsert_tables"), and coherent seed rows (protoflow_database action="seed_rows") before writing pages.',
+  '4. Create/overwrite pages with protoflow_page(action="write_page") or edit subtrees losslessly with protoflow_page(action="edit_block"); never mix desktop <Page> and mobile <MobilePage> (M*) components.',
+  '5. Attach PRD notes, Mermaid mindmaps, and component sticky-note rules via protoflow_docs, and finish with protoflow_audit(action="audit_project") until healthy is true.',
   ...(capture ? ['6. After a page edit, call protoflow_capture_preview for a visual check. Use fullPage for content below the fold and inspect the returned revision.'] : []),
 ].join(' ');
 
-const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
+const DESKTOP_WRITE_ACTIONS: Record<string, string | null> = {
+  protoflow_workspace: 'update_project_meta',
+  protoflow_database: 'upsert_tables, upsert_columns, delete_tables, seed_rows, and clear_rows',
+  protoflow_page: 'write_page, edit_block, reshape_axure_page, bind_axure_table, optimize_axure_block, and reshape_figma_page',
+  protoflow_docs: 'all write actions (every action except get_docs)',
+};
+
+const desktopTools = DOMAIN_MCP_TOOLS.map(tool => {
   const { properties, required = [] } = tool.inputSchema as { properties: Record<string, object>; required?: string[] };
   if (!Object.hasOwn(properties, 'expectedRevision')) return tool;
   const workspace = tool.name === 'protoflow_workspace';
-  const writeActions = workspace ? 'update_project_meta' :
-    tool.name === 'protoflow_manage_table_rows' ? 'seed and clear' :
-    tool.name === 'protoflow_reshape_imported_page' ? 'reshape_axure_page, bind_axure_table, optimize_axure_block, and reshape_figma_page' : null;
-  const { projectName, projectMode, activePageId, expectedContractDigest } = properties;
+  const writeActions = Object.hasOwn(DESKTOP_WRITE_ACTIONS, tool.name) ? DESKTOP_WRITE_ACTIONS[tool.name] : null;
+  const {
+    projectName,
+    projectMode,
+    activePageId,
+    designTokens,
+    includeDiagnostics,
+    scenarioIds,
+    componentNames,
+    includeAxure,
+    includeFigma,
+    expectedContractDigest,
+  } = properties;
   const expectedRevision = {
-    type: 'string', minLength: 1,
-    description: (writeActions ? `Required for ${writeActions}.` : 'Required for every write.') +
+    type: 'string',
+    minLength: 1,
+    description:
+      (writeActions ? `Required for ${writeActions}.` : 'Required for every write.') +
       ' Use the revision from workspace status for the first write and from the previous successful write thereafter.',
   };
   return {
     ...tool,
-    description: workspace ? 'Inspect the active desktop project or update its metadata.' : tool.description,
+    description: workspace
+      ? 'Inspect the active desktop project (status, overview, guide, contracts) or update its metadata.'
+      : tool.description,
     inputSchema: {
       ...tool.inputSchema,
       properties: workspace
         ? {
-            action: { type: 'string', enum: ['status', 'update_project_meta'] },
+            action: {
+              type: 'string',
+              enum: ['status', 'overview', 'guide', 'contracts', 'update_project_meta'],
+            },
             projectName,
             projectMode,
             activePageId,
+            designTokens,
+            includeDiagnostics,
+            scenarioIds,
+            componentNames,
+            includeAxure,
+            includeFigma,
             expectedContractDigest,
             expectedRevision,
           }
@@ -112,12 +141,11 @@ const desktopTools = AUTHORING_MCP_TOOLS.map(tool => {
   };
 });
 
-const desktopCatalog = [...SPEC_MCP_TOOLS, ...desktopTools];
 export const MCP_TOOL_CATALOGS = {
   readonly: SPEC_MCP_TOOLS,
-  local_file: [...SPEC_MCP_TOOLS, ...AUTHORING_MCP_TOOLS],
-  desktop_bridge: desktopCatalog,
-  desktop_bridge_with_preview: [...desktopCatalog, capturePreviewTool],
+  local_file: DOMAIN_MCP_TOOLS,
+  desktop_bridge: desktopTools,
+  desktop_bridge_with_preview: [...desktopTools, capturePreviewTool],
 };
 
 const AUTHORING_PROMPT_NAMES = new Set(AUTHORING_MCP_PROMPTS.map((p) => p.name));
@@ -163,6 +191,49 @@ type RequestTarget = WorkspaceLoader | ((request: JsonRpcRequest) => Promise<Jso
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function requestedStatusDigest(request: JsonRpcRequest): string | undefined {
+  const params = request.params;
+  if (request.method !== 'tools/call' || params?.name !== 'protoflow_workspace' || !isObject(params.arguments)) return;
+  const { action, expectedContractDigest } = params.arguments;
+  const explicitAction = typeof action === 'string' ? action.trim() : '';
+  if (explicitAction && explicitAction !== 'status') return;
+  if (typeof expectedContractDigest !== 'string') return;
+  const digest = expectedContractDigest.trim();
+  if (digest.length > 0) return digest;
+}
+
+function toolErrorResponse(id: RpcId, message: string, modern: boolean): JsonRpcResponse {
+  return {
+    jsonrpc: '2.0', id,
+    result: {
+      ...(modern ? { resultType: 'complete' } : {}),
+      content: [{ type: 'text', text: message }], isError: true,
+    },
+  };
+}
+
+function desktopVerificationError(response: JsonRpcResponse | null): string | undefined {
+  const unverified = tr(
+    '[CONTRACT_UNVERIFIED] 暂未连接到正在运行的 Alex 桌面端工程。请确认已在 Alex 桌面端打开 .pflow 项目（AI 协同会自动重连）。',
+    '[CONTRACT_UNVERIFIED] Could not reach an open project in Alex Desktop. Open a .pflow project in Alex Desktop and retry.',
+  );
+  const result = response?.result;
+  if (response?.error || !isObject(result) || !Array.isArray(result.content)) return unverified;
+  const first = result.content[0];
+  if (!isObject(first) || first.type !== 'text' || typeof first.text !== 'string') return unverified;
+  if (result.isError === true) return first.text;
+  if (result.isError !== undefined && result.isError !== false) return unverified;
+  let status: unknown;
+  try {
+    status = JSON.parse(first.text);
+  } catch {
+    return unverified;
+  }
+  if (!isObject(status) || typeof status.contractDigest !== 'string') return unverified;
+  if (status.contractCheckStatus === 'matched' || status.contractCheckStatus === 'mismatched') return;
+  return unverified;
 }
 
 function usesModernProtocol(method: string, meta: unknown, connection?: StdioConnection): boolean {
@@ -222,7 +293,16 @@ export async function handleSpecMcpRequest(
   const params = req.params && typeof req.params === 'object' ? req.params : {};
   try {
     const isModernRequest = usesModernProtocol(req.method, params._meta, connection);
-    if (typeof loader === 'function') return await loader(req);
+    const expectedDigest = requestedStatusDigest(req);
+    if (typeof loader === 'function') {
+      if (expectedDigest === undefined) return await loader(req);
+      const forwarded = await loader(req).catch(() => null);
+      const verificationError = desktopVerificationError(forwarded);
+      if (verificationError !== undefined) {
+        return toolErrorResponse(id, verificationError, isModernRequest);
+      }
+      return forwarded;
+    }
     const isReadWrite = isAuthoringWorkspace(loader) && loader.mode === 'readwrite';
     const live = isReadWrite && loader.transport === 'desktop_bridge' && typeof loader.capturePreview === 'function';
     switch (req.method) {
@@ -367,15 +447,7 @@ export async function handleSpecMcpRequest(
           };
         } catch (toolError) {
           const message = toolError instanceof Error ? toolError.message : String(toolError);
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: {
-              ...(isModernRequest ? { resultType: 'complete' as const } : {}),
-              content: [{ type: 'text', text: message }],
-              isError: true,
-            },
-          };
+          return toolErrorResponse(id, message, isModernRequest);
         }
       }
 

@@ -1006,24 +1006,35 @@ export function noteAiContext(
   return { catalog, documents };
 }
 
-/** Extract clean plain text from HTML note content for full-text search and word count. */
-export function noteHtmlToPlainText(html: string): string {
+function stripHtmlTagsKeepEntities(html: string): string {
   if (!html) return '';
   return html
-    .replace(/<\/(p|h1|h2|h3|h4|li|tr|blockquote|pre|div)>/gi, '\n')
+    .replace(/<\/(p|h1|h2|h3|h4|h5|h6|li|tr|blockquote|pre|div)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<[^>]+>/g, '');
+}
+
+function decodeHtmlEntities(text: string): string {
+  if (!text) return '';
+  return text
     .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/** Extract clean plain text from HTML note content for full-text search and word count. */
+export function noteHtmlToPlainText(html: string): string {
+  if (!html) return '';
+  return decodeHtmlEntities(stripHtmlTagsKeepEntities(html))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 export interface NoteHeadingItem {
-  level: 1 | 2 | 3;
+  level: 1 | 2 | 3 | 4;
   text: string;
   index: number;
 }
@@ -1051,7 +1062,8 @@ export function extractAllNoteTasks(workspace: NoteWorkspace): NoteActionTaskIte
       const inner = match[1];
       const checked = /data-checked="true"/i.test(fullTag);
       const divMatch = inner.match(/<div>([\s\S]*?)<\/div>/i) || inner.match(/<p>([\s\S]*?)<\/p>/i);
-      const text = noteHtmlToPlainText(divMatch ? divMatch[1] : inner)
+      const rawLine = (divMatch ? divMatch[1] : inner).replace(/<ul[\s\S]*$/i, '').replace(/<ol[\s\S]*$/i, '');
+      const text = noteHtmlToPlainText(rawLine)
         .replace(/\s+/g, ' ')
         .trim();
       if (text) {
@@ -1105,14 +1117,14 @@ export function toggleNoteTaskAtIndex(html: string, targetIndex: number): string
   );
 }
 
-/** Extract H1/H2/H3 outline headings from HTML content for the Table of Contents sidebar. */
+/** Extract H1–H4 outline headings from HTML content for the Table of Contents sidebar. */
 export function extractNoteHeadings(html: string): NoteHeadingItem[] {
   const result: NoteHeadingItem[] = [];
-  const regex = /<h([123])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const regex = /<h([1234])[^>]*>([\s\S]*?)<\/h\1>/gi;
   let match: RegExpExecArray | null;
   let idx = 0;
   while ((match = regex.exec(html)) !== null) {
-    const level = Number(match[1]) as 1 | 2 | 3;
+    const level = Number(match[1]) as 1 | 2 | 3 | 4;
     const text = noteHtmlToPlainText(match[2]).replace(/\s+/g, ' ').trim();
     if (text) {
       result.push({ level, text, index: idx });
@@ -1125,17 +1137,31 @@ export function extractNoteHeadings(html: string): NoteHeadingItem[] {
 export interface NoteMarkdownOptions {
   /**
    * placeholder: `[图片 N：alt]` (clipboard, AI); inline: embedded data URIs (single-file export);
-   * link: `![alt](path)` via `assetPath` (Git export).
+   * link: `![alt](path)` via `assetPath` (Git export); asset_ref: `![alt](pf-asset:id)` (lossless internal patch).
    */
-  images?: 'placeholder' | 'inline' | 'link';
+  images?: 'placeholder' | 'inline' | 'link' | 'asset_ref';
   assets?: Record<string, NoteAsset>;
   assetPath?: (id: string, asset: NoteAsset) => string;
 }
+
+export type NoteCalloutKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+export const VALID_NOTE_CALLOUTS = new Set<string>(['note', 'tip', 'important', 'warning', 'caution']);
 
 const attr = (tag: string, name: string) => {
   const match = new RegExp(`\\b${name}=(["'])([\\s\\S]*?)\\1`, 'i').exec(tag);
   return match ? match[2] : undefined;
 };
+
+export function isAllowedNoteHref(href: string): boolean {
+  const trimmed = href.trim();
+  if (!trimmed) return false;
+  return (
+    /^#pf-(?:page|table|note|mindmap):[A-Za-z0-9._-]+$/.test(trimmed) ||
+    /^#[A-Za-z0-9._\-\u4e00-\u9fa5]+$/.test(trimmed) ||
+    /^https?:\/\/[^\s<>"]+$/i.test(trimmed) ||
+    /^mailto:[^\s<>"]+$/i.test(trimmed)
+  );
+}
 
 /**
  * Picks the note's images that can be attached to an AI chat (PNG/JPEG/WebP within the size
@@ -1160,6 +1186,315 @@ export function noteAiImageAttachments(
   return { total: tags.length, attachments };
 }
 
+/** Convert inline HTML formatting (code, links, bold, italic, strike, mark) into Markdown. */
+function inlineHtmlToMarkdown(html: string, { preserveLineBreaksAsBr = false }: { preserveLineBreaksAsBr?: boolean } = {}): string {
+  if (!html) return '';
+  const codeSpans: string[] = [];
+  let s = html.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_m, inner: string) => {
+    const raw = decodeHtmlEntities(inner.replace(/<[^>]+>/g, ''));
+    const maxTicks = Math.max(0, ...(raw.match(/`+/g) ?? []).map((t) => t.length));
+    const fence = '`'.repeat(maxTicks + 1);
+    const pad = raw.startsWith('`') || raw.endsWith('`') ? ' ' : '';
+    codeSpans.push(`${fence}${pad}${raw}${pad}${fence}`);
+    return `\u0000ICODE${codeSpans.length - 1}\u0000`;
+  });
+
+  const links: string[] = [];
+  s = s.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_m, attrs: string, inner: string) => {
+    const href = decodeHtmlEntities(attr(`<a ${attrs}>`, 'href') ?? '').trim();
+    const label = inlineHtmlToMarkdown(inner, { preserveLineBreaksAsBr: false }).replace(/\n+/g, ' ').trim();
+    if (href && isAllowedNoteHref(href) && label) {
+      links.push(`[${label.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}](${href})`);
+      return `\u0000ILINK${links.length - 1}\u0000`;
+    }
+    return label;
+  });
+
+  s = s.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, c: string) => {
+    const inner = c.trim();
+    return inner ? `**${inner}**` : '';
+  });
+  s = s.replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, c: string) => {
+    const inner = c.trim();
+    return inner ? `*${inner}*` : '';
+  });
+  s = s.replace(/<s\b[^>]*>([\s\S]*?)<\/s>/gi, (_m, c: string) => {
+    const inner = c.trim();
+    return inner ? `~~${inner}~~` : '';
+  });
+  s = s.replace(/<mark\b[^>]*>([\s\S]*?)<\/mark>/gi, (_m, c: string) => {
+    const inner = c.trim();
+    return inner ? `==${inner}==` : '';
+  });
+
+  if (preserveLineBreaksAsBr) {
+    s = s
+      .replace(/<\/p>\s*<p[^>]*>/gi, '\u0000IBR\u0000')
+      .replace(/<br\s*\/?>/gi, '\u0000IBR\u0000');
+  } else {
+    s = s.replace(/<br\s*\/?>/gi, '\n');
+  }
+
+  s = decodeHtmlEntities(s.replace(/<[^>]+>/g, ''));
+  if (preserveLineBreaksAsBr) {
+    s = s.replace(/\s*\n+\s*/g, ' ').replace(/\u0000IBR\u0000/g, '<br>');
+  }
+  s = s.replace(/\u0000ILINK(\d+)\u0000/g, (_m, i: string) => links[Number(i)] ?? '');
+  s = s.replace(/\u0000ICODE(\d+)\u0000/g, (_m, i: string) => codeSpans[Number(i)] ?? '');
+  return s;
+}
+
+/** Find matching closing tag for balanced nested lists (`<ul>...</ul>` / `<ol>...</ol>` / `<li>...</li>`). */
+function findMatchingCloseTag(html: string, tagName: string, openTagEnd: number): { innerEnd: number; afterClose: number } | null {
+  const re = new RegExp(`<(\\/?)${tagName}\\b[^>]*>`, 'gi');
+  re.lastIndex = openTagEnd;
+  let depth = 1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1] === '/') {
+      depth--;
+      if (depth === 0) return { innerEnd: m.index, afterClose: re.lastIndex };
+    } else {
+      depth++;
+    }
+  }
+  return null;
+}
+
+function serializeListHtml(listTag: 'ul' | 'ol', attrs: string, innerHtml: string, depth: number): string {
+  const isTask = listTag === 'ul' && /data-type=(["'])taskList\1/i.test(attrs);
+  const lines: string[] = [];
+  const liOpenRe = /<li\b([^>]*)>/gi;
+  let m: RegExpExecArray | null;
+  let itemIndex = 1;
+  while ((m = liOpenRe.exec(innerHtml)) !== null) {
+    const liAttrs = m[1];
+    const closed = findMatchingCloseTag(innerHtml, 'li', liOpenRe.lastIndex);
+    if (!closed) break;
+    const liBody = innerHtml.slice(liOpenRe.lastIndex, closed.innerEnd);
+    liOpenRe.lastIndex = closed.afterClose;
+
+    // Extract nested lists inside this <li> (either direct children or inside taskItem's <div>)
+    const nestedBlocks: string[] = [];
+    let leadHtml = '';
+    let cursor = 0;
+    const nestedOpenRe = /<(ul|ol)\b([^>]*)>/gi;
+    let nm: RegExpExecArray | null;
+    while ((nm = nestedOpenRe.exec(liBody)) !== null) {
+      leadHtml += liBody.slice(cursor, nm.index);
+      const subTag = nm[1].toLowerCase() as 'ul' | 'ol';
+      const subClosed = findMatchingCloseTag(liBody, subTag, nestedOpenRe.lastIndex);
+      if (!subClosed) {
+        cursor = nestedOpenRe.lastIndex;
+        break;
+      }
+      const subInner = liBody.slice(nestedOpenRe.lastIndex, subClosed.innerEnd);
+      nestedBlocks.push(serializeListHtml(subTag, nm[2], subInner, depth + 1));
+      cursor = subClosed.afterClose;
+      nestedOpenRe.lastIndex = cursor;
+    }
+    leadHtml += liBody.slice(cursor);
+
+    const indent = '  '.repeat(depth);
+    const isTaskItem = isTask || /data-type=(["'])taskItem\1/i.test(liAttrs);
+    const checked = /data-checked=(["'])true\1/i.test(liAttrs);
+    const cleanedLead = leadHtml.replace(/<label\b[\s\S]*?<\/label>/gi, '');
+    const itemText = inlineHtmlToMarkdown(cleanedLead).replace(/\s*\n+\s*/g, ' ').trim();
+    const prefix = isTaskItem
+      ? `- [${checked ? 'x' : ' '}] `
+      : listTag === 'ol'
+        ? `${itemIndex}. `
+        : '- ';
+    lines.push(`${indent}${prefix}${itemText}`);
+    for (const sub of nestedBlocks) {
+      if (sub.trim()) lines.push(sub.replace(/\n+$/, ''));
+    }
+    itemIndex++;
+  }
+  return lines.join('\n');
+}
+
+/** Convert rich HTML note body (without title/metadata header) into clean GFM Markdown. */
+export function noteHtmlToMarkdownBody(
+  content: string,
+  options: NoteMarkdownOptions = {}
+): string {
+  if (!content) return '';
+
+  // 1. Opaque tokens for images and fenced code blocks so regexes below never touch their contents.
+  const images: string[] = [];
+  let md = content.replace(/<img\b[^>]*>/gi, (tag) => {
+    const index = images.length + 1;
+    const src = attr(tag, 'src') ?? '';
+    const alt = noteHtmlToPlainText(attr(tag, 'alt') ?? '').replace(/[[\]\n]/g, ' ').trim() || tr(`图片 ${index}`, `Image ${index}`);
+    const assetId = src.startsWith(NOTE_ASSET_SCHEME) ? src.slice(NOTE_ASSET_SCHEME.length) : undefined;
+    const asset = assetId ? options.assets?.[assetId] : undefined;
+    let out = tr(`[图片 ${index}：${alt}]`, `[Image ${index}: ${alt}]`);
+    if (options.images === 'asset_ref' && assetId) {
+      out = `![${alt}](${NOTE_ASSET_SCHEME}${assetId})`;
+    } else if (options.images === 'inline') {
+      const url = asset ? noteAssetDataUrl(asset) : parseImageDataUrl(src) ? src : undefined;
+      if (url) out = `![${alt}](${url})`;
+    } else if (options.images === 'link' && asset && assetId && options.assetPath) {
+      out = `![${alt}](${options.assetPath(assetId, asset)})`;
+    }
+    images.push(out);
+    return `<p>\u0000IMG${index - 1}\u0000</p>`;
+  });
+
+  const codeBlocks: string[] = [];
+  md = md.replace(
+    /<pre\b[^>]*>\s*<code\b([^>]*)>([\s\S]*?)<\/code>\s*<\/pre>/gi,
+    (_m, codeAttrs: string, codeInner: string) => {
+      const cls = attr(`<code ${codeAttrs}>`, 'class') ?? '';
+      const langMatch = /\blanguage-([a-zA-Z0-9_+-]+)/.exec(cls);
+      const lang = langMatch ? langMatch[1] : '';
+      const rawCode = decodeHtmlEntities(codeInner.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\n$/, '');
+      const maxTicks = Math.max(2, ...(rawCode.match(/`+/g) ?? []).map((t) => t.length));
+      const fence = '`'.repeat(Math.max(3, maxTicks + 1));
+      codeBlocks.push(`${fence}${lang}\n${rawCode}\n${fence}`);
+      return `\n\u0000CBLK${codeBlocks.length - 1}\u0000\n\n`;
+    }
+  );
+
+  // 2. Tables (preserve inline formatting, links, code spans, and <br> multi-line cells)
+  const tables: string[] = [];
+  md = md.replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_m, tableHtml: string) => {
+    const rows: string[][] = [];
+    const rowRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rMatch: RegExpExecArray | null;
+    while ((rMatch = rowRegex.exec(tableHtml)) !== null) {
+      const cells: string[] = [];
+      const cellRegex = /<(th|td)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+      let cMatch: RegExpExecArray | null;
+      while ((cMatch = cellRegex.exec(rMatch[1])) !== null) {
+        const cellMd = inlineHtmlToMarkdown(cMatch[2], { preserveLineBreaksAsBr: true }).trim();
+        cells.push(cellMd.replace(/\\?\|/g, '\\|'));
+      }
+      if (cells.length) rows.push(cells);
+    }
+    if (!rows.length) return '';
+    const colCount = Math.max(...rows.map((r) => r.length));
+    const pad = (r: string[]) => Array.from({ length: colCount }, (_, i) => r[i] ?? '');
+    const header = `| ${pad(rows[0]).join(' | ')} |`;
+    const sep = `| ${Array.from({ length: colCount }, () => '---').join(' | ')} |`;
+    const body = rows.slice(1).map((r) => `| ${pad(r).join(' | ')} |`);
+    tables.push([header, sep, ...body].join('\n'));
+    return `\n\u0000TBL${tables.length - 1}\u0000\n\n`;
+  });
+
+  // 3. Blockquotes & GFM Callouts (data-callout="note|tip|important|warning|caution")
+  const quotes: string[] = [];
+  md = md.replace(/<blockquote\b([^>]*)>([\s\S]*?)<\/blockquote>/gi, (_m, bqAttrs: string, inner: string) => {
+    const calloutRaw = (attr(`<blockquote ${bqAttrs}>`, 'data-callout') ?? '').toLowerCase();
+    const callout = VALID_NOTE_CALLOUTS.has(calloutRaw) ? calloutRaw.toUpperCase() : '';
+    const subLists: string[] = [];
+    let rest = '';
+    let cursor = 0;
+    const openRe = /<(ul|ol)\b([^>]*)>/gi;
+    let lm: RegExpExecArray | null;
+    while ((lm = openRe.exec(inner)) !== null) {
+      rest += inner.slice(cursor, lm.index);
+      const tag = lm[1].toLowerCase() as 'ul' | 'ol';
+      const closed = findMatchingCloseTag(inner, tag, openRe.lastIndex);
+      if (!closed) {
+        rest += lm[0];
+        cursor = openRe.lastIndex;
+        continue;
+      }
+      subLists.push(serializeListHtml(tag, lm[2], inner.slice(openRe.lastIndex, closed.innerEnd), 0));
+      rest += `\n\u0000BQL${subLists.length - 1}\u0000\n`;
+      cursor = closed.afterClose;
+      openRe.lastIndex = cursor;
+    }
+    rest += inner.slice(cursor);
+
+    const paras: string[] = [];
+    rest = rest.replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, (_pm, pc: string) => {
+      paras.push(inlineHtmlToMarkdown(pc).trim());
+      return `\n\u0000BQP${paras.length - 1}\u0000\n`;
+    });
+    rest = inlineHtmlToMarkdown(rest)
+      .replace(/\u0000BQP(\d+)\u0000/g, (_pm, idx: string) => paras[Number(idx)] ?? '')
+      .replace(/\u0000BQL(\d+)\u0000/g, (_lm, idx: string) => subLists[Number(idx)] ?? '')
+      .replace(/\n{2,}/g, '\n');
+
+    const cleanedLines = rest
+      .trim()
+      .split('\n')
+      .map((l) => l.trimEnd());
+    const outLines: string[] = [];
+    if (callout) {
+      outLines.push(`> [!${callout}]`);
+    }
+    for (const l of cleanedLines) {
+      if (!l && outLines.length === 0) continue;
+      outLines.push(l ? `> ${l}` : '>');
+    }
+    if (!outLines.length) outLines.push('>');
+    quotes.push(outLines.join('\n'));
+    return `\n\u0000BQT${quotes.length - 1}\u0000\n\n`;
+  });
+
+  // 4. Headings (H1–H6, mapped up to H5) -> opaque tokens so decoded `<` / `<=` are never re-parsed as HTML tags
+  const headings: string[] = [];
+  md = md.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, lvl: string, c: string) => {
+    const hashes = '#'.repeat(Math.min(5, Math.max(1, Number(lvl))));
+    headings.push(`${hashes} ${inlineHtmlToMarkdown(c).replace(/\s*\n+\s*/g, ' ').trim()}`);
+    return `\n\u0000HDG${headings.length - 1}\u0000\n\n`;
+  });
+
+  // 5. Lists (nested ul / ol / taskList) -> opaque tokens
+  const lists: string[] = [];
+  {
+    let out = '';
+    let cursor = 0;
+    const openRe = /<(ul|ol)\b([^>]*)>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = openRe.exec(md)) !== null) {
+      out += md.slice(cursor, m.index);
+      const tag = m[1].toLowerCase() as 'ul' | 'ol';
+      const closed = findMatchingCloseTag(md, tag, openRe.lastIndex);
+      if (!closed) {
+        out += m[0];
+        cursor = openRe.lastIndex;
+        continue;
+      }
+      lists.push(serializeListHtml(tag, m[2], md.slice(openRe.lastIndex, closed.innerEnd), 0));
+      out += `\n\u0000LST${lists.length - 1}\u0000\n\n`;
+      cursor = closed.afterClose;
+      openRe.lastIndex = cursor;
+    }
+    out += md.slice(cursor);
+    md = out;
+  }
+
+  // 6. Horizontal rules & Paragraphs -> opaque tokens
+  md = md.replace(/<hr\s*\/?>/gi, '\n---\n\n');
+  const paragraphs: string[] = [];
+  md = md.replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, (_m, c: string) => {
+    paragraphs.push(inlineHtmlToMarkdown(c).trim());
+    return `\u0000PAR${paragraphs.length - 1}\u0000\n\n`;
+  });
+
+  // Any remaining bare inline HTML outside <p>/<li>/<hN>
+  md = inlineHtmlToMarkdown(md);
+
+  // Restore all block tokens after HTML stripping is completely finished
+  md = md
+    .replace(/\u0000PAR(\d+)\u0000/g, (_m, i: string) => paragraphs[Number(i)] ?? '')
+    .replace(/\u0000LST(\d+)\u0000/g, (_m, i: string) => lists[Number(i)] ?? '')
+    .replace(/\u0000HDG(\d+)\u0000/g, (_m, i: string) => headings[Number(i)] ?? '')
+    .replace(/\u0000BQT(\d+)\u0000/g, (_m, i: string) => quotes[Number(i)] ?? '')
+    .replace(/\u0000TBL(\d+)\u0000/g, (_m, i: string) => tables[Number(i)] ?? '')
+    .replace(/\u0000CBLK(\d+)\u0000/g, (_m, i: string) => codeBlocks[Number(i)] ?? '')
+    .replace(/\u0000IMG(\d+)\u0000/g, (_m, i: string) => images[Number(i)] ?? '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return md;
+}
+
 /** Convert rich HTML content from Tiptap to readable Markdown for export & Git diffing. */
 export function noteHtmlToMarkdown(
   node: Pick<NoteNode, 'title' | 'icon' | 'updatedAt'> & { tags?: string[]; content: string },
@@ -1177,84 +1512,8 @@ export function noteHtmlToMarkdown(
   }
   lines.push('');
 
-  // Images become opaque tokens first, so data URIs never pass through the text regexes below.
-  const images: string[] = [];
-  let md = (node.content || '').replace(/<img\b[^>]*>/gi, (tag) => {
-    const index = images.length + 1;
-    const src = attr(tag, 'src') ?? '';
-    const alt = noteHtmlToPlainText(attr(tag, 'alt') ?? '').replace(/[[\]\n]/g, ' ').trim() || tr(`图片 ${index}`, `Image ${index}`);
-    const assetId = src.startsWith(NOTE_ASSET_SCHEME) ? src.slice(NOTE_ASSET_SCHEME.length) : undefined;
-    const asset = assetId ? options.assets?.[assetId] : undefined;
-    let out = tr(`[图片 ${index}：${alt}]`, `[Image ${index}: ${alt}]`);
-    if (options.images === 'inline') {
-      const url = asset ? noteAssetDataUrl(asset) : parseImageDataUrl(src) ? src : undefined;
-      if (url) out = `![${alt}](${url})`;
-    } else if (options.images === 'link' && asset && assetId && options.assetPath) {
-      out = `![${alt}](${options.assetPath(assetId, asset)})`;
-    }
-    images.push(out);
-    return `<p>\u0000IMG${index - 1}\u0000</p>`;
-  });
-  // Task items
-  md = md.replace(
-    /<li[^>]*data-type="taskItem"[^>]*data-checked="(true|false)"[^>]*>[\s\S]*?(?:<div>([\s\S]*?)<\/div>|<p>([\s\S]*?)<\/p>)[\s\S]*?<\/li>/gi,
-    (_m, checked, divInner, pInner) => {
-      const txt = noteHtmlToPlainText(divInner || pInner || '').replace(/\n+/g, ' ').trim();
-      return `- [${checked === 'true' ? 'x' : ' '}] ${txt}\n`;
-    }
-  );
-  // Headings
-  md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_m, c) => `\n# ${noteHtmlToPlainText(c).trim()}\n\n`);
-  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_m, c) => `\n## ${noteHtmlToPlainText(c).trim()}\n\n`);
-  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_m, c) => `\n### ${noteHtmlToPlainText(c).trim()}\n\n`);
-  // Code blocks
-  md = md.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_m, c) => `\n\`\`\`\n${noteHtmlToPlainText(c)}\n\`\`\`\n\n`);
-  // Blockquotes
-  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_m, c) => {
-    const quoted = noteHtmlToPlainText(c)
-      .split('\n')
-      .map((l) => `> ${l}`)
-      .join('\n');
-    return `\n${quoted}\n\n`;
-  });
-  // Tables
-  md = md.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_m, tableHtml) => {
-    const rows: string[][] = [];
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rMatch: RegExpExecArray | null;
-    while ((rMatch = rowRegex.exec(tableHtml)) !== null) {
-      const cells: string[] = [];
-      const cellRegex = /<(th|td)[^>]*>([\s\S]*?)<\/\1>/gi;
-      let cMatch: RegExpExecArray | null;
-      while ((cMatch = cellRegex.exec(rMatch[1])) !== null) {
-        cells.push(noteHtmlToPlainText(cMatch[2]).replace(/\n+/g, ' ').trim());
-      }
-      if (cells.length) rows.push(cells);
-    }
-    if (!rows.length) return '';
-    const colCount = Math.max(...rows.map((r) => r.length));
-    const pad = (r: string[]) => Array.from({ length: colCount }, (_, i) => (r[i] || '').replace(/\|/g, '\\|'));
-    const header = `| ${pad(rows[0]).join(' | ')} |`;
-    const sep = `| ${Array.from({ length: colCount }, () => '---').join(' | ')} |`;
-    const body = rows.slice(1).map((r) => `| ${pad(r).join(' | ')} |`);
-    return `\n${[header, sep, ...body].join('\n')}\n\n`;
-  });
-  // Inline formatting
-  md = md.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
-  md = md.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
-  md = md.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*');
-  md = md.replace(/<s[^>]*>([\s\S]*?)<\/s>/gi, '~~$1~~');
-  md = md.replace(/<mark[^>]*>([\s\S]*?)<\/mark>/gi, '==$1==');
-  md = md.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
-  md = md.replace(/<hr\s*\/?>/gi, '\n---\n\n');
-  // List items
-  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, c) => `- ${noteHtmlToPlainText(c).replace(/\n+/g, ' ').trim()}\n`);
-  // Paragraphs
-  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_m, c) => `${noteHtmlToPlainText(c).trim()}\n\n`);
-  md = noteHtmlToPlainText(md);
-  md = md.replace(/\u0000IMG(\d+)\u0000/g, (_m, i: string) => images[Number(i)] ?? '');
-
-  lines.push(md);
+  const body = noteHtmlToMarkdownBody(node.content || '', options);
+  if (body) lines.push(body);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
@@ -1265,17 +1524,210 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+function escapeAttr(text: string): string {
+  return escapeHtml(text).replace(/"/g, '&quot;');
+}
+
 function formatInlineMarkdown(line: string): string {
-  return escapeHtml(line)
+  if (!line) return '';
+  // 1. Protect inline code spans (`...` or ``...``) first so *, _, <br>, and []() inside code stay literal.
+  const codeTokens: string[] = [];
+  let s = line.replace(/(`+)([\s\S]*?)\1/g, (_m, _ticks: string, raw: string) => {
+    const cleaned = raw.length >= 2 && raw.startsWith(' ') && raw.endsWith(' ') && raw.trim().length > 0 ? raw.slice(1, -1) : raw;
+    codeTokens.push(`<code>${escapeHtml(cleaned)}</code>`);
+    return `\u0000MCODE${codeTokens.length - 1}\u0000`;
+  });
+
+  // 2. Preserve explicit <br> / <br/> line breaks before HTML escaping.
+  s = s.replace(/<br\s*\/?>/gi, '\u0000MBR\u0000');
+
+  // 3. Extract Markdown links [label](href) for safe schemes (#pf-page:, #pf-table:, #pf-note:, #pf-mindmap:, https://, #anchor).
+  const linkTokens: string[] = [];
+  s = s.replace(/\[((?:\\\]|[^\]])+)\]\(([^)\s]+)\)/g, (whole, rawLabel: string, rawHref: string) => {
+    const href = rawHref.trim();
+    if (!isAllowedNoteHref(href)) return whole;
+    const unescapedLabel = rawLabel.replace(/\\([[\]])/g, '$1');
+    const formattedLabel = formatInlineMarkdown(unescapedLabel);
+    linkTokens.push(`<a href="${escapeAttr(href)}">${formattedLabel}</a>`);
+    return `\u0000MLINK${linkTokens.length - 1}\u0000`;
+  });
+
+  // 4. Escape remaining HTML & apply emphasis / highlight marks.
+  s = escapeHtml(s)
+    .replace(/\\([\\|])/g, '$1')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/(^|[^*])\*([^*]+?)\*(?!\*)/g, '$1<em>$2</em>')
     .replace(/~~(.+?)~~/g, '<s>$1</s>')
-    .replace(/==(.+?)==/g, '<mark>$1</mark>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
+    .replace(/==(.+?)==/g, '<mark>$1</mark>');
+
+  // 5. Restore protected tokens.
+  s = s
+    .replace(/\u0000MLINK(\d+)\u0000/g, (_m, i: string) => linkTokens[Number(i)] ?? '')
+    .replace(/\u0000MBR\u0000/g, '<br>')
+    .replace(/\u0000MCODE(\d+)\u0000/g, (_m, i: string) => codeTokens[Number(i)] ?? '');
+  return s;
+}
+
+/**
+ * Split a GFM table row into cell strings without splitting on escaped `\|` or pipes inside
+ * balanced inline backtick spans (e.g. `` `0|草稿` `` or `` `0 \| 草稿` ``).
+ */
+export function splitMarkdownTableRow(rowStr: string): string[] {
+  let trimmed = rowStr.trim();
+  if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+  // Strip trailing pipe only if it is not escaped by an odd number of backslashes.
+  if (trimmed.endsWith('|')) {
+    let slashes = 0;
+    for (let k = trimmed.length - 2; k >= 0 && trimmed[k] === '\\'; k--) slashes++;
+    if (slashes % 2 === 0) trimmed = trimmed.slice(0, -1);
+  }
+
+  const cells: string[] = [];
+  let buf = '';
+  let inCodeTicks = 0;
+  let i = 0;
+
+  while (i < trimmed.length) {
+    const ch = trimmed[i];
+    if (ch === '\\' && i + 1 < trimmed.length && trimmed[i + 1] === '|') {
+      buf += '|';
+      i += 2;
+      continue;
+    }
+    if (ch === '`') {
+      let tickLen = 1;
+      while (i + tickLen < trimmed.length && trimmed[i + tickLen] === '`') tickLen++;
+      if (inCodeTicks === 0) {
+        // Only enter backtick mode if a matching closing run of the same length exists on this line.
+        const closeIdx = trimmed.indexOf('`'.repeat(tickLen), i + tickLen);
+        if (closeIdx !== -1) inCodeTicks = tickLen;
+      } else if (tickLen === inCodeTicks) {
+        inCodeTicks = 0;
+      }
+      buf += '`'.repeat(tickLen);
+      i += tickLen;
+      continue;
+    }
+    if (ch === '|' && inCodeTicks === 0) {
+      cells.push(buf.trim());
+      buf = '';
+      i++;
+      continue;
+    }
+    buf += ch;
+    i++;
+  }
+  cells.push(buf.trim());
+  return cells;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|') || !trimmed.includes('-')) return false;
+  const cells = splitMarkdownTableRow(trimmed);
+  return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
+}
+
+interface ParsedListLine {
+  indent: number;
+  kind: 'task' | 'ul' | 'ol';
+  checked?: boolean;
+  content: string;
+}
+
+function parseListLine(rawLine: string): ParsedListLine | null {
+  const expanded = rawLine.replace(/\t/g, '  ');
+  const indentMatch = /^( *)/.exec(expanded);
+  const indent = indentMatch ? indentMatch[1].length : 0;
+  const rest = expanded.slice(indent);
+
+  const taskMatch = /^[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(rest);
+  if (taskMatch) {
+    return {
+      indent,
+      kind: 'task',
+      checked: taskMatch[1].toLowerCase() === 'x',
+      content: taskMatch[2].trim(),
+    };
+  }
+  if (/^[-*+]\s+/.test(rest) && !/^([-*])\1{2,}\s*$/.test(rest)) {
+    return {
+      indent,
+      kind: 'ul',
+      content: rest.replace(/^[-*+]\s+/, '').trim(),
+    };
+  }
+  const olMatch = /^\d+\.\s+(.*)$/.exec(rest);
+  if (olMatch) {
+    return {
+      indent,
+      kind: 'ol',
+      content: olMatch[1].trim(),
+    };
+  }
+  return null;
+}
+
+function buildNestedListHtml(items: ParsedListLine[], startIdx: number, baseIndent: number): { html: string; nextIdx: number } {
+  const first = items[startIdx];
+  const groupKind = first.kind;
+  const liHtmls: string[] = [];
+  let idx = startIdx;
+
+  while (idx < items.length) {
+    const cur = items[idx];
+    if (cur.indent < baseIndent) break;
+    if (cur.indent === baseIndent && cur.kind !== groupKind) break;
+
+    if (cur.indent > baseIndent) {
+      // Attach deeper items to the previous <li>, or start a nested list if orphaned.
+      const sub = buildNestedListHtml(items, idx, cur.indent);
+      if (liHtmls.length > 0) {
+        const last = liHtmls.pop()!;
+        if (last.endsWith('</div></li>')) {
+          liHtmls.push(`${last.slice(0, -'</div></li>'.length)}${sub.html}</div></li>`);
+        } else {
+          liHtmls.push(`${last.slice(0, -'</li>'.length)}${sub.html}</li>`);
+        }
+      } else {
+        liHtmls.push(`<li><p></p>${sub.html}</li>`);
+      }
+      idx = sub.nextIdx;
+      continue;
+    }
+
+    const formatted = formatInlineMarkdown(cur.content);
+    if (groupKind === 'task') {
+      const checked = Boolean(cur.checked);
+      liHtmls.push(
+        `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox"${checked ? ' checked="checked"' : ''}><span></span></label><div><p>${formatted}</p></div></li>`
+      );
+    } else {
+      liHtmls.push(`<li><p>${formatted}</p></li>`);
+    }
+    idx++;
+  }
+
+  const html =
+    groupKind === 'task'
+      ? `<ul data-type="taskList">${liHtmls.join('')}</ul>`
+      : groupKind === 'ol'
+        ? `<ol>${liHtmls.join('')}</ol>`
+        : `<ul>${liHtmls.join('')}</ul>`;
+  return { html, nextIdx: idx };
+}
+
+export interface MarkdownToNoteOptions {
+  /** Extract a leading `# Title` line as `title` instead of `<h1>` (default: true). */
+  extractTitle?: boolean;
 }
 
 /** Convert imported Markdown text into clean Tiptap-ready HTML and extract an optional H1 title. */
-export function markdownToNoteHtml(markdown: string): { title?: string; html: string } {
+export function markdownToNoteHtml(
+  markdown: string,
+  options: MarkdownToNoteOptions = {}
+): { title?: string; html: string } {
+  const extractTitle = options.extractTitle !== false;
   const rawLines = markdown.replace(/\r\n/g, '\n').split('\n');
   let extractedTitle: string | undefined;
   let startIndex = 0;
@@ -1283,9 +1735,17 @@ export function markdownToNoteHtml(markdown: string): { title?: string; html: st
   while (startIndex < rawLines.length && !rawLines[startIndex].trim()) {
     startIndex++;
   }
-  if (startIndex < rawLines.length && /^#\s+/.test(rawLines[startIndex].trim())) {
+  if (extractTitle && startIndex < rawLines.length && /^#\s+/.test(rawLines[startIndex].trim())) {
     extractedTitle = rawLines[startIndex].trim().replace(/^#\s+/, '').trim();
     startIndex++;
+    // Skip auto-generated metadata quote line (`> 标签：... · 更新于 ...`) on round-trip re-import
+    while (startIndex < rawLines.length && !rawLines[startIndex].trim()) startIndex++;
+    if (
+      startIndex < rawLines.length &&
+      /^>\s*(?:标签：|Tags:).*?(?:更新于|Updated)\s+\d{4}-\d{2}-\d{2}/.test(rawLines[startIndex].trim())
+    ) {
+      startIndex++;
+    }
   }
 
   const htmlBlocks: string[] = [];
@@ -1300,120 +1760,124 @@ export function markdownToNoteHtml(markdown: string): { title?: string; html: st
       continue;
     }
 
-    // Fenced code block
-    if (trimmed.startsWith('```')) {
+    // Fenced code block (supports 3+ backticks or tildes + optional language tag)
+    const fenceMatch = /^(`{3,}|~{3,})([^\s`~]*).*$/.exec(trimmed);
+    if (fenceMatch) {
+      const fenceChar = fenceMatch[1][0];
+      const fenceLen = fenceMatch[1].length;
+      const rawLang = fenceMatch[2].trim().toLowerCase();
+      const safeLang = /^[a-z0-9_+-]+$/.test(rawLang) ? rawLang : '';
+      const closeRe = new RegExp(`^\\s*${fenceChar === '`' ? '`' : '~'}{${fenceLen},}\\s*$`);
       const codeLines: string[] = [];
       i++;
-      while (i < rawLines.length && !rawLines[i].trim().startsWith('```')) {
+      while (i < rawLines.length && !closeRe.test(rawLines[i])) {
         codeLines.push(escapeHtml(rawLines[i]));
         i++;
       }
       if (i < rawLines.length) i++;
-      htmlBlocks.push(`<pre><code>${codeLines.join('\n')}</code></pre>`);
+      const classAttr = safeLang ? ` class="language-${safeLang}"` : '';
+      htmlBlocks.push(`<pre><code${classAttr}>${codeLines.join('\n')}</code></pre>`);
       continue;
     }
 
-    // Headings
-    if (/^###\s+/.test(trimmed)) {
-      htmlBlocks.push(`<h3>${formatInlineMarkdown(trimmed.replace(/^###\s+/, ''))}</h3>`);
-      i++;
-      continue;
-    }
-    if (/^##\s+/.test(trimmed)) {
-      htmlBlocks.push(`<h2>${formatInlineMarkdown(trimmed.replace(/^##\s+/, ''))}</h2>`);
-      i++;
-      continue;
-    }
-    if (/^#\s+/.test(trimmed)) {
-      htmlBlocks.push(`<h1>${formatInlineMarkdown(trimmed.replace(/^#\s+/, ''))}</h1>`);
+    // Headings (H1–H6, mapped to h1–h5)
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+    if (headingMatch) {
+      const level = Math.min(5, headingMatch[1].length);
+      htmlBlocks.push(`<h${level}>${formatInlineMarkdown(headingMatch[2].trim())}</h${level}>`);
       i++;
       continue;
     }
 
     // Horizontal rule
-    if (/^(-{3,}|\*{3,})$/.test(trimmed)) {
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
       htmlBlocks.push('<hr>');
       i++;
       continue;
     }
 
-    // Blockquote
+    // Blockquote & GFM Alerts (> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION])
     if (trimmed.startsWith('>')) {
-      const quoteLines: string[] = [];
+      const rawQuoteLines: string[] = [];
       while (i < rawLines.length && rawLines[i].trim().startsWith('>')) {
-        quoteLines.push(formatInlineMarkdown(rawLines[i].trim().replace(/^>\s?/, '')));
+        rawQuoteLines.push(rawLines[i].trim().replace(/^>\s?/, ''));
         i++;
       }
-      htmlBlocks.push(`<blockquote><p>${quoteLines.join('<br>')}</p></blockquote>`);
+      let calloutAttr = '';
+      if (rawQuoteLines.length > 0) {
+        const alertMatch = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:[ \t]+(.*))?$/i.exec(rawQuoteLines[0]);
+        if (alertMatch) {
+          calloutAttr = ` data-callout="${alertMatch[1].toLowerCase()}"`;
+          const inlineTitle = (alertMatch[2] ?? '').trim();
+          if (inlineTitle) {
+            rawQuoteLines[0] = `**${inlineTitle}**`;
+          } else {
+            rawQuoteLines.shift();
+          }
+        }
+      }
+      const paragraphs: string[] = [];
+      let currentPara: string[] = [];
+      for (const ql of rawQuoteLines) {
+        if (!ql.trim()) {
+          if (currentPara.length) {
+            paragraphs.push(`<p>${currentPara.join('<br>')}</p>`);
+            currentPara = [];
+          }
+        } else {
+          currentPara.push(formatInlineMarkdown(ql));
+        }
+      }
+      if (currentPara.length) paragraphs.push(`<p>${currentPara.join('<br>')}</p>`);
+      if (!paragraphs.length) paragraphs.push('<p></p>');
+      htmlBlocks.push(`<blockquote${calloutAttr}>${paragraphs.join('')}</blockquote>`);
       continue;
     }
 
-    // Task list
-    if (/^[-*]\s+\[([ xX])\]\s+/.test(trimmed)) {
-      const items: string[] = [];
-      while (i < rawLines.length && /^[-*]\s+\[([ xX])\]\s+/.test(rawLines[i].trim())) {
-        const m = rawLines[i].trim().match(/^[-*]\s+\[([ xX])\]\s+(.*)$/)!;
-        const checked = m[1].toLowerCase() === 'x';
-        const content = formatInlineMarkdown(m[2]);
-        items.push(
-          `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox"${checked ? ' checked="checked"' : ''}><span></span></label><div><p>${content}</p></div></li>`
-        );
-        i++;
-      }
-      htmlBlocks.push(`<ul data-type="taskList">${items.join('')}</ul>`);
-      continue;
-    }
-
-    // Unordered list
-    if (/^[-*]\s+/.test(trimmed)) {
-      const items: string[] = [];
-      while (i < rawLines.length && /^[-*]\s+/.test(rawLines[i].trim()) && !/^[-*]\s+\[[ xX]\]/.test(rawLines[i].trim())) {
-        items.push(`<li><p>${formatInlineMarkdown(rawLines[i].trim().replace(/^[-*]\s+/, ''))}</p></li>`);
-        i++;
-      }
-      htmlBlocks.push(`<ul>${items.join('')}</ul>`);
-      continue;
-    }
-
-    // Ordered list
-    if (/^\d+\.\s+/.test(trimmed)) {
-      const items: string[] = [];
-      while (i < rawLines.length && /^\d+\.\s+/.test(rawLines[i].trim())) {
-        items.push(`<li><p>${formatInlineMarkdown(rawLines[i].trim().replace(/^\d+\.\s+/, ''))}</p></li>`);
-        i++;
-      }
-      htmlBlocks.push(`<ol>${items.join('')}</ol>`);
-      continue;
-    }
-
-    // Markdown table
-    if (trimmed.includes('|') && i + 1 < rawLines.length && /^\s*\|?[\s:-]+\|[\s|:-]*$/.test(rawLines[i + 1])) {
-      const parseCells = (rowStr: string) =>
-        rowStr
-          .trim()
-          .replace(/^\|/, '')
-          .replace(/\|$/, '')
-          .split('|')
-          .map((c) => formatInlineMarkdown(c.trim()));
-      const headers = parseCells(rawLines[i]);
+    // Markdown table (handles escaped \|, inline code pipes, and <br> multi-line cells)
+    if (trimmed.includes('|') && i + 1 < rawLines.length && isMarkdownTableSeparator(rawLines[i + 1])) {
+      const headers = splitMarkdownTableRow(rawLines[i]).map((c) => formatInlineMarkdown(c));
       i += 2; // skip header and separator
       const bodyRows: string[][] = [];
-      while (i < rawLines.length && rawLines[i].trim().includes('|')) {
-        bodyRows.push(parseCells(rawLines[i]));
+      while (i < rawLines.length && rawLines[i].trim() && rawLines[i].trim().includes('|')) {
+        bodyRows.push(splitMarkdownTableRow(rawLines[i]).map((c) => formatInlineMarkdown(c)));
         i++;
       }
-      const headerHtml = `<tr>${headers.map((h) => `<th><p>${h}</p></th>`).join('')}</tr>`;
+      const colCount = Math.max(headers.length, ...bodyRows.map((r) => r.length));
+      const normHeaders = Array.from({ length: colCount }, (_, idx) => headers[idx] ?? '');
+      const headerHtml = `<tr>${normHeaders.map((h) => `<th><p>${h}</p></th>`).join('')}</tr>`;
       const bodyHtml = bodyRows
-        .map((r) => `<tr>${headers.map((_, idx) => `<td><p>${r[idx] ?? ''}</p></td>`).join('')}</tr>`)
+        .map((r) => `<tr>${normHeaders.map((_, idx) => `<td><p>${r[idx] ?? ''}</p></td>`).join('')}</tr>`)
         .join('');
       htmlBlocks.push(`<table><tbody>${headerHtml}${bodyHtml}</tbody></table>`);
       continue;
     }
 
-    // Embedded image (as produced by the single-file .md export)
-    const imageMatch = /^!\[([^\]]*)\]\((data:image\/[^)\s]+)\)$/.exec(trimmed);
-    if (imageMatch && parseImageDataUrl(imageMatch[2])) {
-      htmlBlocks.push(`<img src="${imageMatch[2]}" alt="${escapeHtml(imageMatch[1]).replace(/"/g, '&quot;')}">`);
+    // Lists (nested task / bullet / ordered lists)
+    if (parseListLine(line)) {
+      const listItems: ParsedListLine[] = [];
+      while (i < rawLines.length) {
+        const parsed = parseListLine(rawLines[i]);
+        if (!parsed) break;
+        listItems.push(parsed);
+        i++;
+      }
+      let cursor = 0;
+      while (cursor < listItems.length) {
+        const built = buildNestedListHtml(listItems, cursor, listItems[cursor].indent);
+        htmlBlocks.push(built.html);
+        cursor = built.nextIdx;
+      }
+      continue;
+    }
+
+    // Embedded image (single-file .md export data URI or internal pf-asset:<id> reference)
+    const imageMatch = /^!\[([^\]]*)\]\(((?:data:image\/|pf-asset:img-)[^)\s]+)\)$/.exec(trimmed);
+    if (
+      imageMatch &&
+      (imageMatch[2].startsWith(NOTE_ASSET_SCHEME) || parseImageDataUrl(imageMatch[2]))
+    ) {
+      htmlBlocks.push(`<img src="${imageMatch[2]}" alt="${escapeAttr(imageMatch[1])}">`);
       i++;
       continue;
     }
@@ -1427,4 +1891,64 @@ export function markdownToNoteHtml(markdown: string): { title?: string; html: st
     title: extractedTitle,
     html: htmlBlocks.length > 0 ? htmlBlocks.join('') : '<p></p>',
   };
+}
+
+/**
+ * Locate a Markdown section by heading text (matching either `# Heading` or bare `Heading`)
+ * and return `[startOffset, endOffset)` spanning up to the next heading of same or higher level.
+ */
+export function findMarkdownSectionRange(
+  markdown: string,
+  headingQuery: string
+): { start: number; end: number; level: number; matchedHeading: string } | null {
+  const queryRaw = headingQuery.trim();
+  if (!queryRaw) return null;
+  const queryClean = queryRaw.replace(/^#{1,6}\s+/, '').trim().toLowerCase();
+  const explicitLevelMatch = /^(#{1,6})\s+/.exec(queryRaw);
+  const requiredLevel = explicitLevelMatch ? explicitLevelMatch[1].length : null;
+
+  const lines = markdown.split('\n');
+  let offset = 0;
+  let inFence: { char: string; len: number } | null = null;
+  const headings: { start: number; lineEnd: number; level: number; raw: string; clean: string }[] = [];
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
+    const trimmed = line.trim();
+    const fence = /^(`{3,}|~{3,})/.exec(trimmed);
+    if (fence) {
+      if (!inFence) inFence = { char: fence[1][0], len: fence[1].length };
+      else if (fence[1][0] === inFence.char && fence[1].length >= inFence.len && /^\s*[`~]+\s*$/.test(line)) {
+        inFence = null;
+      }
+    } else if (!inFence) {
+      const hm = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+      if (hm) {
+        headings.push({
+          start: offset,
+          lineEnd: offset + line.length,
+          level: hm[1].length,
+          raw: trimmed,
+          clean: hm[2].trim().toLowerCase(),
+        });
+      }
+    }
+    offset += line.length + (idx < lines.length - 1 ? 1 : 0);
+  }
+
+  const targetIdx = headings.findIndex(
+    (h) =>
+      (requiredLevel === null || h.level === requiredLevel) &&
+      (h.clean === queryClean || h.clean.includes(queryClean))
+  );
+  if (targetIdx === -1) return null;
+  const target = headings[targetIdx];
+  let end = markdown.length;
+  for (let k = targetIdx + 1; k < headings.length; k++) {
+    if (headings[k].level <= target.level) {
+      end = headings[k].start;
+      break;
+    }
+  }
+  return { start: target.start, end, level: target.level, matchedHeading: target.raw };
 }

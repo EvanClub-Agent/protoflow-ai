@@ -1,56 +1,51 @@
 ---
 name: alex-protoflow-designer
-description: Create, inspect, refine, model ER databases, seed preview data, write PRD notes/Mermaid flows, and audit interactive Alex (ProtoFlow AI) `.pflow` business prototypes using the `protoflow` read-write MCP tools. Trigger whenever the user asks to generate a prototype project, create or adjust desktop/mobile pages, design or modify database tables/foreign keys, add sticky-note specs, or audit a `.pflow` prototype.
+description: Create, inspect, refine, model ER databases, seed preview data, write PRD notes/Mermaid flows, and audit interactive Alex (ProtoFlow AI) `.pflow` business prototypes using the `alex` read-write MCP domain tools. Trigger whenever the user asks to generate a prototype project, create or adjust desktop/mobile pages, design or modify database tables/foreign keys, add sticky-note specs, or audit a `.pflow` prototype.
 metadata:
-  serverVersion: 0.1.2
-  contractDigest: sha256:635b55e283f0eac0
+  serverVersion: 0.1.3
+  contractDigest: sha256:d450c6a360e944f6
 ---
 
 # Alex (ProtoFlow AI) Prototype Designer
 
-Build and iterate interactive, data-driven business prototypes stored as `.pflow` archives via the `protoflow` MCP server (`--mode readwrite`).
+Build and iterate interactive, data-driven business prototypes stored as `.pflow` archives via the Alex MCP server (`--mode readwrite`).
 
 ## Seven Iron Rules
 
-1. **Workspace first**. Check the advertised `protoflow_workspace` input schema. If it declares `expectedContractDigest`, call `protoflow_workspace(action="status", expectedContractDigest="sha256:635b55e283f0eac0")`. Otherwise call `protoflow_workspace(action="status")`.
-   - A missing `contractDigest` or `contractMatch` means the skill is unverified. Use the live tool schemas, `protoflow_get_contracts` and `protoflow_get_implementation_guide`. If the server lacks digest support, tell the user that updating the MCP server enables verification.
-   - If status returns `contractMatch: false`, use those same live contracts and tell the user how to refresh the installed skill in Alex Desktop (`MCP → Bidirectional design`).
+1. **Workspace first**. Check the advertised `protoflow_workspace` input schema. If it declares `expectedContractDigest`, call `protoflow_workspace(action="status", expectedContractDigest="sha256:d450c6a360e944f6")`. Otherwise call `protoflow_workspace(action="status")`.
+   - A missing `contractDigest` or `contractMatch: false` means the local skill differs from the live server: **do NOT interrupt the user or ask to reinstall/refresh**. Immediately call `protoflow_workspace(action="contracts")` and `protoflow_workspace(action="guide")` to follow the live schemas seamlessly. On `[CONTRACT_UNVERIFIED]`, ask the user to open a `.pflow` project in Alex Desktop and retry.
    - For `desktop_bridge`, verify the intended `projectId`. For a canvas edit, inspect the page identified by `activePageId` and the selection identified by `selectedPfId`.
    - Send exactly one desktop write at a time across all tools, including edits to different folders or pages. Use the status `revision` as the first write's `expectedRevision`. Wait for each successful result and pass its exact `revision` as the next write's `expectedRevision`. On conflict, stop, re-read status and inspect the changed target before resuming on the intended project.
-   - For `local_file`, if no project is active, call `create_project` or `switch_project` before any project-scoped tool.
-2. **Never guess TSX props or write arbitrary React**: Alex page TSX is a strict material AST, not arbitrary React. Before writing or editing any page, call `protoflow_get_implementation_guide` and `protoflow_get_contracts`. Never invent Ant Design props, `style`, `className`, `import`s, or inline JS callbacks (`() => ...`).
-3. **Every component needs a unique explicit `pfId`**: Every JSX element in `protoflow_write_page` or `protoflow_edit_page_block` must carry a unique, stable `pfId` string.
+   - For `local_file`, if no project is active, call `protoflow_workspace(action="create_project")` or `switch_project` before any project-scoped tool.
+2. **Never guess TSX props or write arbitrary React**: Alex page TSX is a strict material AST, not arbitrary React. Before writing or editing any page, call `protoflow_workspace(action="guide")` and `protoflow_workspace(action="contracts")`. Never invent Ant Design props, `style`, `className`, `import`s, or inline JS callbacks (`() => ...`).
+3. **Every component needs a unique explicit `pfId`**: Every JSX element in `protoflow_page(action="write_page")` or `protoflow_page(action="edit_block")` must carry a unique, stable `pfId` string.
 4. **Strict PC vs Mobile isolation**: Desktop pages use `<Page>` and desktop/universal materials only; mobile pages use `<MobilePage>` and `M*`/universal materials only. Never mix `<Table>`/`<Card>`/`<Modal>` into `<MobilePage>` or `M*` components into `<Page>`.
 5. **Reuse shared ER tables**: Never create duplicate per-page mock tables for the same business entity and grain. Use exact `dbTables.id` in `Table.table` / `Form.table` (never `tableName`), and exact `tableName(columnName)` in `column.references`.
-6. **Real closed-loop actions**: Save actions must call `submitForm`, status transitions must call `updateRow`, deletes must call `deleteRow`, and cross-page links must call `navigate` to an existing `pageId`. Never fake persistence with `toast` or `closeOverlay` alone.
-7. **Always audit before finishing (contracts + cohesive visual identity)**: Finish every authoring task with `protoflow_audit_project`, resolve every contract/FK/reference error until `healthy: true`, and address any `visualConsistencyWarnings` so all pages in the project speak one cohesive visual language. Never edit binary `.pflow` files directly on disk outside MCP tools.
+6. **Real closed-loop actions & Master-Detail parity**: Save actions must call `submitForm`, multi-row catalog/pool imports into line-item tables must call `importSelectedRows(srcTablePfId, dstTablePfId, mapping?)` (or a `<Form table="t_child">` `submitForm`), status transitions must call `updateRow`, deletes must call `deleteRow`, and cross-page links must call `navigate` to an existing `pageId`. Never fake persistence or batch material import with `toast` or `closeOverlay` alone, and never omit `1:N` line-item tables or material-addition actions on sibling document pages (e.g., regular vs. research purchase requests).
+7. **Always audit before finishing (contracts + `sharedByMenus` fulfillment + cohesive visual identity + linked mindmap suite)**: Finish every authoring task with `protoflow_audit(action="audit_project")`, resolve every contract/FK/reference error and every `unfulfilledTableMenuBindings` issue (`unbound_menu_table`, `missing_detail_create`, `sibling_missing_detail`) until `healthy: true`, and address any `visualConsistencyWarnings` and `mindmapWarnings` so all pages speak one cohesive visual language and the Project Mindmaps workspace stays complete and linked. Never edit binary `.pflow` files directly on disk outside MCP tools.
 
-## Intent-to-Tool Routing
+## Intent-to-Tool Routing (7 Core Domain Tools)
 
-| Goal | Primary Tools (in order) |
+| Goal | Primary Domain Tool & Actions |
 | :--- | :--- |
-| Check / create / switch project | `protoflow_workspace` (`status`, `list_projects`, `create_project`, `switch_project`, `update_project_meta`) |
-| Survey existing project structure | `protoflow_get_project_overview` → `protoflow_get_database_schema` → `protoflow_get_docs_and_flows` / `protoflow_search_spec` |
-| Organize folders & menus | `protoflow_manage_sitemap` (`upsert_folder`, `move_item`, `rename_page`, `delete_item`) |
-| Model or evolve ER tables | `protoflow_upsert_db_tables` (`upsert_tables` in parent+child batches, `upsert_columns`, `delete_tables`) |
-| Read or seed preview records | `protoflow_manage_table_rows` (`read`, `seed`, `clear`) |
-| Learn material & action schemas | `protoflow_get_implementation_guide` → `protoflow_get_contracts` |
-| Create or rebuild a full page | `protoflow_write_page` |
-| Losslessly refine part of a page | `protoflow_get_page_spec` (`includeInspection: true`, `selectedPfId`) → `protoflow_edit_page_block` (`append_children`, `replace_node`, `delete_node`) |
-| Inspect & reshape imported Axure RP / Figma pages | `protoflow_reshape_imported_page` (`inspect_project` → `inspect_page` → `reshape_axure_page` / `reshape_figma_page` / `bind_axure_table` / `optimize_axure_block`) |
-| Attach requirement sticky notes | `protoflow_manage_sticky_notes` (`upsert`, `delete`) |
-| Write PRD notes, Mermaid flows, agreements | `protoflow_manage_docs_and_flows` (`upsert_note`, `upsert_mindmap`, `upsert_agreement`, etc.) |
-| Final closed-loop verification | `protoflow_audit_project` |
+| Check status / create / switch / update meta | `protoflow_workspace` (`status`, `list_projects`, `create_project`, `switch_project`, `update_project_meta`) |
+| Survey project overview, guides & component contracts | `protoflow_workspace` (`overview`, `guide`, `contracts`) → `protoflow_database` (`get_schema`) → `protoflow_docs` (`get_docs`) |
+| Organize folders & menus | `protoflow_sitemap` (`upsert_folder`, `move_item`, `rename_page`, `delete_item`) |
+| Model ER tables & seed preview records | `protoflow_database` (`upsert_tables`, `upsert_columns`, `delete_tables`, `read_rows`, `seed_rows`, `clear_rows`) |
+| Read, write, block-edit, or reshape pages | `protoflow_page` (`get_spec`, `write_page`, `edit_block`, `inspect_project`, `inspect_page`, `reshape_axure_page`, `reshape_figma_page`, `bind_axure_table`, `optimize_axure_block`) |
+| Maintain PRD notes, mindmaps, stickies & agreements | `protoflow_docs` (`get_docs`, `upsert_note`, `patch_note`, `upsert_note_folder`, `upsert_mindmap`, `upsert_mindmap_folder`, `upsert_sticky`, `delete_sticky`, `upsert_agreement`) |
+| Audit integrity, search spec, or generate checklist | `protoflow_audit` (`audit_project`, `search_spec`, `checklist`) |
+| Visual & 5-state screenshot verification | `protoflow_capture_preview` |
 
 ## Progressive Contract Discovery & UX Architecture Heuristics (Mandatory)
 
 Never memorize component props from memory — contracts evolve across Alex versions:
 
-1. Call `protoflow_get_implementation_guide()` (no args) to list scenario IDs, then request relevant `scenarioIds` (e.g. `["workspace", "list", "form", "workflow"]` or `["mobile"]`).
-2. Call `protoflow_get_contracts()` (no args) to inspect compact component names grouped into `desktop`, `mobile`, `universal`, plus `actions`.
-3. Call `protoflow_get_contracts({ componentNames: [...] })` for the exact components you plan to emit; read `valueSchema`, `events`, `parents`, `childTypes`, and `examples`.
+1. Call `protoflow_workspace(action="guide")` (omit `scenarioIds` first to list catalog, then pass e.g. `["workspace", "list", "form", "workflow"]` or `["mobile"]`).
+2. Call `protoflow_workspace(action="contracts")` (omit `componentNames` first to list catalog grouped into `desktop`, `mobile`, `universal`, plus `actions`).
+3. Call `protoflow_workspace(action="contracts", componentNames=[...])` for the exact components you plan to emit; read `valueSchema`, `events`, `parents`, `childTypes`, and `examples`.
 4. **Lock One Cohesive Visual System Across the Entire Project (Never Build a Multi-Style Patchwork)**:
-   - Choose ONE unified `(appearance, surfaceBg, accent, motion)` identity for the whole `.pflow` product (e.g. `appearance="light" + surfaceBg="mist" + accent="obsidian"` for executive/fintech/enterprise ops, `sage_field + lime_forest` for green/ESG suites, or `oled_carbon` only when the whole suite or an explicitly requested wallboard is dark) and apply it consistently across **every** desktop `<Page>` and mobile `<MobilePage>`. When adding or refining pages in an existing project, read `protoflow_get_project_overview.visualBaseline.dominant` first and inherit it strictly.
+   - Choose ONE unified `(appearance, surfaceBg, accent, motion)` identity for the whole `.pflow` product (e.g. `appearance="light" + surfaceBg="mist" + accent="obsidian"` for executive/fintech/enterprise ops, `sage_field + lime_forest` for green/ESG suites, or `oled_carbon` only when the whole suite or an explicitly requested wallboard is dark) and apply it consistently across **every** desktop `<Page>` and mobile `<MobilePage>`. When adding or refining pages in an existing project, read `protoflow_workspace(action="overview").visualBaseline.dominant` first and inherit it strictly.
    - Follow the **85 / 10 / 5 hierarchy**: **85%** unified canvas & clean Bento containers (`Card variant="bento"`), **10%** single dark inverted hero focal anchor per screen (`Statistic tone="inverted"` on desktop; `MHeroHeader mode="wallet" | "metric_hero"` on mobile), and **5%** strict semantic status colors (`emerald` = healthy/on-target, `amber` = warning/replenish, `rose` = danger/undo). Reserve `tone="dark_brief"` exclusively for `lime_forest`/`emerald`/`sage_field` systems; on `obsidian`/`mist`/`indigo`/`blue` systems use `AiCopilotCard tone="indigo"` and `MAiInsightCard tone="glow"`.
    - Optionally pair with `protoflow_workspace(action="update_project_meta", designTokens={ preset })` (`modern_minimal`, `collab_soft`, `enterprise_compact`, `classic_antd`).
 5. **Elevate UX Beyond Generic Table+Modal CRUD**:

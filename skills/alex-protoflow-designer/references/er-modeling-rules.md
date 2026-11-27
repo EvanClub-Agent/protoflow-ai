@@ -1,10 +1,10 @@
 # ER Database Modeling & Seed Data Rules
 
-Follow these rules whenever calling `protoflow_upsert_db_tables` or `protoflow_manage_table_rows`.
+Follow these rules whenever calling `protoflow_database` (`get_schema`, `upsert_tables`, `upsert_columns`, `read_rows`, `seed_rows`).
 
 ## 1. Shared Tables & Modeling Rationale
 
-- **Inspect existing tables first**: Call `protoflow_get_database_schema` before adding tables or columns. Never create a second table for the same entity and grain across different menus (e.g., list, create, detail, approval, and mobile views must share the same physical table via `sharedByMenus`).
+- **Inspect existing tables first**: Call `protoflow_database(action="get_schema")` before adding tables or columns. Never create a second table for the same entity and grain across different menus (e.g., list, create, detail, approval, and mobile views must share the same physical table via `sharedByMenus`).
 - **Mandatory `modeling` metadata**: Every table must include:
   - `modeling.entity`: Business entity or event name (e.g. `"Sales Order"`, `"Order Line Item"`).
   - `modeling.grain`: Exact meaning of a single row, including time/version dimensions if applicable (e.g. `"One line item on a customer order"`).
@@ -21,15 +21,15 @@ Follow these rules whenever calling `protoflow_upsert_db_tables` or `protoflow_m
   - Format `references` as `physicalTableName(columnName)` (e.g. `t_customers(id)`), never internal `table.id`.
   - Set `isForeignKey: true` and align `dataType` identically with the referenced target column (which must be a primary key or `isUnique: true` single column).
   - Set `foreignKeyOptions: { name, cardinality: '1:N' | '1:1', onDelete: 'RESTRICT' | 'CASCADE' | 'SET NULL' }`. Remember `SET NULL` requires `nullable: true`.
-  - Submit parent and child tables together in one `protoflow_upsert_db_tables(action="upsert_tables", tables=[...])` call so cross-table FK checks pass atomically.
+  - Submit parent and child tables together in one `protoflow_database(action="upsert_tables", tables=[...])` call so cross-table FK checks pass atomically.
 - **Composite uniqueness**: Use `uniqueConstraints: [{ name, columnIds }]` referencing exact `columns[].id` values when uniqueness spans multiple columns (e.g. `(contract_id, stage_no)`).
 - **Pending rules (`modeling.pendingRules`)**: When a requirement cannot be expressed by SQL keys/types alone (e.g., conditional uniqueness when `status != 'cancelled'`, cross-table balance caps, or composite foreign keys), record `{ rule, reason }` in `modeling.pendingRules` instead of faking it with weaker constraints.
 - **Avoid fan-out traps**: Keep independent 1:N child branches in separate tables (e.g. `order_items` and `order_payments`), never flattened into one wide table.
 
 ## 3. Coherent Preview Seed Rows
 
-- Seed parent tables before or together with child tables in `protoflow_manage_table_rows(action="seed")`.
+- Seed parent tables before or together with child tables in `protoflow_database(action="seed_rows")`.
 - Every row MUST include a unique non-empty string `id` matching the prototype runtime identity (even if the physical PK is `id`).
 - Values must match column `dataType`, `nullable` (`false` columns cannot be null/omitted), ENUM options, `isUnique` / `uniqueConstraints`, and exact foreign key parent values.
 - Use realistic domain records (never `"test1"` / `"aaa"`), covering multiple statuses (e.g. draft, pending, approved, rejected) so filters, tabs, approvals, and charts render meaningfully.
-- When updating schema on an existing table that already has `tableRows`, inspect `protoflow_manage_table_rows(action="read")` and re-seed with `replaceExisting: true` if new NOT NULL fields or chart metrics require populated data.
+- When updating schema on an existing table that already has `tableRows`, inspect `protoflow_database(action="read_rows")` and re-seed with `replaceExisting: true` if new NOT NULL fields or chart metrics require populated data.

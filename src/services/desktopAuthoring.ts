@@ -25,13 +25,41 @@ interface LiveApi {
   close(sessionId: string): Promise<void>;
   onRequest(listener: (request: LiveRequest) => void): () => void;
   reply(result: { sessionId: string; id: string; body?: string | null; failed?: boolean }): void;
-  installPlugin(sessionId: string): Promise<string>;
+  installPlugin(sessionId: string, options?: { forceRepair?: boolean }): Promise<string>;
   exportExtension(sessionId: string): Promise<string | null>;
-  installSkill(client: SkillClient): Promise<string>;
+  installSkill(client: SkillClient, options?: { forceRepair?: boolean }): Promise<string>;
 }
 export function desktopAuthoringApi() {
   return typeof window === 'undefined' ? undefined :
     (window as Window & { protoflowDesktop?: { liveAuthoring?: LiveApi } }).protoflowDesktop?.liveAuthoring;
+}
+
+export const DESKTOP_AUTHORING_PREF_KEY = 'protoflow.desktopAuthoring.enabled.v1';
+
+function resolveStorage(): Storage | undefined {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+    if (typeof localStorage !== 'undefined') return localStorage;
+  } catch {
+    // Ignore restricted/unavailable storage environments
+  }
+  return undefined;
+}
+
+export function readSavedDesktopAuthoringPref(): boolean {
+  try {
+    return resolveStorage()?.getItem(DESKTOP_AUTHORING_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSavedDesktopAuthoringPref(enabled: boolean): void {
+  try {
+    resolveStorage()?.setItem(DESKTOP_AUTHORING_PREF_KEY, enabled ? '1' : '0');
+  } catch {
+    // Ignore restricted/unavailable storage environments
+  }
 }
 
 type ChangeNotice = { id: string; projectId: string; opened: string; summary: string };
@@ -70,10 +98,10 @@ function projectOpen(target: Session) {
     current.storageDir === target.storageDir && current.opened === target.opened);
 }
 
-export function runClientIntegration(action: 'installPlugin' | 'exportExtension') {
+export function runClientIntegration(action: 'installPlugin' | 'exportExtension', options?: { forceRepair?: boolean }) {
   const api = desktopAuthoringApi();
   if (!api || !session || !projectOpen(session)) throw new Error(tr('请先开启双向设计', 'Enable bidirectional design first'));
-  return api[action](session.sessionId);
+  return action === 'installPlugin' ? api.installPlugin(session.sessionId, options) : api.exportExtension(session.sessionId);
 }
 
 async function closeSession() {
@@ -86,6 +114,7 @@ async function closeSession() {
 }
 
 export async function disableDesktopAuthoring() {
+  writeSavedDesktopAuthoringPref(false);
   useDesktopAuthoring.setState({ enabled: false, connectionError: null });
   await closeSession();
 }
@@ -96,6 +125,7 @@ export async function enableDesktopAuthoring() {
   if (!api || !opened) throw new Error(tr('请在桌面端打开工程文件', 'Open a project file in Alex Desktop'));
   const current = editableTarget();
   if (!current) throw new Error(tr('当前工程不可编辑', 'Current project is unavailable for editing'));
+  writeSavedDesktopAuthoringPref(true);
   if (session && projectOpen(session) && useDesktopAuthoring.getState().connectionPath) return;
   if (opening && session && projectOpen(session)) return opening;
   const target: Session = { ...current, sessionId: newId('mcp-session') };
@@ -110,6 +140,7 @@ export async function enableDesktopAuthoring() {
       useDesktopAuthoring.setState({ connectionPath: result.connectionPath });
     } catch (error) {
       if (session === target) {
+        writeSavedDesktopAuthoringPref(false);
         useDesktopAuthoring.setState({ enabled: false, connectionError: error instanceof Error ? error.message : String(error) });
         await closeSession();
       } else {
@@ -248,6 +279,9 @@ export function startDesktopAuthoring() {
   if (!api) return () => {};
   let disposed = false;
   let microtaskScheduled = false;
+  if (!useDesktopAuthoring.getState().enabled && readSavedDesktopAuthoringPref()) {
+    useDesktopAuthoring.setState({ enabled: true, connectionError: null });
+  }
   const checkProject = () => {
     const { notice } = useDesktopAuthoring.getState();
     if (notice && notice.opened !== desktopFileSession()) useDesktopAuthoring.setState({ notice: null });
@@ -261,8 +295,13 @@ export function startDesktopAuthoring() {
       }
     });
   };
+  checkProject();
   const stopStore = useProtoStore.subscribe(checkProject);
   const stopAccount = useAccountStore.subscribe((next, previous) => {
+    if (previous.status === 'checking' && (next.status === 'local' || next.status === 'authenticated')) {
+      checkProject();
+      return;
+    }
     if (useDesktopAuthoring.getState().enabled && (next.status !== previous.status ||
         next.user?.id !== previous.user?.id || next.serverUrl !== previous.serverUrl)) {
       void disableDesktopAuthoring().catch(console.error);
@@ -288,6 +327,7 @@ export function startDesktopAuthoring() {
     stopStore();
     stopAccount();
     stopSave();
-    void disableDesktopAuthoring().catch(console.error);
+    useDesktopAuthoring.setState({ enabled: false, connectionError: null });
+    void closeSession().catch(console.error);
   };
 }

@@ -128,13 +128,46 @@ const skillRoots = new Map([
   ['antigravity', ['.gemini', 'config', 'skills']],
 ]);
 
-function installDesignerSkill(client, home, source, codexHome) {
+function installDesignerSkill(client, home, source, codexHome, options = {}) {
   const parts = skillRoots.get(client);
   if (!parts) throw new Error('Unknown skill client');
   if (client === 'codex' && codexHome && !path.isAbsolute(codexHome)) throw new Error('CODEX_HOME must be absolute');
   const root = client === 'codex' && codexHome ? path.join(codexHome, 'skills') : path.join(home, ...parts);
   const { installDesignerFiles, skillFiles } = require('./designer-install.cjs');
-  return installDesignerFiles(path.join(root, 'alex-protoflow-designer'), 'skill', skillFiles(source));
+  return installDesignerFiles(path.join(root, 'alex-protoflow-designer'), 'skill', skillFiles(source), undefined, options);
 }
 
-module.exports = { createDesktopAuthoringBridge, installDesignerSkill };
+function syncManagedIntegrations({ root, home, executable, connectionFile, codexHome, installPlugin }) {
+  const synced = [];
+  if (typeof installPlugin === 'function' && connectionFile && executable) {
+    const pluginDir = path.join(home, '.gemini', 'config', 'plugins', 'alex-protoflow-designer');
+    if (fs.existsSync(pluginDir)) {
+      try {
+        installPlugin(root, home, { executable, connectionFile });
+        synced.push(pluginDir);
+      } catch {
+        // Leave customized or busy plugin directories untouched during background sync.
+      }
+    }
+  }
+  const skillSource = path.join(root, 'skills', 'alex-protoflow-designer');
+  if (fs.existsSync(skillSource)) {
+    for (const [client, parts] of skillRoots.entries()) {
+      try {
+        const base = client === 'codex' && codexHome && path.isAbsolute(codexHome)
+          ? path.join(codexHome, 'skills')
+          : path.join(home, ...parts);
+        const target = path.join(base, 'alex-protoflow-designer');
+        if (fs.existsSync(target)) {
+          installDesignerSkill(client, home, skillSource, codexHome);
+          synced.push(target);
+        }
+      } catch {
+        // Ignore customized or busy skill directories during silent sync.
+      }
+    }
+  }
+  return synced;
+}
+
+module.exports = { createDesktopAuthoringBridge, installDesignerSkill, syncManagedIntegrations };

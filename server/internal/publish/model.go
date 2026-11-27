@@ -141,6 +141,7 @@ var allowedPublishedActions = map[string]bool{
 	"deleteRow":                true,
 	"updateRow":                true,
 	"importPurchaseOrderLines": true,
+	"importSelectedRows":       true,
 	"returnSelection":          true,
 	"switchTab":                true,
 	"navigate":                 true,

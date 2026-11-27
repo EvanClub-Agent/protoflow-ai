@@ -6,8 +6,9 @@ import os from 'node:os';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { createDesktopRelay } from '../src/mcp/desktopRelay';
+import { PROTOFLOW_CONTRACT_DIGEST } from '../src/mcp/generatedSkillBundle';
 import { parseCliArgs } from '../src/mcp/cli';
-import { desktopAuthoringApi, disableDesktopAuthoring, enableDesktopAuthoring, startDesktopAuthoring, useDesktopAuthoring, publishCanvasSelection } from '../src/services/desktopAuthoring';
+import { desktopAuthoringApi, DESKTOP_AUTHORING_PREF_KEY, disableDesktopAuthoring, enableDesktopAuthoring, startDesktopAuthoring, useDesktopAuthoring, publishCanvasSelection } from '../src/services/desktopAuthoring';
 import { createProjectPayload, flushProjectChanges, loadProjectFromBinaryPayload, startProjectPersistence } from '../src/services/projectStorage';
 import { pendingProjectAiTasks } from '../src/services/hermesTaskLock';
 import { canUndoProjectChange, undoProjectChange } from '../src/services/projectUndo';
@@ -16,7 +17,7 @@ import { usePageStore } from '../src/proto/store/usePageStore';
 import { useAccountStore } from '../src/store/useAccountStore';
 import { decodePflowBinary } from '../src/utils/pflowBinaryCodec';
 import { installTestDom } from './dom';
-const { createDesktopAuthoringBridge, installDesignerSkill } = require('../electron/desktop-authoring.cjs');
+const { createDesktopAuthoringBridge, installDesignerSkill, syncManagedIntegrations } = require('../electron/desktop-authoring.cjs');
 
 test('capture options distinguish absent fields from invalid explicit values', () => {
   assert.deepEqual(parseCaptureOptions({}), { scope: 'viewport', fullPage: false, waitMs: 0, pageId: undefined });
@@ -126,6 +127,40 @@ test('desktop reconnect follows the latest project and stops after revocation or
   }
 });
 
+test('an unanswered desktop verification times out in five seconds and recovers immediately when desktop responds', { timeout: 12_000 }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-relay-verification-'));
+  let received = 0;
+  let responding = false;
+  const bridge = createDesktopAuthoringBridge(dir, (req: { id: string; sessionId: string; body: string }) => {
+    received++;
+    if (responding) {
+      const rpc = JSON.parse(req.body);
+      const status = { contractMatch: true, contractCheckStatus: 'matched', contractDigest: PROTOFLOW_CONTRACT_DIGEST };
+      bridge.reply({ id: req.id, sessionId: req.sessionId, body: JSON.stringify({
+        jsonrpc: '2.0', id: rpc.id, result: { isError: false, content: [{ type: 'text', text: JSON.stringify(status) }] },
+      }) });
+    }
+  });
+  t.after(() => { bridge.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const { connectionPath } = await bridge.open({ sessionId: 'session', projectId: 'project', storageDir: dir, fileName: 'project.pflow' });
+  const relay = createDesktopRelay(connectionPath);
+  const status = async (args: Record<string, unknown>) => {
+    const reply = await relay({ id: 1, method: 'tools/call', params: { name: 'protoflow_workspace', arguments: args } });
+    assert.ok(reply && !Array.isArray(reply) && !reply.error);
+    return reply.result as { isError: boolean; content: { text: string }[] };
+  };
+  const verification = { action: 'status', expectedContractDigest: PROTOFLOW_CONTRACT_DIGEST };
+  const start = performance.now();
+  const failure = await status(verification);
+  assert.ok(performance.now() - start < 7_500, 'allow scheduler slack around the five-second deadline');
+  assert.equal(failure.isError, true);
+  assert.ok(failure.content[0].text.startsWith('[CONTRACT_UNVERIFIED]'));
+  responding = true;
+  assert.equal((await status({})).isError, false);
+  assert.equal((await status(verification)).isError, false);
+  assert.equal(received, 3);
+});
+
 test('Live MCP uses authenticated loopback, current editor selection, autosave revisions, Hermes lock and project undo', async () => {
   const restoreDom = installTestDom();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alex-desktop-authoring-'));
@@ -165,6 +200,14 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     const endpoint = 'http://127.0.0.1:' + port + '/mcp';
     assert.equal((await fetch(endpoint, { method: 'POST' })).status, 403);
     assert.equal((await fetch(endpoint, { method: 'POST', headers: { Origin: 'null', Authorization: 'Bearer ' + token } })).status, 403);
+    // Older bundled relays without X-Alex-Contract-Lock stay compatible across desktop upgrades (no HTTP 426!)
+    const legacyRelay = await fetch(endpoint, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    assert.equal(legacyRelay.status, 200);
+    const legacyToolsBody = await legacyRelay.json();
+    assert.equal(legacyToolsBody.result.tools.length, 7);
     const relay = createDesktopRelay(connection);
     const tool = async (name: string, args: Record<string, unknown> = {}) => {
       const res: any = await relay({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name, arguments: args } });
@@ -235,17 +278,18 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     assert.match(offlineInit.result.instructions, /protoflow_capture_preview/);
     const offlineTools: any = await relay({ jsonrpc: '2.0', id: 21, method: 'tools/list', params: {} });
     assert.equal(offlineTools.error, undefined);
+    assert.equal(offlineTools.result.tools.length, 7);
     assert.equal(offlineTools.result.tools.some((t: { name: string }) => t.name === 'protoflow_capture_preview'), true);
     const schemaFor = (name: string) => offlineTools.result.tools.find((tool: { name: string }) => tool.name === name).inputSchema;
-    assert.ok(schemaFor('protoflow_write_page').required.includes('expectedRevision'));
-    assert.ok(schemaFor('protoflow_upsert_db_tables').required.includes('expectedRevision'));
-    for (const name of ['protoflow_workspace', 'protoflow_manage_table_rows']) {
+    assert.ok(schemaFor('protoflow_sitemap').required.includes('expectedRevision'));
+    for (const name of ['protoflow_workspace', 'protoflow_database', 'protoflow_page', 'protoflow_docs']) {
       const schema = schemaFor(name);
       assert.ok(!Object.hasOwn(schema, 'if') && !Object.hasOwn(schema, 'then'));
       assert.ok(!schema.required?.includes('expectedRevision'));
     }
     assert.match(schemaFor('protoflow_workspace').properties.expectedRevision.description, /update_project_meta/);
-    assert.match(schemaFor('protoflow_manage_table_rows').properties.expectedRevision.description, /seed.*clear/);
+    assert.match(schemaFor('protoflow_database').properties.expectedRevision.description, /upsert_tables.*seed_rows/);
+    assert.ok((await tool('protoflow_workspace', { action: 'contracts' })).components.desktop.length > 0);
     assert.ok((await tool('protoflow_get_contracts')).components.desktop.length > 0);
     await assert.rejects(status(), /unavailable/);
 
@@ -269,8 +313,25 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     assert.equal(decodePflowBinary(fs.readFileSync(path.join(dir, 'second.pflow'))).meta.projectName, 'Confirmed second project');
     assert.equal(disk().meta.projectName, 'Recoverable');
 
-    // Explicitly switching back to read-only prevents auto-reconnecting on subsequent projects.
+    // Persisted bidirectional preference survives app restart even when account store boots from 'checking' -> 'local'
+    await enableDesktopAuthoring();
+    assert.equal(window.localStorage.getItem(DESKTOP_AUTHORING_PREF_KEY), '1');
+    stopBridge();
+    assert.equal(useDesktopAuthoring.getState().enabled, false);
+    useAccountStore.setState({ status: 'checking' });
+    const restartedBridge = startDesktopAuthoring();
+    assert.equal(useDesktopAuthoring.getState().enabled, true);
+    useAccountStore.setState({ status: 'local' });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(useDesktopAuthoring.getState().enabled, true);
+    assert.equal(window.localStorage.getItem(DESKTOP_AUTHORING_PREF_KEY), '1');
+    assert.equal(useDesktopAuthoring.getState().connectionPath, connection);
+    restartedBridge();
+
+    // Explicitly switching back to read-only clears saved preference and prevents auto-reconnecting on subsequent projects.
+    const resumedBridge = startDesktopAuthoring();
     await disableDesktopAuthoring();
+    assert.equal(window.localStorage.getItem(DESKTOP_AUTHORING_PREF_KEY), '0');
     assert.equal(fs.existsSync(connection), false);
     const thirdPayload = createProjectPayload({ projectId: 'third-project', projectName: 'Third Project', templateId: 'blank_project',
       fileName: 'third.pflow', storageDir: dir, pageCount: 0, tableCount: 0, stickyCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -278,6 +339,7 @@ test('Live MCP uses authenticated loopback, current editor selection, autosave r
     await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(useDesktopAuthoring.getState().connectionPath, null);
     await assert.rejects(status(), /unavailable/);
+    resumedBridge();
   } finally {
     holdSave?.();
     pendingProjectAiTasks.delete('live-test');
@@ -316,7 +378,7 @@ test('client packages contain a portable stdio server, preserve customized plugi
   fs.writeFileSync(first, '{"token":"test-private-token"}');
   try {
     const portable = pluginFiles(root);
-    assert.equal(JSON.parse(portable['mcp_config.json']).mcpServers.protoflow.variables[0].name, 'ALEX_CONNECTION_FILE');
+    assert.equal(JSON.parse(portable['mcp_config.json']).mcpServers.alex.variables[0].name, 'ALEX_CONNECTION_FILE');
     assert.ok(portable['skills/alex-protoflow-designer/SKILL.md']);
     for (const connection of [undefined, first]) {
       const files = unzipSync(claudeBundle(root, connection));
@@ -326,15 +388,21 @@ test('client packages contain a portable stdio server, preserve customized plugi
       assert.equal(manifest.user_config.connection_file.default, connection);
       assert.ok(Object.values(files).every(bytes => !Buffer.from(bytes as Uint8Array).includes('test-private-token')));
     }
-    const bind = (connectionFile: string) => installPlugin(root, temp, { executable, connectionFile });
+    const bind = (connectionFile: string, options?: { forceRepair?: boolean }) =>
+      installPlugin(root, temp, { executable, connectionFile }, options);
     const target = bind(first);
+    // Benign OS metadata files (.DS_Store) never trigger false conflict errors
+    fs.writeFileSync(path.join(target, '.DS_Store'), 'finder');
     assert.equal(bind(first), target);
     assert.equal(bind(second), target);
     const config = path.join(target, 'mcp_config.json');
-    assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.protoflow.args.at(-1), second);
+    assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.alex.args.at(-1), second);
     fs.writeFileSync(config, '{"mcpServers":{"custom":{}}}');
     assert.throws(() => bind(first), /Existing plugin differs/);
     assert.equal(fs.readFileSync(config, 'utf8'), '{"mcpServers":{"custom":{}}}');
+    // One-click forceRepair cleanly recovers corrupted or customized directories when explicitly requested by user
+    assert.equal(bind(first, { forceRepair: true }), target);
+    assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.alex.args.at(-1), first);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 
@@ -386,6 +454,21 @@ test('managed designer installs upgrade verified trees, migrate legacy bindings 
     assert.equal(fs.readFileSync(path.join(installed, 'personal.md'), 'utf8'), 'My notes');
     fs.unlinkSync(path.join(plugin, 'server/cli.cjs'));
     assert.throws(() => bind('D'), /Existing plugin differs/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.protoflow.args.at(-1), path.join(dir, 'C.json'));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.alex.args.at(-1), path.join(dir, 'C.json'));
+    // Silent background sync repairs nothing when customized/corrupted, and auto-updates clean managed installs
+    installPlugin(assets, home, { executable: process.execPath, connectionFile: path.join(dir, 'C.json') }, { forceRepair: true });
+    fs.unlinkSync(path.join(installed, 'personal.md'));
+    writeRelease('3.0.0');
+    const synced = syncManagedIntegrations({
+      root: assets,
+      home,
+      executable: process.execPath,
+      connectionFile: path.join(dir, 'E.json'),
+      codexHome,
+      installPlugin,
+    });
+    assert.equal(synced.length, 2);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version, '3.0.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.alex.args.at(-1), path.join(dir, 'E.json'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

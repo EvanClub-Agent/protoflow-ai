@@ -6,7 +6,7 @@ import type { HermesOperation } from './hermesClient';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 import { folderOptions, sitemapItemLocation } from '../proto/sitemap';
 import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
-import { includesPlanAndSchema } from './projectPlanMenus';
+import { includesPlanWithMenuBindings } from './projectPlanMenus';
 
 export interface ProjectChangeReview {
   requestedPage?: import('./projectPagePlatform').RequestedPage;
@@ -45,7 +45,7 @@ export function describeChanges(
   const reviewedPages = new Set<string>();
   const folders = folderOptions(after.designerFolders, after.sitemapOverrides, after.sitemapBase);
   const folderName = (id: unknown) => id === null ? tr('顶层', 'Root') : folders.find(f => f.id === id)?.path ?? String(id);
-  const combinedPlan = includesPlanAndSchema(operations) ? after.projectPlan : undefined;
+  const combinedPlan = includesPlanWithMenuBindings(operations) ? after.projectPlan : undefined;
   if (combinedPlan) {
     for (const folder of folders) {
       const pages = combinedPlan.pages.filter(page => page.folderId === folder.id);
@@ -118,6 +118,20 @@ export function describeChanges(
       }
       case 'protoflow_upsert_db_column': items.add(tr(`更新表 ${args.tableId} 的字段 ${(args.column as {name:string}).name}`, `Update column ${(args.column as {name:string}).name} on table ${args.tableId}`)); break;
       case 'protoflow_upsert_sticky_contract': items.add(tr(`更新页面 ${(args.sticky as {pageId:string}).pageId} 的需求便签`, `Update sticky requirement on page ${(args.sticky as {pageId:string}).pageId}`)); break;
+      case 'protoflow_manage_mindmap': {
+        const act = String(args.action ?? '');
+        const id = String(args.id ?? '');
+        if (act === 'delete') {
+          const oldTitle = before.mindmaps.nodes.find(n => n.id === id)?.title ?? id;
+          items.add(tr(`删除脑图节点「${oldTitle}」`, `Delete mindmap item "${oldTitle}"`));
+        } else {
+          const existed = before.mindmaps.nodes.some(n => n.id === id);
+          const label = act === 'upsert_folder' ? tr('脑图目录', 'mindmap folder') : tr('项目脑图', 'mindmap');
+          const title = String(args.title ?? id);
+          items.add(tr(`${existed ? '更新' : '创建'}${label}「${title}」`, `${existed ? 'Update' : 'Create'} ${label} "${title}"`));
+        }
+        break;
+      }
       case 'protoflow_run_closed_loop_audit': items.add(tr(`替换项目巡检清单：${before.closedLoopIssues.length} → ${after.closedLoopIssues.length} 条`, `Replace closed-loop audit list: ${before.closedLoopIssues.length} -> ${after.closedLoopIssues.length} item(s)`)); break;
       case 'protoflow_set_project_plan': case 'protoflow_revise_project_page':
         if (!combinedPlan) items.add(after.projectPlan?.approved ? tr('更新页面需求及生成记录', 'Update page requirements and generation progress') : tr('更新待确认的项目方案', 'Update pending project plan'));

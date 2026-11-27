@@ -9,6 +9,7 @@ import { parsePageSource } from '../proto/dsl/parser';
 import { walk } from '../proto/dsl/tree';
 import { isActionChain, type ActionCall, type PropValue, type ProtoNode } from '../proto/types';
 import { purchaseTransferContractError } from '../proto/runtime/purchaseTransfer';
+import { importSelectedRowsContractErrors } from '../proto/runtime/rowTransfer';
 import { diagramRelations } from '../proto/database/relations';
 import { reviewDatabaseDesign } from '../proto/database/designReview';
 
@@ -86,6 +87,22 @@ export function analyzeProject(s: ProjectStateSnapshot) {
           else transfers.push({pageId,pfId:action.pfId,fromTableId:from,toTableId:to});
         }
         else issues.push(tr(`${page.title} / ${action.pfId} 的数据转入动作缺少有效的来源或目标表`, `${page.title} / ${action.pfId} data transfer action is missing a valid source or target table`));
+      }
+      if (action.call.name==='importSelectedRows') {
+        const resolveTableNode = (id: PropValue) => {
+          const matches = nodes.filter(n=>n.pfId===id || n.props.id===id);
+          return matches.length===1 && matches[0].type==='Table' ? matches[0] : undefined;
+        };
+        const srcNode=resolveTableNode(action.call.args[0]), dstNode=resolveTableNode(action.call.args[1]);
+        const from=typeof srcNode?.props.table==='string' ? srcNode.props.table : undefined;
+        const to=typeof dstNode?.props.table==='string' ? dstNode.props.table : undefined;
+        const defaultFk=typeof dstNode?.props.sourceForeignKey==='string' ? dstNode.props.sourceForeignKey : undefined;
+        const errs = importSelectedRowsContractErrors(s.dbTables, from, to, action.call.args[2], defaultFk);
+        if (errs.length > 0) {
+          issues.push(...errs.map(e => tr(`${page.title} / ${action.pfId}：${e}`, `${page.title} / ${action.pfId}: ${e}`)));
+        } else if (from && to) {
+          transfers.push({pageId,pfId:action.pfId,fromTableId:from,toTableId:to});
+        }
       }
     }
   }

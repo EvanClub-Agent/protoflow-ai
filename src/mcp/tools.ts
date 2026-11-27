@@ -9,7 +9,16 @@ import { resolveUniqueConstraints } from '../proto/database/uniqueConstraints';
 import { readPageHeader } from '../proto/dsl/header';
 import { parsePageSource } from '../proto/dsl/parser';
 import { walk } from '../proto/dsl/tree';
-import { noteHtmlToMarkdown, noteHtmlToPlainText } from '../proto/notes';
+import { emptyMindmaps, mindmapContextResolver, mindmapPath } from '../proto/mindmaps';
+import {
+  emptyProjectNotes,
+  extractNoteHeadings,
+  findMarkdownSectionRange,
+  noteHtmlToMarkdown,
+  noteHtmlToPlainText,
+  notePath,
+  relatedPagesResolver,
+} from '../proto/notes';
 import { FIELD_TYPES } from '../proto/registry/meta';
 import { buildSitemap } from '../proto/sitemap';
 import { exportDesignTokensSpec } from '../proto/theme/designTokens';
@@ -23,6 +32,7 @@ import {
   renderDatabaseDdl,
   type SqlDialect,
 } from './ddl';
+import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
 import type { LoadedWorkspace } from './workspace';
 
 export interface McpToolDefinition {
@@ -62,14 +72,14 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_project_overview',
     description:
-      'Get the high-level architecture of the Alex (ProtoFlow AI) prototype project: metadata, brand Design Tokens (CSS variables + Antd theme tokens), hierarchical navigation sitemap, page catalog with table bindings, database table summary, global business agreements, and static health diagnostics. Call this tool FIRST before implementing features.',
+      'Get prototype project architecture: metadata, Design Tokens (CSS vars + Antd tokens), sitemap, page catalog with table bindings, DB summary, agreements, and diagnostics. Call FIRST.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Prototype Project Overview' },
     inputSchema: {
       type: 'object',
       properties: {
         includeDiagnostics: {
           type: 'boolean',
-          description: 'Include static reference checks and database design review warnings (default: true).',
+          description: 'Include static reference checks and DB design warnings (default: true).',
         },
       },
       additionalProperties: false,
@@ -78,7 +88,7 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_database_schema',
     description:
-      'Get ER physical table schemas, primary/foreign keys, unique constraints, modeling grain/rationale, PostgreSQL or MySQL DDL draft, and optional seed rows from the prototype. Check uniqueConstraintsComplete and warnings before running DDL from legacy online shares.',
+      'Get ER physical table schemas, PK/FKs, unique constraints, modeling grain/rationale, Postgres/MySQL DDL, and seed rows. Check uniqueConstraintsComplete and warnings on legacy shares.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Database ER Schema & SQL DDL' },
     inputSchema: {
       type: 'object',
@@ -86,22 +96,22 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
         tableNames: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional list of physical table names (e.g. ["t_orders"]) or internal table IDs to filter. Omit to retrieve all tables.',
+          description: 'Optional physical table names or table IDs to filter (omit for all).',
         },
         dialect: {
           type: 'string',
           enum: ['postgres', 'mysql'],
-          description: 'Target SQL dialect for generated CREATE/ALTER DDL statements (default: "postgres").',
+          description: 'SQL dialect for DDL (default: "postgres").',
         },
         includeSampleRows: {
           type: 'boolean',
-          description: 'Include realistic prototype rows from tableRows for seed scripts and integration tests (default: true).',
+          description: 'Include prototype seed rows from tableRows (default: true).',
         },
         sampleRowLimit: {
           type: 'integer',
           minimum: 1,
           maximum: 50,
-          description: 'Maximum sample rows returned per table when includeSampleRows is true (default: 5).',
+          description: 'Max sample rows per table (default: 5).',
         },
       },
       additionalProperties: false,
@@ -110,7 +120,7 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'protoflow_get_page_spec',
     description:
-      'Get the full specification of a single prototype page: route path, desktop/mobile viewport mode, bound physical tables, interactive event chains, UI Stack 5-state fallback spec (empty/loading/edge/error), Poka-Yoke defensive rules (cross-field constraints, disabledWhen/hiddenWhen guards, confirm matchText, undo deletes, FK onDelete policies), component-pinned product sticky notes, component outline, and TSX prototype source.',
+      'Get full specification of one page: route, desktop/mobile mode, bound tables, event chains, UI Stack 5-state spec, Poka-Yoke rules, sticky notes, component outline, linked docs, and TSX source.',
     annotations: { ...READ_ONLY_ANNOTATIONS, title: 'Get Single Page UI & Interaction Spec' },
     inputSchema: {
       type: 'object',
@@ -121,21 +131,21 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
         },
         includeSource: {
           type: 'boolean',
-          description: 'Include the full canonical TSX prototype source of the page (default: true).',
+          description: 'Include canonical TSX source (default: true).',
         },
         selectedPfId: {
           type: 'string',
-          description: 'Optional exact component pfId to inspect its ancestors and subtree.',
+          description: 'Optional component pfId to inspect ancestors and subtree.',
         },
         includeInspection: {
           type: 'boolean',
-          description: 'Include static contract validation, warnings, and saved preview-row binding status from inspectPage (default: false).',
+          description: 'Include static contract validation and preview-row binding status (default: false).',
         },
         importView: {
           type: 'string',
           enum: ['axure', 'figma'],
           description:
-            'Optional structured inspection view for imported Axure RP pages ("axure", returning StaticTable firstRow[].pfId, columnActions row consistency, nearbyLabel, dynamic panel states, and importNotes) or Figma frames ("figma", returning Auto Layout repeating groups, semantic blocks, and paginated layers).',
+            'Structured inspection view for imported Axure RP ("axure") or Figma ("figma") pages.',
         },
         offset: {
           type: 'integer',
@@ -172,6 +182,19 @@ export const SPEC_MCP_TOOLS: McpToolDefinition[] = [
         pageId: {
           type: 'string',
           description: 'Optional pageId to filter notes and diagrams linked to that page or its parent folder.',
+        },
+        sectionHeading: {
+          type: 'string',
+          description: 'Optional heading text to extract only that section.',
+        },
+        charOffset: {
+          type: 'integer',
+          minimum: 0,
+        },
+        maxChars: {
+          type: 'integer',
+          minimum: 500,
+          maximum: 200000,
         },
       },
       additionalProperties: false,
@@ -619,6 +642,26 @@ function extractPageExperienceSpecs(
   };
 }
 
+function readNoteContexts(state: ProjectStateSnapshot, pageId: string | null, noteId?: string | null) {
+  const workspace = state.projectNotes ?? emptyProjectNotes();
+  const resolve = relatedPagesResolver(workspace, state);
+  return workspace.nodes.flatMap(note => {
+    if (note.kind !== 'note' || (noteId && note.id !== noteId)) return [];
+    const context = resolve(note.id);
+    return pageId && !context.relatedPageIds.includes(pageId) ? [] : [{ note, context }];
+  });
+}
+
+function readMindmapContexts(state: ProjectStateSnapshot, pageId: string | null, mindmapId?: string | null) {
+  const workspace = state.mindmaps ?? emptyMindmaps();
+  const resolve = mindmapContextResolver(workspace, state);
+  return workspace.nodes.flatMap(node => {
+    if (node.kind !== 'mindmap' || (mindmapId && node.id !== mindmapId)) return [];
+    const context = resolve(node.id);
+    return pageId && !context.relatedPageIds.includes(pageId) ? [] : [context];
+  });
+}
+
 export function executeSpecTool(
   workspace: LoadedWorkspace,
   name: string,
@@ -923,23 +966,10 @@ export function executeSpecTool(
       const upstreamDependencies = evidence.links.filter((l) => l.pageId === pageId);
       const acceptanceCases = evidence.cases.filter((c) => c.pageId === pageId);
 
-      const linkedNoteIds = new Set(
-        (s.projectNotes?.links ?? [])
-          .filter((l) => l.page.kind === 'page' && l.page.pageId === pageId)
-          .map((l) => l.targetNodeId)
-      );
-      const linkedNotes = (s.projectNotes?.nodes ?? [])
-        .filter((n) => n.kind === 'note' && linkedNoteIds.has(n.id))
-        .map((n) => ({ id: n.id, title: n.title, status: n.status ?? 'draft', priority: n.priority ?? null }));
-
-      const linkedMindmapIds = new Set(
-        (s.mindmaps?.links ?? [])
-          .filter((l) => l.page.kind === 'page' && l.page.pageId === pageId)
-          .map((l) => l.targetNodeId)
-      );
-      const linkedMindmaps = (s.mindmaps?.nodes ?? [])
-        .filter((n) => n.kind === 'mindmap' && linkedMindmapIds.has(n.id))
-        .map((n) => ({ id: n.id, title: n.title }));
+      const linkedNotes = readNoteContexts(s, pageId).map(({ note }) => ({
+        id: note.id, title: note.title, status: note.status ?? 'draft', priority: note.priority ?? null,
+      }));
+      const linkedMindmaps = readMindmapContexts(s, pageId).map(({ mindmapId, title }) => ({ id: mindmapId, title }));
 
       const agreements = (s.projectAgreements ?? []).filter((a) => a.pageIds.includes(pageId));
 
@@ -1033,48 +1063,57 @@ export function executeSpecTool(
       const noteId = typeof args.noteId === 'string' && args.noteId.trim() ? args.noteId.trim() : null;
       const mindmapId = typeof args.mindmapId === 'string' && args.mindmapId.trim() ? args.mindmapId.trim() : null;
       const pageId = typeof args.pageId === 'string' && args.pageId.trim() ? args.pageId.trim() : null;
+      const sectionHeading =
+        typeof args.sectionHeading === 'string' && args.sectionHeading.trim()
+          ? args.sectionHeading.trim()
+          : null;
+      const charOffset =
+        typeof args.charOffset === 'number' && Number.isFinite(args.charOffset)
+          ? Math.max(0, Math.trunc(args.charOffset))
+          : 0;
+      const maxChars =
+        typeof args.maxChars === 'number' && Number.isFinite(args.maxChars)
+          ? Math.max(500, Math.min(200_000, Math.trunc(args.maxChars)))
+          : null;
 
-      // Determine parent folders if filtering by pageId so folder-linked notes/mindmaps are also returned
-      const matchingFolderIds = new Set<string>();
-      if (pageId) {
-        const sitemap = buildSitemap(s.designerFolders, s.designerPages, s.sitemapOverrides, s.sitemapBase);
-        const findAncestors = (items: typeof sitemap, ancestors: string[]): boolean => {
-          for (const item of items) {
-            if (item.type === 'folder') {
-              if (findAncestors(item.children ?? [], [...ancestors, item.id])) return true;
-            } else if (item.pageId === pageId) {
-              ancestors.forEach((id) => matchingFolderIds.add(id));
-              return true;
+      const noteWorkspace = s.projectNotes ?? emptyProjectNotes();
+      const noteLinks = noteWorkspace.links ?? [];
+      const noteFolders = noteWorkspace.nodes
+        .filter((n): n is Extract<typeof n, { kind: 'folder' }> => n.kind === 'folder')
+        .map((f) => ({
+          id: f.id,
+          title: f.title,
+          parentId: f.parentId,
+          path: notePath(noteWorkspace, f.id),
+          linkedTargets: noteLinks
+            .filter((l) => l.targetNodeId === f.id)
+            .map((l) => (l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`)),
+        }));
+
+      const notes = readNoteContexts(s, pageId, noteId)
+        .map(({ note: n, context }) => {
+          const linkedTargets = context.links
+            .map((l) => (l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`));
+          const fullMd = noteHtmlToMarkdown(n, { images: 'placeholder', assets: s.projectNotes?.assets });
+          let targetMd = fullMd;
+          let matchedSection: string | null = null;
+          if (sectionHeading) {
+            const range = findMarkdownSectionRange(fullMd, sectionHeading);
+            if (range) {
+              targetMd = fullMd.slice(range.start, range.end).trim();
+              matchedSection = range.matchedHeading;
+            } else {
+              targetMd = '';
             }
           }
-          return false;
-        };
-        findAncestors(sitemap, []);
-      }
-
-      const noteLinks = s.projectNotes?.links ?? [];
-      const allowedNoteIds = pageId
-        ? new Set(
-            noteLinks
-              .filter(
-                (l) =>
-                  (l.page.kind === 'page' && l.page.pageId === pageId) ||
-                  (l.page.kind === 'folder' && matchingFolderIds.has(l.page.folderId))
-              )
-              .map((l) => l.targetNodeId)
-          )
-        : null;
-
-      const notes = (s.projectNotes?.nodes ?? [])
-        .filter((n): n is Extract<typeof n, { kind: 'note' }> => n.kind === 'note')
-        .filter((n) => (!noteId || n.id === noteId) && (!allowedNoteIds || allowedNoteIds.has(n.id)))
-        .map((n) => {
-          const linkedTargets = noteLinks
-            .filter((l) => l.targetNodeId === n.id)
-            .map((l) => (l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`));
+          const sliced =
+            maxChars !== null ? targetMd.slice(charOffset, charOffset + maxChars) : charOffset > 0 ? targetMd.slice(charOffset) : targetMd;
+          const truncated = maxChars !== null && charOffset + sliced.length < targetMd.length;
           return {
             id: n.id,
             title: n.title,
+            parentId: n.parentId,
+            path: context.path,
             icon: n.icon,
             status: n.status ?? 'draft',
             priority: n.priority ?? null,
@@ -1083,42 +1122,59 @@ export function executeSpecTool(
             tags: n.tags,
             updatedAt: n.updatedAt,
             linkedTargets,
-            markdown: noteHtmlToMarkdown(n, { images: 'placeholder', assets: s.projectNotes?.assets }),
+            relatedPageIds: context.relatedPageIds,
+            headings: extractNoteHeadings(n.content).map((h) => `${'#'.repeat(h.level)} ${h.text}`),
+            markdown: sliced,
+            totalChars: targetMd.length,
+            ...(sectionHeading ? { matchedSection } : {}),
+            ...(maxChars !== null || charOffset > 0
+              ? {
+                  charOffset,
+                  truncated,
+                  nextCharOffset: truncated ? charOffset + sliced.length : null,
+                }
+              : {}),
           };
         });
 
-      const mindmapLinks = s.mindmaps?.links ?? [];
-      const allowedMindmapIds = pageId
-        ? new Set(
-            mindmapLinks
-              .filter(
-                (l) =>
-                  (l.page.kind === 'page' && l.page.pageId === pageId) ||
-                  (l.page.kind === 'folder' && matchingFolderIds.has(l.page.folderId))
-              )
-              .map((l) => l.targetNodeId)
-          )
-        : null;
+      const mindmapWorkspace = s.mindmaps ?? emptyMindmaps();
+      const mindmapLinks = mindmapWorkspace.links ?? [];
+      const mindmapFolders = mindmapWorkspace.nodes
+        .filter((n): n is Extract<typeof n, { kind: 'folder' }> => n.kind === 'folder')
+        .map((f) => ({
+          id: f.id,
+          title: f.title,
+          parentId: f.parentId,
+          path: mindmapPath(mindmapWorkspace, f.id),
+          linkedTargets: mindmapLinks
+            .filter((l) => l.targetNodeId === f.id)
+            .map((l) => (l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`)),
+        }));
 
-      const mindmaps = (s.mindmaps?.nodes ?? [])
-        .filter((n): n is Extract<typeof n, { kind: 'mindmap' }> => n.kind === 'mindmap')
-        .filter((n) => (!mindmapId || n.id === mindmapId) && (!allowedMindmapIds || allowedMindmapIds.has(n.id)))
-        .map((n) => {
-          const linkedTargets = mindmapLinks
-            .filter((l) => l.targetNodeId === n.id)
-            .map((l) => (l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`));
+      const mindmaps = readMindmapContexts(s, pageId, mindmapId)
+        .map((ctx) => {
+          const linkedTargets = ctx.links.map((l) =>
+            l.page.kind === 'page' ? `page:${l.page.pageId}` : `folder:${l.page.folderId}`,
+          );
           return {
-            id: n.id,
-            title: n.title,
+            id: ctx.mindmapId,
+            title: ctx.title,
+            parentId: ctx.parentId,
+            path: ctx.path,
             linkedTargets,
-            mermaidSource: n.source,
+            relatedPageIds: ctx.relatedPageIds,
+            mermaidSource: ctx.source,
           };
         });
 
       return {
+        noteFolderCount: noteFolders.length,
         noteCount: notes.length,
+        mindmapFolderCount: mindmapFolders.length,
         mindmapCount: mindmaps.length,
+        noteFolders,
         notes,
+        mindmapFolders,
         mindmaps,
       };
     }

@@ -1,4 +1,4 @@
-import { folderOptions } from '../proto/sitemap';
+import { folderOptions, menuPageIds, type SitemapLayout } from '../proto/sitemap';
 import { printPageSource } from '../proto/dsl/printer';
 import { parsePageSource } from '../proto/dsl/parser';
 import type { ProjectStateSnapshot } from '../utils/pflowBinaryCodec';
@@ -20,10 +20,20 @@ export function pagePrototypeIssue(source: string) {
   return '';
 }
 
-/** A full proposal can declare both future menus and data to be used by them. */
-export function includesPlanAndSchema(operations: HermesOperation[]) {
+/** A combined proposal materializes its planned menus when the user accepts the edits. */
+export function includesPlanWithMenuBindings(operations: HermesOperation[]) {
   return operations.some(op => op.tool === 'protoflow_set_project_plan')
-    && operations.some(op => op.tool === 'protoflow_upsert_db_table' || op.tool === 'protoflow_upsert_db_column');
+    && operations.some(op => ['protoflow_upsert_db_table', 'protoflow_upsert_db_column', 'protoflow_manage_mindmap'].includes(op.tool));
+}
+
+/** Validate links to this turn's declared menus without putting scaffolds in the live or staged page sources. */
+export function plannedSitemapLayout(layout: SitemapLayout, plan: ProjectPlan): SitemapLayout {
+  const designerFolders = plannedFolders(layout, plan);
+  const existingIds = menuPageIds(layout);
+  const newPages = plan.pages
+    .filter(page => !existingIds.has(page.pageId))
+    .map(({ pageId, title, folderId }) => ({ pageId, title, folderId }));
+  return { ...layout, designerFolders, designerPages: [...layout.designerPages, ...newPages] };
 }
 
 /** The same menu scaffold is used for preflight, confirmation and resuming generation.

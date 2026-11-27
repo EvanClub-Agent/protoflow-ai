@@ -312,24 +312,30 @@ test('Bidirectional MCP: Axure RP & Figma inspection, flow reshaping, coverage g
     const desktopToolsRes = (await rpcCall(desktopMock, 'tools/list')) as {
       tools: { name: string; inputSchema: { required?: string[] } }[];
     };
-    const desktopReshapeSchema = desktopToolsRes.tools.find((t) => t.name === 'protoflow_reshape_imported_page')!;
-    const validateArgs = new Ajv().compile(desktopReshapeSchema.inputSchema);
+    const desktopPageSchema = desktopToolsRes.tools.find((t) => t.name === 'protoflow_page')!;
+    const validateArgs = new Ajv().compile(desktopPageSchema.inputSchema);
     const coverageArgs = { action: 'reshape_figma_page', pageId: 'fig-page-a1b2c3d4', expectedRevision: finalLoaded.revision,
       coverage: { converted: [{ sourcePfIds: ['fig-title'], targetPfId: 'm-opt-top', summary: '标题栏' }] },
       source: finalLoaded.payload.stateSnapshot.pageSources[reshapedFigma.optimizedPageId] };
     assert.ok(validateArgs(coverageArgs), JSON.stringify(validateArgs.errors));
     assert.equal(validateArgs({ ...coverageArgs, coverage: { converted: [{ targetPfId: 'm-opt-top' }] } }), false);
-    assert.ok(!desktopReshapeSchema.inputSchema.required?.includes('expectedRevision'));
-    const inspectOnDesktop = await callOk(desktopMock, 'protoflow_reshape_imported_page', {
+    assert.ok(!desktopPageSchema.inputSchema.required?.includes('expectedRevision'));
+    const inspectOnDesktop = await callOk(desktopMock, 'protoflow_page', {
       action: 'inspect_project',
       sourceType: 'figma',
     });
     assert.equal(inspectOnDesktop.totalPages, 1);
+    // Legacy tool alias remains 100% callable too
+    const legacyInspect = await callOk(desktopMock, 'protoflow_reshape_imported_page', {
+      action: 'inspect_project',
+      sourceType: 'figma',
+    });
+    assert.equal(legacyInspect.totalPages, 1);
     const promptRes = (await rpcCall(desktopMock, 'prompts/get', {
       name: 'reshape-imported-pages',
       arguments: { scopeTarget: 'fig-page-a1b2c3d4' },
     })) as { messages: { content: { text: string } }[] };
-    assert.match(promptRes.messages[0].content.text, /protoflow_reshape_imported_page/);
+    assert.match(promptRes.messages[0].content.text, /protoflow_reshape_imported_page|protoflow_page/);
 
     assert.equal(AUTHORING_MCP_TOOLS.some((t) => t.name === 'protoflow_reshape_imported_page'), true);
   } finally {

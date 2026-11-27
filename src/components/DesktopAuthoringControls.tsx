@@ -130,30 +130,46 @@ export function DesktopAuthoringControls() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold text-slate-900">Antigravity</span>
                   <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200/80 text-[10px] font-semibold text-emerald-700">
-                    {tr('免填代码 · 自动配置', 'Zero-config')}
+                    {tr('一次安装 · 自动同步', 'Install once · Auto-sync')}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
                   {tr(
-                    '点击下方按钮即可自动装好连接插件与原型设计技能。首次安装后，在 Antigravity 插件管理页开关一次即可直接对话。',
-                    'Automatically installs both the live bridge and design skill. Toggle the plugin once in Antigravity Customizations on first install.'
+                    '点击下方按钮自动装好插件与原型技能。开启后自动记忆，以后重启软件、升级版本或切换项目均会自动无感连通。',
+                    'Installs the live bridge and design skill in one click. Remembers your preference and auto-syncs across restarts, upgrades, and projects.'
                   )}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => void run(async () => {
-                  await runClientIntegration('installPlugin');
-                  return tr(
-                    'Antigravity 插件已装好！如果是第一次安装（或刚升级版本），请在 Antigravity 的插件页面把「Alex ProtoFlow Designer」关闭再打开一次；之后直接在聊天框提需求即可，换项目也无需再点安装。',
-                    'Antigravity plugin is ready! On first install or after an upgrade, toggle "Alex ProtoFlow Designer" off and on once in Antigravity Customizations — then just chat to design. Future projects connect automatically.'
-                  );
-                })}
-                className="min-h-7 w-full rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
-              >
-                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>{tr('安装 Antigravity 插件', 'Install Antigravity plugin')}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void run(async () => {
+                    await runClientIntegration('installPlugin');
+                    return tr(
+                      'Antigravity 插件已装好！首次安装后即可直接在聊天框提需求；后续打开或切换项目、升级软件都会在后台自动同步，无需再次操作。',
+                      'Antigravity plugin is ready! Chat directly to design — future project switches and app upgrades sync automatically in the background.'
+                    );
+                  })}
+                  className="min-h-7 flex-1 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>{tr('安装 Antigravity 插件', 'Install Antigravity plugin')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void run(async () => {
+                    await runClientIntegration('installPlugin', { forceRepair: true });
+                    return tr(
+                      '已强制修复并重置 Antigravity 插件与技能文件，所有核心工具均已恢复最新状态。',
+                      'Force-repaired Antigravity plugin and skill files to a clean latest state.'
+                    );
+                  })}
+                  title={tr('当本地插件目录异常或冲突时一键重置修复', 'Force-reset and repair plugin files if corrupted')}
+                  className="min-h-7 shrink-0 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 cursor-pointer transition shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+                >
+                  {tr('修复', 'Repair')}
+                </button>
+              </div>
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 flex flex-col justify-between gap-2.5">

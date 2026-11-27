@@ -123,7 +123,7 @@ export function useAutoSelectFirstRow(params: {
   useEffect(() => {
     const queryChanged = prevQueryRef.current !== serializedQuery;
     prevQueryRef.current = serializedQuery;
-    if (rt.isDesign || !autoSelectFirst || !tableId) return;
+    if (!autoSelectFirst || !tableId) return;
     const previous = previousSource.current;
     const sourceChanged = sourceTableId !== undefined && (
       previous.rowId !== sourceRowId || (sourceRowId !== undefined && previous.tableId !== sourceTableId)

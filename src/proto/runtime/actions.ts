@@ -113,6 +113,17 @@ export const ACTIONS: ActionSpec[] = [
     ],
   },
   {
+    name: 'importSelectedRows',
+    title: '批量勾选转入明细表',
+    canAbort: true,
+    description: '通用主子表/跨表选单转入动作：将源表格（如物料目录、待转需求池、采购明细）中勾选的多行记录批量写入目标明细表格，自动绑定当前主单外键与同名字段，并支持通过 mapping 配置 { fieldMap, parentFieldMap, defaults, parentForeignKey, allowDuplicate }。',
+    args: [
+      { name: 'source', label: '来源勾选表格', kind: 'nodeRef', refTypes: ['Table'] },
+      { name: 'target', label: '目标明细表格', kind: 'nodeRef', refTypes: ['Table'] },
+      { name: 'mapping', label: '字段映射与默认值(可选)', kind: 'json', optional: true },
+    ],
+  },
+  {
     name: 'returnSelection',
     title: '回填选中行',
     description: '在选择弹框中使用：把表格勾选的行回填到打开它的 PickerInput，并关闭弹框。',

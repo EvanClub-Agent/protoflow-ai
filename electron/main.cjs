@@ -453,12 +453,27 @@ function assertAuthoringRenderer(event) {
   if (!app.isPackaged && activeDevServerUrl && page.origin === new URL(activeDevServerUrl).origin) return;
   throw new Error('Desktop authoring requires the Alex editor');
 }
-handleIpc('pflow:mcp-live-open', (event, input) => {
+handleIpc('pflow:mcp-live-open', async (event, input) => {
   assertAuthoringRenderer(event);
-  authoringBridge ??= require('./desktop-authoring.cjs').createDesktopAuthoringBridge(
+  const desktopAuthoring = require('./desktop-authoring.cjs');
+  authoringBridge ??= desktopAuthoring.createDesktopAuthoringBridge(
     path.join(app.getPath('userData'), 'authoring'), request => mainWindow.webContents.send('pflow:mcp-live-request', request)
   );
-  return authoringBridge.open(input);
+  const opened = await authoringBridge.open(input);
+  try {
+    const { installPlugin } = require('./generated/client-integrations.cjs');
+    desktopAuthoring.syncManagedIntegrations({
+      root: path.resolve(__dirname, '..'),
+      home: app.getPath('home'),
+      executable: process.execPath,
+      connectionFile: opened.connectionPath,
+      codexHome: process.env.CODEX_HOME,
+      installPlugin,
+    });
+  } catch {
+    // Background sync is best-effort and never blocks live connection startup.
+  }
+  return opened;
 });
 handleIpc('pflow:mcp-capture', (event, { sessionId, requestId, snapshot }) => {
   assertAuthoringRenderer(event);
@@ -473,21 +488,23 @@ handleIpc('pflow:mcp-live-close', (event, sessionId) => {
 ipcMain.on('pflow:mcp-live-reply', (event, result) => {
   if (isMainRendererEvent(event)) authoringBridge?.reply(result);
 });
-handleIpc('pflow:mcp-install-skill', (event, client) => {
+handleIpc('pflow:mcp-install-skill', (event, client, options) => {
   assertAuthoringRenderer(event);
   return require('./desktop-authoring.cjs').installDesignerSkill(client, os.homedir(),
-    path.join(__dirname, '../skills/alex-protoflow-designer'), process.env.CODEX_HOME);
+    path.join(__dirname, '../skills/alex-protoflow-designer'), process.env.CODEX_HOME,
+    { forceRepair: Boolean(options?.forceRepair) });
 });
 
 function currentConnectionFile(sessionId) {
   if (!authoringBridge) throw new Error('Desktop connection closed');
   return authoringBridge.connectionFile(sessionId);
 }
-handleIpc('pflow:mcp-install-plugin', (event, sessionId) => {
+handleIpc('pflow:mcp-install-plugin', (event, sessionId, options) => {
   assertAuthoringRenderer(event);
   const connectionFile = currentConnectionFile(sessionId);
   const { installPlugin } = require('./generated/client-integrations.cjs');
-  return installPlugin(path.resolve(__dirname, '..'), app.getPath('home'), { executable: process.execPath, connectionFile });
+  return installPlugin(path.resolve(__dirname, '..'), app.getPath('home'),
+    { executable: process.execPath, connectionFile }, { forceRepair: Boolean(options?.forceRepair) });
 });
 handleIpc('pflow:mcp-export-extension', async (event, sessionId) => {
   assertAuthoringRenderer(event);

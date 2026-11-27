@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpenText, ChevronLeft, X } from 'lucide-react';
 import type { PublishedNote, ReadablePublishedSnapshot } from '../services/publishedSnapshot';
 import { NOTE_ASSET_SCHEME, NOTE_PRIORITY_OPTIONS, NOTE_STATUS_OPTIONS, noteAssetDataUrl } from '../proto/notes';
 import { sanitizeNoteHtml } from '../proto/noteHtmlSanitize';
+import { renderMermaidDiagram } from '../services/mindmapRenderer';
 import { useI18n } from '../i18n';
 
 const statusMeta = (id: string) => NOTE_STATUS_OPTIONS.find((s) => s.id === id);
@@ -69,7 +70,16 @@ export function PublishedProjectNotes({
             </button>
           </header>
           {selected ? (
-            <PublishedNoteBody note={selected} snapshot={snapshot} onNavigate={(id) => { onNavigate(id); setSelectedId(null); }} />
+            <PublishedNoteBody
+              note={selected}
+              snapshot={snapshot}
+              sharedNoteIds={new Set(notes.map((n) => n.noteId))}
+              onSelectNote={(id) => setSelectedId(id)}
+              onNavigate={(id) => {
+                onNavigate(id);
+                setSelectedId(null);
+              }}
+            />
           ) : (
             <>
               <div className="flex flex-wrap gap-1 border-b border-slate-100 px-4 py-2 text-xs" role="tablist">
@@ -129,13 +139,18 @@ export function PublishedProjectNotes({
 function PublishedNoteBody({
   note,
   snapshot,
+  sharedNoteIds,
+  onSelectNote,
   onNavigate,
 }: {
   note: PublishedNote;
   snapshot: ReadablePublishedSnapshot;
+  sharedNoteIds: Set<string>;
+  onSelectNote: (noteId: string) => void;
   onNavigate: (pageId: string) => void;
 }) {
   const { tr } = useI18n();
+  const bodyRef = useRef<HTMLDivElement>(null);
   const pageIds = useMemo(() => new Set(snapshot.pages.map((p) => p.pageId)), [snapshot]);
   // Sanitized again on the reader side: the share payload is never trusted as markup.
   const html = useMemo(() => {
@@ -147,8 +162,38 @@ function PublishedNoteBody({
         return asset ? noteAssetDataUrl(asset) : null;
       },
       keepPageLink: (pageId) => pageIds.has(pageId),
+      keepNoteLink: (noteId) => sharedNoteIds.has(noteId),
     });
-  }, [note, snapshot, pageIds]);
+  }, [note, snapshot, pageIds, sharedNoteIds]);
+
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (!root) return;
+    let cancelled = false;
+    const dark = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark';
+    const blocks = Array.from(root.querySelectorAll('pre > code.language-mermaid'));
+    for (const codeEl of blocks) {
+      const pre = codeEl.parentElement;
+      const src = (codeEl.textContent ?? '').trim();
+      if (!pre || !src) continue;
+      void renderMermaidDiagram(src, dark).then(
+        ({ svg }) => {
+          if (cancelled || !pre.isConnected) return;
+          const wrap = document.createElement('div');
+          wrap.className = 'pf-note-mermaid-card my-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 overflow-x-auto';
+          wrap.innerHTML = svg;
+          pre.replaceWith(wrap);
+        },
+        () => {
+          /* keep raw code block on syntax error */
+        }
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [html]);
+
   const status = statusMeta(note.status);
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -166,10 +211,13 @@ function PublishedNoteBody({
           if (href.startsWith('#pf-page:')) {
             event.preventDefault();
             onNavigate(href.slice('#pf-page:'.length));
+          } else if (href.startsWith('#pf-note:')) {
+            event.preventDefault();
+            onSelectNote(href.slice('#pf-note:'.length));
           }
         }}
       >
-        <div className="ProseMirror" data-testid="published-note-body" dangerouslySetInnerHTML={{ __html: html }} />
+        <div ref={bodyRef} className="ProseMirror" data-testid="published-note-body" dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     </div>
   );

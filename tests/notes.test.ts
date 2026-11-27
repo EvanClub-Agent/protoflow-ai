@@ -20,6 +20,7 @@ import {
   duplicateNoteNode,
   editNoteNode,
   importMarkdownAsNote,
+  importMarkdownFilesAsNotes,
   openNoteNode,
   registerNoteImage,
   setNoteTargetLinks,
@@ -33,6 +34,7 @@ import {
   NOTE_TEMPLATES,
   extractAllNoteTasks,
   extractNoteHeadings,
+  markdownToNoteHtml,
   noteAiImageAttachments,
   noteAssetRefs,
   noteContext,
@@ -41,6 +43,7 @@ import {
   noteTemplateContent,
   uniqueNoteTitle,
 } from '../src/proto/notes';
+import { sanitizeNoteHtml } from '../src/proto/noteHtmlSanitize';
 import { installTestDom } from './dom';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -523,6 +526,136 @@ test('an open rich editor picks up external task toggles instead of overwriting 
   } finally {
     await act(async () => root.unmount());
     // Let editor/React teardown finish before the fake DOM is removed.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    container.remove();
+    restore();
+  }
+});
+
+test('PRD-grade Markdown round-trip: H1–H5, nested lists, inline-code pipes, <br> table cells, GFM callouts, Mermaid blocks, cross-doc links, batch import, and read-only/wide UI', async () => {
+  const restore = installTestDom();
+  const { createRoot } = await import('react-dom/client');
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    loadProjectFromBinaryPayload(project('proj-prd-suite'));
+
+    const prdMd0 = [
+      '# 00-PRD总纲与双端闭环状态机架构规范',
+      '',
+      '> [!IMPORTANT]',
+      '> 所有审批流以单据状态枚举直接体现，严禁出现孤立无下游的单据。',
+      '',
+      '## 1. 全局状态流转图',
+      '',
+      '```mermaid',
+      'stateDiagram-v2',
+      '  direction LR',
+      '  [*] --> 草稿',
+      '  草稿 --> 待审核: 提交申请',
+      '  待审核 --> 已通过: 审批通过',
+      '```',
+      '',
+      '### 1.1 多级业务规则树',
+      '- 主端入库红线',
+      '  - 本次验收数量 `recv_qty <= remain_qty`',
+      '  - 关联 [首页工作台](#pf-page:page-home) 与 [主数据表](#pf-table:tbl_mat)',
+      '- 供应商协同规则',
+      '  1. 报价截止前允许撤回重报',
+      '  2. 中标后自动下推采购订单',
+      '',
+      '#### 1.1.1 核心字段与枚举字典表（含管道符与换行）',
+      '',
+      '| 字段名 | 枚举值定义 | 交互与校验说明 |',
+      '| --- | --- | --- |',
+      '| `F_Status` | `0|草稿`、`1|待审`、`2|已审` | 第一行说明<br>第二行补充说明 |',
+      '| `F_Type` | 普通 \\| 紧急 | 参见 [模块一PRD](#pf-note:note_mod_1) |',
+      '',
+      '##### (a) 五级细则标题保留验证',
+      '支持五级标题无损往返。',
+    ].join('\n');
+
+    const prdMd1 = '# 01-主端PRD-基础资料与计划招采\n\n## 2.1 物资档案维护\n- [x] 支持批次保质期预警\n';
+
+    const importedIds = importMarkdownFilesAsNotes(
+      'proj-prd-suite',
+      [
+        { fileName: '00-总纲.md', markdownText: prdMd0 },
+        { fileName: '01-主端.md', markdownText: prdMd1 },
+      ],
+      null
+    );
+    assert.equal(importedIds.length, 2);
+
+    const note0 = noteById(importedIds[0]);
+    assert.equal(note0.title, '00-PRD总纲与双端闭环状态机架构规范');
+    assert.match(note0.content, /<blockquote data-callout="important">/);
+    assert.match(note0.content, /<code class="language-mermaid">/);
+    assert.match(note0.content, /<h4>1\.1\.1 核心字段与枚举字典表（含管道符与换行）<\/h4>/);
+    assert.match(note0.content, /<h5>\(a\) 五级细则标题保留验证<\/h5>/);
+    // `0|草稿` must NOT split the 3-column table row into extra columns
+    const rowMatches = [...note0.content.matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
+    assert.equal(rowMatches.length, 3);
+    for (const row of rowMatches) {
+      const cells = row[1].match(/<(?:th|td)>/g) ?? [];
+      assert.equal(cells.length, 3, 'every row must have exactly 3 cells despite inline code pipes');
+    }
+    assert.match(note0.content, /第一行说明<br>第二行补充说明/);
+    assert.match(note0.content, /href="#pf-page:page-home"/);
+    assert.match(note0.content, /href="#pf-table:tbl_mat"/);
+    assert.match(note0.content, /href="#pf-note:note_mod_1"/);
+
+    // TOC extracts H1–H4
+    const headings = extractNoteHeadings(note0.content);
+    assert.deepEqual(
+      headings.map((h) => h.level),
+      [2, 3, 4]
+    );
+
+    // Sanitizer preserves data-callout, language-mermaid, H5, and opted-in note/table links
+    const sanitized = sanitizeNoteHtml(note0.content, {
+      resolveImage: () => null,
+      keepPageLink: (p) => p === 'page-home',
+      keepNoteLink: (n) => n === 'note_mod_1',
+      keepTableLink: (t) => t === 'tbl_mat',
+    });
+    assert.match(sanitized, /data-callout="important"/);
+    assert.match(sanitized, /class="language-mermaid"/);
+    assert.match(sanitized, /href="#pf-note:note_mod_1"/);
+    assert.match(sanitized, /href="#pf-table:tbl_mat"/);
+
+    // Round-trip HTML -> Markdown -> HTML preserves callouts, mermaid lang, nested lists, table cells & links
+    const exported = noteHtmlToMarkdown(note0);
+    assert.match(exported, /> \[!IMPORTANT\]/);
+    assert.match(exported, /```mermaid/);
+    assert.match(exported, /  - 本次验收数量 `recv_qty <= remain_qty`/);
+    assert.match(exported, /\[首页工作台\]\(#pf-page:page-home\)/);
+    assert.match(exported, /第一行说明<br>第二行补充说明/);
+    const reparsed = markdownToNoteHtml(exported);
+    assert.match(reparsed.html, /<blockquote data-callout="important">/);
+    assert.match(reparsed.html, /<code class="language-mermaid">/);
+    assert.match(reparsed.html, /第一行说明<br>第二行补充说明/);
+
+    // Mount ProjectNotesView and verify Mermaid block NodeView + Read-Only lock toggle
+    openNoteNode('proj-prd-suite', importedIds[0]);
+    await act(async () => {
+      root.render(React.createElement(ProjectNotesView, { projectId: 'proj-prd-suite' }));
+    });
+    assert.ok(container.querySelector('.pf-note-mermaid-block'), 'Mermaid diagram block NodeView should render');
+    const dom = container.querySelector('.ProseMirror') as (HTMLElement & { editor?: any }) | null;
+    assert.equal(dom?.editor?.isEditable, true);
+
+    const lockBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('阅读锁定')
+    );
+    assert.ok(lockBtn, 'Read-only lock button should exist');
+    await act(async () => {
+      lockBtn!.click();
+    });
+    assert.equal(dom?.editor?.isEditable, false, 'editor should lock in read-only mode');
+  } finally {
+    await act(async () => root.unmount());
     await new Promise((resolve) => setTimeout(resolve, 20));
     container.remove();
     restore();
